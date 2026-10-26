@@ -175,7 +175,7 @@ body { margin: 0; background: var(--sky); color: var(--ink); font-family: var(--
   <span>.glb をドロップで置ける</span>
 </div>
 
-<div class="hint" id="hint">左側をなぞって移動、右側をなぞって視点</div>
+<div class="hint" id="hint">左側を上へなぞって前へ、左右で向きを変える。右側をなぞって視点、2 本指でズーム</div>
 <div id="scope" hidden></div><div id="scopeDir" hidden></div>
 <div class="subbtns" id="subBtns" hidden>
   <button type="button" id="rescueBtn">救出</button>
@@ -476,10 +476,15 @@ function rigPlane(item, root, model, gltf, def) {
 const RIGS = { car: rigAutoCar, ship: rigBoat, sub: rigBoat, plane: rigPlane };
 
 /* ================= ワールドの形 =================
-   200m × 200m × 200m の箱。y=0 が海面、箱の底は y=-50、天井は y=150。
+   500m × 500m（高さ 200m）の箱。はじめの 200m の陸と入り江はそのままに、南（-z）の海の方へ広げた。
+   y=0 が海面、箱の底は y=-50、天井は y=150。海の真ん中に小さな島がある。
    地形は「決まった種のノイズ」から作るので、だれの画面でも同じ形になる（送る必要がない）。 */
-const W = 200, HALF = 100, Y_BOTTOM = -50, Y_TOP = 150, SEA = 0;
-const CELL = 2, N = W / CELL, HN = N + 1;   // 2m ごとの格子（スマホでも軽い 2 万三角形）
+const X0 = -250, X1 = 250, Z0 = -400, Z1 = 100, Y_BOTTOM = -50, Y_TOP = 150, SEA = 0;
+const XW = X1 - X0, ZW = Z1 - Z0, XC = (X0 + X1) / 2, ZC = (Z0 + Z1) / 2;
+const CELL = 2, NX = XW / CELL, NZ = ZW / CELL, HNX = NX + 1, HNZ = NZ + 1;   // 高さは 2m ごとの格子で持つ
+const clampX = (x, m = 0) => Math.min(X1 - m, Math.max(X0 + m, x));
+const clampZ = (z, m = 0) => Math.min(Z1 - m, Math.max(Z0 + m, z));
+const outsideBox = (x, z, m = 0) => x < X0 + m || x > X1 - m || z < Z0 + m || z > Z1 - m;
 const coarse = window.matchMedia('(pointer: coarse)').matches;
 
 function hash(ix, iz) {
@@ -496,27 +501,59 @@ function vnoise(x, z) {
 const fbm = (x, z) => vnoise(x / 40, z / 40) * 0.6 + vnoise(x / 17 + 31, z / 17 + 7) * 0.3 + vnoise(x / 7 + 5, z / 7 + 91) * 0.1;
 const ss = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
 
-// 手前（-z）の真ん中が海の底。そこから離れるほど浅瀬 → 砂浜 → 草の丘になる
+// はじめの入り江（BAY のまわり）と、南に広がる外海。離れるほど浅瀬 → 砂浜 → 草の丘になる
 const BAY = { x: 0, z: -75 };
+const COAST_Z = -112;                        // 外海の波打ち際（このあたり）
+const ISLAND = { x: 0, z: -265, r: 7.5 };    // 海の真ん中の島（直径およそ 15m）
+function islandHeight(d) {
+  if (d < ISLAND.r) return 2.2 - (2.25 / (ISLAND.r * ISLAND.r)) * d * d;   // 真ん中が 2.2m、ふちで水面
+  return -0.05 - (d - ISLAND.r) * 1.35;                                    // 海の中はなだらかに深く
+}
 function rawHeight(x, z) {
   const n = fbm(x, z);
-  const r = Math.hypot((x - BAY.x) * 0.95, z - BAY.z) + n * 9;
+  const rBay = Math.hypot((x - BAY.x) * 0.95, z - BAY.z);
+  const rOpen = 80 + (z - COAST_Z) + fbm(x * 0.4 + 200, 3) * 10;
+  const r = Math.min(rBay, rOpen) + n * 9;
   let h = -32 + 29 * ss(25, 68, r) + 3 * ss(66, 80, r) + 2.6 * ss(79, 92, r);   // 底 -32 → 浅瀬 -3 → 波打ち際 0 → 砂浜 2.6
   h += n * 1.6 * (1 - ss(70, 90, r));                                             // 海の底のでこぼこ
   const inland = ss(92, 118, r);
-  h += inland * (4 + (r - 92) * 0.07 + (fbm(x * 1.7 + 50, z * 1.7) * 0.5 + 0.5) * 7);   // 奥に行くほど高い草の丘
+  h += inland * (4 + Math.min(r - 92, 200) * 0.07 + (fbm(x * 1.7 + 50, z * 1.7) * 0.5 + 0.5) * 7);   // 奥に行くほど高い草の丘
   h += 9 * Math.exp(-((x - 45) ** 2 + (z - 70) ** 2) / 900);                      // 奥の右に見晴らしの丘
+  const di = Math.hypot(x - ISLAND.x, z - ISLAND.z);
+  if (di < 40) h = Math.max(h, islandHeight(di) + n * 0.15);
   return h;
 }
-const HGT = new Float32Array(HN * HN);
-for (let j = 0; j < HN; j++) for (let i = 0; i < HN; i++) HGT[j * HN + i] = rawHeight(-HALF + i * CELL, -HALF + j * CELL);
+const HGT = new Float32Array(HNX * HNZ);
+for (let j = 0; j < HNZ; j++) for (let i = 0; i < HNX; i++) HGT[j * HNX + i] = rawHeight(X0 + i * CELL, Z0 + j * CELL);
+
+/* 20m ごとの区画に分け、はじめの陸・島・波打ち際は 2m、遠い海の底や奥の丘は 4m の粗い三角形にする（スマホを軽く）。
+   粗い区画の間の点は、粗い三角形の上にそろえておくので、すき間はできず、heightAt もぴったり合う。 */
+const TILE = 10, TX = NX / TILE, TZ = NZ / TILE;
+const FINE = new Uint8Array(TX * TZ);
+for (let tj = 0; tj < TZ; tj++) for (let ti = 0; ti < TX; ti++) {
+  const x0 = X0 + ti * TILE * CELL, z0 = Z0 + tj * TILE * CELL, x1 = x0 + TILE * CELL, z1 = z0 + TILE * CELL;
+  let lo = Infinity, hi = -Infinity;
+  for (let j = tj * TILE; j <= (tj + 1) * TILE; j++) for (let i = ti * TILE; i <= (ti + 1) * TILE; i++) { const h = HGT[j * HNX + i]; lo = Math.min(lo, h); hi = Math.max(hi, h); }
+  const nearIsland = Math.hypot(Math.max(x0 - ISLAND.x, 0, ISLAND.x - x1), Math.max(z0 - ISLAND.z, 0, ISLAND.z - z1)) < 45;
+  const oldLand = x1 > -112 && x0 < 112 && z1 > -112;
+  FINE[tj * TX + ti] = oldLand || nearIsland || (lo < 4 && hi > -6) ? 1 : 0;
+}
+for (let tj = 0; tj < TZ; tj++) for (let ti = 0; ti < TX; ti++) {
+  if (FINE[tj * TX + ti]) continue;
+  for (let J = tj * TILE; J < (tj + 1) * TILE; J += 2) for (let I = ti * TILE; I < (ti + 1) * TILE; I += 2) {
+    const H = (i, j) => HGT[j * HNX + i], S = (i, j, v) => { HGT[j * HNX + i] = v; };
+    S(I + 1, J, (H(I, J) + H(I + 2, J)) / 2); S(I, J + 1, (H(I, J) + H(I, J + 2)) / 2);
+    S(I + 2, J + 1, (H(I + 2, J) + H(I + 2, J + 2)) / 2); S(I + 1, J + 2, (H(I, J + 2) + H(I + 2, J + 2)) / 2);
+    S(I + 1, J + 1, (H(I + 2, J) + H(I, J + 2)) / 2);
+  }
+}
 
 // 表示している三角形とぴったり同じ高さを返す
 function heightAt(x, z) {
-  const gx = (Math.min(HALF, Math.max(-HALF, x)) + HALF) / CELL, gz = (Math.min(HALF, Math.max(-HALF, z)) + HALF) / CELL;
-  const i = Math.min(N - 1, Math.floor(gx)), j = Math.min(N - 1, Math.floor(gz));
+  const gx = (clampX(x) - X0) / CELL, gz = (clampZ(z) - Z0) / CELL;
+  const i = Math.min(NX - 1, Math.floor(gx)), j = Math.min(NZ - 1, Math.floor(gz));
   const fx = gx - i, fz = gz - j;
-  const h00 = HGT[j * HN + i], h10 = HGT[j * HN + i + 1], h01 = HGT[(j + 1) * HN + i], h11 = HGT[(j + 1) * HN + i + 1];
+  const h00 = HGT[j * HNX + i], h10 = HGT[j * HNX + i + 1], h01 = HGT[(j + 1) * HNX + i], h11 = HGT[(j + 1) * HNX + i + 1];
   return fx + fz <= 1 ? h00 + (h10 - h00) * fx + (h01 - h00) * fz : h11 + (h01 - h11) * (1 - fx) + (h10 - h11) * (1 - fz);
 }
 
@@ -621,10 +658,11 @@ function updateAtmosphere() {
     scene.background = scene.fog.color;
     sunI *= 1 - depth * 0.85; hemiI *= 1 - depth * 0.75;
   } else {
-    scene.fog.color.copy(skyBot); scene.fog.near = 70; scene.fog.far = 200;
+    scene.fog.color.copy(skyBot); scene.fog.near = 80; scene.fog.far = 260 + camDist * 2;
     scene.background = null;
   }
   sky.visible = clouds.visible = !underwater;
+  sky.position.set(camera.position.x, 0, camera.position.z); stars.position.copy(sky.position);
   stars.visible = !underwater && starMat.opacity > 0.01;
   sun.intensity = sunI; hemi.intensity = hemiI;
   renderer.toneMappingExposure = 0.9 + 0.2 * day;
@@ -656,18 +694,23 @@ function surfaceColor(cx, cy, cz, ny, out) {
   return out.multiplyScalar(0.93 + v * 0.14);
 }
 {
-  const tris = N * N * 2, pos = new Float32Array(tris * 9), col = new Float32Array(tris * 9);
+  let tris = 0;
+  for (let t = 0; t < TX * TZ; t++) tris += FINE[t] ? TILE * TILE * 2 : (TILE / 2) * (TILE / 2) * 2;
+  const pos = new Float32Array(tris * 9), col = new Float32Array(tris * 9);
   let k = 0;
   const a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3(), e1 = new THREE.Vector3(), e2 = new THREE.Vector3();
-  const put = (p, i, j) => p.set(-HALF + i * CELL, HGT[j * HN + i], -HALF + j * CELL);
+  const put = (p, i, j) => p.set(X0 + i * CELL, HGT[j * HNX + i], Z0 + j * CELL);
   const tri = () => {
     e1.subVectors(b, a); e2.subVectors(c, a); e1.cross(e2).normalize();
     surfaceColor((a.x + b.x + c.x) / 3, (a.y + b.y + c.y) / 3, (a.z + b.z + c.z) / 3, e1.y, tmpC);
     for (const p of [a, b, c]) { pos[k] = p.x; pos[k + 1] = p.y; pos[k + 2] = p.z; col[k] = tmpC.r; col[k + 1] = tmpC.g; col[k + 2] = tmpC.b; k += 3; }
   };
-  for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
-    put(a, i, j); put(b, i, j + 1); put(c, i + 1, j); tri();
-    put(a, i, j + 1); put(b, i + 1, j + 1); put(c, i + 1, j); tri();
+  for (let tj = 0; tj < TZ; tj++) for (let ti = 0; ti < TX; ti++) {
+    const s = FINE[tj * TX + ti] ? 1 : 2;
+    for (let j = tj * TILE; j < (tj + 1) * TILE; j += s) for (let i = ti * TILE; i < (ti + 1) * TILE; i += s) {
+      put(a, i, j); put(b, i, j + s); put(c, i + s, j); tri();
+      put(a, i, j + s); put(b, i + s, j + s); put(c, i + s, j); tri();
+    }
   }
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
@@ -676,12 +719,14 @@ function surfaceColor(cx, cy, cz, ny, out) {
   const ground = new THREE.Mesh(g, new THREE.MeshLambertMaterial({ vertexColors: true }));
   ground.receiveShadow = true;
   scene.add(ground);
+  window.__terrainTris = tris;
 }
 
 /* ---- 箱の側面：地中の断面（表土 → 土 → 石 → 岩盤）と、海の断面 ---- */
 function edgePoints() {   // 箱の 4 辺を、格子の点でたどる
   const rows = [[], [], [], []];
-  for (let i = 0; i < HN; i++) { rows[0].push([i, 0]); rows[1].push([i, N]); rows[2].push([0, i]); rows[3].push([N, i]); }
+  for (let i = 0; i < HNX; i++) { rows[0].push([i, 0]); rows[1].push([i, NZ]); }
+  for (let j = 0; j < HNZ; j++) { rows[2].push([0, j]); rows[3].push([NX, j]); }
   return rows;
 }
 {
@@ -689,7 +734,7 @@ function edgePoints() {   // 箱の 4 辺を、格子の点でたどる
   for (const row of edgePoints()) {
     const base = pos.length / 3, wbase = wpos.length / 3;
     for (const [i, j] of row) {
-      const x = -HALF + i * CELL, z = -HALF + j * CELL, h = HGT[j * HN + i];
+      const x = X0 + i * CELL, z = Z0 + j * CELL, h = HGT[j * HNX + i];
       surfaceColor(x, h, z, 1, tmpC);
       const top = h > 0.35 ? (h > 3 ? COL.dirt : COL.sand) : COL.seabed;
       const layers = [[h, tmpC.clone()], [h - 0.7, top], [h - 5, COL.dirt2], [Math.min(h - 6, -22), COL.stone], [Y_BOTTOM, COL.bedrock]];
@@ -710,8 +755,8 @@ function edgePoints() {   // 箱の 4 辺を、格子の点でたどる
   g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
   g.setIndex(idx); g.computeVertexNormals();
   scene.add(new THREE.Mesh(g, new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide })));
-  const bottom = new THREE.Mesh(new THREE.PlaneGeometry(W, W), new THREE.MeshLambertMaterial({ color: COL.bedrock, side: THREE.DoubleSide }));
-  bottom.rotation.x = -Math.PI / 2; bottom.position.y = Y_BOTTOM;
+  const bottom = new THREE.Mesh(new THREE.PlaneGeometry(XW, ZW), new THREE.MeshLambertMaterial({ color: COL.bedrock, side: THREE.DoubleSide }));
+  bottom.rotation.x = -Math.PI / 2; bottom.position.set(XC, Y_BOTTOM, ZC);
   scene.add(bottom);
   const wg = new THREE.BufferGeometry();
   wg.setAttribute('position', new THREE.Float32BufferAttribute(wpos, 3));
@@ -735,21 +780,79 @@ function waterTexture() {
   const t = new THREE.CanvasTexture(c);
   t.colorSpace = THREE.SRGBColorSpace;
   t.wrapS = t.wrapT = THREE.RepeatWrapping;
-  t.repeat.set(40, 40);
+  t.repeat.set(XW / 5, ZW / 5);
   return t;
 }
 const waterTex = waterTexture();
-const water = new THREE.Mesh(new THREE.PlaneGeometry(W, W), new THREE.MeshPhongMaterial({
+const water = new THREE.Mesh(new THREE.PlaneGeometry(XW, ZW), new THREE.MeshPhongMaterial({
   color: 0x2f8fd6, map: waterTex, transparent: true, opacity: 0.7, shininess: 90, specular: 0xffffff, side: THREE.DoubleSide, depthWrite: false,
 }));
-water.rotation.x = -Math.PI / 2; water.position.y = SEA; water.renderOrder = 3;
+water.rotation.x = -Math.PI / 2; water.position.set(XC, SEA, ZC); water.renderOrder = 3;
 scene.add(water);
 
-// 200m の箱のふち（スケッチの線）
-const boxFrame = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(W, Y_TOP - Y_BOTTOM, W)),
+// 箱のふち（スケッチの線）
+const boxFrame = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(XW, Y_TOP - Y_BOTTOM, ZW)),
   new THREE.LineBasicMaterial({ color: 0x16324f, transparent: true, opacity: 0.35, fog: false }));
-boxFrame.position.y = (Y_TOP + Y_BOTTOM) / 2;
+boxFrame.position.set(XC, (Y_TOP + Y_BOTTOM) / 2, ZC);
 scene.add(boxFrame);
+
+/* ---- 島のふちのヤシの木 ---- */
+const PALMS = [];
+{
+  const trunkMat = new THREE.MeshLambertMaterial({ color: 0x8a6a45, flatShading: true });
+  const leafMat = new THREE.MeshLambertMaterial({ color: 0x3f9b3a, flatShading: true, side: THREE.DoubleSide });
+  const nutMat = new THREE.MeshLambertMaterial({ color: 0x5a3d22 });
+  const leafGeo = new THREE.BufferGeometry();
+  {   // 1 枚の葉：根もとから先へ垂れ下がる細長い三角の帯
+    const pts = [], idx = [];
+    const N = 5, L = 2.6;
+    for (let i = 0; i <= N; i++) {
+      const t = i / N, x = t * L, y = 0.5 * t - 1.3 * t * t, w = 0.42 * Math.sin(Math.PI * Math.min(1, t * 1.1 + 0.08));
+      pts.push(x, y, -w, x, y + 0.04, w);
+      if (i < N) { const a = i * 2; idx.push(a, a + 2, a + 1, a + 1, a + 2, a + 3); }
+    }
+    leafGeo.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
+    leafGeo.setIndex(idx);
+    leafGeo.computeVertexNormals();
+  }
+  const nutGeo = new THREE.SphereGeometry(0.14, 6, 4);
+  const spots = [[0.3, 6.0, 4.4], [1.5, 5.6, 5.0], [2.6, 6.2, 3.9], [3.9, 5.8, 4.7], [5.1, 6.1, 4.2], [5.7, 5.5, 3.6]];
+  for (const [a, d, hgt] of spots) {
+    const x = ISLAND.x + Math.cos(a) * d, z = ISLAND.z + Math.sin(a) * d, y = heightAt(x, z);
+    const palm = new THREE.Group();
+    palm.position.set(x, y - 0.1, z);
+    palm.rotation.y = -a;   // ローカル +x が島の外向き
+    const SEG = 5;
+    let px = 0, py = 0;
+    for (let i = 0; i < SEG; i++) {   // 外へ向かってゆるく曲がる幹
+      const t0 = i / SEG, t1 = (i + 1) / SEG;
+      const x0 = 1.1 * t0 * t0, x1 = 1.1 * t1 * t1, y0 = hgt * t0, y1 = hgt * t1;
+      const len = Math.hypot(x1 - x0, y1 - y0);
+      const seg = new THREE.Mesh(new THREE.CylinderGeometry(0.17 - 0.03 * t1, 0.2 - 0.03 * t0, len * 1.04, 6), trunkMat);
+      seg.position.set((x0 + x1) / 2, (y0 + y1) / 2, 0);
+      seg.rotation.z = -Math.atan2(x1 - x0, y1 - y0);
+      palm.add(seg);
+      px = x1; py = y1;
+    }
+    const top = new THREE.Group();
+    top.position.set(px, py, 0);
+    for (let k = 0; k < 7; k++) {
+      const leaf = new THREE.Mesh(leafGeo, leafMat);
+      leaf.rotation.y = (k / 7) * Math.PI * 2 + a * 3;
+      leaf.rotation.z = 0.15;
+      top.add(leaf);
+    }
+    for (let k = 0; k < 3; k++) {
+      const nut = new THREE.Mesh(nutGeo, nutMat);
+      nut.position.set(Math.cos(k * 2.1) * 0.18, -0.2, Math.sin(k * 2.1) * 0.18);
+      top.add(nut);
+    }
+    palm.add(top);
+    scene.add(palm);
+    PALMS.push({ x, z, y });
+  }
+}
+
 
 /* ================= キャラクター ================= */
 const P_R = 0.35, P_H = 1.7;
@@ -854,7 +957,7 @@ async function addPropFromBuffer(buf, name, cat, wheels) {
   const f = new THREE.Vector3(Math.sin(player.face), 0, Math.cos(player.face));
   const ahead = veh ? 3 + Math.max(V.halfLength, V.halfWidth) : 4;
   const at = player.pos.clone().addScaledVector(f, ahead);
-  let x = THREE.MathUtils.clamp(at.x, -HALF + 4, HALF - 4), z = THREE.MathUtils.clamp(at.z, -HALF + 4, HALF - 4);
+  let x = clampX(at.x, 4), z = clampZ(at.z, 4);
   const rot = wrapA(veh ? player.face : player.face + Math.PI);
   if (cat === 'ship' || cat === 'sub') {   // 船は浮かべられる深さの海をさがして置く
     const spot = findWaterSpot(x, z, V, rot);
@@ -903,7 +1006,7 @@ async function loadSharedProp(d) {
     try { item = await buildThing(buf, name, cat); }
     catch (e) { if (!VEHICLE_CATS.has(cat)) throw e; asCat = 'prop'; item = await buildThing(buf, name, 'prop'); }
     if (!net.loading.has(id)) return;   // 読み込み中に片付けられた
-    const x = num(d.x, -HALF + 1, HALF - 1), z = num(d.z, -HALF + 1, HALF - 1), rot = num(d.rot, -100, 100);
+    const x = num(d.x, X0 + 1, X1 - 1), z = num(d.z, Z0 + 1, Z1 - 1), rot = num(d.rot, -100, 100);
     if (VEHICLE_CATS.has(asCat)) makeVehicle(item, x, z, rot, { id, shared: true, name });
     else placeProp(item, name, asCat, x, z, rot, id);
   } catch (e) { net.loading.delete(id); }
@@ -911,7 +1014,7 @@ async function loadSharedProp(d) {
 function movedSharedProp(d) {
   const v = vehicles.find((x) => x.id === d.id);
   if (!v || v === ride || v.remote) return;
-  parkAt(v, num(d.x, -HALF + 1, HALF - 1), num(d.z, -HALF + 1, HALF - 1), num(d.rot, -100, 100));
+  parkAt(v, num(d.x, X0 + 1, X1 - 1), num(d.z, Z0 + 1, Z1 - 1), num(d.rot, -100, 100));
 }
 function unloadSharedProp(id) {
   net.loading.delete(id);
@@ -1048,8 +1151,16 @@ const stickEl = document.getElementById('stick'), knobEl = document.getElementBy
 let camYaw = SPAWN.face + Math.PI, camPitch = 0.35, camDist = 7;
 
 const cv = renderer.domElement;
+const CAM_MIN = 3, CAM_MAX = 120;
+const camPts = new Map();   // 視点用の指（2 本でつまむとズーム）
+let pinchD = 0;
+const pinchDist = () => { const [a, b] = [...camPts.values()]; return Math.hypot(a.x - b.x, a.y - b.y); };
 cv.addEventListener('pointerdown', (e) => {
   cv.focus();
+  if (!(e.pointerType === 'touch' && e.clientX < window.innerWidth * 0.45 && touch.stickId === null)) {
+    camPts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (camPts.size === 2) { pinchD = pinchDist(); camDrag.id = null; }
+  }
   if (e.pointerType === 'touch' && e.clientX < window.innerWidth * 0.45 && touch.stickId === null) {
     touch.stickId = e.pointerId; touch.sx = e.clientX; touch.sy = e.clientY; touch.x = touch.y = 0;
     stickEl.style.left = e.clientX + 'px'; stickEl.style.top = e.clientY + 'px';
@@ -1058,9 +1169,18 @@ cv.addEventListener('pointerdown', (e) => {
   } else if (camDrag.id === null) {
     camDrag.id = e.pointerId; camDrag.lx = e.clientX; camDrag.ly = e.clientY;
   }
-  cv.setPointerCapture(e.pointerId);
+  try { cv.setPointerCapture(e.pointerId); } catch (_) {}
 });
 cv.addEventListener('pointermove', (e) => {
+  if (camPts.has(e.pointerId)) {
+    camPts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (camPts.size >= 2) {
+      const d = pinchDist();
+      if (pinchD > 0 && d > 0) camDist = THREE.MathUtils.clamp(camDist * (pinchD / d), CAM_MIN, CAM_MAX);
+      pinchD = d; camDrag.last = clock.elapsedTime;
+      return;
+    }
+  }
   if (e.pointerId === touch.stickId) {
     let dx = e.clientX - touch.sx, dy = e.clientY - touch.sy;
     const len = Math.hypot(dx, dy), max = 50;
@@ -1080,12 +1200,19 @@ cv.addEventListener('pointermove', (e) => {
   }
 });
 const endPointer = (e) => {
+  if (camPts.delete(e.pointerId) && camPts.size === 1 && camDrag.id === null) {
+    const [id, p] = [...camPts.entries()][0];   // 1 本に戻ったら、その指で見回す
+    camDrag.id = id; camDrag.lx = p.x; camDrag.ly = p.y; pinchD = 0;
+  }
   if (e.pointerId === touch.stickId) { touch.stickId = null; touch.x = touch.y = 0; stickEl.hidden = true; }
   if (e.pointerId === camDrag.id) camDrag.id = null;
 };
 cv.addEventListener('pointerup', endPointer);
 cv.addEventListener('pointercancel', endPointer);
-cv.addEventListener('wheel', (e) => { camDist = THREE.MathUtils.clamp(camDist + Math.sign(e.deltaY) * 0.8, 3, 30); e.preventDefault(); }, { passive: false });
+cv.addEventListener('wheel', (e) => {   // 1 目盛りでおよそ 1.2 倍。トラックパッドでもなめらかに
+  const d = THREE.MathUtils.clamp(e.deltaMode === 1 ? e.deltaY * 33 : e.deltaY, -300, 300);
+  camDist = THREE.MathUtils.clamp(camDist * Math.exp(d * 0.002), CAM_MIN, CAM_MAX); e.preventDefault();
+}, { passive: false });
 cv.tabIndex = 0;
 
 function holdButton(btn, field) {
@@ -1179,8 +1306,8 @@ function exitPoint(v) {
   const [ex, ez] = v.item.def.vehicle.exit, h = visYaw(v);
   const at = (lx) => new THREE.Vector2(v.pos.x + lx * Math.cos(h) + ez * Math.sin(h), v.pos.y - lx * Math.sin(h) + ez * Math.cos(h));
   let p = at(ex);
-  if (Math.abs(p.x) > HALF - 0.5 || Math.abs(p.y) > HALF - 0.5) p = at(-ex);
-  return new THREE.Vector2(THREE.MathUtils.clamp(p.x, -HALF + P_R, HALF - P_R), THREE.MathUtils.clamp(p.y, -HALF + P_R, HALF - P_R));
+  if (outsideBox(p.x, p.y, 0.5)) p = at(-ex);
+  return new THREE.Vector2(clampX(p.x, P_R), clampZ(p.y, P_R));
 }
 function dropPlayerAt(p, face, fromY) {
   const g = heightAt(p.x, p.y);
@@ -1249,33 +1376,29 @@ function pushFromCar(V, cx, cz, cy, h) {
   }
 }
 function stepPlayer(dt) {
-  const fwd = new THREE.Vector2(-Math.sin(camYaw), -Math.cos(camYaw));
-  const left = new THREE.Vector2(fwd.y, -fwd.x);
-  let mx = 0, mz = 0;
-  if (keys.KeyW || keys.ArrowUp) mz += 1;
-  if (keys.KeyS || keys.ArrowDown) mz -= 1;
-  if (keys.KeyA || keys.ArrowLeft) mx += 1;
-  if (keys.KeyD || keys.ArrowRight) mx -= 1;
+  // ↑↓ で向いている方へ進む・下がる、←→ で向きを変える（カメラの向きとは関係なし）
+  let fwdIn = (keys.KeyW || keys.ArrowUp ? 1 : 0) - (keys.KeyS || keys.ArrowDown ? 1 : 0);
+  let turnIn = (keys.KeyA || keys.ArrowLeft ? 1 : 0) - (keys.KeyD || keys.ArrowRight ? 1 : 0);
   const run = keys.ShiftLeft || keys.ShiftRight;
   let speed = run ? RUN : WALK, stick = false;
-  if (touch.stickId !== null) { mx = -touch.x; mz = -touch.y; speed = RUN * 0.8; stick = true; }
-
+  if (touch.stickId !== null) {
+    fwdIn = Math.abs(touch.y) > 0.15 ? -touch.y : 0; turnIn = Math.abs(touch.x) > 0.15 ? -touch.x : 0;
+    speed = RUN * 0.8; stick = true;
+  }
   const ground = heightAt(player.pos.x, player.pos.z);
   const inWater = ground < FLOAT_Y && player.pos.y < FLOAT_Y + 0.3;
   if (inWater) speed = stick ? SWIM * 1.3 : (run ? SWIM * 1.6 : SWIM);
   else if (ground < SEA) speed *= 0.65;   // 浅瀬はじゃぶじゃぶ遅い
 
-  const mag = Math.min(1, Math.hypot(mx, mz));
+  player.face += turnIn * 2.6 * dt;
+  const mag = Math.min(1, Math.abs(fwdIn)) * (fwdIn < 0 ? 0.55 : 1);   // 後ろ歩きはゆっくり
+  player.moving = mag > 0.05 || Math.abs(turnIn) > 0.05;
   if (mag > 0.05) {
-    const n = Math.hypot(mx, mz);
-    const dir = new THREE.Vector2(fwd.x * mz + left.x * mx, fwd.y * mz + left.y * mx).divideScalar(n);
-    const nx = player.pos.x + dir.x * speed * mag * dt, nz = player.pos.z + dir.y * speed * mag * dt;
+    const sg = Math.sign(fwdIn), dirx = Math.sin(player.face) * sg, dirz = Math.cos(player.face) * sg;
+    const nx = player.pos.x + dirx * speed * mag * dt, nz = player.pos.z + dirz * speed * mag * dt;
     // 歩きで登れないほど急なところ（高さ 1m 以上の段差に相当）は進めない
     const rise = heightAt(nx, nz) - Math.max(player.pos.y, ground);
     if (!(player.onGround && rise > speed * mag * dt * 1.6 + 0.02)) { player.pos.x = nx; player.pos.z = nz; }
-    const target = Math.atan2(dir.x, dir.y);
-    let d = target - player.face; d = Math.atan2(Math.sin(d), Math.cos(d));
-    player.face += d * Math.min(1, dt * 12);
   }
 
   const up = keys.Space || touch.act, down = keys.KeyC || keys.ControlLeft || keys.KeyQ || touch.dive;
@@ -1294,8 +1417,12 @@ function stepPlayer(dt) {
     player.onGround = false;
     player.mode = 'walk';
   }
-  player.pos.x = THREE.MathUtils.clamp(player.pos.x, -HALF + P_R, HALF - P_R);
-  player.pos.z = THREE.MathUtils.clamp(player.pos.z, -HALF + P_R, HALF - P_R);
+  player.pos.x = clampX(player.pos.x, P_R);
+  player.pos.z = clampZ(player.pos.z, P_R);
+  for (const pm of PALMS) {   // ヤシの幹にはぶつかる
+    const dx = player.pos.x - pm.x, dz = player.pos.z - pm.z, d = Math.hypot(dx, dz), R = P_R + 0.3;
+    if (d < R && d > 1e-4 && player.pos.y < pm.y + 5) { player.pos.x += (dx / d) * (R - d); player.pos.z += (dz / d) * (R - d); }
+  }
   const g2 = heightAt(player.pos.x, player.pos.z);
   if (player.pos.y <= g2) { player.pos.y = g2; player.vy = Math.max(0, player.vy); player.onGround = true; if (!inWater) player.mode = 'walk'; }
 
@@ -1396,9 +1523,9 @@ function stepCar(car, dt) {
 
   for (const [ax, az] of CORNERS) {
     const p = carLocalToWorld(car, ax * V.halfWidth, V.centerZ + az * V.halfLength);
-    const ox = Math.abs(p.x) - HALF, oz = Math.abs(p.y) - HALF;
-    if (ox > 0) { car.pos.x -= Math.sign(p.x) * ox; hitWall(car); }
-    if (oz > 0) { car.pos.y -= Math.sign(p.y) * oz; hitWall(car); }
+    const ox = p.x < X0 ? X0 - p.x : p.x > X1 ? X1 - p.x : 0, oz = p.y < Z0 ? Z0 - p.y : p.y > Z1 ? Z1 - p.y : 0;
+    if (ox) { car.pos.x += ox; hitWall(car); }
+    if (oz) { car.pos.y += oz; hitWall(car); }
   }
   for (const pr of props) {
     const b = pr.box, R = 1.3;
@@ -1498,13 +1625,13 @@ function hullGround(x, z, h, V) {   // 船体の下で、いちばん高い地�
   for (const [ax, az] of HULL_PTS) {
     const lx = ax * V.halfWidth * 0.9, lz = az * V.halfLength * 0.9;
     const px = x + lx * c + lz * s, pz = z - lx * s + lz * c;
-    if (Math.abs(px) > HALF - 0.5 || Math.abs(pz) > HALF - 0.5) return Infinity;
+    if (outsideBox(px, pz, 0.5)) return Infinity;
     g = Math.max(g, heightAt(px, pz));
   }
   return g;
 }
 function findWaterSpot(x, z, V, h) {
-  for (let r = 0; r <= 120; r += 3) {
+  for (let r = 0; r <= 160; r += 3) {
     const n = r === 0 ? 1 : Math.ceil(r * 0.7);
     for (let i = 0; i < n; i++) {
       const a = (i / n) * Math.PI * 2, px = x + Math.cos(a) * r, pz = z + Math.sin(a) * r;
@@ -1586,9 +1713,9 @@ function stepPlane(v, dt) {
   v.pos.x += Math.sin(v.h) * v.vF * dt; v.pos.y += Math.cos(v.h) * v.vF * dt;
   v.y += v.vy * dt;
   // 箱のかべ
-  const lim = HALF - Math.max(V.halfWidth, V.halfLength) * 0.6;
-  if (Math.abs(v.pos.x) > lim || Math.abs(v.pos.y) > lim) {
-    v.pos.x = THREE.MathUtils.clamp(v.pos.x, -lim, lim); v.pos.y = THREE.MathUtils.clamp(v.pos.y, -lim, lim);
+  const lim = Math.max(V.halfWidth, V.halfLength) * 0.6;
+  if (outsideBox(v.pos.x, v.pos.y, lim)) {
+    v.pos.x = clampX(v.pos.x, lim); v.pos.y = clampZ(v.pos.y, lim);
     v.vF *= 0.3; if (mine) showMsg('世界のはしです。向きを変えてください');
   }
   const fl = floorAt(v.pos.x, v.pos.y);
@@ -1682,13 +1809,13 @@ function syncPeers(peers) {
       net.others.set(p.peer, o);
     }
     o.by = p.by;
-    o.t = { x: num(pr.p[0], -HALF, HALF), y: num(pr.p[1], Y_BOTTOM, Y_TOP), z: num(pr.p[2], -HALF, HALF), f: num(pr.f, -100, 100), m: ['walk', 'swim', 'dive', 'drive', 'ride'].includes(pr.m) ? pr.m : 'walk' };
+    o.t = { x: num(pr.p[0], X0, X1), y: num(pr.p[1], Y_BOTTOM, Y_TOP), z: num(pr.p[2], Z0, Z1), f: num(pr.f, -100, 100), m: ['walk', 'swim', 'dive', 'drive', 'ride'].includes(pr.m) ? pr.m : 'walk' };
     o.t.pv = o.t.m === 'ride' && typeof pr.pv === 'string' && /^[A-Za-z0-9_-]{1,40}$/.test(pr.pv) ? pr.pv : null;
     o.t.ps = Number.isInteger(pr.ps) && pr.ps >= 0 && pr.ps < 16 ? pr.ps : 0;
     o.t.lt = pr.lt === 1; o.t.py = num(pr.py, -7, 7);
-    o.tc = Array.isArray(pr.c) ? { x: num(pr.c[0], -HALF, HALF), y: num(pr.c[1], Y_BOTTOM, Y_TOP), z: num(pr.c[2], -HALF, HALF), h: num(pr.c[3], -100, 100), pitch: num(pr.c[4], -1, 1), roll: num(pr.c[5], -1, 1) } : null;
+    o.tc = Array.isArray(pr.c) ? { x: num(pr.c[0], X0, X1), y: num(pr.c[1], Y_BOTTOM, Y_TOP), z: num(pr.c[2], Z0, Z1), h: num(pr.c[3], -100, 100), pitch: num(pr.c[4], -1, 1), roll: num(pr.c[5], -1, 1) } : null;
     o.t.v = typeof pr.v === 'string' && /^[A-Za-z0-9_-]{1,40}$/.test(pr.v) ? pr.v : null;
-    o.t.vc = o.t.v && Array.isArray(pr.vc) ? { x: num(pr.vc[0], -HALF, HALF), y: num(pr.vc[1], Y_BOTTOM, Y_TOP), z: num(pr.vc[2], -HALF, HALF), h: num(pr.vc[3], -100, 100), pitch: num(pr.vc[4], -1, 1), roll: num(pr.vc[5], -1, 1) } : null;
+    o.t.vc = o.t.v && Array.isArray(pr.vc) ? { x: num(pr.vc[0], X0, X1), y: num(pr.vc[1], Y_BOTTOM, Y_TOP), z: num(pr.vc[2], Z0, Z1), h: num(pr.vc[3], -100, 100), pitch: num(pr.vc[4], -1, 1), roll: num(pr.vc[5], -1, 1) } : null;
     if (o.first) { o.pos.set(o.t.x, o.t.y, o.t.z); o.face = o.t.f; o.first = false; }
     const nm = net.names.get(p.by);
     setLabel(o, (nm || 'だれか') + (p.isMe ? '（別のタブ）' : ''));
@@ -1993,8 +2120,13 @@ function updateCamera(dt) {
     }
   } else {
     camTarget.set(player.pos.x, player.pos.y + 1.5, player.pos.z);
+    if (!aboard && player.moving && clock.elapsedTime - camDrag.last > 1.2) {
+      let d = player.face + Math.PI - camYaw; d = Math.atan2(Math.sin(d), Math.cos(d));
+      camYaw += d * Math.min(1, dt * 2.5);
+    }
   }
   const dist = driving ? Math.max(camDist, vtype(ride) === 'plane' ? 13 : isBoat(ride) ? 10 : 7.5) : camDist;
+  camera.far = Math.max(900, dist * 6);
   camPos.set(Math.sin(camYaw) * Math.cos(camPitch), Math.sin(camPitch), Math.cos(camYaw) * Math.cos(camPitch)).multiplyScalar(dist).add(camTarget);
   camPos.y = Math.max(heightAt(camPos.x, camPos.z) + 0.4, camPos.y);   // 地面の中にカメラを入れない
   camera.position.lerp(camPos, 1 - Math.exp(-14 * dt));
@@ -2002,7 +2134,7 @@ function updateCamera(dt) {
   camera.lookAt(camTarget);
 
   // 水の中は青くかすむ（色は updateAtmosphere で、深いほど暗く）
-  underwater = camera.position.y < SEA && Math.abs(camera.position.x) < HALF && Math.abs(camera.position.z) < HALF;
+  underwater = camera.position.y < SEA && !outsideBox(camera.position.x, camera.position.z);
   // 影は自分のまわり 60m だけ計算する（スマホを軽く）
   const fx = ride ? ride.pos.x : player.pos.x, fy = ride ? ride.y : player.pos.y, fz = ride ? ride.pos.y : player.pos.z;
   sun.target.position.set(fx, fy, fz);
@@ -2021,8 +2153,8 @@ const KEYS_HTML = {
   sub: K(['W'], '前へ') + K(['S'], '後ろへ') + K(['A', 'D'], 'かじ') + K(['Space'], 'うく') + K(['C'], 'もぐる') + K(['L'], 'ライト') + K(['P'], '潜望鏡') + K(['Z', 'X'], '潜望鏡を回す') + K(['R'], '救出') + K(['E'], '降りる'),
   plane: K(['W'], '出力を上げる') + K(['S'], '下げる・ブレーキ') + K(['A', 'D'], '曲がる') + K(['Space'], '上昇') + K(['C'], '下降') + K(['E'], '降りる'),
   ride: K(['E'], '降りる') + '<span>ドラッグで視点・ホイールで距離</span>',
-  wet: K(['W', 'A', 'S', 'D'], '泳ぐ') + K(['Space'], 'うく') + K(['C'], 'もぐる') + '<span>ドラッグで視点・ホイールで距離</span>',
-  walk: K(['W', 'A', 'S', 'D'], '移動') + K(['Shift'], '走る') + K(['Space'], 'ジャンプ') + K(['E'], '乗る') + K(['T'], 'ひとこと') + '<span>ドラッグで視点・ホイールで距離</span><span>.glb をドロップで置ける</span>',
+  wet: K(['W'], '前へ') + K(['A', 'D'], '向きを変える') + K(['Space'], 'うく') + K(['C'], 'もぐる') + '<span>ドラッグで視点・ホイールで遠く／近く</span>',
+  walk: K(['W'], '前へ') + K(['S'], '後ろへ') + K(['A', 'D'], '向きを変える') + K(['Shift'], '走る') + K(['Space'], 'ジャンプ') + K(['E'], '乗る') + K(['T'], 'ひとこと') + '<span>ドラッグで視点・ホイールで遠く／近く</span><span>.glb をドロップで置ける</span>',
 };
 const HINT = {
   car: '左側をなぞって運転（上でアクセル・下でブレーキ）',
@@ -2030,8 +2162,8 @@ const HINT = {
   sub: '左側をなぞって操縦。「もぐる」で下へ、「うく」で上へ。潜望鏡は右側をなぞって回す',
   plane: '左側を上になぞると出力アップ、下でダウン。「上昇」「下降」で高さ',
   ride: '相乗り中。右側をなぞって見回せます',
-  wet: '左側をなぞって泳ぐ。「もぐる」で下へ、「うく」で上へ',
-  walk: '左側をなぞって移動、右側をなぞって視点',
+  wet: '左側を上へなぞって前へ、左右で向きを変える。「もぐる」で下へ、「うく」で上へ',
+  walk: '左側を上へなぞって前へ、左右で向きを変える。右側をなぞって視点、2 本指でズーム',
 };
 function updateUi() {
   const np = !driving && !aboard && props.length ? nearestProp() : null;
@@ -2106,7 +2238,7 @@ window.__world = {
   get car() { const car = ride || myCar; return car && { x: car.pos.x, z: car.pos.y, y: car.y, h: car.h, vF: car.vF, pitch: car.pitch, name: car.name }; },
   vehicles,
   get driving() { return driving; },
-  set camYaw(v) { camYaw = v; }, set camPitch(v) { camPitch = v; }, set camDist(v) { camDist = v; },
+  set camYaw(v) { camYaw = v; }, set camPitch(v) { camPitch = v; }, set camDist(v) { camDist = v; }, get camDist() { return camDist; },
   keys, touch, toggleRide, loadItem, ITEM_DEFS, heightAt, player, net, syncPeers,
   get aboard() { return aboard; }, get ride() { return ride; }, worldHour, setHourOffset(h) { hourOffset = h; },
   hullGround, findWaterSpot, rescueBoat, get periscope() { return periscope; }, toggleLight, setPeriscope,
