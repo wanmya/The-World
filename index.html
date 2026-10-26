@@ -97,6 +97,11 @@ body { margin: 0; background: var(--sky); color: var(--ink); font-family: var(--
 .subbtns button[aria-pressed="true"] { background: var(--accent); color: #fff; border-color: transparent; }
 #scope { position: fixed; inset: 0; pointer-events: none; z-index: 1; }
 #prompt, .hud, .side, .keys, .touch { z-index: 3; }
+#map { position: fixed; z-index: 3; left: max(16px, env(safe-area-inset-left, 0px)); top: calc(118px + env(safe-area-inset-top, 0px));
+  width: 160px; padding: 6px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; cursor: pointer; }
+#map canvas { display: block; width: 100%; aspect-ratio: 1; border-radius: 6px; }
+#map .mapcap { display: flex; justify-content: space-between; font: 800 11px var(--font-ui); color: var(--ink-dim); margin-top: 4px; }
+@media (pointer: coarse) { #map { width: 124px; } }
 #scope {
   background: radial-gradient(circle at 50% 50%, transparent 0, transparent min(38vw, 38vh), rgba(0,0,0,0.92) calc(min(38vw, 38vh) + 2px)); }
 #scope::before, #scope::after { content: ""; position: absolute; left: 50%; top: 50%; background: rgba(20, 40, 30, 0.75); }
@@ -123,7 +128,12 @@ body { margin: 0; background: var(--sky); color: var(--ink); font-family: var(--
   <span class="label" id="stateLabel">いま</span>
   <span class="state" id="state">歩いている</span>
   <span class="alt" id="alt">高さ</span>
-  <span class="speed" id="speedBox" hidden><span id="speed">0</span><small>km/h</small></span>
+  <span class="speed" id="speedBox" hidden><span id="speed">0</span><small id="speedUnit">km/h</small></span>
+</div>
+
+<div id="map" hidden role="button" aria-label="地図（押すと 近く／全体 を切りかえ）">
+  <canvas id="mapCv" width="296" height="296"></canvas>
+  <div class="mapcap"><span id="mapMode">近く 160m</span><span>押して切りかえ</span></div>
 </div>
 
 <div class="side">
@@ -175,7 +185,7 @@ body { margin: 0; background: var(--sky); color: var(--ink); font-family: var(--
   <span>.glb をドロップで置ける</span>
 </div>
 
-<div class="hint" id="hint">左側を上へなぞって前へ、左右で向きを変える。右側をなぞって視点、2 本指でズーム</div>
+<div class="hint" id="hint">左側をなぞって移動、右側をなぞって視点、2 本指でズーム</div>
 <div id="scope" hidden></div><div id="scopeDir" hidden></div>
 <div class="subbtns" id="subBtns" hidden>
   <button type="button" id="rescueBtn">救出</button>
@@ -1381,18 +1391,28 @@ function stepPlayer(dt) {
   let turnIn = (keys.KeyA || keys.ArrowLeft ? 1 : 0) - (keys.KeyD || keys.ArrowRight ? 1 : 0);
   const run = keys.ShiftLeft || keys.ShiftRight;
   let speed = run ? RUN : WALK, stick = false;
-  if (touch.stickId !== null) {
-    fwdIn = Math.abs(touch.y) > 0.15 ? -touch.y : 0; turnIn = Math.abs(touch.x) > 0.15 ? -touch.x : 0;
-    speed = RUN * 0.8; stick = true;
-  }
+  if (touch.stickId !== null) { speed = RUN * 0.8; stick = true; }
   const ground = heightAt(player.pos.x, player.pos.z);
   const inWater = ground < FLOAT_Y && player.pos.y < FLOAT_Y + 0.3;
   if (inWater) speed = stick ? SWIM * 1.3 : (run ? SWIM * 1.6 : SWIM);
   else if (ground < SEA) speed *= 0.65;   // 浅瀬はじゃぶじゃぶ遅い
 
-  player.face += turnIn * 2.6 * dt;
-  const mag = Math.min(1, Math.abs(fwdIn)) * (fwdIn < 0 ? 0.55 : 1);   // 後ろ歩きはゆっくり
-  player.moving = mag > 0.05 || Math.abs(turnIn) > 0.05;
+  if (stick) {   // スマホ：なぞった方向（カメラから見た向き）へ歩く。カメラは自分で回す
+    const mx = -touch.x, mz = -touch.y, mag = Math.min(1, Math.hypot(mx, mz));
+    player.moving = false;
+    if (mag > 0.05) {
+      const fx = -Math.sin(camYaw), fz = -Math.cos(camYaw), lx = fz, lz = -fx, n = Math.hypot(mx, mz);
+      const dx = (fx * mz + lx * mx) / n, dz = (fz * mz + lz * mx) / n;
+      const nx = player.pos.x + dx * speed * mag * dt, nz = player.pos.z + dz * speed * mag * dt;
+      const rise = heightAt(nx, nz) - Math.max(player.pos.y, ground);
+      if (!(player.onGround && rise > speed * mag * dt * 1.6 + 0.02)) { player.pos.x = nx; player.pos.z = nz; }
+      let d = Math.atan2(dx, dz) - player.face; d = Math.atan2(Math.sin(d), Math.cos(d));
+      player.face += d * Math.min(1, dt * 12);
+    }
+  }
+  if (!stick) player.face += turnIn * 2.6 * dt;
+  const mag = stick ? 0 : Math.min(1, Math.abs(fwdIn)) * (fwdIn < 0 ? 0.55 : 1);   // 後ろ歩きはゆっくり
+  if (!stick) player.moving = mag > 0.05 || Math.abs(turnIn) > 0.05;
   if (mag > 0.05) {
     const sg = Math.sign(fwdIn), dirx = Math.sin(player.face) * sg, dirz = Math.cos(player.face) * sg;
     const nx = player.pos.x + dirx * speed * mag * dt, nz = player.pos.z + dirz * speed * mag * dt;
@@ -2162,8 +2182,8 @@ const HINT = {
   sub: '左側をなぞって操縦。「もぐる」で下へ、「うく」で上へ。潜望鏡は右側をなぞって回す',
   plane: '左側を上になぞると出力アップ、下でダウン。「上昇」「下降」で高さ',
   ride: '相乗り中。右側をなぞって見回せます',
-  wet: '左側を上へなぞって前へ、左右で向きを変える。「もぐる」で下へ、「うく」で上へ',
-  walk: '左側を上へなぞって前へ、左右で向きを変える。右側をなぞって視点、2 本指でズーム',
+  wet: '左側をなぞって泳ぐ。「もぐる」で下へ、「うく」で上へ。2 本指でズーム',
+  walk: '左側をなぞって移動、右側をなぞって視点、2 本指でズーム',
 };
 function updateUi() {
   const np = !driving && !aboard && props.length ? nearestProp() : null;
@@ -2172,7 +2192,8 @@ function updateUi() {
   const nv = !ride && !aboard ? nearCar() : null;
   const near = !!nv;
   const vt = ride ? vtype(ride) : null;
-  const kmh = ride ? Math.round(Math.abs(ride.vF) * 3.6) : 0;
+  const sea = ride && isBoat(ride);   // 船・潜水艦はノット（1 ノット = 1.852 km/h）
+  const kmh = ride ? Math.round(Math.abs(ride.vF) * (sea ? 3.6 / 1.852 : 3.6)) : 0;
   const mode = driving ? 'drive' : aboard ? 'ride' : player.mode;
   const y = ride ? ride.y : player.pos.y;
   const vname = (ride || (aboard && aboard.v) || nv || myCar || { name: 'がっち号' }).name;
@@ -2186,6 +2207,7 @@ function updateUi() {
   el('alt').textContent = alt;
   el('speedBox').hidden = !driving;
   el('speed').textContent = kmh;
+  el('speedUnit').textContent = sea ? 'kt' : 'km/h';
   el('prompt').hidden = !(near || driving || aboard);
   el('promptText').textContent = driving || aboard ? `${vname}から` : share ? `${vname}に相乗り` : `${vname}に`;
   el('promptBtn').textContent = driving || aboard ? '降りる' : '乗る';
@@ -2200,6 +2222,57 @@ function updateUi() {
   el('lightBtn').hidden = el('scopeBtn').hidden = vt !== 'sub';
   if (vt === 'sub') el('lightBtn').setAttribute('aria-pressed', String(!!(ride.item.light && ride.item.light.on)));
   el('keys').innerHTML = KEYS_HTML[kind];
+}
+
+/* ================= 潜水艦の地図（乗っているあいだだけ） ================= */
+const mapEl = el('map'), mapCv = el('mapCv'), mapCx = mapCv.getContext('2d');
+let mapImg = null, mapWide = false, mapTick = 0;
+function buildMapImage() {   // 地形を上から見た絵を 1 回だけ作る（1 ピクセル = 2m、上が -z の海側）
+  const c = document.createElement('canvas'); c.width = NX; c.height = NZ;
+  const g = c.getContext('2d'), im = g.createImageData(NX, NZ);
+  for (let j = 0; j < NZ; j++) for (let i = 0; i < NX; i++) {
+    const h = heightAt(X0 + (i + 0.5) * CELL, Z0 + (j + 0.5) * CELL), k = (j * NX + i) * 4;
+    let r, gg, b;
+    if (h < SEA) { const t = Math.min(1, (SEA - h) / 32); r = 70 - 55 * t; gg = 170 - 110 * t; b = 215 - 95 * t; }
+    else if (h < 1.6) { r = 236; gg = 218; b = 168; }
+    else { const t = Math.min(1, h / 40); r = 120 - 50 * t; gg = 185 - 60 * t; b = 95 - 40 * t; }
+    im.data[k] = r; im.data[k + 1] = gg; im.data[k + 2] = b; im.data[k + 3] = 255;
+  }
+  g.putImageData(im, 0, 0);
+  return c;
+}
+mapEl.addEventListener('click', () => { mapWide = !mapWide; mapTick = 1; });
+function updateMap(dt) {
+  const v = ride && vtype(ride) === 'sub' ? ride : aboard && vtype(aboard.v) === 'sub' ? aboard.v : null;
+  if (mapEl.hidden !== !v) mapEl.hidden = !v;
+  if (!v) return;
+  mapTick += dt;
+  if (mapTick < 0.15) return;
+  mapTick = 0;
+  if (!mapImg) mapImg = buildMapImage();
+  mapEl.style.top = Math.round(document.querySelector('.hud').getBoundingClientRect().bottom + 8) + 'px';
+  const S = mapCv.width, span = mapWide ? Math.max(XW, ZW) : 160;
+  const cx = mapWide ? XC : v.pos.x, cz = mapWide ? ZC : v.pos.y, k = S / span;
+  const toX = (x) => (x - cx) * k + S / 2, toY = (z) => (z - cz) * k + S / 2;
+  mapCx.fillStyle = '#0d2a40'; mapCx.fillRect(0, 0, S, S);
+  mapCx.imageSmoothingEnabled = true;
+  mapCx.drawImage(mapImg, toX(X0), toY(Z0), XW * k, ZW * k);
+  mapCx.strokeStyle = 'rgba(255,255,255,0.7)'; mapCx.lineWidth = 2; mapCx.strokeRect(toX(X0), toY(Z0), XW * k, ZW * k);
+  for (const pm of PALMS) { mapCx.fillStyle = '#2f7d2c'; mapCx.beginPath(); mapCx.arc(toX(pm.x), toY(pm.z), Math.max(1.5, 1.2 * k), 0, 7); mapCx.fill(); }
+  for (const o of net.others.values()) {   // ほかの人
+    const p = o.avatar.position;
+    mapCx.fillStyle = o.col; mapCx.strokeStyle = '#fff'; mapCx.lineWidth = 1.5;
+    mapCx.beginPath(); mapCx.arc(toX(p.x), toY(p.z), 4, 0, 7); mapCx.fill(); mapCx.stroke();
+  }
+  // 自分の潜水艦：向いている方へとがった三角
+  const h = visYaw(v), x = toX(v.pos.x), y = toY(v.pos.y), dx = Math.sin(h), dy = Math.cos(h);
+  mapCx.fillStyle = '#ff7a3d'; mapCx.strokeStyle = '#fff'; mapCx.lineWidth = 2;
+  mapCx.beginPath();
+  mapCx.moveTo(x + dx * 11, y + dy * 11);
+  mapCx.lineTo(x - dx * 7 + dy * 6, y - dy * 7 - dx * 6);
+  mapCx.lineTo(x - dx * 7 - dy * 6, y - dy * 7 + dx * 6);
+  mapCx.closePath(); mapCx.fill(); mapCx.stroke();
+  el('mapMode').textContent = mapWide ? '全体 500m' : '近く 160m';
 }
 
 /* ================= ループ ================= */
@@ -2220,6 +2293,7 @@ function frame() {
   updateCamera(dt);
   updateAtmosphere();
   updateUi();
+  updateMap(dt);
   netTick += dt;
   if (netTick > 0.25) { netTick = 0; sendPresence(); }
   renderer.render(scene, camera);
