@@ -1435,10 +1435,14 @@ async function startNet() {
     if (p) onChat({ peer: p.tab, data: p.data, sameTab: false });
   });
   ch.on('presence', { event: 'leave' }, ({ key }) => { if (others.delete(key)) syncPeers(peerList()); });
-  ch.on('postgres_changes', { event: '*', schema: 'public', table: 'props' }, (m) => {
+  // 置いた物の知らせは別の通り道にする（こちらがうまくいかなくても、みんなの姿は見える）
+  sb.channel('world-props').on('postgres_changes', { event: '*', schema: 'public', table: 'props' }, (m) => {
     if (m.eventType === 'INSERT') loadSharedProp(m.new);
     else if (m.eventType === 'UPDATE') movedSharedProp(m.new);
     else if (m.eventType === 'DELETE' && m.old && isId(m.old.id)) unloadSharedProp(m.old.id);
+  }).subscribe((status, err) => {
+    if (status === 'SUBSCRIBED') loadAll();
+    else if (status !== 'CLOSED') console.warn('world-props', status, err);
   });
   net.room = {
     presence: async (msg) => { if (live) await ch.send({ type: 'broadcast', event: 'pos', payload: Object.assign({ tab: myTab, by: net.myId, n: myName }, msg) }); },
@@ -1448,15 +1452,17 @@ async function startNet() {
     },
     peers: peerList,
   };
-  ch.subscribe((status) => {
+  $id('who').textContent = 'つないでいます…';
+  ch.subscribe((status, err) => {
     if (status === 'SUBSCRIBED') {
       live = true;
       ch.track({ at: Date.now() }).catch(() => {});
       net.lastSent = '';
-      loadAll();
+      syncPeers(peerList());   // 「いまはひとり」か「○人で遊んでいます」
     } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
       live = false;
-      $id('who').textContent = 'つなぎ直しています…';
+      console.warn('world', status, err);
+      $id('who').textContent = status === 'TIMED_OUT' ? 'つながりません（時間切れ）' : 'つながりません（つなぎ直しています）';
     }
   });
   // しばらく何も届かない人は、いなくなったことにする
