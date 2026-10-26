@@ -178,6 +178,7 @@ body { margin: 0; background: var(--sky); color: var(--ink); font-family: var(--
 <div class="hint" id="hint">左側をなぞって移動、右側をなぞって視点</div>
 <div id="scope" hidden></div><div id="scopeDir" hidden></div>
 <div class="subbtns" id="subBtns" hidden>
+  <button type="button" id="rescueBtn">救出</button>
   <button type="button" id="lightBtn" aria-pressed="false">ライト</button>
   <button type="button" id="scopeBtn" aria-pressed="false">潜望鏡</button>
 </div>
@@ -1033,6 +1034,7 @@ document.addEventListener('keydown', (e) => {
   keys[e.code] = true;
   if (e.code === 'KeyE' || e.code === 'KeyF') toggleRide();
   if (e.code === 'KeyL') toggleLight();
+  if (e.code === 'KeyR') rescueBoat();
   if (e.code === 'KeyP') setPeriscope(!periscope);
   if (e.code === 'KeyT' || e.code === 'Enter') { e.preventDefault(); keys[e.code] = false; openChat(); return; }
   if (e.code === 'Space' || e.code.startsWith('Arrow')) e.preventDefault();
@@ -1094,6 +1096,7 @@ const tAct = document.getElementById('tAct'), tDive = document.getElementById('t
 holdButton(tAct, 'act'); holdButton(tDive, 'dive');
 document.getElementById('promptBtn').addEventListener('click', toggleRide);
 document.getElementById('lightBtn').addEventListener('click', () => { toggleLight(); cv.focus(); });
+document.getElementById('rescueBtn').addEventListener('click', () => { rescueBoat(); cv.focus(); });
 document.getElementById('scopeBtn').addEventListener('click', () => { setPeriscope(!periscope); cv.focus(); });
 document.getElementById('resetCar').addEventListener('click', () => { if (myCar && ride !== myCar) { placeCar(); showMsg('がっち号をスタート位置に戻しました'); } });
 
@@ -1518,23 +1521,36 @@ function setSubLight(v, on) {
   L.beam.visible = on;
   for (const m of L.glow) { m.emissive.setHex(on ? 0xfff1c8 : 0x000000); m.emissiveIntensity = on ? 2 : 1; }
 }
+// 座礁したとき：近くの、船が浮かべられる深さの海へ移す
+function rescueBoat() {
+  const v = ride;
+  if (!v || !isBoat(v)) return;
+  const V = v.item.def.vehicle, spot = findWaterSpot(v.pos.x, v.pos.y, V, visYaw(v));
+  if (!spot) { showMsg('近くに深い海が見つかりませんでした'); return; }
+  v.pos.set(spot[0], spot[1]); v.vF = 0; v.dive = 0; v.vy = 0; v.y = SEA;
+  showMsg(`${v.name} を深い海へ移しました`);
+}
 function stepBoat(v, dt) {
   const V = v.item.def.vehicle, mine = v === ride, sub = V.type === 'sub';
   const k = driveInput(mine);
   const target = k.thr >= 0 ? k.thr * V.maxSpeed : k.thr * V.maxSpeed * 0.6;
   v.vF += (target - v.vF) * Math.min(1, dt * (k.thr ? 0.7 : 0.4));
   const yawRate = k.turn * V.turn * (0.35 + Math.min(1, Math.abs(v.vF) / 4) * 0.65) * (v.vF < -0.2 ? -1 : 1);
-  const old = { x: v.pos.x, z: v.pos.y, h: v.h };
+  const old = { x: v.pos.x, z: v.pos.y, h: v.h }, oldG = hullGround(v.pos.x, v.pos.y, visYaw(v), V);
   v.h += yawRate * dt;
   v.pos.x += Math.sin(v.h) * v.vF * dt; v.pos.y += Math.cos(v.h) * v.vF * dt;
   const surf = SEA + Math.sin(clock.elapsedTime * 1.3 + v.pos.x * 0.1) * 0.06;
   const curY = sub && v.dive > 0.05 ? SEA - v.dive : surf;
   let g = hullGround(v.pos.x, v.pos.y, visYaw(v), V);
-  if (g > curY - V.draft - 0.15 || bumpProps(v, Math.min(V.halfWidth, V.halfLength) * 0.8)) {   // 浅い・陸・かべ・置物：元に戻して止める
+  if (bumpProps(v, Math.min(V.halfWidth, V.halfLength) * 0.8)) v.vF *= 0.5;   // 置物には押し返される
+  // 浅い・陸・かべ：前より浅くなる動きだけ止める（引っかかっても、深いほうへは動ける）
+  const outNow = g === Infinity, outOld = oldG === Infinity;
+  const worse = outNow ? !(outOld && Math.hypot(v.pos.x, v.pos.y) < Math.hypot(old.x, old.z)) : g > curY - V.draft - 0.15 && g > oldG + 0.01;
+  if (worse) {
     v.pos.x = old.x; v.pos.y = old.z; v.h = old.h;
     v.vF *= -0.2;
     g = hullGround(v.pos.x, v.pos.y, visYaw(v), V);
-    if (mine) showMsg(g > SEA - 0.3 ? 'ここから先は陸です。船では進めません' : '浅くてこれ以上進めません');
+    if (mine) showMsg(g > SEA - 0.3 ? 'ここから先は陸です。船では進めません' : '浅くてこれ以上進めません。動けないときは「救出」（R キー）');
   }
   if (sub) {   // うく・もぐる。海の底より下へは行かない
     v.vy = (v.vy || 0) + (k.up * 2.5 - (v.vy || 0)) * Math.min(1, dt * 2);
@@ -2001,8 +2017,8 @@ const DRIVE_VERB = { car: '運転', ship: '操縦', sub: '操縦', plane: '操�
 const K = (k, t) => `<span>${k.map((x) => `<kbd>${x}</kbd>`).join('')}${t}</span>`;
 const KEYS_HTML = {
   car: K(['W'], 'アクセル') + K(['S'], 'ブレーキ／バック') + K(['A', 'D'], 'ハンドル') + K(['Space'], 'サイドブレーキ') + K(['E'], '降りる') + '<span>ドラッグで視点</span>',
-  ship: K(['W'], '前へ') + K(['S'], '後ろへ') + K(['A', 'D'], 'かじ') + K(['E'], '降りる') + '<span>ドラッグで視点</span>',
-  sub: K(['W'], '前へ') + K(['S'], '後ろへ') + K(['A', 'D'], 'かじ') + K(['Space'], 'うく') + K(['C'], 'もぐる') + K(['L'], 'ライト') + K(['P'], '潜望鏡') + K(['Z', 'X'], '潜望鏡を回す') + K(['E'], '降りる'),
+  ship: K(['W'], '前へ') + K(['S'], '後ろへ') + K(['A', 'D'], 'かじ') + K(['R'], '救出') + K(['E'], '降りる') + '<span>ドラッグで視点</span>',
+  sub: K(['W'], '前へ') + K(['S'], '後ろへ') + K(['A', 'D'], 'かじ') + K(['Space'], 'うく') + K(['C'], 'もぐる') + K(['L'], 'ライト') + K(['P'], '潜望鏡') + K(['Z', 'X'], '潜望鏡を回す') + K(['R'], '救出') + K(['E'], '降りる'),
   plane: K(['W'], '出力を上げる') + K(['S'], '下げる・ブレーキ') + K(['A', 'D'], '曲がる') + K(['Space'], '上昇') + K(['C'], '下降') + K(['E'], '降りる'),
   ride: K(['E'], '降りる') + '<span>ドラッグで視点・ホイールで距離</span>',
   wet: K(['W', 'A', 'S', 'D'], '泳ぐ') + K(['Space'], 'うく') + K(['C'], 'もぐる') + '<span>ドラッグで視点・ホイールで距離</span>',
@@ -2048,7 +2064,8 @@ function updateUi() {
   tDive.textContent = vt === 'plane' ? '下降' : 'もぐる';
   const kind = vt || (aboard ? 'ride' : wet ? 'wet' : 'walk');
   el('hint').textContent = HINT[kind];
-  el('subBtns').hidden = vt !== 'sub';
+  el('subBtns').hidden = vt !== 'sub' && vt !== 'ship';
+  el('lightBtn').hidden = el('scopeBtn').hidden = vt !== 'sub';
   if (vt === 'sub') el('lightBtn').setAttribute('aria-pressed', String(!!(ride.item.light && ride.item.light.on)));
   el('keys').innerHTML = KEYS_HTML[kind];
 }
@@ -2092,7 +2109,7 @@ window.__world = {
   set camYaw(v) { camYaw = v; }, set camPitch(v) { camPitch = v; }, set camDist(v) { camDist = v; },
   keys, touch, toggleRide, loadItem, ITEM_DEFS, heightAt, player, net, syncPeers,
   get aboard() { return aboard; }, get ride() { return ride; }, worldHour, setHourOffset(h) { hourOffset = h; },
-  hullGround, findWaterSpot, get periscope() { return periscope; }, toggleLight, setPeriscope,
+  hullGround, findWaterSpot, rescueBoat, get periscope() { return periscope; }, toggleLight, setPeriscope,
   teleport(x, z, y) { player.pos.set(x, y ?? heightAt(x, z), z); player.vy = 0; },
 };
 
