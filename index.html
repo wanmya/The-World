@@ -59,7 +59,8 @@ body { margin: 0; background: var(--sky); color: var(--ink); font-family: var(--
 #place .pcats button { display: grid; gap: 2px; text-align: left; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; background: #f4f8fc; color: var(--ink); font: 500 12px var(--font-ui); cursor: pointer; }
 #place .pcats button b { font-size: 15px; font-weight: 800; }
 #place .pcats button small { color: var(--ink-dim); font-size: 12px; }
-#place .pcats button[data-cat="car"] { background: #fff1ea; border-color: rgba(255, 122, 61, 0.45); }
+#place .pcats .pveh { background: #fff1ea; border-color: rgba(255, 122, 61, 0.45); }
+#place .pfoot { display: flex; justify-content: flex-end; gap: 8px; }
 #place button:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
 #place button:disabled { opacity: 0.5; }
 #place .perr { font-size: 13px; line-height: 1.5; background: #fff4f0; border-radius: 10px; padding: 10px 12px; }
@@ -126,14 +127,29 @@ body { margin: 0; background: var(--sky); color: var(--ink); font-family: var(--
 
 <div id="place" role="dialog" aria-modal="true" aria-labelledby="placeTitle" hidden>
   <p class="ptitle" id="placeTitle">何を置く？</p>
-  <div class="pcats">
+  <div class="pcats" data-screen="main">
     <button type="button" data-cat="building"><b>建物</b><small>家・塔・橋など</small></button>
     <button type="button" data-cat="plant"><b>植物</b><small>木・花・草など</small></button>
     <button type="button" data-cat="prop"><b>置物</b><small>そのほかの物</small></button>
-    <button type="button" data-cat="car"><b>乗り物：自動車</b><small>ボディ＋タイヤ4つ</small></button>
+    <button type="button" data-go="vehicle" class="pveh"><b>乗り物</b><small>自動車・船舶・航空機</small></button>
+  </div>
+  <div class="pcats" data-screen="vehicle" hidden>
+    <button type="button" data-go="car" class="pveh"><b>自動車</b><small>ボディ＋タイヤ 2〜6 個</small></button>
+    <button type="button" data-go="boat" class="pveh"><b>船舶</b><small>船・潜水艦</small></button>
+    <button type="button" data-cat="plane" class="pveh"><b>航空機</b><small>前を +Z に向けた形</small></button>
+  </div>
+  <div class="pcats" data-screen="car" hidden>
+    <button type="button" data-cat="car" data-wheels="2" class="pveh"><b>2 輪</b><small>タイヤ前・タイヤ後</small></button>
+    <button type="button" data-cat="car" data-wheels="3" class="pveh"><b>3 輪</b><small>前 1＋後ろ 2、または前 2＋後ろ 1</small></button>
+    <button type="button" data-cat="car" data-wheels="4" class="pveh"><b>4 輪</b><small>右前・右後・左前・左後</small></button>
+    <button type="button" data-cat="car" data-wheels="6" class="pveh"><b>6 輪</b><small>4 輪＋右中・左中</small></button>
+  </div>
+  <div class="pcats" data-screen="boat" hidden>
+    <button type="button" data-cat="ship" class="pveh"><b>船</b><small>海の上を走る・相乗りできる</small></button>
+    <button type="button" data-cat="sub" class="pveh"><b>潜水艦</b><small>水にもぐれる・相乗りできる</small></button>
   </div>
   <div class="perr" id="placeErr" role="alert" hidden></div>
-  <button type="button" class="pcancel" id="placeCancel">やめる</button>
+  <div class="pfoot"><button type="button" class="pcancel" id="placeBack" hidden>もどる</button><button type="button" class="pcancel" id="placeCancel">やめる</button></div>
 </div>
 <form id="chat" hidden autocomplete="off"><input id="chatText" type="text" maxlength="40" placeholder="ひとこと（40文字まで）" aria-label="ひとこと"><button type="submit">送る</button></form>
 <div id="prompt" hidden><span><kbd>E</kbd> <span id="promptText">がっち号に</span></span><button id="promptBtn" type="button">乗る</button></div>
@@ -188,7 +204,7 @@ const ITEM_DEFS = {
     source: { base64: GACCHI_GLB_B64 },
     fix: { forward: '+x', mirrorHalfBody: true, groundY: -0.293 },   // モデルは前＝+x、車体は右半分だけ
     vehicle: {
-      wheel: /タイヤ/, front: /前/, wheelRadius: 0.2925, wheelbase: 2.04,
+      type: 'car', wheel: /タイヤ/, front: /前/, wheelRadius: 0.2925, wheelbase: 2.04,
       halfWidth: 0.9, halfLength: 1.8, centerZ: 0.04,
       maxSpeed: 19, accel: 7.5, brake: 16, reverseMax: 6, maxSteer: 0.6,
       exit: [-1.55, -0.2],   // 降りる位置（車から見て右＝運転席側）
@@ -243,7 +259,7 @@ async function loadItem(def) {
   }
 
   // プレイヤーの自動車：部品の名前からタイヤを見つけて、走れる形に組み直す
-  if (def.autoCar) rigAutoCar(item, root, model, gltf);
+  if (def.rig) RIGS[def.rig](item, root, model, gltf, def);
 
   // 持ち込みの置物：地面に置いて、真ん中をそろえる
   if (def.kind === 'prop') {
@@ -255,72 +271,156 @@ async function loadItem(def) {
   return item;
 }
 
-/* ================= 自動車のルール =================
-   部品は「ボディ」1つと、タイヤ 4 つ（右前・右後・左前・左後）。1 単位＝1m、上が +Y、車の前が +Z。
-   タイヤの位置から、車幅・ホイールベース・タイヤの大きさを計算する。 */
-const CAR_PARTS = [
-  ['FR', 'タイヤ右前', /^(タイヤ右前|右前タイヤ|wheel[ _-]?(fr|front[ _-]?right|right[ _-]?front)|tire[ _-]?fr)/i, true],
-  ['RR', 'タイヤ右後', /^(タイヤ右後|右後タイヤ|wheel[ _-]?(rr|br|rear[ _-]?right|right[ _-]?rear|back[ _-]?right)|tire[ _-]?rr)/i, false],
-  ['FL', 'タイヤ左前', /^(タイヤ左前|左前タイヤ|wheel[ _-]?(fl|front[ _-]?left|left[ _-]?front)|tire[ _-]?fl)/i, true],
-  ['RL', 'タイヤ左後', /^(タイヤ左後|左後タイヤ|wheel[ _-]?(rl|bl|rear[ _-]?left|left[ _-]?rear|back[ _-]?left)|tire[ _-]?rl)/i, false],
-];
+/* ================= 乗り物のルール =================
+   自動車：「ボディ」と、タイヤ 2・3・4・6 個（名前で場所を決める）。1 単位＝1m、上が +Y、車の前が +Z。
+   船舶（船・潜水艦）：形だけでよい。上から見て長いほうの向きに進み、短い辺が前か後ろになる。
+     ほぼ正方形なら、どの向きにも進める（乗ったときにカメラが向いているほうが前）。
+   航空機：形だけでよい。前が +Z。 */
+const SIDE = '(?![ _-]?(r|l|right|left)(?![a-z])|[a-z])';   // wheel_f と wheel_fr を見分ける
+const WHEEL_DEFS = {
+  F: ['タイヤ前', new RegExp(`^(タイヤ前|前タイヤ|(wheel|tire)[ _-]?(f|front)${SIDE})`, 'i')],
+  R: ['タイヤ後', new RegExp(`^(タイヤ後|後タイヤ|(wheel|tire)[ _-]?(r|rear|b|back)${SIDE})`, 'i')],
+  FR: ['タイヤ右前', /^(タイヤ右前|右前タイヤ|(wheel|tire)[ _-]?(fr|front[ _-]?right|right[ _-]?front))/i],
+  RR: ['タイヤ右後', /^(タイヤ右後|右後タイヤ|(wheel|tire)[ _-]?(rr|br|rear[ _-]?right|right[ _-]?rear|back[ _-]?right))/i],
+  FL: ['タイヤ左前', /^(タイヤ左前|左前タイヤ|(wheel|tire)[ _-]?(fl|front[ _-]?left|left[ _-]?front))/i],
+  RL: ['タイヤ左後', /^(タイヤ左後|左後タイヤ|(wheel|tire)[ _-]?(rl|bl|rear[ _-]?left|left[ _-]?rear|back[ _-]?left))/i],
+  MR: ['タイヤ右中', /^(タイヤ右中|右中タイヤ|(wheel|tire)[ _-]?(mr|cr|middle[ _-]?right|right[ _-]?middle|center[ _-]?right))/i],
+  ML: ['タイヤ左中', /^(タイヤ左中|左中タイヤ|(wheel|tire)[ _-]?(ml|cl|middle[ _-]?left|left[ _-]?middle|center[ _-]?left))/i],
+};
+const LAYOUTS = { 2: [['F', 'R']], 3: [['F', 'RR', 'RL'], ['FR', 'FL', 'R']], 4: [['FR', 'RR', 'FL', 'RL']], 6: [['FR', 'MR', 'RR', 'FL', 'ML', 'RL']] };
+const FRONT_W = new Set(['F', 'FR', 'FL']), REAR_W = new Set(['R', 'RR', 'RL']);
 const CAR_LIMITS = { length: 7, width: 3.5, height: 4, rMin: 0.1, rMax: 1.0 };
-class CarRuleError extends Error { constructor(reasons) { super(reasons.join(' / ')); this.reasons = reasons; } }
-function rigAutoCar(item, root, model, gltf) {
+class RuleError extends Error { constructor(kind, reasons) { super(reasons.join(' / ')); this.kind = kind; this.reasons = reasons; } }
+const extrasOf = (gltf) => Object.assign({}, gltf.scene.userData, gltf.scene.children.length === 1 ? gltf.scene.children[0].userData : {});
+const kmhOf = (ex, d, lo, hi) => (typeof ex.max_speed_kmh === 'number' ? THREE.MathUtils.clamp(ex.max_speed_kmh, lo, hi) : d);
+function modelBox(root, model) { root.updateMatrixWorld(true); return new THREE.Box3().setFromObject(model); }
+
+function rigAutoCar(item, root, model, gltf, def) {
   const found = {}, reasons = [];
-  model.traverse((o) => {
-    for (const [k, , re] of CAR_PARTS) if (!found[k] && re.test(o.name || '')) found[k] = o;
-  });
-  for (const [k, ja] of CAR_PARTS) if (!found[k]) reasons.push(`「${ja}」という名前の部品がありません`);
-  if (reasons.length) throw new CarRuleError(reasons);
+  model.traverse((o) => { for (const k in WHEEL_DEFS) if (!found[k] && WHEEL_DEFS[k][1].test(o.name || '')) found[k] = o; });
+  // 選んだタイヤの数のならべ方（読み込み直すときは、名前から多い順に見つける）
+  let lay = null;
+  for (const n of def.wheels ? [def.wheels] : [6, 4, 3, 2]) for (const l of LAYOUTS[n] || []) if (!lay && l.every((k) => found[k])) lay = l;
+  if (!lay) {
+    const n = def.wheels || 4;
+    if (n === 3) reasons.push('3 輪は「タイヤ前・タイヤ右後・タイヤ左後」か「タイヤ右前・タイヤ左前・タイヤ後」という名前の部品が必要です');
+    else for (const k of LAYOUTS[n][0]) if (!found[k]) reasons.push(`「${WHEEL_DEFS[k][0]}」という名前の部品がありません`);
+    throw new RuleError('car', reasons);
+  }
   const measure = () => {
     root.updateMatrixWorld(true);
     const w = {};
-    for (const [k] of CAR_PARTS) { const b = new THREE.Box3().setFromObject(found[k]); w[k] = { b, c: b.getCenter(new THREE.Vector3()), s: b.getSize(new THREE.Vector3()) }; }
+    for (const k of lay) { const b = new THREE.Box3().setFromObject(found[k]); w[k] = { b, c: b.getCenter(new THREE.Vector3()), s: b.getSize(new THREE.Vector3()) }; }
     return w;
   };
   let w = measure();
-  for (const [k, ja] of CAR_PARTS) if (w[k].b.isEmpty()) reasons.push(`「${ja}」に形が入っていません`);
-  if (reasons.length) throw new CarRuleError(reasons);
-  let frontZ = (w.FR.c.z + w.FL.c.z) / 2, rearZ = (w.RR.c.z + w.RL.c.z) / 2;
-  if (frontZ < rearZ - 0.3) { model.rotation.y = Math.PI; w = measure(); frontZ = (w.FR.c.z + w.FL.c.z) / 2; rearZ = (w.RR.c.z + w.RL.c.z) / 2; }   // 前が -Z 向きなら回してあげる
+  for (const k of lay) if (w[k].b.isEmpty()) reasons.push(`「${WHEEL_DEFS[k][0]}」に形が入っていません`);
+  if (reasons.length) throw new RuleError('car', reasons);
+  const fr = lay.filter((k) => FRONT_W.has(k)), rr = lay.filter((k) => REAR_W.has(k));
+  const avgZ = (keys) => keys.reduce((a, k) => a + w[k].c.z, 0) / keys.length;
+  let frontZ = avgZ(fr), rearZ = avgZ(rr);
+  if (frontZ < rearZ - 0.3) { model.rotation.y = Math.PI; w = measure(); frontZ = avgZ(fr); rearZ = avgZ(rr); }   // 前が -Z 向きなら回してあげる
   if (frontZ - rearZ < 0.3) reasons.push('前のタイヤと後ろのタイヤが同じ位置にあります（車の前を +Z に向けてください）');
   const radius = {};
-  for (const [k, ja] of CAR_PARTS) {
+  for (const k of lay) {
     radius[k] = Math.max(w[k].s.y, w[k].s.z) / 2;
-    if (radius[k] < CAR_LIMITS.rMin || radius[k] > CAR_LIMITS.rMax) reasons.push(`「${ja}」の半径が ${radius[k].toFixed(2)}m です（${CAR_LIMITS.rMin}〜${CAR_LIMITS.rMax}m にしてください）`);
+    if (radius[k] < CAR_LIMITS.rMin || radius[k] > CAR_LIMITS.rMax) reasons.push(`「${WHEEL_DEFS[k][0]}」の半径が ${radius[k].toFixed(2)}m です（${CAR_LIMITS.rMin}〜${CAR_LIMITS.rMax}m にしてください）`);
   }
-  if (reasons.length) throw new CarRuleError(reasons);
-  // 4 つのタイヤの真ん中を原点に、いちばん低いタイヤの下を地面に
-  let ground = Infinity, mx = 0, mz = 0;
-  for (const [k] of CAR_PARTS) { ground = Math.min(ground, w[k].c.y - radius[k]); mx += w[k].c.x / 4; mz += w[k].c.z / 4; }
+  if (reasons.length) throw new RuleError('car', reasons);
+  // 前と後ろのタイヤの真ん中を原点に、いちばん低いタイヤの下を地面に
+  let ground = Infinity, mx = 0;
+  for (const k of lay) { ground = Math.min(ground, w[k].c.y - radius[k]); mx += w[k].c.x / lay.length; }
+  const mz = (frontZ + rearZ) / 2;
   model.position.set(model.position.x - mx, model.position.y - ground, model.position.z - mz);
   w = measure();
-  const all = new THREE.Box3().setFromObject(model), size = all.getSize(new THREE.Vector3());
+  const all = modelBox(root, model), size = all.getSize(new THREE.Vector3());
   if (size.z > CAR_LIMITS.length) reasons.push(`全長が ${size.z.toFixed(1)}m です（${CAR_LIMITS.length}m まで）`);
   if (size.x > CAR_LIMITS.width) reasons.push(`全幅が ${size.x.toFixed(1)}m です（${CAR_LIMITS.width}m まで）`);
   if (size.y > CAR_LIMITS.height) reasons.push(`高さが ${size.y.toFixed(1)}m です（${CAR_LIMITS.height}m まで）`);
-  if (reasons.length) throw new CarRuleError(reasons);
-  // タイヤを「ハンドルで曲がる箱」と「転がる箱」に入れる（タイヤの中心を軸にする）
-  for (const [k, , , front] of CAR_PARTS) {
+  if (reasons.length) throw new RuleError('car', reasons);
+  // タイヤを「ハンドルで曲がる箱」と「転がる箱」に入れる（タイヤの中心を軸にする）。曲がるのは前のタイヤだけ
+  for (const k of lay) {
     const steer = new THREE.Group(), spin = new THREE.Group();
     steer.position.copy(w[k].c);
     root.add(steer); steer.add(spin);
     root.updateMatrixWorld(true);
     spin.attach(found[k]);
-    item.wheels.push({ steer, spin, front });
+    item.wheels.push({ steer, spin, front: FRONT_W.has(k) });
   }
-  const ex = Object.assign({}, gltf.scene.userData, gltf.scene.children.length === 1 ? gltf.scene.children[0].userData : {});
-  const kmh = typeof ex.max_speed_kmh === 'number' ? THREE.MathUtils.clamp(ex.max_speed_kmh, 20, 90) : 60;
-  const halfWidth = Math.max(Math.abs(all.min.x), all.max.x), halfLength = size.z / 2, centerZ = (all.max.z + all.min.z) / 2;
+  const kmh = kmhOf(extrasOf(gltf), 60, 20, 90);
+  const halfWidth = Math.max(0.3, Math.abs(all.min.x), all.max.x), halfLength = size.z / 2, centerZ = (all.max.z + all.min.z) / 2;
   item.def.vehicle = {
-    wheelRadius: (radius.FR + radius.FL + radius.RR + radius.RL) / 4, wheelbase: frontZ - rearZ,
-    halfWidth, halfLength, centerZ,
+    type: 'car', wheels: lay.length,
+    wheelRadius: lay.reduce((a, k) => a + radius[k], 0) / lay.length, wheelbase: frontZ - rearZ,
+    halfWidth, halfLength, centerZ, height: size.y,
     maxSpeed: kmh / 3.6, accel: 7, brake: 16, reverseMax: 6, maxSteer: 0.6,
     exit: [-(halfWidth + 0.6), centerZ],
   };
   item.size = size;
 }
+
+const BOAT_LIMITS = { length: 30, width: 20, height: 15 };
+function rigBoat(item, root, model, gltf, def) {
+  const kind = def.rig === 'sub' ? 'sub' : 'ship';
+  let box = modelBox(root, model);
+  if (box.isEmpty()) throw new RuleError(kind, ['形が入っていません']);
+  let size = box.getSize(new THREE.Vector3());
+  // 上から見た縦横比：長いほうを進む向き（Z）にそろえる。ほぼ正方形なら、どの向きにも進める
+  const square = Math.max(size.x, size.z) / Math.max(0.01, Math.min(size.x, size.z)) < 1.15;
+  if (!square && size.x > size.z) { model.rotation.y = Math.PI / 2; box = modelBox(root, model); size = box.getSize(new THREE.Vector3()); }
+  const reasons = [];
+  if (size.z > BOAT_LIMITS.length) reasons.push(`長さが ${size.z.toFixed(1)}m です（${BOAT_LIMITS.length}m まで）`);
+  if (size.x > BOAT_LIMITS.width) reasons.push(`幅が ${size.x.toFixed(1)}m です（${BOAT_LIMITS.width}m まで）`);
+  if (size.y > BOAT_LIMITS.height) reasons.push(`高さが ${size.y.toFixed(1)}m です（${BOAT_LIMITS.height}m まで）`);
+  if (Math.min(size.x, size.z) < 0.5) reasons.push('小さすぎます（幅 0.5m 以上にしてください）');
+  if (reasons.length) throw new RuleError(kind, reasons);
+  // 船底から 1/4 くらいが水に沈む。原点を水面の高さにする
+  const draft = THREE.MathUtils.clamp(size.y * 0.25, 0.2, 2);
+  const c = box.getCenter(new THREE.Vector3());
+  model.position.x -= c.x; model.position.z -= c.z; model.position.y -= box.min.y + draft;
+  box = modelBox(root, model);
+  // 相乗りの人が立つ場所：上から光を当てて、甲板の高さを調べる
+  const meshes = [];
+  model.traverse((o) => { if (o.isMesh) meshes.push(o); });
+  const ray = new THREE.Raycaster(), seats = [];
+  for (const fz of [0, -0.3, 0.3, -0.55, 0.55]) for (const fx of [0, -0.45, 0.45]) {
+    const x = fx * size.x / 2, z = fz * size.z / 2;
+    if (fx && size.x < 2) continue;
+    ray.set(new THREE.Vector3(x, box.max.y + 1, z), new THREE.Vector3(0, -1, 0));
+    const hit = ray.intersectObjects(meshes, false)[0];
+    if (hit) seats.push([x, hit.point.y, z]);
+  }
+  if (!seats.length) seats.push([0, box.max.y, 0]);
+  const kmh = kmhOf(extrasOf(gltf), kind === 'sub' ? 25 : 35, 10, 60);
+  item.def.vehicle = {
+    type: kind, square, halfWidth: size.x / 2, halfLength: size.z / 2, centerZ: 0, height: size.y, draft,
+    seats: seats.slice(0, 8), maxSpeed: kmh / 3.6, turn: 0.6,
+    wheelbase: Math.max(1, size.z * 0.6), wheelRadius: 1,
+    exit: [-(size.x / 2 + 0.8), 0],
+  };
+  item.size = size;
+}
+
+const PLANE_LIMITS = { length: 30, width: 30, height: 10 };
+function rigPlane(item, root, model, gltf, def) {
+  let box = modelBox(root, model);
+  if (box.isEmpty()) throw new RuleError('plane', ['形が入っていません']);
+  const size = box.getSize(new THREE.Vector3()), reasons = [];
+  if (size.z > PLANE_LIMITS.length) reasons.push(`長さが ${size.z.toFixed(1)}m です（${PLANE_LIMITS.length}m まで）`);
+  if (size.x > PLANE_LIMITS.width) reasons.push(`翼の幅が ${size.x.toFixed(1)}m です（${PLANE_LIMITS.width}m まで）`);
+  if (size.y > PLANE_LIMITS.height) reasons.push(`高さが ${size.y.toFixed(1)}m です（${PLANE_LIMITS.height}m まで）`);
+  if (reasons.length) throw new RuleError('plane', reasons);
+  const c = box.getCenter(new THREE.Vector3());
+  model.position.x -= c.x; model.position.z -= c.z; model.position.y -= box.min.y;
+  const kmh = kmhOf(extrasOf(gltf), 150, 60, 300);
+  item.def.vehicle = {
+    type: 'plane', halfWidth: size.x / 2, halfLength: size.z / 2, centerZ: 0, height: size.y,
+    maxSpeed: kmh / 3.6, wheelbase: Math.max(1, size.z * 0.6), wheelRadius: 0.3,
+    exit: [-(size.x / 2 + 0.6), 0],
+  };
+  item.size = size;
+}
+const RIGS = { car: rigAutoCar, ship: rigBoat, sub: rigBoat, plane: rigPlane };
 
 /* ================= ワールドの形 =================
    200m × 200m × 200m の箱。y=0 が海面、箱の底は y=-50、天井は y=150。
@@ -383,7 +483,8 @@ const HORIZON = new THREE.Color(0xbfe2ff), DEEP = new THREE.Color(0x1d6d96);
 scene.fog = new THREE.Fog(HORIZON.clone(), 70, 200);
 const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 900);
 
-scene.add(new THREE.HemisphereLight(0xdcefff, 0x8a9a6a, 1.6));
+const hemi = new THREE.HemisphereLight(0xdcefff, 0x8a9a6a, 1.6);
+scene.add(hemi);
 const sun = new THREE.DirectionalLight(0xfff3df, 2.6);
 const SUN_DIR = new THREE.Vector3(18, 30, 12).normalize().multiplyScalar(60);
 sun.castShadow = true;
@@ -395,7 +496,7 @@ scene.add(sun, sun.target);
 // 青空（箱の外は空だけ）
 const sky = new THREE.Mesh(new THREE.SphereGeometry(600, 32, 16), new THREE.ShaderMaterial({
   side: THREE.BackSide, depthWrite: false, fog: false,
-  uniforms: { top: { value: new THREE.Color(0x2a74d6) }, bottom: { value: HORIZON } },
+  uniforms: { top: { value: new THREE.Color(0x2a74d6) }, bottom: { value: HORIZON.clone() } },
   vertexShader: 'varying vec3 vP; void main(){ vP = position; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
   fragmentShader: 'uniform vec3 top; uniform vec3 bottom; varying vec3 vP; void main(){ float h = normalize(vP).y; gl_FragColor = vec4(mix(bottom, top, pow(clamp(h, 0.0, 1.0), 0.55)), 1.0); }',
 }));
@@ -416,6 +517,65 @@ for (let i = 0; i < 9; i++) {
   g.position.set(Math.cos(a) * r, 70 + (i % 4) * 12, Math.sin(a) * r);
   g.lookAt(0, g.position.y, 0);
   clouds.add(g);
+}
+
+/* ---- 昼と夜：ワールドの 1 日は 1 時間。時計を全員でそろえるので、だれの画面でも同じ時刻 ---- */
+const DAY_MS = 60 * 60 * 1000;
+let hourOffset = 0;   // 確認用（ふだんは 0）
+function worldHour() { return ((((Date.now() % DAY_MS) / DAY_MS) * 24) + hourOffset) % 24; }
+const SKYC = {
+  dayTop: new THREE.Color(0x2a74d6), dayBot: new THREE.Color(0xbfe2ff), duskTop: new THREE.Color(0x3b4c8c), duskBot: new THREE.Color(0xffa36b), nightTop: new THREE.Color(0x040817), nightBot: new THREE.Color(0x101c33),
+  sun: new THREE.Color(0xfff3df), sunDusk: new THREE.Color(0xffb070), moon: new THREE.Color(0x9fb6e8),
+};
+const skyTop = new THREE.Color(), skyBot = new THREE.Color(), tmpFog = new THREE.Color();
+const starMat = new THREE.PointsMaterial({ color: 0xffffff, size: 2, sizeAttenuation: false, transparent: true, opacity: 0, fog: false, depthWrite: false });
+const stars = new THREE.Points((() => {
+  const g = new THREE.BufferGeometry(), p = [];
+  for (let i = 0; i < 500; i++) {
+    const a = hash(i, 7) * Math.PI * 2, y = 0.08 + hash(i, 13) * 0.92, r = Math.sqrt(1 - y * y);
+    p.push(Math.cos(a) * r * 500, y * 500, Math.sin(a) * r * 500);
+  }
+  g.setAttribute('position', new THREE.Float32BufferAttribute(p, 3));
+  return g;
+})(), starMat);
+scene.add(stars);
+let dayLight = 1, lastClock = '';
+function updateAtmosphere() {
+  const hr = worldHour(), ang = ((hr - 6) / 24) * Math.PI * 2;   // 6 時に日の出、12 時に真上、18 時に日の入り
+  const elev = Math.sin(ang);
+  const day = ss(-0.12, 0.25, elev), dusk = Math.max(0, 1 - Math.abs(elev) / 0.3);
+  dayLight = day;
+  skyTop.copy(SKYC.nightTop).lerp(SKYC.dayTop, day).lerp(SKYC.duskTop, dusk * 0.45);
+  skyBot.copy(SKYC.nightBot).lerp(SKYC.dayBot, day).lerp(SKYC.duskBot, dusk * 0.6);
+  sky.material.uniforms.top.value.copy(skyTop);
+  sky.material.uniforms.bottom.value.copy(skyBot);
+  // 昼は太陽、夜は月の光（影の向きも動く）
+  const up = elev > -0.08;
+  const d = up ? new THREE.Vector3(Math.cos(ang) * 0.85, Math.max(0.12, elev), 0.4) : new THREE.Vector3(-Math.cos(ang) * 0.6, 0.6, -0.4);
+  SUN_DIR.copy(d.normalize().multiplyScalar(60));
+  sun.color.copy(SKYC.sun).lerp(SKYC.sunDusk, dusk * 0.7);
+  if (!up) sun.color.copy(SKYC.moon);
+  let sunI = up ? 2.6 * day + 0.2 : 0.35, hemiI = 0.28 + 1.32 * day;
+  starMat.opacity = Math.max(0, 1 - day * 1.6);
+  cloudMat.color.setScalar(0.3 + 0.7 * day).lerp(SKYC.sunDusk, dusk * 0.25);
+  // 水の中：深いほど暗く、見通しも悪くなる
+  if (underwater) {
+    const depth = THREE.MathUtils.clamp((SEA - camera.position.y) / 28, 0, 1);
+    tmpFog.copy(DEEP).multiplyScalar((1 - depth * 0.92) * (0.22 + 0.78 * day));
+    scene.fog.color.copy(tmpFog); scene.fog.near = 1; scene.fog.far = 38 - 24 * depth;
+    scene.background = scene.fog.color;
+    sunI *= 1 - depth * 0.85; hemiI *= 1 - depth * 0.75;
+  } else {
+    scene.fog.color.copy(skyBot); scene.fog.near = 70; scene.fog.far = 200;
+    scene.background = null;
+  }
+  sky.visible = clouds.visible = !underwater;
+  stars.visible = !underwater && starMat.opacity > 0.01;
+  sun.intensity = sunI; hemi.intensity = hemiI;
+  renderer.toneMappingExposure = 0.9 + 0.2 * day;
+  const hh = Math.floor(hr), mm = Math.floor((hr - hh) * 60);
+  const text = `いま ${hh}:${String(mm).padStart(2, '0')} ${hr >= 5 && hr < 8 ? '朝' : hr >= 8 && hr < 17 ? '昼' : hr >= 17 && hr < 19 ? '夕方' : '夜'}`;
+  if (text !== lastClock) { lastClock = text; document.getElementById('stateLabel').textContent = text; }
 }
 
 /* ---- 地面：三角形ごとに 1 色（ローポリ）。砂浜・草・崖・海の底を高さと傾きで塗り分ける ---- */
@@ -572,8 +732,8 @@ const vehicles = [];
 let myCar = null;   // 自分のがっち号
 let ride = null;    // いま運転している乗り物
 function makeVehicle(item, x, z, h, extra) {
-  const v = Object.assign({ item, pos: new THREE.Vector2(x, z), h, vF: 0, vL: 0, steer: 0, y: 0, pitch: 0, roll: 0, id: null, shared: false, name: item.def.name, remote: null, settled: false }, extra);
-  const p = carPose(v);
+  const v = Object.assign({ item, pos: new THREE.Vector2(x, z), h, yawOff: 0, vF: 0, vL: 0, steer: 0, y: 0, pitch: 0, roll: 0, id: null, shared: false, name: item.def.name, remote: null, settled: false }, extra);
+  const p = restPose(v);
   Object.assign(v, { y: p.y, pitch: p.pitch, roll: p.roll });
   item.root.rotation.order = 'YXZ';
   scene.add(item.root);
@@ -581,12 +741,13 @@ function makeVehicle(item, x, z, h, extra) {
   return v;
 }
 function parkAt(v, x, z, h) {
-  Object.assign(v, { pos: new THREE.Vector2(x, z), h, vF: 0, vL: 0, steer: 0, settled: false });
-  const p = carPose(v);
+  Object.assign(v, { pos: new THREE.Vector2(x, z), h, yawOff: 0, vF: 0, vL: 0, steer: 0, settled: false, dive: 0, throttle: 0, vy: 0 });
+  const p = restPose(v);
   Object.assign(v, { y: p.y, pitch: p.pitch, roll: p.roll });
 }
 function removeVehicle(v) {
   if (ride === v) leaveRide(true);
+  if (aboard && aboard.v === v) getOff();
   scene.remove(v.item.root);
   const i = vehicles.indexOf(v); if (i >= 0) vehicles.splice(i, 1);
 }
@@ -601,7 +762,8 @@ function placeCar() {
    自動車を選ぶと、ボディ＋4 タイヤのルールで読み取って、みんなで乗れる車になる。 */
 const props = [];   // { item, box, id(共有なら), name, cat }
 const SHARE_MAX = 1.5 * 1024 * 1024, CHUNK = 180000, TRI_MAX = 30000;
-const CATS = { building: '建物', plant: '植物', prop: '置物', car: '自動車' };
+const CATS = { building: '建物', plant: '植物', prop: '置物', car: '自動車', ship: '船', sub: '潜水艦', plane: '航空機' };
+const VEHICLE_CATS = new Set(['car', 'ship', 'sub', 'plane']);
 function bufToB64(buf) {
   const u = new Uint8Array(buf); let s = '';
   for (let i = 0; i < u.length; i += 0x8000) s += String.fromCharCode.apply(null, u.subarray(i, i + 0x8000));
@@ -627,19 +789,26 @@ function removeProp(pr) {
   const i = props.indexOf(pr); if (i >= 0) props.splice(i, 1);
 }
 // .glb を読んで、選んだ種類の形にする（自動車はルールに合わないと CarRuleError）
-async function buildThing(buf, name, cat) {
-  return loadItem({ name, kind: cat === 'car' ? 'vehicle' : 'prop', autoCar: cat === 'car', source: { buffer: buf.slice(0) } });
+async function buildThing(buf, name, cat, wheels) {
+  const veh = VEHICLE_CATS.has(cat);
+  return loadItem({ name, kind: veh ? 'vehicle' : 'prop', rig: veh ? cat : null, wheels, source: { buffer: buf.slice(0) } });
 }
-async function addPropFromBuffer(buf, name, cat) {
-  const item = await buildThing(buf, name, cat);   // 自動車のルール違反はここで投げる
+async function addPropFromBuffer(buf, name, cat, wheels) {
+  const item = await buildThing(buf, name, cat, wheels);   // 乗り物のルール違反はここで投げる
+  const veh = VEHICLE_CATS.has(cat), V = veh ? item.def.vehicle : null;
   const f = new THREE.Vector3(Math.sin(player.face), 0, Math.cos(player.face));
-  const ahead = cat === 'car' ? 3 + item.def.vehicle.halfLength : 4;
+  const ahead = veh ? 3 + Math.max(V.halfLength, V.halfWidth) : 4;
   const at = player.pos.clone().addScaledVector(f, ahead);
-  const x = THREE.MathUtils.clamp(at.x, -HALF + 4, HALF - 4), z = THREE.MathUtils.clamp(at.z, -HALF + 4, HALF - 4);
-  const rot = cat === 'car' ? player.face : player.face + Math.PI;
+  let x = THREE.MathUtils.clamp(at.x, -HALF + 4, HALF - 4), z = THREE.MathUtils.clamp(at.z, -HALF + 4, HALF - 4);
+  const rot = wrapA(veh ? player.face : player.face + Math.PI);
+  if (cat === 'ship' || cat === 'sub') {   // 船は浮かべられる深さの海をさがして置く
+    const spot = findWaterSpot(x, z, V, rot);
+    if (!spot) throw new RuleError(cat, ['近くに、この大きさの船を浮かべられる深さの海がありません。海の近くで置いてください']);
+    [x, z] = spot;
+  }
   const tris = countTris(item.root);
   const label = CATS[cat];
-  const place = (id) => cat === 'car'
+  const place = (id) => veh
     ? makeVehicle(item, x, z, rot, { id, shared: !!id, name })
     : placeProp(item, name, cat, x, z, rot, id);
   const sizeText = () => { const sz = new THREE.Box3().setFromObject(item.root).getSize(new THREE.Vector3()); return `${sz.x.toFixed(1)}×${sz.z.toFixed(1)}×高さ${sz.y.toFixed(1)}m`; };
@@ -651,7 +820,7 @@ async function addPropFromBuffer(buf, name, cat) {
       const row = { id, name, cat, x: Math.round(x * 100) / 100, z: Math.round(z * 100) / 100, rot: Math.round(rot * 1000) / 1000, bytes: buf.byteLength, by: net.myId || null };
       await net.db.add(row, buf);
       place(id);
-      showMsg(cat === 'car' ? `${name} をみんなの世界に置きました。近づいて「乗る」で運転できます` : `${name}（${label}）をみんなの世界に置きました（${sizeText()}）`);
+      showMsg(veh ? `${name}（${label}）をみんなの世界に置きました。近づいて「乗る」で${cat === 'car' ? '運転' : '操縦'}できます` : `${name}（${label}）をみんなの世界に置きました（${sizeText()}）`);
       return;
     } catch (err) {
       net.loading.delete(id);
@@ -660,7 +829,7 @@ async function addPropFromBuffer(buf, name, cat) {
   } else if (net.db) {
     showMsg(buf.byteLength > SHARE_MAX ? `${name} は大きすぎるので（1.5MB まで）自分の画面だけに置きます` : `${name} は細かすぎるので（3 万三角形まで）自分の画面だけに置きます`);
   } else {
-    showMsg(cat === 'car' ? `${name} を置きました（自分の画面だけ）。近づいて「乗る」で運転できます` : `${name}（${label}）を置きました（${sizeText()}・自分の画面だけ）`);
+    showMsg(veh ? `${name}（${label}）を置きました（自分の画面だけ）。近づいて「乗る」で${cat === 'car' ? '運転' : '操縦'}できます` : `${name}（${label}）を置きました（${sizeText()}・自分の画面だけ）`);
   }
   place(null);
 }
@@ -677,10 +846,10 @@ async function loadSharedProp(d) {
     if (buf.byteLength > SHARE_MAX) throw new Error('大きすぎます');
     let item, asCat = cat;
     try { item = await buildThing(buf, name, cat); }
-    catch (e) { if (cat !== 'car') throw e; asCat = 'prop'; item = await buildThing(buf, name, 'prop'); }
+    catch (e) { if (!VEHICLE_CATS.has(cat)) throw e; asCat = 'prop'; item = await buildThing(buf, name, 'prop'); }
     if (!net.loading.has(id)) return;   // 読み込み中に片付けられた
     const x = num(d.x, -HALF + 1, HALF - 1), z = num(d.z, -HALF + 1, HALF - 1), rot = num(d.rot, -100, 100);
-    if (asCat === 'car') makeVehicle(item, x, z, rot, { id, shared: true, name });
+    if (VEHICLE_CATS.has(asCat)) makeVehicle(item, x, z, rot, { id, shared: true, name });
     else placeProp(item, name, asCat, x, z, rot, id);
   } catch (e) { net.loading.delete(id); }
 }
@@ -728,13 +897,23 @@ async function clearNearProp() {
 /* ---- 置くときに、何として置くかを選ぶ ---- */
 const placeEl = document.getElementById('place');
 let pendingFile = null, pendingCat = null;
+let placeScreen = 'main', placeBaseTitle = '';
+const SCREEN_UP = { vehicle: 'main', car: 'vehicle', boat: 'vehicle' };
+const SCREEN_TITLE = { vehicle: '乗り物の種類は？', car: 'タイヤはいくつ？', boat: '船の種類は？' };
+function showScreen(s) {
+  placeScreen = s;
+  for (const d of placeEl.querySelectorAll('[data-screen]')) d.hidden = d.dataset.screen !== s;
+  el('placeBack').hidden = s === 'main';
+  el('placeTitle').textContent = s === 'main' ? placeBaseTitle : SCREEN_TITLE[s];
+  const first = placeEl.querySelector(`[data-screen="${s}"] button`);
+  if (first) first.focus();
+}
 function resetPlaceDialog(title) {
-  el('placeTitle').textContent = title;
+  placeBaseTitle = title;
   el('placeErr').hidden = true;
   el('placeErr').textContent = '';
-  for (const b of placeEl.querySelectorAll('[data-cat]')) b.hidden = false;
   placeEl.hidden = false;
-  placeEl.querySelector('[data-cat="prop"]').focus();
+  showScreen('main');
 }
 // 「glTF を置く」ボタン：先に種類を選んで、それからファイルを選ぶ
 function askCategoryFirst() {
@@ -748,24 +927,25 @@ function askCategory(buf, name) {
   resetPlaceDialog(`${name} を何として置く？`);
 }
 function closePlace() { placeEl.hidden = true; pendingFile = null; }
-async function placeWithCategory(buf, name, cat) {
+const RULE_HEAD = { car: '自動車のルールに合いませんでした', ship: '船のルールに合いませんでした', sub: '潜水艦のルールに合いませんでした', plane: '航空機のルールに合いませんでした' };
+async function placeWithCategory(buf, name, cat, wheels) {
   for (const x of placeEl.querySelectorAll('button')) x.disabled = true;
   try {
-    await addPropFromBuffer(buf, name, cat);
+    await addPropFromBuffer(buf, name, cat, wheels);
     closePlace();
   } catch (err) {
     pendingFile = { buf, name };
-    el('placeTitle').textContent = `${name} を何として置く？`;
+    placeBaseTitle = `${name} を何として置く？`;
     placeEl.hidden = false;
+    showScreen('main');
     const box = el('placeErr');
-    if (err instanceof CarRuleError) {
+    if (err instanceof RuleError) {
       box.innerHTML = '';
-      const head = document.createElement('strong'); head.textContent = '自動車のルールに合いませんでした';
+      const head = document.createElement('strong'); head.textContent = RULE_HEAD[err.kind] || 'ルールに合いませんでした';
       const ul = document.createElement('ul');
       for (const r of err.reasons) { const li = document.createElement('li'); li.textContent = r; ul.appendChild(li); }
       const tail = document.createElement('span'); tail.textContent = 'ほかの種類として置くこともできます。';
       box.append(head, ul, tail);
-      placeEl.querySelector('[data-cat="car"]').hidden = true;
     } else {
       box.textContent = '読み込めませんでした。テクスチャを中に含めた .glb で試してください（' + (err.message || err) + '）';
     }
@@ -778,15 +958,18 @@ placeEl.addEventListener('click', (e) => {
   const b = e.target.closest('button');
   if (!b) return;
   if (b.id === 'placeCancel') { closePlace(); return; }
+  if (b.id === 'placeBack') { showScreen(SCREEN_UP[placeScreen] || 'main'); return; }
+  if (b.dataset.go) { showScreen(b.dataset.go); return; }
   const cat = b.dataset.cat;
   if (!cat) return;
-  if (pendingFile) { placeWithCategory(pendingFile.buf, pendingFile.name, cat); return; }
+  const wheels = b.dataset.wheels ? Number(b.dataset.wheels) : undefined;
+  if (pendingFile) { placeWithCategory(pendingFile.buf, pendingFile.name, cat, wheels); return; }
   // まだファイルがない：選んだ種類を覚えて、ファイル選びを開く（押した流れのまま開く）
-  pendingCat = cat;
+  pendingCat = { cat, wheels };
   placeEl.hidden = true;
   fileEl.click();
 });
-placeEl.addEventListener('keydown', (e) => { if (e.key === 'Escape') closePlace(); });
+placeEl.addEventListener('keydown', (e) => { if (e.key !== 'Escape') return; if (placeScreen !== 'main') showScreen(SCREEN_UP[placeScreen]); else closePlace(); });
 
 /* ================= 入力 ================= */
 const keys = {};
@@ -857,7 +1040,7 @@ fileEl.addEventListener('change', async () => {
   const f = fileEl.files[0]; fileEl.value = '';
   const cat = pendingCat; pendingCat = null;
   if (!f) return;
-  if (cat) placeWithCategory(await f.arrayBuffer(), f.name.replace(/\.(glb|gltf)$/i, '').slice(0, 40), cat);
+  if (cat) placeWithCategory(await f.arrayBuffer(), f.name.replace(/\.(glb|gltf)$/i, '').slice(0, 40), cat.cat, cat.wheels);
   else tryAddProp(f);
 });
 const dropEl = document.getElementById('drop');
@@ -883,15 +1066,28 @@ function showMsg(t) {
   msgTimer = setTimeout(() => { el.hidden = true; }, 4500);
 }
 
-/* ================= 乗り降り ================= */
+/* ================= 乗り降り =================
+   空いている乗り物には運転席から乗る。ほかの人が操縦している船には「相乗り」で甲板に立つ。 */
 const RIDE_DIST = 1.6;   // 車体のふちからこの距離なら乗れる
+const wrapA = (a) => Math.atan2(Math.sin(a), Math.cos(a));
+const vtype = (v) => v.item.def.vehicle.type || 'car';
+const isBoat = (v) => { const t = vtype(v); return t === 'ship' || t === 'sub'; };
+const visYaw = (v) => v.h + (v.yawOff || 0);   // 見た目の向き（船は前後を乗るたびに決めるので、進む向きとずれることがある）
+const floorAt = (x, z) => Math.max(heightAt(x, z), SEA);
+let aboard = null;   // 相乗り中 { v, seat }
+function restPose(v) {
+  const t = vtype(v);
+  if (t === 'ship' || t === 'sub') return { y: SEA, pitch: 0, roll: 0 };
+  if (t === 'plane') return { y: floorAt(v.pos.x, v.pos.y), pitch: 0, roll: 0 };
+  return carPose(v);
+}
 function nearCar() {
   let best = null, bd = Infinity;
   for (const v of vehicles) {
-    if (Math.abs(player.pos.y - v.y) > 2) continue;
     const V = v.item.def.vehicle;
+    if (Math.abs(player.pos.y - v.y) > Math.max(2, (V.height || 0) + 1)) continue;
     const d = Math.hypot(player.pos.x - v.pos.x, player.pos.z - v.pos.y) - Math.max(V.halfWidth, V.halfLength * 0.7);
-    if (d < RIDE_DIST && d < bd) { bd = d; best = v; }
+    if (d < (isBoat(v) ? 2.6 : RIDE_DIST) && d < bd) { bd = d; best = v; }
   }
   return best;
 }
@@ -899,30 +1095,75 @@ function carLocalToWorld(car, lx, lz) {
   const s = Math.sin(car.h), c = Math.cos(car.h);
   return new THREE.Vector2(car.pos.x + lx * c + lz * s, car.pos.y - lx * s + lz * c);
 }
+// 相乗りの人が立つ場所（船の向き・高さに合わせる）
+function seatWorld(v, i) {
+  const S = v.item.def.vehicle.seats || [[0, v.item.def.vehicle.height || 1, 0]];
+  const s = S[i % S.length], h = visYaw(v), sn = Math.sin(h), cs = Math.cos(h);
+  return new THREE.Vector3(v.pos.x + s[0] * cs + s[2] * sn, v.y + s[1], v.pos.y - s[0] * sn + s[2] * cs);
+}
+function freeSeat(v) {
+  const used = new Set();
+  for (const o of net.others.values()) if (o.t && o.t.pv === v.id) used.add(o.t.ps);
+  const n = (v.item.def.vehicle.seats || [0]).length;
+  for (let i = 0; i < n; i++) if (!used.has(i)) return i;
+  return -1;
+}
+// 降りる場所：乗り物の横。水の上なら泳ぎから（潜水艦の中からなら、その深さから）
+function exitPoint(v) {
+  const [ex, ez] = v.item.def.vehicle.exit, h = visYaw(v);
+  const at = (lx) => new THREE.Vector2(v.pos.x + lx * Math.cos(h) + ez * Math.sin(h), v.pos.y - lx * Math.sin(h) + ez * Math.cos(h));
+  let p = at(ex);
+  if (Math.abs(p.x) > HALF - 0.5 || Math.abs(p.y) > HALF - 0.5) p = at(-ex);
+  return new THREE.Vector2(THREE.MathUtils.clamp(p.x, -HALF + P_R, HALF - P_R), THREE.MathUtils.clamp(p.y, -HALF + P_R, HALF - P_R));
+}
+function dropPlayerAt(p, face, fromY) {
+  const g = heightAt(p.x, p.y);
+  const y = g < FLOAT_Y ? Math.min(FLOAT_Y, Math.max(g, fromY - 1)) : g;
+  player.pos.set(p.x, y, p.y);
+  player.vy = 0; player.face = face;
+}
 function leaveRide(force) {
   const car = ride;
   if (!car) return;
+  if (!force && vtype(car) === 'plane' && car.y > floorAt(car.pos.x, car.pos.y) + 0.5) { showMsg('着陸してから降りてください'); return; }
   if (!force && Math.abs(car.vF) > 3) { showMsg('止まってから降りてください'); return; }
-  const [ex, ez] = car.item.def.vehicle.exit;
-  let p = carLocalToWorld(car, ex, ez);
-  if (Math.abs(p.x) > HALF - 0.5 || Math.abs(p.y) > HALF - 0.5) p = carLocalToWorld(car, -ex, ez);
-  const x = THREE.MathUtils.clamp(p.x, -HALF + P_R, HALF - P_R), z = THREE.MathUtils.clamp(p.y, -HALF + P_R, HALF - P_R);
-  player.pos.set(x, heightAt(x, z), z);
-  player.vy = 0; player.face = car.h;
+  dropPlayerAt(exitPoint(car), visYaw(car), car.y);
   ride = null; driving = false; avatar.visible = true;
   car.vF = 0; car.vL = 0; car.settled = false;
-  // みんなの車は、降りた場所を保存する（次に来た人もそこから乗れる）
+  car.h = wrapA(visYaw(car)); car.yawOff = 0;   // 見た目の向きを、そのまま止めた向きにする
+  // みんなの乗り物は、降りた場所を保存する（次に来た人もそこから乗れる）
   if (car.shared && car.id && net.db) {
     net.db.move(car.id, Math.round(car.pos.x * 100) / 100, Math.round(car.pos.y * 100) / 100, Math.round(car.h * 1000) / 1000).catch(() => {});
   }
 }
+function getOff() {
+  const v = aboard.v;
+  aboard = null;
+  dropPlayerAt(exitPoint(v), visYaw(v), v.y);
+  avatar.visible = true;
+}
+// 船に乗ったとき：カメラの向きに近いほうの短い辺を前にする（正方形なら、カメラの向きがそのまま前）
+function chooseBow(v) {
+  const vis = visYaw(v), look = camYaw + Math.PI;
+  const h = v.item.def.vehicle.square ? look : (Math.abs(wrapA(look - vis)) <= Math.PI / 2 ? vis : vis + Math.PI);
+  v.yawOff = vis - h; v.h = h;
+}
 function toggleRide() {
+  if (aboard) { getOff(); return; }
   if (ride) { leaveRide(false); return; }
   const v = nearCar();
   if (!v) return;
-  if (v.remote) { showMsg(`${v.name} はほかの人が運転中です`); return; }
+  if (v.remote) {
+    if (!isBoat(v)) { showMsg(`${v.name} はほかの人が運転中です`); return; }
+    const seat = freeSeat(v);
+    if (seat < 0) { showMsg(`${v.name} は満員です`); return; }
+    aboard = { v, seat };
+    showMsg(`${v.name} に相乗りしました。「降りる」でいつでも降りられます`);
+    return;
+  }
   ride = v; driving = true; avatar.visible = false;
   v.settled = false;
+  if (isBoat(v)) chooseBow(v);
 }
 
 /* ================= 歩く・泳ぐ ================= */
@@ -992,7 +1233,7 @@ function stepPlayer(dt) {
   if (player.pos.y <= g2) { player.pos.y = g2; player.vy = Math.max(0, player.vy); player.onGround = true; if (!inWater) player.mode = 'walk'; }
 
   // 車にめり込まない（車の高さより上なら乗り越えられる）。自分の車も、ほかの人の車も
-  for (const v of vehicles) pushFromCar(v.item.def.vehicle, v.pos.x, v.pos.y, v.y, v.h);
+  for (const v of vehicles) if (!(aboard && aboard.v === v)) pushFromCar(v.item.def.vehicle, v.pos.x, v.pos.y, v.y, visYaw(v));
   for (const o of net.others.values()) {
     if (o.carObj) pushFromCar(ITEM_DEFS['gacchi-go'].vehicle, o.carObj.position.x, o.carObj.position.z, o.carObj.position.y, o.carObj.rotation.y);
     if (!o.avatar.visible || Math.abs(player.pos.y - o.pos.y) > P_H) continue;
@@ -1034,7 +1275,7 @@ function carPose(car) {
 function showCar(car) {
   const root = car.item.root;
   root.position.set(car.pos.x, car.y, car.pos.y);
-  root.rotation.set(-car.pitch, car.h, car.roll);
+  root.rotation.set(-car.pitch, visYaw(car), car.roll);
 }
 function stepCar(car, dt) {
   const V = car.item.def.vehicle;
@@ -1143,6 +1384,135 @@ function stepCar(car, dt) {
 }
 function hitWall(car) { car.vF *= -0.15; car.vL *= 0.3; }
 
+/* ---- 乗り物ごとの動き ---- */
+function stepVehicle(v, dt) {
+  // ほかの人が動かしている乗り物は、その人から届いた位置へ寄せるだけ
+  if (v.remote) {
+    const t = v.remote, k = 1 - Math.exp(-10 * dt);
+    v.yawOff = 0;
+    v.pos.x += (t.x - v.pos.x) * k; v.pos.y += (t.z - v.pos.y) * k; v.y += (t.y - v.y) * k;
+    v.h = lerpAngle(v.h, t.h, k); v.pitch += (t.pitch - v.pitch) * k; v.roll += (t.roll - v.roll) * k;
+    showCar(v);
+    return;
+  }
+  const t = vtype(v);
+  if (t === 'ship' || t === 'sub') stepBoat(v, dt);
+  else if (t === 'plane') stepPlane(v, dt);
+  else stepCar(v, dt);
+}
+function driveInput(mine) {
+  const k = { thr: 0, turn: 0, up: 0 };
+  if (!mine) return k;
+  k.thr = (keys.KeyW || keys.ArrowUp ? 1 : 0) - (keys.KeyS || keys.ArrowDown ? 1 : 0);
+  k.turn = (keys.KeyA || keys.ArrowLeft ? 1 : 0) - (keys.KeyD || keys.ArrowRight ? 1 : 0);
+  k.up = (keys.Space || touch.act ? 1 : 0) - (keys.KeyC || keys.ControlLeft || keys.KeyQ || touch.dive ? 1 : 0);
+  if (touch.stickId !== null) { k.thr = THREE.MathUtils.clamp(-touch.y * 1.4, -1, 1); k.turn = -touch.x; }
+  return k;
+}
+function bumpProps(v, R) {
+  let hit = false;
+  for (const pr of props) {
+    const b = pr.box;
+    if (b.max.y - b.min.y < 0.25 || b.min.y > v.y + 1.5 || b.max.y < v.y - 0.5) continue;
+    const qx = THREE.MathUtils.clamp(v.pos.x, b.min.x, b.max.x), qz = THREE.MathUtils.clamp(v.pos.y, b.min.z, b.max.z);
+    const dx = v.pos.x - qx, dz = v.pos.y - qz, d = Math.hypot(dx, dz);
+    if (d < R) { if (d > 1e-4) { v.pos.x += (dx / d) * (R - d); v.pos.y += (dz / d) * (R - d); } hit = true; }
+  }
+  return hit;
+}
+
+/* ---- 船・潜水艦：水の上（潜水艦は水の中も）を進む。船底より浅いところへは行けない ---- */
+const HULL_PTS = [[0, 0], [1, 1], [1, -1], [-1, 1], [-1, -1], [0, 1], [0, -1], [1, 0], [-1, 0]];
+function hullGround(x, z, h, V) {   // 船体の下で、いちばん高い地面（箱の外なら Infinity）
+  let g = -Infinity;
+  const s = Math.sin(h), c = Math.cos(h);
+  for (const [ax, az] of HULL_PTS) {
+    const lx = ax * V.halfWidth * 0.9, lz = az * V.halfLength * 0.9;
+    const px = x + lx * c + lz * s, pz = z - lx * s + lz * c;
+    if (Math.abs(px) > HALF - 0.5 || Math.abs(pz) > HALF - 0.5) return Infinity;
+    g = Math.max(g, heightAt(px, pz));
+  }
+  return g;
+}
+function findWaterSpot(x, z, V, h) {
+  for (let r = 0; r <= 120; r += 3) {
+    const n = r === 0 ? 1 : Math.ceil(r * 0.7);
+    for (let i = 0; i < n; i++) {
+      const a = (i / n) * Math.PI * 2, px = x + Math.cos(a) * r, pz = z + Math.sin(a) * r;
+      if (hullGround(px, pz, h, V) < SEA - V.draft - 0.3) return [Math.round(px * 100) / 100, Math.round(pz * 100) / 100];
+    }
+  }
+  return null;
+}
+function stepBoat(v, dt) {
+  const V = v.item.def.vehicle, mine = v === ride, sub = V.type === 'sub';
+  const k = driveInput(mine);
+  const target = k.thr >= 0 ? k.thr * V.maxSpeed : k.thr * V.maxSpeed * 0.6;
+  v.vF += (target - v.vF) * Math.min(1, dt * (k.thr ? 0.7 : 0.4));
+  const yawRate = k.turn * V.turn * (0.35 + Math.min(1, Math.abs(v.vF) / 4) * 0.65) * (v.vF < -0.2 ? -1 : 1);
+  const old = { x: v.pos.x, z: v.pos.y, h: v.h };
+  v.h += yawRate * dt;
+  v.pos.x += Math.sin(v.h) * v.vF * dt; v.pos.y += Math.cos(v.h) * v.vF * dt;
+  const surf = SEA + Math.sin(clock.elapsedTime * 1.3 + v.pos.x * 0.1) * 0.06;
+  const curY = sub && v.dive > 0.05 ? SEA - v.dive : surf;
+  let g = hullGround(v.pos.x, v.pos.y, visYaw(v), V);
+  if (g > curY - V.draft - 0.15 || bumpProps(v, Math.min(V.halfWidth, V.halfLength) * 0.8)) {   // 浅い・陸・かべ・置物：元に戻して止める
+    v.pos.x = old.x; v.pos.y = old.z; v.h = old.h;
+    v.vF *= -0.2;
+    g = hullGround(v.pos.x, v.pos.y, visYaw(v), V);
+    if (mine) showMsg(g > SEA - 0.3 ? 'ここから先は陸です。船では進めません' : '浅くてこれ以上進めません');
+  }
+  if (sub) {   // うく・もぐる。海の底より下へは行かない
+    v.vy = (v.vy || 0) + (k.up * 2.5 - (v.vy || 0)) * Math.min(1, dt * 2);
+    const maxDive = Math.max(0, SEA - g - 0.2 - V.draft);
+    v.dive = THREE.MathUtils.clamp((v.dive || 0) - v.vy * dt, 0, maxDive);
+  }
+  const wantY = sub && v.dive > 0.05 ? SEA - v.dive : surf;
+  v.y += (wantY - v.y) * Math.min(1, dt * 4);
+  const rock = sub && v.dive > 1 ? 0 : 1;   // 水の上ではゆらゆら
+  const tp = Math.sin(clock.elapsedTime * 0.9 + v.pos.y * 0.1) * 0.02 * rock + (sub ? THREE.MathUtils.clamp((v.vy || 0) * 0.08, -0.2, 0.2) : 0);
+  const tr = Math.sin(clock.elapsedTime * 1.1 + v.pos.x * 0.1) * 0.03 * rock - yawRate * 0.12;
+  const kk = Math.min(1, dt * 4);
+  v.pitch += (tp - v.pitch) * kk; v.roll += (tr - v.roll) * kk;
+  showCar(v);
+}
+
+/* ---- 航空機：W/S で出力、A/D で曲がる、Space で上昇・C で下降。遅いと浮かない ---- */
+function stepPlane(v, dt) {
+  const V = v.item.def.vehicle, mine = v === ride;
+  const k = driveInput(mine);
+  v.throttle = mine ? THREE.MathUtils.clamp((v.throttle || 0) + k.thr * dt * 0.45, 0, 1) : 0;
+  const fl0 = floorAt(v.pos.x, v.pos.y), air = v.y > fl0 + 0.3;
+  v.vF += (v.throttle * V.maxSpeed - v.vF) * Math.min(1, dt * 0.45);
+  if (!air && k.thr < 0 && v.throttle === 0) v.vF = Math.max(0, v.vF - 8 * dt);   // 地上でブレーキ
+  if (!air && !mine) v.vF = 0;
+  const stall = V.maxSpeed * 0.3, lift = Math.min(1, v.vF / stall);
+  let vy = 0;
+  if (lift >= 1) vy = k.up * Math.min(14, v.vF * 0.35);
+  else if (air) vy = -5 * (1 - lift) + Math.max(0, k.up) * v.vF * 0.2;
+  v.vy = (v.vy || 0) + (vy - (v.vy || 0)) * Math.min(1, dt * 3);
+  const yawRate = k.turn * (air ? 0.65 : 0.9 * Math.min(1, v.vF / 3));
+  v.h += yawRate * dt;
+  v.pos.x += Math.sin(v.h) * v.vF * dt; v.pos.y += Math.cos(v.h) * v.vF * dt;
+  v.y += v.vy * dt;
+  // 箱のかべ
+  const lim = HALF - Math.max(V.halfWidth, V.halfLength) * 0.6;
+  if (Math.abs(v.pos.x) > lim || Math.abs(v.pos.y) > lim) {
+    v.pos.x = THREE.MathUtils.clamp(v.pos.x, -lim, lim); v.pos.y = THREE.MathUtils.clamp(v.pos.y, -lim, lim);
+    v.vF *= 0.3; if (mine) showMsg('世界のはしです。向きを変えてください');
+  }
+  const fl = floorAt(v.pos.x, v.pos.y);
+  if (v.y < fl) { v.y = fl; v.vy = Math.max(0, v.vy); }
+  if (v.y > Y_TOP - 4) { v.y = Y_TOP - 4; v.vy = Math.min(0, v.vy); }
+  if (v.y < fl + 2 && bumpProps(v, Math.min(V.halfWidth, V.halfLength) * 0.6)) v.vF *= 0.3;
+  const airNow = v.y > fl + 0.3;
+  const tp = airNow ? Math.atan2(v.vy, Math.max(4, v.vF)) : 0, tr = airNow ? -k.turn * 0.45 : 0;
+  const kk = Math.min(1, dt * 4);
+  v.pitch += (tp - v.pitch) * kk; v.roll += (tr - v.roll) * kk;
+  showCar(v);
+}
+
+
 /* ================= みんなで遊ぶ（同じページを開いている人） =================
    それぞれの位置・向き・車をおよそ 1 秒に 4 回（止まっていれば 3 秒に 1 回）、まわりに知らせる。
    受け取った位置へなめらかに寄せて表示する。保存はしない（閉じたら消える）。 */
@@ -1222,7 +1592,9 @@ function syncPeers(peers) {
       net.others.set(p.peer, o);
     }
     o.by = p.by;
-    o.t = { x: num(pr.p[0], -HALF, HALF), y: num(pr.p[1], Y_BOTTOM, Y_TOP), z: num(pr.p[2], -HALF, HALF), f: num(pr.f, -100, 100), m: ['walk', 'swim', 'dive', 'drive'].includes(pr.m) ? pr.m : 'walk' };
+    o.t = { x: num(pr.p[0], -HALF, HALF), y: num(pr.p[1], Y_BOTTOM, Y_TOP), z: num(pr.p[2], -HALF, HALF), f: num(pr.f, -100, 100), m: ['walk', 'swim', 'dive', 'drive', 'ride'].includes(pr.m) ? pr.m : 'walk' };
+    o.t.pv = o.t.m === 'ride' && typeof pr.pv === 'string' && /^[A-Za-z0-9_-]{1,40}$/.test(pr.pv) ? pr.pv : null;
+    o.t.ps = Number.isInteger(pr.ps) && pr.ps >= 0 && pr.ps < 16 ? pr.ps : 0;
     o.tc = Array.isArray(pr.c) ? { x: num(pr.c[0], -HALF, HALF), y: num(pr.c[1], Y_BOTTOM, Y_TOP), z: num(pr.c[2], -HALF, HALF), h: num(pr.c[3], -100, 100), pitch: num(pr.c[4], -1, 1), roll: num(pr.c[5], -1, 1) } : null;
     o.t.v = typeof pr.v === 'string' && /^[A-Za-z0-9_-]{1,40}$/.test(pr.v) ? pr.v : null;
     o.t.vc = o.t.v && Array.isArray(pr.vc) ? { x: num(pr.vc[0], -HALF, HALF), y: num(pr.vc[1], Y_BOTTOM, Y_TOP), z: num(pr.vc[2], -HALF, HALF), h: num(pr.vc[3], -100, 100), pitch: num(pr.vc[4], -1, 1), roll: num(pr.vc[5], -1, 1) } : null;
@@ -1256,10 +1628,11 @@ function resolveName(by) { net.names.set(by, ''); }
 function sendPresence() {
   if (!net.room) return;
   const r = (v, k = 100) => Math.round(v * k) / k;
-  const pose = (v) => [r(v.pos.x), r(v.y), r(v.pos.y), r(v.h), r(v.pitch), r(v.roll)];
+  const pose = (v) => [r(v.pos.x), r(v.y), r(v.pos.y), r(wrapA(visYaw(v))), r(v.pitch), r(v.roll)];
   const at = ride ? [ride.pos.x, ride.y, ride.pos.y] : [player.pos.x, player.pos.y, player.pos.z];
   const msg = {
-    p: at.map((v) => r(v)), f: r(ride ? ride.h : player.face), m: ride ? 'drive' : player.mode, col: myColor,
+    p: at.map((v) => r(v)), f: r(wrapA(ride ? ride.h : player.face)), m: ride ? 'drive' : aboard ? 'ride' : player.mode, col: myColor,
+    pv: aboard && aboard.v.shared ? aboard.v.id : null, ps: aboard ? aboard.seat : null,   // 相乗りしている船と、立っている場所
     c: myCar ? pose(myCar) : null,
     v: ride && ride.shared ? ride.id : null,       // みんなの車を運転中なら、その車の番号と位置
     vc: ride && ride.shared ? pose(ride) : null,
@@ -1275,7 +1648,9 @@ function stepOthers(dt) {
     const t = o.t;
     o.pos.x += (t.x - o.pos.x) * k; o.pos.y += (t.y - o.pos.y) * k; o.pos.z += (t.z - o.pos.z) * k;
     o.face = lerpAngle(o.face, t.f, k);
-    o.avatar.visible = t.m !== 'drive';
+    const pv = t.pv ? vehicles.find((v) => v.id === t.pv) : null;
+    if (pv) { o.pos.copy(seatWorld(pv, t.ps)); o.face = visYaw(pv); }   // 相乗りの人は、こちらの画面の船の上に立たせる
+    o.avatar.visible = t.m !== 'drive' && !(pv && vtype(pv) === 'sub');
     o.avatar.position.copy(o.pos);
     o.avatar.rotation.y = o.face;
     o.avatar.rotation.x = t.m === 'dive' ? 0.9 : 0;
@@ -1489,22 +1864,15 @@ function updateCamera(dt) {
   } else {
     camTarget.set(player.pos.x, player.pos.y + 1.5, player.pos.z);
   }
-  const dist = driving ? Math.max(camDist, 7.5) : camDist;
+  const dist = driving ? Math.max(camDist, vtype(ride) === 'plane' ? 13 : isBoat(ride) ? 10 : 7.5) : camDist;
   camPos.set(Math.sin(camYaw) * Math.cos(camPitch), Math.sin(camPitch), Math.cos(camYaw) * Math.cos(camPitch)).multiplyScalar(dist).add(camTarget);
   camPos.y = Math.max(heightAt(camPos.x, camPos.z) + 0.4, camPos.y);   // 地面の中にカメラを入れない
   camera.position.lerp(camPos, 1 - Math.exp(-14 * dt));
   camera.position.y = Math.max(heightAt(camera.position.x, camera.position.z) + 0.3, camera.position.y);
   camera.lookAt(camTarget);
 
-  // 水の中は青くかすむ
-  const uw = camera.position.y < SEA && Math.abs(camera.position.x) < HALF && Math.abs(camera.position.z) < HALF;
-  if (uw !== underwater) {
-    underwater = uw;
-    scene.fog.color.copy(uw ? DEEP : HORIZON);
-    scene.fog.near = uw ? 1 : 70; scene.fog.far = uw ? 38 : 200;
-    sky.visible = clouds.visible = !uw;
-    scene.background = uw ? DEEP : null;
-  }
+  // 水の中は青くかすむ（色は updateAtmosphere で、深いほど暗く）
+  underwater = camera.position.y < SEA && Math.abs(camera.position.x) < HALF && Math.abs(camera.position.z) < HALF;
   // 影は自分のまわり 60m だけ計算する（スマホを軽く）
   const fx = ride ? ride.pos.x : player.pos.x, fy = ride ? ride.y : player.pos.y, fz = ride ? ride.pos.y : player.pos.z;
   sun.target.position.set(fx, fy, fz);
@@ -1515,36 +1883,58 @@ function updateCamera(dt) {
 const el = (id) => document.getElementById(id);
 let lastUi = '';
 const STATE_TEXT = { walk: '歩いている', swim: '泳いでいる', dive: 'もぐっている', drive: 'がっち号を運転中' };
+const DRIVE_VERB = { car: '運転', ship: '操縦', sub: '操縦', plane: '操縦' };
+const K = (k, t) => `<span>${k.map((x) => `<kbd>${x}</kbd>`).join('')}${t}</span>`;
+const KEYS_HTML = {
+  car: K(['W'], 'アクセル') + K(['S'], 'ブレーキ／バック') + K(['A', 'D'], 'ハンドル') + K(['Space'], 'サイドブレーキ') + K(['E'], '降りる') + '<span>ドラッグで視点</span>',
+  ship: K(['W'], '前へ') + K(['S'], '後ろへ') + K(['A', 'D'], 'かじ') + K(['E'], '降りる') + '<span>ドラッグで視点</span>',
+  sub: K(['W'], '前へ') + K(['S'], '後ろへ') + K(['A', 'D'], 'かじ') + K(['Space'], 'うく') + K(['C'], 'もぐる') + K(['E'], '降りる'),
+  plane: K(['W'], '出力を上げる') + K(['S'], '下げる・ブレーキ') + K(['A', 'D'], '曲がる') + K(['Space'], '上昇') + K(['C'], '下降') + K(['E'], '降りる'),
+  ride: K(['E'], '降りる') + '<span>ドラッグで視点・ホイールで距離</span>',
+  wet: K(['W', 'A', 'S', 'D'], '泳ぐ') + K(['Space'], 'うく') + K(['C'], 'もぐる') + '<span>ドラッグで視点・ホイールで距離</span>',
+  walk: K(['W', 'A', 'S', 'D'], '移動') + K(['Shift'], '走る') + K(['Space'], 'ジャンプ') + K(['E'], '乗る') + K(['T'], 'ひとこと') + '<span>ドラッグで視点・ホイールで距離</span><span>.glb をドロップで置ける</span>',
+};
+const HINT = {
+  car: '左側をなぞって運転（上でアクセル・下でブレーキ）',
+  ship: '左側をなぞって操縦（上で前へ・下で後ろへ）',
+  sub: '左側をなぞって操縦。「もぐる」で下へ、「うく」で上へ',
+  plane: '左側を上になぞると出力アップ、下でダウン。「上昇」「下降」で高さ',
+  ride: '相乗り中。右側をなぞって見回せます',
+  wet: '左側をなぞって泳ぐ。「もぐる」で下へ、「うく」で上へ',
+  walk: '左側をなぞって移動、右側をなぞって視点',
+};
 function updateUi() {
-  const np = !driving && props.length ? nearestProp() : null;
+  const np = !driving && !aboard && props.length ? nearestProp() : null;
   const cp = el('clearProp');
   if (cp.hidden !== !np) cp.hidden = !np;
-  const nv = !ride ? nearCar() : null;
+  const nv = !ride && !aboard ? nearCar() : null;
   const near = !!nv;
+  const vt = ride ? vtype(ride) : null;
   const kmh = ride ? Math.round(Math.abs(ride.vF) * 3.6) : 0;
-  const mode = driving ? 'drive' : player.mode;
+  const mode = driving ? 'drive' : aboard ? 'ride' : player.mode;
   const y = ride ? ride.y : player.pos.y;
-  const vname = (ride || nv || myCar || { name: 'がっち号' }).name;
-  const alt = mode === 'dive' || mode === 'swim' ? `水深 ${Math.max(0, SEA - y).toFixed(1)}m` : `高さ ${y >= 0 ? '+' : ''}${y.toFixed(1)}m`;
-  const key = [mode, near, kmh, alt, vname].join('|');
+  const vname = (ride || (aboard && aboard.v) || nv || myCar || { name: 'がっち号' }).name;
+  const deep = (vt === 'sub' && y < SEA - 0.3) || mode === 'dive' || mode === 'swim';
+  const alt = deep ? `水深 ${Math.max(0, SEA - y).toFixed(1)}m` : `高さ ${y >= 0 ? '+' : ''}${y.toFixed(1)}m`;
+  const share = nv && nv.remote && isBoat(nv);
+  const key = [mode, near, share, kmh, alt, vname, vt].join('|');
   if (key === lastUi) return;
   lastUi = key;
-  el('state').textContent = mode === 'drive' ? `${vname}を運転中` : STATE_TEXT[mode];
+  el('state').textContent = mode === 'drive' ? `${vname}を${DRIVE_VERB[vt]}中` : mode === 'ride' ? `${vname}に相乗り中` : STATE_TEXT[mode];
   el('alt').textContent = alt;
   el('speedBox').hidden = !driving;
   el('speed').textContent = kmh;
-  el('prompt').hidden = !(near || driving);
-  el('promptText').textContent = driving ? `${vname}から` : `${vname}に`;
-  el('promptBtn').textContent = driving ? '降りる' : '乗る';
-  const wet = mode === 'swim' || mode === 'dive';
-  tAct.textContent = driving ? 'サイド' : wet ? 'うく' : 'ジャンプ';
-  tDive.hidden = !wet;
-  el('hint').textContent = driving ? '左側をなぞって運転（上でアクセル・下でブレーキ）' : wet ? '左側をなぞって泳ぐ。「もぐる」で下へ、「うく」で上へ' : '左側をなぞって移動、右側をなぞって視点';
-  el('keys').innerHTML = driving
-    ? '<span><kbd>W</kbd>アクセル</span><span><kbd>S</kbd>ブレーキ／バック</span><span><kbd>A</kbd><kbd>D</kbd>ハンドル</span><span><kbd>Space</kbd>サイドブレーキ</span><span><kbd>E</kbd>降りる</span><span>ドラッグで視点</span>'
-    : wet
-      ? '<span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd>泳ぐ</span><span><kbd>Space</kbd>うく</span><span><kbd>C</kbd>もぐる</span><span>ドラッグで視点・ホイールで距離</span>'
-      : '<span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd>移動</span><span><kbd>Shift</kbd>走る</span><span><kbd>Space</kbd>ジャンプ</span><span><kbd>E</kbd>乗る</span><span><kbd>T</kbd>ひとこと</span><span>ドラッグで視点・ホイールで距離</span><span>.glb をドロップで置ける</span>';
+  el('prompt').hidden = !(near || driving || aboard);
+  el('promptText').textContent = driving || aboard ? `${vname}から` : share ? `${vname}に相乗り` : `${vname}に`;
+  el('promptBtn').textContent = driving || aboard ? '降りる' : '乗る';
+  const wet = !driving && !aboard && (mode === 'swim' || mode === 'dive');
+  tAct.hidden = vt === 'ship' || !!aboard;
+  tAct.textContent = vt === 'sub' ? 'うく' : vt === 'plane' ? '上昇' : vt ? 'サイド' : wet ? 'うく' : 'ジャンプ';
+  tDive.hidden = !(wet || vt === 'sub' || vt === 'plane');
+  tDive.textContent = vt === 'plane' ? '下降' : 'もぐる';
+  const kind = vt || (aboard ? 'ride' : wet ? 'wet' : 'walk');
+  el('hint').textContent = HINT[kind];
+  el('keys').innerHTML = KEYS_HTML[kind];
 }
 
 /* ================= ループ ================= */
@@ -1552,14 +1942,18 @@ const clock = new THREE.Clock();
 let netTick = 0;
 function frame() {
   const dt = Math.min(0.05, clock.getDelta());
-  if (!driving) stepPlayer(dt);
-  for (const v of vehicles) stepCar(v, dt);
+  if (aboard && !vehicles.includes(aboard.v)) getOff();
+  if (!driving && !aboard) stepPlayer(dt);
+  for (const v of vehicles) stepVehicle(v, dt);
+  if (aboard) { player.pos.copy(seatWorld(aboard.v, aboard.seat)); player.vy = 0; player.face = visYaw(aboard.v); player.mode = 'walk'; }
+  avatar.visible = !driving && !(aboard && vtype(aboard.v) === 'sub');
   avatar.position.copy(player.pos);
   avatar.rotation.y = player.face;
   avatar.rotation.x = player.mode === 'dive' ? 0.9 : 0;
   stepOthers(dt);
   waterTex.offset.x = (clock.elapsedTime * 0.02) % 1; waterTex.offset.y = (clock.elapsedTime * 0.013) % 1;
   updateCamera(dt);
+  updateAtmosphere();
   updateUi();
   netTick += dt;
   if (netTick > 0.25) { netTick = 0; sendPresence(); }
@@ -1581,6 +1975,8 @@ window.__world = {
   get driving() { return driving; },
   set camYaw(v) { camYaw = v; }, set camPitch(v) { camPitch = v; }, set camDist(v) { camDist = v; },
   keys, touch, toggleRide, loadItem, ITEM_DEFS, heightAt, player, net, syncPeers,
+  get aboard() { return aboard; }, get ride() { return ride; }, worldHour, setHourOffset(h) { hourOffset = h; },
+  hullGround, findWaterSpot,
   teleport(x, z, y) { player.pos.set(x, y ?? heightAt(x, z), z); player.vy = 0; },
 };
 
