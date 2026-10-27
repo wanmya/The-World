@@ -2335,8 +2335,10 @@ function updateMap(dt) {
   mapCx.drawImage(mapImg, toX(X0), toY(Z0), XW * k, ZW * k);
   mapCx.strokeStyle = 'rgba(255,255,255,0.7)'; mapCx.lineWidth = 2; mapCx.strokeRect(toX(X0), toY(Z0), XW * k, ZW * k);
   for (const pm of PALMS) { mapCx.fillStyle = '#2f7d2c'; mapCx.beginPath(); mapCx.arc(toX(pm.x), toY(pm.z), Math.max(1.5, 1.2 * k), 0, 7); mapCx.fill(); }
-  for (const o of net.others.values()) {   // ほかの人（潜っている潜水艦の人は出さない）
+  for (const o of net.others.values()) {   // ほかの人。潜水艦が深度 5m 以上なら出さない（潜望鏡が水の上に出ていても）
     if (o.hid) continue;
+    const ov = o.t && (o.t.m === 'drive' && o.t.v ? vehicles.find((x) => x.id === o.t.v) : o.t.pv ? vehicles.find((x) => x.id === o.t.pv) : null);
+    if (ov && vtype(ov) === 'sub' && SEA - ov.y >= 5) continue;
     const p = o.avatar.position;
     mapCx.fillStyle = o.col; mapCx.strokeStyle = '#fff'; mapCx.lineWidth = 1.5;
     mapCx.beginPath(); mapCx.arc(toX(p.x), toY(p.z), 4, 0, 7); mapCx.fill(); mapCx.stroke();
@@ -2554,7 +2556,8 @@ function fireTorpedo() {
   const x = v.pos.x + Math.sin(h) * (V.halfLength + 1.8), z = v.pos.y + Math.cos(h) * (V.halfLength + 1.8);
   if (outsideBox(x, z, 1) || heightAt(x, z) > SEA - 1.5) { showMsg('前が浅くて撃てません'); return; }
   const y = Math.max(heightAt(x, z) + 0.6, Math.min(v.y - V.draft * 0.5, SEA - 1));
-  tube.n--; tube.firedAt = clock.elapsedTime; helmShown = '';
+  tube.n--; helmShown = '';
+  if (tube.type !== 'decoy') tube.firedAt = clock.elapsedTime;   // デコイだけは発射音がしない
   const d = { id: newId().slice(0, 12), k: tube.type, x, y, z, h, dp: tube.dp, dist: tube.dist, time: tube.time, src: v.id || 'local' };
   launchTorpedo(d, true);
   showMsg(`${tube.type === 'decoy' ? 'デコイ' : '魚雷'}発射！ 方位 ${fmtB(bearingOf(h))}°・深度 ${tube.dp}m（残り ${tube.n} 本）`);
