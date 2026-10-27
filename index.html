@@ -273,6 +273,9 @@ body.helmOn .subbtns { flex-wrap: wrap; justify-content: flex-end; max-width: ca
   <button type="button" id="lightBtn" aria-pressed="false">ライト</button>
   <button type="button" id="scopeBtn" aria-pressed="false">潜望鏡</button>
   <button type="button" id="pingBtn" hidden>ピンガー</button>
+  <button type="button" id="gunBtn" aria-pressed="true" hidden>主砲</button>
+  <button type="button" id="ciwsBtn" aria-pressed="true" hidden>CIWS</button>
+  <button type="button" id="untargetBtn" hidden>目標解除</button>
   <button type="button" id="subChat" hidden>ひとこと</button>
   <button type="button" id="subExit" hidden>降りる</button>
 </div>
@@ -473,6 +476,9 @@ function rigAutoCar(item, root, model, gltf, def) {
 
 const BOAT_LIMITS = { length: 30, width: 20, height: 15 };
 const LIGHT_RE = /^(ライト|light|lamp|headlight)/i, PERI_RE = /^(潜望鏡|periscope)/i;
+// イージス艦：船の glTF に「主砲」「CIWS」「前方」があればイージス艦として読む。前方のブロックがある側が前
+const GUN_RE = /^(主砲|main.?gun)/i, CIWS_RE = /^ciws/i, BOW_RE = /^(前方|bow|front)$/i;
+const AEGIS_LIMITS = { length: 200, width: 30, height: 60 };
 function rigBoat(item, root, model, gltf, def) {
   const kind = def.rig === 'sub' ? 'sub' : 'ship';
   let box = modelBox(root, model);
@@ -480,7 +486,25 @@ function rigBoat(item, root, model, gltf, def) {
   let size = box.getSize(new THREE.Vector3());
   const reasons = [];
   // 潜水艦は「船体・ライト・潜望鏡」。ライトのある側が前になる
-  let lightPart = null, periPart = null;
+  let lightPart = null, periPart = null, bowPart = null;
+  const gunParts = [], ciwsParts = [];
+  if (kind === 'ship') model.traverse((o) => {
+    const n = (o.name || '').trim();
+    if (GUN_RE.test(n) && !gunParts.some((g) => g.getObjectById(o.id))) gunParts.push(o);
+    else if (CIWS_RE.test(n) && !ciwsParts.some((g) => g.getObjectById(o.id))) ciwsParts.push(o);
+    else if (!bowPart && BOW_RE.test(n)) bowPart = o;
+  });
+  const aegis = kind === 'ship' && (gunParts.length > 0 || ciwsParts.length > 0);
+  if (aegis) {
+    if (!gunParts.length) reasons.push('「主砲」という名前の部品がありません');
+    if (!ciwsParts.length) reasons.push('「CIWS」という名前の部品がありません');
+    if (!bowPart) reasons.push('「前方」という名前の部品がありません（ある側が船の前になります）');
+    if (reasons.length) throw new RuleError(kind, reasons);
+    const c0 = box.getCenter(new THREE.Vector3()), fc = new THREE.Box3().setFromObject(bowPart).getCenter(new THREE.Vector3());
+    model.rotation.y = -Math.atan2(fc.x - c0.x, fc.z - c0.z);   // 前方のブロックを +Z 側へ
+    bowPart.visible = false;
+    box = modelBox(root, model); size = box.getSize(new THREE.Vector3());
+  }
   if (kind === 'sub') {
     model.traverse((o) => { if (!lightPart && LIGHT_RE.test(o.name || '')) lightPart = o; if (!periPart && PERI_RE.test(o.name || '')) periPart = o; });
     if (!lightPart) reasons.push('「ライト」という名前の部品がありません');
@@ -491,11 +515,12 @@ function rigBoat(item, root, model, gltf, def) {
     model.rotation.y = turn; box = modelBox(root, model); size = box.getSize(new THREE.Vector3());
   }
   // 上から見た縦横比：長いほうを進む向き（Z）にそろえる。ほぼ正方形なら、どの向きにも進める
-  const square = kind === 'ship' && Math.max(size.x, size.z) / Math.max(0.01, Math.min(size.x, size.z)) < 1.15;
-  if (kind === 'ship' && !square && size.x > size.z) { model.rotation.y = Math.PI / 2; box = modelBox(root, model); size = box.getSize(new THREE.Vector3()); }
-  if (size.z > BOAT_LIMITS.length) reasons.push(`長さが ${size.z.toFixed(1)}m です（${BOAT_LIMITS.length}m まで）`);
-  if (size.x > BOAT_LIMITS.width) reasons.push(`幅が ${size.x.toFixed(1)}m です（${BOAT_LIMITS.width}m まで）`);
-  if (size.y > BOAT_LIMITS.height) reasons.push(`高さが ${size.y.toFixed(1)}m です（${BOAT_LIMITS.height}m まで）`);
+  const square = kind === 'ship' && !aegis && Math.max(size.x, size.z) / Math.max(0.01, Math.min(size.x, size.z)) < 1.15;
+  if (kind === 'ship' && !aegis && !square && size.x > size.z) { model.rotation.y = Math.PI / 2; box = modelBox(root, model); size = box.getSize(new THREE.Vector3()); }
+  const LIM = aegis ? AEGIS_LIMITS : BOAT_LIMITS;
+  if (size.z > LIM.length) reasons.push(`長さが ${size.z.toFixed(1)}m です（${LIM.length}m まで）`);
+  if (size.x > LIM.width) reasons.push(`幅が ${size.x.toFixed(1)}m です（${LIM.width}m まで）`);
+  if (size.y > LIM.height) reasons.push(`高さが ${size.y.toFixed(1)}m です（${LIM.height}m まで）`);
   if (Math.min(size.x, size.z) < 0.5) reasons.push('小さすぎます（幅 0.5m 以上にしてください）');
   if (reasons.length) throw new RuleError(kind, reasons);
   // 船底から 1/4 くらいが水に沈む。原点を水面の高さにする
@@ -540,9 +565,20 @@ function rigBoat(item, root, model, gltf, def) {
     item.hull = model;   // 潜望鏡は pivot に移したので、model は船体とライト
     item.hullTop = modelBox(root, model).max.y;
   }
-  const kmh = kind === 'sub' ? 15 * 1.852 : kmhOf(extrasOf(gltf), 35, 10, 60);   // 潜水艦は最高 15 ノット
+  if (aegis) {   // 主砲・CIWS：真ん中を軸に左右へ回せるようにする（ふだんは前を向いている）
+    root.updateMatrixWorld(true);
+    const turret = (part) => {
+      const b = new THREE.Box3().setFromObject(part), c = b.getCenter(new THREE.Vector3()), o = part.getWorldPosition(new THREE.Vector3());
+      const axis = o.x >= b.min.x && o.x <= b.max.x && o.z >= b.min.z && o.z <= b.max.z ? o : c;   // 回る軸：部品の原点（砲塔の真ん中）。外にあれば形の真ん中
+      const pivot = new THREE.Group(); pivot.position.set(axis.x, 0, axis.z);
+      root.add(pivot); root.updateMatrixWorld(true); pivot.attach(part);
+      return { pivot, muzzle: new THREE.Vector3(c.x, c.y, b.max.z) };
+    };
+    item.guns = { main: gunParts.map(turret), ciws: ciwsParts.map(turret) };
+  }
+  const kmh = kind === 'sub' ? 15 * 1.852 : aegis ? 23 * 1.852 : kmhOf(extrasOf(gltf), 35, 10, 60);   // 潜水艦は最高 15 ノット、イージス艦は 23 ノット
   item.def.vehicle = {
-    type: kind, square, fixedBow: kind === 'sub', halfWidth: size.x / 2, halfLength: size.z / 2, centerZ: 0, height: size.y, draft,
+    type: kind, square, fixedBow: kind === 'sub' || aegis, aegis, halfWidth: size.x / 2, halfLength: size.z / 2, centerZ: 0, height: size.y, draft,
     seats: seats.slice(0, 8), maxSpeed: kmh / 3.6, turn: 0.6,
     wheelbase: Math.max(1, size.z * 0.6), wheelRadius: 1,
     exit: [-(size.x / 2 + 0.8), 0],
@@ -1743,6 +1779,7 @@ function stepVehicle(v, dt) {
     v.h = lerpAngle(v.h, t.h, k); v.pitch += (t.pitch - v.pitch) * k; v.roll += (t.roll - v.roll) * k;
     setSubLight(v, !!t.lt);
     if (v.item.periscope) v.item.periscope.pivot.rotation.y = t.py || 0;
+    if (v.item.guns && t.gy) { for (const g of v.item.guns.main) g.pivot.rotation.y = t.gy[0]; for (const g of v.item.guns.ciws) g.pivot.rotation.y = t.gy[1]; }
     showCar(v);
     hideSubmerged(v);
     return;
@@ -1969,6 +2006,7 @@ function syncPeers(peers) {
     o.t.pv = o.t.m === 'ride' && typeof pr.pv === 'string' && /^[A-Za-z0-9_-]{1,40}$/.test(pr.pv) ? pr.pv : null;
     o.t.ps = Number.isInteger(pr.ps) && pr.ps >= 0 && pr.ps < 16 ? pr.ps : 0;
     o.t.lt = pr.lt === 1; o.t.py = num(pr.py, -7, 7); o.t.ns = pr.ns === 1;
+    o.t.gy = Array.isArray(pr.gy) ? [num(pr.gy[0], -2, 2), num(pr.gy[1], -2, 2)] : null;
     o.tc = Array.isArray(pr.c) ? { x: num(pr.c[0], X0, X1), y: num(pr.c[1], Y_BOTTOM, Y_TOP), z: num(pr.c[2], Z0, Z1), h: num(pr.c[3], -100, 100), pitch: num(pr.c[4], -1, 1), roll: num(pr.c[5], -1, 1) } : null;
     o.t.v = typeof pr.v === 'string' && /^[A-Za-z0-9_-]{1,40}$/.test(pr.v) ? pr.v : null;
     o.t.vc = o.t.v && Array.isArray(pr.vc) ? { x: num(pr.vc[0], X0, X1), y: num(pr.vc[1], Y_BOTTOM, Y_TOP), z: num(pr.vc[2], Z0, Z1), h: num(pr.vc[3], -100, 100), pitch: num(pr.vc[4], -1, 1), roll: num(pr.vc[5], -1, 1) } : null;
@@ -1986,7 +2024,7 @@ function syncPeers(peers) {
   }
   // みんなの車：だれかが運転中なら、その人の位置に合わせる
   const driven = new Map();
-  for (const [peer, o] of net.others) if (o.t && o.t.v && o.t.vc) driven.set(o.t.v, Object.assign({ peer, lt: o.t.lt, py: o.t.py }, o.t.vc));
+  for (const [peer, o] of net.others) if (o.t && o.t.v && o.t.vc) driven.set(o.t.v, Object.assign({ peer, lt: o.t.lt, py: o.t.py, gy: o.t.gy }, o.t.vc));
   for (const v of vehicles) {
     if (!v.shared) continue;
     const d = driven.get(v.id);
@@ -2008,7 +2046,8 @@ function sendPresence() {
     p: at.map((v) => r(v)), f: r(wrapA(ride ? ride.h : player.face)), m: ride ? 'drive' : aboard ? 'ride' : player.mode, col: myColor,
     pv: aboard && aboard.v.shared ? aboard.v.id : null, ps: aboard ? aboard.seat : null,   // 相乗りしている船と、立っている場所
     lt: ride && ride.item.light && ride.item.light.on ? 1 : 0, py: ride && ride.item.periscope ? r(periYaw) : 0,   // 潜水艦のライトと潜望鏡の向き
-    ns: ride && vtype(ride) === 'sub' && subNoisy(ride) ? 1 : 0,   // 潜水艦の音（動いている・装填中・撃った直後）
+    ns: ride && vtype(ride) === 'sub' && subNoisy(ride) ? 1 : 0,
+    gy: ride && ride.item.guns ? [r((ride.item.guns.main[0] || { pivot: { rotation: { y: 0 } } }).pivot.rotation.y), r((ride.item.guns.ciws[0] || { pivot: { rotation: { y: 0 } } }).pivot.rotation.y)] : null,   // イージス艦の砲塔の向き   // 潜水艦の音（動いている・装填中・撃った直後）
     c: myCar ? pose(myCar) : null,
     v: ride && ride.shared ? ride.id : null,       // みんなの車を運転中なら、その車の番号と位置
     vc: ride && ride.shared ? pose(ride) : null,
@@ -2190,6 +2229,7 @@ async function startNet() {
   });
   ch.on('broadcast', { event: 'torp' }, ({ payload }) => { const p = heard(payload); if (p) onTorp(p); });
   ch.on('broadcast', { event: 'boom' }, ({ payload }) => { const p = heard(payload); if (p) onBoom(p); });
+  ch.on('broadcast', { event: 'gun' }, ({ payload }) => { const p = heard(payload); if (p) onGun(p); });
   ch.on('broadcast', { event: 'tg' }, ({ payload }) => { const p = heard(payload); if (p) onTorpGuide(p); });
   ch.on('broadcast', { event: 'ping' }, ({ payload }) => { const p = heard(payload); if (p) onPing(p); });
   ch.on('presence', { event: 'leave' }, ({ key }) => { if (others.delete(key)) syncPeers(peerList()); });
@@ -2343,13 +2383,19 @@ function updateUi() {
   const share = nv && nv.remote && isBoat(nv);
   const sv2 = vt === 'sub' ? ride : aboard && vtype(aboard.v) === 'sub' ? aboard.v : null;
   const navTxt = sv2 ? `方位 ${String(Math.round(bearingOf(sv2.h)) % 360).padStart(3, '0')}°（${compassName(bearingOf(sv2.h))}）　海底 ${seabedAt(sv2.pos.x, sv2.pos.y).toFixed(1)}m` : '';
-  const hpTxt = sv2 ? `HP ${subHp(sv2)}／${HP_MAX}（最高 ${maxKt(sv2)}kt）` : '';
-  const key = [mode, near, share, kmh, alt, vname, vt, periscope, navTxt, hpTxt].join('|');
+  const shipV = !sv2 && ride && vt === 'ship' ? ride : null, ag = shipV && shipV.item.def.vehicle.aegis ? shipV : null;
+  const hpTxt = sv2 ? `HP ${subHp(sv2)}／${HP_MAX}（最高 ${maxKt(sv2)}kt）` : shipV ? `HP ${subHp(shipV)}／${HP_MAX}` : '';
+  let tgtTxt = '';
+  if (ag) {
+    const t = targetNow(ag);
+    tgtTxt = t ? `目標 ${t.name}　方位 ${fmtB(bearingOf(Math.atan2(t.x - ag.pos.x, t.z - ag.pos.y)))}°・${Math.round(Math.hypot(t.x - ag.pos.x, t.z - ag.pos.y))}m　${ag.gunState || ''}` : 'レーダーを開いて目標を選ぶ';
+  }
+  const key = [mode, near, share, kmh, alt, vname, vt, periscope, navTxt, hpTxt, tgtTxt].join('|');
   if (key === lastUi) return;
   lastUi = key;
   el('state').textContent = mode === 'drive' ? `${vname}を${DRIVE_VERB[vt]}中` : mode === 'ride' ? `${vname}に相乗り中` : STATE_TEXT[mode];
   el('alt').textContent = alt;
-  el('navLine').hidden = !navTxt; el('navLine').textContent = navTxt;
+  el('navLine').hidden = !(navTxt || tgtTxt); el('navLine').textContent = navTxt || tgtTxt;
   el('hpLine').hidden = !hpTxt; el('hpLine').textContent = hpTxt;
   el('speedBox').hidden = !driving;
   el('speed').textContent = kmh;
@@ -2366,6 +2412,7 @@ function updateUi() {
   el('hint').textContent = HINT[kind];
   el('subBtns').hidden = vt !== 'sub' && vt !== 'ship';
   el('lightBtn').hidden = el('scopeBtn').hidden = el('pingBtn').hidden = vt !== 'sub';
+  el('gunBtn').hidden = el('ciwsBtn').hidden = el('untargetBtn').hidden = !ag;
   if (vt === 'sub') el('lightBtn').setAttribute('aria-pressed', String(!!(ride.item.light && ride.item.light.on)));
   el('keys').innerHTML = KEYS_HTML[kind];
 }
@@ -2389,13 +2436,21 @@ function buildMapImage() {   // 地形を上から見た絵を 1 回だけ作る
   return c;
 }
 mapEl.addEventListener('click', (e) => {   // 小さいときはタップで拡大。大きいときは「近く／全体」と「閉じる」
+  if (helmAegis() && mapEl.classList.contains('big') && e.target === mapCv && radarMarks.length) {   // イージス艦：印をタップして目標にする
+    const r0 = mapCv.getBoundingClientRect(), s = 296 / r0.width, px = (e.clientX - r0.left) * s, py = (e.clientY - r0.top) * s;
+    let best = null, bd = 22;
+    for (const m of radarMarks) { const d = Math.hypot(m.px - px, m.py - py); if (d < bd) { bd = d; best = m; } }
+    if (best) selectTarget(best.t);
+    return;
+  }
   const r = e.target.closest('[data-range]');
   if (r) { if (r.dataset.range === 'close') mapEl.classList.remove('big'); else mapWide = r.dataset.range === 'wide'; }
   else mapEl.classList.toggle('big');
   mapTick = 1;
 });
 function updateMap(dt) {
-  const v = ride && vtype(ride) === 'sub' ? ride : aboard && vtype(aboard.v) === 'sub' ? aboard.v : null;
+  const ag = helmAegis();
+  const v = ag || (ride && vtype(ride) === 'sub' ? ride : aboard && vtype(aboard.v) === 'sub' ? aboard.v : null);
   if (mapEl.hidden !== !v) { mapEl.hidden = !v; document.body.classList.toggle('mapOn', !!v); if (!v) mapEl.classList.remove('big'); }
   if (!v) return;
   mapTick += dt;
@@ -2405,7 +2460,7 @@ function updateMap(dt) {
   if (!mapEl.classList.contains('big')) mapEl.style.top = Math.round(el('menuBtn').getBoundingClientRect().bottom + 8) + 'px';
   const want = mapEl.classList.contains('big') ? 640 : 296;
   if (mapCv.width !== want) mapCv.width = mapCv.height = want;
-  const U = mapCv.width / 296, S = 296, C = S / 2, RP = 132, RANGE = 300, k = RP / RANGE;   // 半径 300m（100m ごとの円）
+  const U = mapCv.width / 296, S = 296, C = S / 2, RP = 132, RANGE = ag ? 500 : 300, k = RP / RANGE;   // 半径 300m（イージス艦は 500m）。100m ごとの円
   mapCx.setTransform(U, 0, 0, U, 0, 0);   // 大きく映すときも、同じ大きさで描いて拡大する
   const big = mapEl.classList.contains('big');
   const H = bearingOf(v.h), Hr = (H * Math.PI) / 180;   // 艦首の方位を上にする（まわりが回る）
@@ -2429,13 +2484,14 @@ function updateMap(dt) {
   mapCx.restore();
   // 距離の円と、45° ごとの線
   mapCx.strokeStyle = 'rgba(140, 255, 170, 0.55)'; mapCx.lineWidth = 1;
-  for (const r of [100, 200, 300]) { mapCx.beginPath(); mapCx.arc(C, C, r * k, 0, 7); mapCx.stroke(); }
+  for (let r = 100; r <= RANGE; r += 100) { mapCx.beginPath(); mapCx.arc(C, C, r * k, 0, 7); mapCx.stroke(); }
   for (let b = 0; b < 360; b += 45) {
     const a = ((b - H) * Math.PI) / 180;
     mapCx.beginPath(); mapCx.moveTo(C + Math.sin(a) * 14, C - Math.cos(a) * 14); mapCx.lineTo(C + Math.sin(a) * RP, C - Math.cos(a) * RP); mapCx.stroke();
   }
+  if (ag) drawAegisRadar(ag, polar, big);
   // ほかの人（目で見える点）。潜水艦が深度 5m 以上なら出さない（潜望鏡が水の上に出ていても）
-  for (const o of net.others.values()) {
+  if (!ag) for (const o of net.others.values()) {
     if (o.hid) continue;
     const ov = o.t && (o.t.m === 'drive' && o.t.v ? vehicles.find((x) => x.id === o.t.v) : o.t.pv ? vehicles.find((x) => x.id === o.t.pv) : null);
     if (ov && vtype(ov) === 'sub' && SEA - ov.y >= 5) continue;
@@ -2458,9 +2514,9 @@ function updateMap(dt) {
       mapCx.fillStyle = '#ffd9a0'; mapCx.fillText(t, tx, p.y - 8);
     }
   };
-  for (const [peer, o] of net.others) if (heardSub(peer, o)) contact(o.t.x, o.t.z, o.t.y);   // 音（動いている・装填中・撃った直後）とピンガー
-  if (!deaf()) for (const t of torps) if (t.decoy) contact(t.x, t.z, t.y);
-  for (const t of torps) if (!t.decoy) {
+  if (!ag) for (const [peer, o] of net.others) if (heardSub(peer, o)) contact(o.t.x, o.t.z, o.t.y);   // 音（動いている・装填中・撃った直後）とピンガー
+  if (!ag && !deaf()) for (const t of torps) if (t.decoy) contact(t.x, t.z, t.y);
+  if (!ag) for (const t of torps) if (!t.decoy) {
     const p = polar(t.x, t.z);
     mapCx.fillStyle = t.mine ? '#ff5a3c' : '#ff2a2a'; mapCx.strokeStyle = '#fff'; mapCx.lineWidth = 1;
     mapCx.beginPath(); mapCx.arc(p.x, p.y, 3.5, 0, 7); mapCx.fill(); mapCx.stroke();
@@ -2479,6 +2535,12 @@ function updateMap(dt) {
   mapCx.fillStyle = '#ff7a3d'; mapCx.strokeStyle = '#fff'; mapCx.lineWidth = 2;
   mapCx.beginPath(); mapCx.moveTo(C, C - 11); mapCx.lineTo(C + 7, C + 8); mapCx.lineTo(C - 7, C + 8); mapCx.closePath(); mapCx.fill(); mapCx.stroke();
   el('mapMode').textContent = `艦首 ${fmtB(H)}°・円は 100m ごと`;
+  if (ag) {   // イージス艦：目標の一覧（大きく映して、印をタップで選ぶ）
+    const t = targetNow(ag);
+    const sh = t ? `目標：${t.name}（${ag.gunState || '照準中'}）` : big ? '印をタップして目標を選ぶ' : 'タップで拡大して目標を選ぶ';
+    if (el('sonar').textContent !== sh) el('sonar').textContent = sh;
+    return;
+  }
   // 音を出している相手の、ここから見た方位と深度
   const lines = [];
   if (deaf()) lines.push(`<span class="deaf">爆発音で聞こえない（あと ${Math.ceil(deafUntil - clock.elapsedTime)} 秒）</span>`);
@@ -2707,7 +2769,7 @@ function torpHit(t) {   // 当たったもの：'ground'／乗り物／置物。
   for (const pr of props) { const b = pr.box; if (t.x > b.min.x - 0.2 && t.x < b.max.x + 0.2 && t.z > b.min.z - 0.2 && t.z < b.max.z + 0.2 && t.y > b.min.y - 0.2 && t.y < b.max.y) return { kind: 'prop' }; }
   return null;
 }
-const nearSubs = (x, y, z, except) => vehicles.filter((v) => v !== except && !v.sunk && vtype(v) === 'sub' && Math.hypot(v.pos.x - x, v.y - y, v.pos.y - z) < NEAR_R);
+const nearSubs = (x, y, z, except) => vehicles.filter((v) => v !== except && !v.sunk && isBoat(v) && Math.hypot(v.pos.x - x, v.y - y, v.pos.y - z) < NEAR_R);
 // 自分の魚雷が爆発：当たり・近くの潜水艦を決めて、みんなに知らせる
 function explode(t, hit) {
   const hv = hit && hit.kind === 'vehicle' ? hit.v : null;
@@ -2719,7 +2781,7 @@ function explode(t, hit) {
   else {
     const parts = [];
     const nm = (v) => (isMine(v) ? '自分の艦' : v.name);
-    if (hv) parts.push(hv.sunk ? `${nm(hv)} を撃沈！` : vtype(hv) === 'sub' ? `${nm(hv)} に直撃！（HP ${subHp(hv)}）` : `${nm(hv)} に命中`);
+    if (hv) parts.push(hv.sunk ? `${nm(hv)} を撃沈！` : isBoat(hv) ? `${nm(hv)} に直撃！（HP ${subHp(hv)}）` : `${nm(hv)} に命中`);
     for (const v of near) parts.push(v.sunk ? `${nm(v)} が沈没！` : `${nm(v)} の近くで爆発（HP ${subHp(v)}）`);
     showMsg(parts.length ? parts.join('　') : hit ? '魚雷は海底か陸・置物に当たりました' : `魚雷は ${Math.round(t.dist)}m 進んで爆発しました`);
   }
@@ -2806,7 +2868,7 @@ function boom(x, y, z, hitV, near, decoy) {
   if (d < 80 || mineHit || mineNear) { shakePow = mineHit ? 0.6 : mineNear ? 0.45 : 0.35 * (1 - d / 80); shakeUntil = clock.elapsedTime + (mineHit ? 1.2 : 0.7); }
   if (decoy) return;
   if (mineHit) { hitV.vF *= 0.2; hitV.roll += 0.25; hitV.pitch -= 0.1; }
-  if (hitV && vtype(hitV) === 'sub' && !hitV.sunk) damageSub(hitV, HIT_DMG, '魚雷が直撃！');
+  if (hitV && isBoat(hitV) && !hitV.sunk) damageSub(hitV, HIT_DMG, '魚雷が直撃！');
   for (const v of near || []) if (!v.sunk) damageSub(v, NEAR_DMG, '近くで魚雷が爆発！');
 }
 const SINK_LIFE = 180;   // 沈んでから 3 分で消える
@@ -2839,7 +2901,7 @@ function stepSunk(v, dt) {
 function stepBooms(dt) {
   for (const b of [...booms]) {
     b.t += dt;
-    const s = 1 + b.t * 9;
+    const s = (1 + b.t * 9) * (b.k || 1);
     b.flash.scale.setScalar(s); b.flash.material.opacity = Math.max(0, 0.9 - b.t * 1.3);
     if (b.col) { const k = Math.min(1, b.t / 0.5); b.col.scale.set(1 + b.t * 0.6, 12 * k * Math.max(0, 1 - Math.max(0, b.t - 0.8) / 1.2), 1 + b.t * 0.6); b.col.material.opacity = Math.max(0, 0.85 - b.t * 0.4); }
     if (b.t > 2.2) { scene.remove(b.flash); b.flash.material.dispose(); if (b.col) { scene.remove(b.col); b.col.material.dispose(); } booms.splice(booms.indexOf(b), 1); }
@@ -2867,7 +2929,7 @@ function onBoom(p) {
   const hv = !decoy && typeof d.hit === 'string' ? vehicles.find((v) => v.id === d.hit) : null;
   const ids = Array.isArray(d.near) ? d.near.filter((s) => typeof s === 'string' && OK_ID.test(s)).slice(0, 20) : [];
   // 知らせにある「みんなの潜水艦」と、自分だけの潜水艦で近くにあるもの
-  const near = decoy ? [] : vehicles.filter((v) => v !== hv && vtype(v) === 'sub' && (ids.includes(v.id) || (!v.shared && Math.hypot(v.pos.x - x, v.y - y, v.pos.y - z) < NEAR_R)));
+  const near = decoy ? [] : vehicles.filter((v) => v !== hv && isBoat(v) && (ids.includes(v.id) || (!v.shared && Math.hypot(v.pos.x - x, v.y - y, v.pos.y - z) < NEAR_R)));
   boom(x, y, z, hv, near, decoy);
 }
 
@@ -2903,6 +2965,155 @@ function onPing(p) {
   w.hidden = false;
   clearTimeout(pingWarnTimer);
   pingWarnTimer = setTimeout(() => { w.hidden = true; }, 1500);
+}
+
+/* ================= イージス艦：レーダーで目標を選ぶと、主砲と CIWS が自動で向いて撃つ =================
+   主砲・CIWS は艦首から左右 90° まで回る（後ろは射界外）。主砲は 3 秒に 1 発・500m・命中で HP -3。
+   CIWS は 1 秒に 5 発・200m・5 発当たるごとに HP -1。撃った人の画面で当たりを決めて、みんなに知らせる。 */
+const GUN = { main: { range: 500, every: 3, turn: (45 * Math.PI) / 180, speed: 800, dmg: 3 }, ciws: { range: 200, every: 0.2, turn: (180 * Math.PI) / 180, speed: 1100, dmg: 0 } };
+const ARC = Math.PI / 2;
+let aegisTarget = null;   // { kind: 'v', v } か { kind: 'p', peer }
+const aegisState = { mainAt: -99, ciwsAt: -99, ciwsHits: new Map(), burst: [] };
+const helmAegis = () => (driving && ride && ride.item.def.vehicle.aegis ? ride : null);
+// 狙えるもの：目で見える乗り物（潜っている潜水艦はだめ）と、歩いているほかの人
+function aegisTargets(me) {
+  const list = [];
+  for (const u of vehicles) {
+    if (u === me || u.sunk || u.hidden || (aboard && aboard.v === u)) continue;
+    const V = u.item.def.vehicle;
+    list.push({ kind: 'v', v: u, x: u.pos.x, y: u.y + Math.max(0.5, (V.height || 1) / 2 - (V.draft || 0)), z: u.pos.y, name: u.name });
+  }
+  for (const [peer, o] of net.others) {
+    if (!o.avatar.visible || o.t.pv || o.hid) continue;
+    list.push({ kind: 'p', peer, x: o.pos.x, y: o.pos.y + 1, z: o.pos.z, name: o.labelText || "だれか" });
+  }
+  return list;
+}
+function targetNow(me) {
+  if (!aegisTarget) return null;
+  return aegisTargets(me).find((t) => (aegisTarget.kind === 'v' ? t.v === aegisTarget.v : t.peer === aegisTarget.peer)) || null;
+}
+const sameTarget = (a, b) => a && b && a.kind === b.kind && (a.kind === 'v' ? a.v === b.v : a.peer === b.peer);
+function selectTarget(t) {
+  aegisTarget = t && !sameTarget(aegisTarget, t) ? (t.kind === 'v' ? { kind: 'v', v: t.v } : { kind: 'p', peer: t.peer }) : null;
+  showMsg(aegisTarget ? `目標：${t.name}。主砲と CIWS が自動で狙います` : '目標を解除しました');
+  mapTick = 1;
+}
+// 砲塔を目標へ回す。射界（左右 90°）の外なら前へ戻す。向いたら true
+function aimTurrets(list, rel, ok, dt, turn) {
+  let aligned = list.length > 0;
+  for (const g of list) {
+    const want = ok ? rel : 0, cur = g.pivot.rotation.y;
+    g.pivot.rotation.y = cur + THREE.MathUtils.clamp(wrapA(want - cur), -turn * dt, turn * dt);
+    if (Math.abs(wrapA(rel - g.pivot.rotation.y)) > 0.05) aligned = false;
+  }
+  return ok && aligned;
+}
+const tmpMz = new THREE.Vector3();
+function muzzleWorld(v, g) {
+  g.pivot.updateMatrixWorld(true);
+  tmpMz.copy(g.muzzle).sub(g.pivot.position);
+  return g.pivot.localToWorld(tmpMz.clone());
+}
+function stepAegis(dt) {
+  const v = helmAegis();
+  if (!v) { if (aegisTarget && !ride) aegisTarget = null; return; }
+  const G = v.item.guns, t = targetNow(v), now = clock.elapsedTime;
+  let rel = 0, d = Infinity;
+  if (t) { rel = wrapA(Math.atan2(t.x - v.pos.x, t.z - v.pos.y) - visYaw(v)); d = Math.hypot(t.x - v.pos.x, t.z - v.pos.y); }
+  else if (aegisTarget) { aegisTarget = null; showMsg('目標が見えなくなりました'); }
+  const inArc = !!t && Math.abs(rel) <= ARC;
+  const mainOk = aimTurrets(G.main, rel, inArc, dt, GUN.main.turn), ciwsOk = aimTurrets(G.ciws, rel, inArc, dt, GUN.ciws.turn);
+  v.gunState = !t ? '' : !inArc ? '射界外（艦の後ろ）' : d > GUN.main.range ? '射程外' : '射撃中';
+  if (!t) return;
+  if (el('gunBtn').getAttribute('aria-pressed') === 'true' && mainOk && d <= GUN.main.range && now - aegisState.mainAt >= GUN.main.every) {
+    aegisState.mainAt = now;
+    fireShell(v, G.main[0], t, 'main', GUN.main.dmg);
+  }
+  if (el('ciwsBtn').getAttribute('aria-pressed') === 'true' && ciwsOk && d <= GUN.ciws.range && now - aegisState.ciwsAt >= GUN.ciws.every) {
+    aegisState.ciwsAt = now;
+    const key = t.kind === 'v' ? t.v : 'p:' + t.peer, n = (aegisState.ciwsHits.get(key) || 0) + 1;
+    aegisState.ciwsHits.set(key, n);
+    fireShell(v, G.ciws[aegisState.ciwsAt * 5 % G.ciws.length | 0] || G.ciws[0], t, 'ciws', n % 5 === 0 ? 1 : 0);
+  }
+}
+// 弾：撃った人の画面で、届いたときに当たり（自動照準なので外れない）
+const shells = [];
+const shellGeo = { main: new THREE.CylinderGeometry(0.12, 0.12, 3, 6).rotateX(Math.PI / 2), ciws: new THREE.CylinderGeometry(0.05, 0.05, 2, 4).rotateX(Math.PI / 2) };
+const shellMat = new THREE.MeshBasicMaterial({ color: 0xffc35a, fog: false });
+function fireShell(v, g, t, w, dmg) {
+  const from = muzzleWorld(v, g);
+  const tv = t.kind === 'v' ? t.v : null;
+  const data = { w: w === 'main' ? 'g' : 'c', f: [from.x, from.y, from.z].map((a) => +a.toFixed(2)), t: [t.x, t.y, t.z].map((a) => +a.toFixed(2)),
+    tid: tv && tv.shared ? tv.id : null, pid: t.kind === 'p' ? t.peer : null, dmg };
+  launchShell(data, tv);
+  if (net.room && (w === 'main' || dmg || Math.random() < 0.4)) net.room.emit('gun', data).catch(() => {});   // CIWS は間引いて知らせる（当たりの回は必ず）
+}
+function launchShell(d, tv) {
+  const from = new THREE.Vector3(...d.f), to = new THREE.Vector3(...d.t), w = d.w === 'g' ? 'main' : 'ciws';
+  const mesh = new THREE.Mesh(shellGeo[w], shellMat);
+  mesh.position.copy(from); mesh.lookAt(to); scene.add(mesh);
+  shells.push({ mesh, from, to, t: 0, dur: Math.max(0.05, from.distanceTo(to) / GUN[w].speed), w, tv, d });
+  if (w === 'main') flashAt(from.x, from.y, from.z, 0.35);
+}
+function stepShells(dt) {
+  for (const s of [...shells]) {
+    s.t += dt;
+    const k = Math.min(1, s.t / s.dur);
+    s.mesh.position.lerpVectors(s.from, s.to, k);
+    if (k < 1) continue;
+    scene.remove(s.mesh); shells.splice(shells.indexOf(s), 1);
+    flashAt(s.to.x, s.to.y, s.to.z, s.w === 'main' ? 0.6 : 0.12);
+    const tv = s.tv;
+    if (tv && s.d.dmg && !tv.sunk && isBoat(tv)) damageSub(tv, s.d.dmg, s.w === 'main' ? '主砲が命中！' : 'CIWS が命中！');
+    if (!s.d.dmg) continue;
+    const meHit = (tv && isMine(tv)) || (s.d.pid && s.d.pid === myTab);
+    if (meHit && !(tv && isBoat(tv))) showMsg(s.w === 'main' ? '主砲が命中しました！' : 'CIWS が命中しました！');
+  }
+}
+function onGun(p) {
+  const d = p && p.data;
+  if (!d || !Array.isArray(d.f) || !Array.isArray(d.t) || shells.length > 80) return;
+  const f = [num(d.f[0], X0, X1), num(d.f[1], Y_BOTTOM, Y_TOP), num(d.f[2], Z0, Z1)], t = [num(d.t[0], X0, X1), num(d.t[1], Y_BOTTOM, Y_TOP), num(d.t[2], Z0, Z1)];
+  const tv = typeof d.tid === 'string' ? vehicles.find((v) => v.id === d.tid) || null : null;
+  launchShell({ w: d.w === 'g' ? 'g' : 'c', f, t, tid: d.tid, pid: typeof d.pid === 'string' ? d.pid : null, dmg: d.w === 'g' ? 3 : d.dmg === 1 ? 1 : 0 }, tv);
+}
+// 小さな光（砲口と着弾）。魚雷の爆発とちがって、音は消えない
+function flashAt(x, y, z, size) {
+  const flash = new THREE.Mesh(boomGeo, new THREE.MeshBasicMaterial({ color: 0xffd08a, transparent: true, opacity: 0.9, depthWrite: false, fog: false }));
+  flash.position.set(x, y, z); scene.add(flash);
+  booms.push({ flash, col: null, t: 0, k: size });
+}
+el('gunBtn').addEventListener('click', (e) => { const b = e.currentTarget; b.setAttribute('aria-pressed', String(b.getAttribute('aria-pressed') !== 'true')); });
+el('ciwsBtn').addEventListener('click', (e) => { const b = e.currentTarget; b.setAttribute('aria-pressed', String(b.getAttribute('aria-pressed') !== 'true')); });
+el('untargetBtn').addEventListener('click', () => { if (aegisTarget) selectTarget(null); });
+
+
+// イージス艦のレーダー：見えている船・乗り物・人を四角で。選んだ目標は赤い照準
+let radarMarks = [];
+window.__marks = () => radarMarks.map((m) => ({ px: m.px, py: m.py, name: m.t.name }));
+function drawAegisRadar(ag, polar, big) {
+  radarMarks = [];
+  const sel = targetNow(ag);
+  for (const t of aegisTargets(ag)) {
+    const p = polar(t.x, t.z);
+    if (p.out) continue;
+    const on = sel && sameTarget(sel, t), boat = t.kind === 'v' && isBoat(t.v);
+    radarMarks.push({ px: p.x, py: p.y, t });
+    mapCx.fillStyle = on ? '#ff3b30' : t.kind === 'p' ? '#ffffff' : boat ? '#ffd24a' : '#9fe0ff';
+    mapCx.strokeStyle = '#000'; mapCx.lineWidth = 1;
+    mapCx.fillRect(p.x - 4, p.y - 4, 8, 8); mapCx.strokeRect(p.x - 4, p.y - 4, 8, 8);
+    if (on) {
+      mapCx.strokeStyle = '#ff3b30'; mapCx.lineWidth = 2;
+      mapCx.beginPath(); mapCx.arc(p.x, p.y, 10, 0, 7); mapCx.moveTo(p.x - 15, p.y); mapCx.lineTo(p.x + 15, p.y); mapCx.moveTo(p.x, p.y - 15); mapCx.lineTo(p.x, p.y + 15); mapCx.stroke();
+    }
+    if (big) {
+      const s = `${t.name} ${Math.round(p.d)}m`;
+      mapCx.font = '700 9px sans-serif'; mapCx.textAlign = 'left';
+      mapCx.lineWidth = 3; mapCx.strokeStyle = 'rgba(0,0,0,0.75)'; mapCx.strokeText(s, p.x + 8, p.y - 6);
+      mapCx.fillStyle = on ? '#ffb0aa' : '#fff'; mapCx.fillText(s, p.x + 8, p.y - 6);
+    }
+  }
 }
 
 /* ================= 潜っているほかの潜水艦は見えない（浮上すると見える） ================= */
@@ -3000,6 +3211,8 @@ function frame() {
   updateMap(dt);
   updateHelm();
   stepTorps(dt);
+  stepAegis(dt);
+  stepShells(dt);
   stepBooms(dt);
   netTick += dt;
   if (netTick > 0.25) { netTick = 0; sendPresence(); }
