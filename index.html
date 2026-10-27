@@ -49,6 +49,7 @@ body { margin: 0; background: var(--sky); color: var(--ink); font-family: var(--
 .pill { font: 800 13px var(--font-ui); color: var(--ink); background: var(--panel); border: 1px solid var(--line); border-radius: 999px; padding: 7px 12px; cursor: pointer; }
 .pill:focus-visible, .tbtn:focus-visible, #prompt button:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
 #msg { max-width: 60vw; font-size: 12px; color: var(--ink); background: var(--panel); border-radius: 8px; padding: 6px 10px; text-align: right; }
+body.mapOn #msg { position: fixed; left: 50%; transform: translateX(-50%); top: max(145px, 30vh); max-width: min(400px, calc(100vw - 32px)); text-align: center; font-size: 13px; font-weight: 700; }
 
 #prompt { position: fixed; left: 50%; bottom: calc(96px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%);
   display: flex; align-items: center; gap: 10px; padding: 8px 8px 8px 14px; background: var(--panel); border: 1px solid var(--line); border-radius: 999px; font-weight: 800; white-space: nowrap; }
@@ -97,11 +98,36 @@ body { margin: 0; background: var(--sky); color: var(--ink); font-family: var(--
 .subbtns button[aria-pressed="true"] { background: var(--accent); color: #fff; border-color: transparent; }
 #scope { position: fixed; inset: 0; pointer-events: none; z-index: 1; }
 #prompt, .hud, .side, .keys, .touch { z-index: 3; }
-#map { position: fixed; z-index: 3; left: max(16px, env(safe-area-inset-left, 0px)); top: calc(118px + env(safe-area-inset-top, 0px));
+#map { position: fixed; z-index: 3; right: max(16px, env(safe-area-inset-right, 0px)); top: calc(52px + env(safe-area-inset-top, 0px));
   width: 160px; padding: 6px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; cursor: pointer; }
 #map canvas { display: block; width: 100%; aspect-ratio: 1; border-radius: 6px; }
-#map .mapcap { display: flex; justify-content: space-between; font: 800 11px var(--font-ui); color: var(--ink-dim); margin-top: 4px; }
+#map .mapcap { display: flex; justify-content: space-between; gap: 4px; font: 800 10px var(--font-ui); color: var(--ink-dim); margin-top: 4px; }
 @media (pointer: coarse) { #map { width: 124px; } }
+#helm { position: fixed; z-index: 3; left: max(16px, env(safe-area-inset-left, 0px)); bottom: calc(84px + env(safe-area-inset-bottom, 0px));
+  width: min(360px, calc(100vw - 32px)); box-sizing: border-box; padding: 8px; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; font: 700 13px var(--font-ui); color: var(--ink); }
+@media (pointer: coarse) { #helm { bottom: calc(12px + env(safe-area-inset-bottom, 0px)); } }
+#helm .htabs { display: flex; gap: 6px; margin-bottom: 6px; }
+#helm .htabs button { flex: 1; height: 32px; border-radius: 999px; border: 1px solid var(--line); background: #fff; color: var(--ink); font: 800 13px var(--font-ui); cursor: pointer; }
+#helm .htabs button[aria-pressed="true"] { background: var(--ink); color: #fff; border-color: transparent; }
+#helm .hrow { display: grid; grid-template-columns: 38px 34px 34px 1fr 34px 34px; gap: 4px; align-items: center; margin-top: 4px; }
+#helm .hl { font-size: 12px; color: var(--ink-dim); }
+#helm .hrow button, #helm .hq button { height: 34px; border-radius: 8px; border: 1px solid var(--line); background: #fff; color: var(--ink); font: 800 12px var(--font-mono); cursor: pointer; padding: 0; touch-action: manipulation; }
+#helm .val { display: flex; align-items: baseline; justify-content: center; gap: 3px; }
+#helm input { width: 46px; height: 30px; box-sizing: border-box; text-align: center; font: 800 16px var(--font-mono); color: var(--accent); border: 1px solid var(--line); border-radius: 6px; background: #fff; }
+#helm small { font-size: 11px; color: var(--ink-dim); }
+#helm em { font: 600 11px var(--font-mono); font-style: normal; color: var(--ink-dim); min-width: 30px; }
+#helm .hq { display: flex; gap: 6px; margin-top: 6px; }
+#helm .hq button { flex: 1; font-family: var(--font-ui); }
+#helm .hq button.fire { background: #c8402a; color: #fff; border-color: transparent; font-size: 14px; }
+#helm .hq button:disabled { opacity: 0.55; cursor: default; }
+#helm .hmsg { margin-top: 6px; font-size: 11px; color: var(--ink-dim); }
+body.mapOn .side .pill { display: none; }
+body.helmOn #prompt, body.helmOn #hint { display: none !important; }
+body.helmOn .subbtns { flex-wrap: wrap; justify-content: flex-end; max-width: calc(100vw - 32px); }
+.subbtns button { white-space: nowrap; }
+#map .mapcap span { white-space: nowrap; }
+@media (pointer: coarse) { body.helmOn .subbtns { bottom: calc(12px + env(safe-area-inset-bottom, 0px)); } #helm .hmsg { display: none; } #helm .hrow button, #helm .hq button { height: 30px; } #helm .hrow { margin-top: 3px; } }
+.hud .nav { font-family: var(--font-mono); font-size: 12px; color: var(--ink); font-variant-numeric: tabular-nums; }
 #scope {
   background: radial-gradient(circle at 50% 50%, transparent 0, transparent min(38vw, 38vh), rgba(0,0,0,0.92) calc(min(38vw, 38vh) + 2px)); }
 #scope::before, #scope::after { content: ""; position: absolute; left: 50%; top: 50%; background: rgba(20, 40, 30, 0.75); }
@@ -128,12 +154,13 @@ body { margin: 0; background: var(--sky); color: var(--ink); font-family: var(--
   <span class="label" id="stateLabel">いま</span>
   <span class="state" id="state">歩いている</span>
   <span class="alt" id="alt">高さ</span>
+  <span class="nav" id="navLine" hidden></span>
   <span class="speed" id="speedBox" hidden><span id="speed">0</span><small id="speedUnit">km/h</small></span>
 </div>
 
 <div id="map" hidden role="button" aria-label="地図（押すと 近く／全体 を切りかえ）">
   <canvas id="mapCv" width="296" height="296"></canvas>
-  <div class="mapcap"><span id="mapMode">近く 160m</span><span>押して切りかえ</span></div>
+  <div class="mapcap"><span id="mapMode">近く 160m</span><span>タップで切替</span></div>
 </div>
 
 <div class="side">
@@ -187,10 +214,27 @@ body { margin: 0; background: var(--sky); color: var(--ink); font-family: var(--
 
 <div class="hint" id="hint">左側をなぞって移動、右側をなぞって視点、2 本指でズーム</div>
 <div id="scope" hidden></div><div id="scopeDir" hidden></div>
+<div id="helm" hidden>
+  <div class="htabs"><button type="button" data-tab="nav" aria-pressed="true">操艦</button><button type="button" data-tab="torp" aria-pressed="false">魚雷</button></div>
+  <div id="helmNav">
+    <div class="hrow"><span class="hl">進路</span><button type="button" data-d="hdg:-10">−10</button><button type="button" data-d="hdg:-1">−1</button><span class="val"><input id="oHdg" inputmode="numeric" aria-label="進路"><small>°</small><em id="cHdg"></em></span><button type="button" data-d="hdg:1">+1</button><button type="button" data-d="hdg:10">+10</button></div>
+    <div class="hrow"><span class="hl">速力</span><button type="button" data-d="kt:-5">−5</button><button type="button" data-d="kt:-1">−1</button><span class="val"><input id="oKt" inputmode="numeric" aria-label="速力"><small>kt</small><em id="cKt"></em></span><button type="button" data-d="kt:1">+1</button><button type="button" data-d="kt:5">+5</button></div>
+    <div class="hrow"><span class="hl">深度</span><button type="button" data-d="dp:-10">−10</button><button type="button" data-d="dp:-1">−1</button><span class="val"><input id="oDp" inputmode="numeric" aria-label="深度"><small>m</small><em id="cDp"></em></span><button type="button" data-d="dp:1">+1</button><button type="button" data-d="dp:10">+10</button></div>
+    <div class="hq"><button type="button" data-q="surface">浮上</button><button type="button" data-q="dive">潜航</button><button type="button" data-q="stop">停止</button></div>
+  </div>
+  <div id="helmTorp" hidden>
+    <div class="hrow"><span class="hl">方位</span><button type="button" data-d="thdg:-10">−10</button><button type="button" data-d="thdg:-1">−1</button><span class="val"><input id="tHdg" inputmode="numeric" aria-label="方位"><small>°</small></span><button type="button" data-d="thdg:1">+1</button><button type="button" data-d="thdg:10">+10</button></div>
+    <div class="hrow"><span class="hl">深度</span><button type="button" data-d="tdp:-5">−5</button><button type="button" data-d="tdp:-1">−1</button><span class="val"><input id="tDp" inputmode="numeric" aria-label="深度"><small>m</small></span><button type="button" data-d="tdp:1">+1</button><button type="button" data-d="tdp:5">+5</button></div>
+    <div class="hq"><button type="button" data-q="bow">艦首の方位</button><button type="button" data-q="load" id="loadBtn">装填</button><button type="button" class="fire" id="fireBtn">発射</button></div>
+  </div>
+  <div class="hmsg" id="helmMsg"></div>
+</div>
 <div class="subbtns" id="subBtns" hidden>
   <button type="button" id="rescueBtn">救出</button>
   <button type="button" id="lightBtn" aria-pressed="false">ライト</button>
   <button type="button" id="scopeBtn" aria-pressed="false">潜望鏡</button>
+  <button type="button" id="subChat" hidden>ひとこと</button>
+  <button type="button" id="subExit" hidden>降りる</button>
 </div>
 <div class="touch">
   <button class="tbtn" id="tDive" type="button" hidden>もぐる</button>
@@ -453,13 +497,16 @@ function rigBoat(item, root, model, gltf, def) {
     const pivot = new THREE.Group(); pivot.position.set(pc.x, 0, pc.z);
     root.add(pivot); root.updateMatrixWorld(true); pivot.attach(periPart);
     item.periscope = { pivot, eye: new THREE.Vector3(pc.x, pb.max.y + 0.15, pc.z) };
+    item.hull = model;   // 潜望鏡は pivot に移したので、model は船体とライト
+    item.hullTop = modelBox(root, model).max.y;
   }
-  const kmh = kmhOf(extrasOf(gltf), kind === 'sub' ? 25 : 35, 10, 60);
+  const kmh = kind === 'sub' ? 15 * 1.852 : kmhOf(extrasOf(gltf), 35, 10, 60);   // 潜水艦は最高 15 ノット
   item.def.vehicle = {
     type: kind, square, fixedBow: kind === 'sub', halfWidth: size.x / 2, halfLength: size.z / 2, centerZ: 0, height: size.y, draft,
     seats: seats.slice(0, 8), maxSpeed: kmh / 3.6, turn: 0.6,
     wheelbase: Math.max(1, size.z * 0.6), wheelRadius: 1,
     exit: [-(size.x / 2 + 0.8), 0],
+    hullTop: item.hullTop,
   };
   item.size = size;
 }
@@ -1023,7 +1070,7 @@ async function loadSharedProp(d) {
 }
 function movedSharedProp(d) {
   const v = vehicles.find((x) => x.id === d.id);
-  if (!v || v === ride || v.remote) return;
+  if (!v || v === ride || v.remote || v.sunk) return;
   parkAt(v, num(d.x, X0 + 1, X1 - 1), num(d.z, Z0 + 1, Z1 - 1), num(d.rot, -100, 100));
 }
 function unloadSharedProp(id) {
@@ -1149,6 +1196,8 @@ document.addEventListener('keydown', (e) => {
   if (e.code === 'KeyL') toggleLight();
   if (e.code === 'KeyR') rescueBoat();
   if (e.code === 'KeyP') setPeriscope(!periscope);
+  if (e.code === 'KeyG') fireTorpedo();
+  if (e.code === 'KeyB') loadTubes();
   if (e.code === 'KeyT' || e.code === 'Enter') { e.preventDefault(); keys[e.code] = false; openChat(); return; }
   if (e.code === 'Space' || e.code.startsWith('Arrow')) e.preventDefault();
 });
@@ -1167,11 +1216,12 @@ let pinchD = 0;
 const pinchDist = () => { const [a, b] = [...camPts.values()]; return Math.hypot(a.x - b.x, a.y - b.y); };
 cv.addEventListener('pointerdown', (e) => {
   cv.focus();
-  if (!(e.pointerType === 'touch' && e.clientX < window.innerWidth * 0.45 && touch.stickId === null)) {
+  const stickHere = e.pointerType === 'touch' && e.clientX < window.innerWidth * 0.45 && touch.stickId === null && !helmSub();
+  if (!stickHere) {
     camPts.set(e.pointerId, { x: e.clientX, y: e.clientY });
     if (camPts.size === 2) { pinchD = pinchDist(); camDrag.id = null; }
   }
-  if (e.pointerType === 'touch' && e.clientX < window.innerWidth * 0.45 && touch.stickId === null) {
+  if (stickHere) {
     touch.stickId = e.pointerId; touch.sx = e.clientX; touch.sy = e.clientY; touch.x = touch.y = 0;
     stickEl.style.left = e.clientX + 'px'; stickEl.style.top = e.clientY + 'px';
     knobEl.style.transform = ''; stickEl.hidden = false;
@@ -1290,6 +1340,7 @@ function nearCar() {
     const V = v.item.def.vehicle;
     if (Math.abs(player.pos.y - v.y) > Math.max(2, (V.height || 0) + 1)) continue;
     const d = Math.hypot(player.pos.x - v.pos.x, player.pos.z - v.pos.y) - Math.max(V.halfWidth, V.halfLength * 0.7);
+    if (v.sunk) continue;
     if (d < (isBoat(v) ? 2.6 : RIDE_DIST) && d < bd) { bd = d; best = v; }
   }
   return best;
@@ -1368,6 +1419,7 @@ function toggleRide() {
   ride = v; driving = true; avatar.visible = false;
   v.settled = false;
   if (isBoat(v) && !v.item.def.vehicle.fixedBow) chooseBow(v);
+  if (vtype(v) === 'sub') initOrders(v);
 }
 
 /* ================= 歩く・泳ぐ ================= */
@@ -1600,6 +1652,7 @@ function hitWall(car) { car.vF *= -0.15; car.vL *= 0.3; }
 
 /* ---- 乗り物ごとの動き ---- */
 function stepVehicle(v, dt) {
+  if (v.sunk) { stepSunk(v, dt); return; }
   // ほかの人が動かしている乗り物は、その人から届いた位置へ寄せるだけ
   if (v.remote) {
     const t = v.remote, k = 1 - Math.exp(-10 * dt);
@@ -1609,10 +1662,11 @@ function stepVehicle(v, dt) {
     setSubLight(v, !!t.lt);
     if (v.item.periscope) v.item.periscope.pivot.rotation.y = t.py || 0;
     showCar(v);
+    hideSubmerged(v);
     return;
   }
   const t = vtype(v);
-  if (t === 'ship' || t === 'sub') stepBoat(v, dt);
+  if (t === 'ship' || t === 'sub') { stepBoat(v, dt); hideSubmerged(v); }
   else if (t === 'plane') stepPlane(v, dt);
   else stepCar(v, dt);
 }
@@ -1679,9 +1733,9 @@ function rescueBoat() {
 }
 function stepBoat(v, dt) {
   const V = v.item.def.vehicle, mine = v === ride, sub = V.type === 'sub';
-  const k = driveInput(mine);
+  const k = sub && mine ? orderInput(v, dt) : driveInput(mine);
   const target = k.thr >= 0 ? k.thr * V.maxSpeed : k.thr * V.maxSpeed * 0.6;
-  v.vF += (target - v.vF) * Math.min(1, dt * (k.thr ? 0.7 : 0.4));
+  v.vF += (Math.min(target, subMax(v)) - v.vF) * Math.min(1, dt * (k.thr ? 0.7 : 0.4));
   const yawRate = k.turn * V.turn * (0.35 + Math.min(1, Math.abs(v.vF) / 4) * 0.65) * (v.vF < -0.2 ? -1 : 1);
   const old = { x: v.pos.x, z: v.pos.y, h: v.h }, oldG = hullGround(v.pos.x, v.pos.y, visYaw(v), V);
   v.h += yawRate * dt;
@@ -1832,7 +1886,7 @@ function syncPeers(peers) {
     o.t = { x: num(pr.p[0], X0, X1), y: num(pr.p[1], Y_BOTTOM, Y_TOP), z: num(pr.p[2], Z0, Z1), f: num(pr.f, -100, 100), m: ['walk', 'swim', 'dive', 'drive', 'ride'].includes(pr.m) ? pr.m : 'walk' };
     o.t.pv = o.t.m === 'ride' && typeof pr.pv === 'string' && /^[A-Za-z0-9_-]{1,40}$/.test(pr.pv) ? pr.pv : null;
     o.t.ps = Number.isInteger(pr.ps) && pr.ps >= 0 && pr.ps < 16 ? pr.ps : 0;
-    o.t.lt = pr.lt === 1; o.t.py = num(pr.py, -7, 7);
+    o.t.lt = pr.lt === 1; o.t.py = num(pr.py, -7, 7); o.t.ns = pr.ns === 1;
     o.tc = Array.isArray(pr.c) ? { x: num(pr.c[0], X0, X1), y: num(pr.c[1], Y_BOTTOM, Y_TOP), z: num(pr.c[2], Z0, Z1), h: num(pr.c[3], -100, 100), pitch: num(pr.c[4], -1, 1), roll: num(pr.c[5], -1, 1) } : null;
     o.t.v = typeof pr.v === 'string' && /^[A-Za-z0-9_-]{1,40}$/.test(pr.v) ? pr.v : null;
     o.t.vc = o.t.v && Array.isArray(pr.vc) ? { x: num(pr.vc[0], X0, X1), y: num(pr.vc[1], Y_BOTTOM, Y_TOP), z: num(pr.vc[2], Z0, Z1), h: num(pr.vc[3], -100, 100), pitch: num(pr.vc[4], -1, 1), roll: num(pr.vc[5], -1, 1) } : null;
@@ -1872,6 +1926,7 @@ function sendPresence() {
     p: at.map((v) => r(v)), f: r(wrapA(ride ? ride.h : player.face)), m: ride ? 'drive' : aboard ? 'ride' : player.mode, col: myColor,
     pv: aboard && aboard.v.shared ? aboard.v.id : null, ps: aboard ? aboard.seat : null,   // 相乗りしている船と、立っている場所
     lt: ride && ride.item.light && ride.item.light.on ? 1 : 0, py: ride && ride.item.periscope ? r(periYaw) : 0,   // 潜水艦のライトと潜望鏡の向き
+    ns: ride && vtype(ride) === 'sub' && subNoisy(ride) ? 1 : 0,   // 潜水艦の音（動いている・装填中・撃った直後）
     c: myCar ? pose(myCar) : null,
     v: ride && ride.shared ? ride.id : null,       // みんなの車を運転中なら、その車の番号と位置
     vc: ride && ride.shared ? pose(ride) : null,
@@ -1908,6 +1963,9 @@ function stepOthers(dt) {
     const sv = t.v ? vehicles.find((v) => v.id === t.v) : null;
     const holder = t.m === 'drive' ? (sv ? sv.item.root : o.carObj) : null;
     placeTags(o, !!holder, holder || o.avatar);
+    o.hid = !!((t.m === 'drive' && sv && sv.hidden) || (pv && pv.hidden));
+    if (o.label) o.label.visible = !o.hid;
+    if (o.bubble) o.bubble.visible = !o.hid;
   }
   if (me.bubble) placeTags(me, !!ride, ride ? ride.item.root : avatar);
 }
@@ -2048,6 +2106,8 @@ async function startNet() {
     const p = heard(payload);
     if (p) onChat({ peer: p.tab, data: p.data, sameTab: false });
   });
+  ch.on('broadcast', { event: 'torp' }, ({ payload }) => { const p = heard(payload); if (p) onTorp(p); });
+  ch.on('broadcast', { event: 'boom' }, ({ payload }) => { const p = heard(payload); if (p) onBoom(p); });
   ch.on('presence', { event: 'leave' }, ({ key }) => { if (others.delete(key)) syncPeers(peerList()); });
   // 置いた物の知らせは別の通り道にする（こちらがうまくいかなくても、みんなの姿は見える）
   sb.channel('world-props').on('postgres_changes', { event: '*', schema: 'public', table: 'props' }, (m) => {
@@ -2170,7 +2230,7 @@ const K = (k, t) => `<span>${k.map((x) => `<kbd>${x}</kbd>`).join('')}${t}</span
 const KEYS_HTML = {
   car: K(['W'], 'アクセル') + K(['S'], 'ブレーキ／バック') + K(['A', 'D'], 'ハンドル') + K(['Space'], 'サイドブレーキ') + K(['E'], '降りる') + '<span>ドラッグで視点</span>',
   ship: K(['W'], '前へ') + K(['S'], '後ろへ') + K(['A', 'D'], 'かじ') + K(['R'], '救出') + K(['E'], '降りる') + '<span>ドラッグで視点</span>',
-  sub: K(['W'], '前へ') + K(['S'], '後ろへ') + K(['A', 'D'], 'かじ') + K(['Space'], 'うく') + K(['C'], 'もぐる') + K(['L'], 'ライト') + K(['P'], '潜望鏡') + K(['Z', 'X'], '潜望鏡を回す') + K(['R'], '救出') + K(['E'], '降りる'),
+  sub: K(['←', '→'], '進路') + K(['↑', '↓'], '速力') + K(['Space'], '浅く') + K(['C'], '深く') + K(['B'], '魚雷を装填') + K(['G'], '発射') + K(['L'], 'ライト') + K(['P'], '潜望鏡') + K(['Z', 'X'], '潜望鏡を回す') + K(['R'], '救出') + K(['E'], '降りる'),
   plane: K(['W'], '出力を上げる') + K(['S'], '下げる・ブレーキ') + K(['A', 'D'], '曲がる') + K(['Space'], '上昇') + K(['C'], '下降') + K(['E'], '降りる'),
   ride: K(['E'], '降りる') + '<span>ドラッグで視点・ホイールで距離</span>',
   wet: K(['W'], '前へ') + K(['A', 'D'], '向きを変える') + K(['Space'], 'うく') + K(['C'], 'もぐる') + '<span>ドラッグで視点・ホイールで遠く／近く</span>',
@@ -2179,7 +2239,7 @@ const KEYS_HTML = {
 const HINT = {
   car: '左側をなぞって運転（上でアクセル・下でブレーキ）',
   ship: '左側をなぞって操縦（上で前へ・下で後ろへ）',
-  sub: '左側をなぞって操縦。「もぐる」で下へ、「うく」で上へ。潜望鏡は右側をなぞって回す',
+  sub: '左下の板で進路・速力・深度を指示。「魚雷」で方位と深度を決めて発射。潜望鏡は画面をなぞって回す',
   plane: '左側を上になぞると出力アップ、下でダウン。「上昇」「下降」で高さ',
   ride: '相乗り中。右側をなぞって見回せます',
   wet: '左側をなぞって泳ぐ。「もぐる」で下へ、「うく」で上へ。2 本指でズーム',
@@ -2198,13 +2258,16 @@ function updateUi() {
   const y = ride ? ride.y : player.pos.y;
   const vname = (ride || (aboard && aboard.v) || nv || myCar || { name: 'がっち号' }).name;
   const deep = (vt === 'sub' && y < SEA - 0.3) || mode === 'dive' || mode === 'swim';
-  const alt = deep ? `水深 ${Math.max(0, SEA - y).toFixed(1)}m` : `高さ ${y >= 0 ? '+' : ''}${y.toFixed(1)}m`;
+  const alt = vt === 'sub' ? `深度 ${Math.max(0, SEA - y).toFixed(1)}m` : deep ? `水深 ${Math.max(0, SEA - y).toFixed(1)}m` : `高さ ${y >= 0 ? '+' : ''}${y.toFixed(1)}m`;
   const share = nv && nv.remote && isBoat(nv);
-  const key = [mode, near, share, kmh, alt, vname, vt, periscope].join('|');
+  const sv2 = vt === 'sub' ? ride : aboard && vtype(aboard.v) === 'sub' ? aboard.v : null;
+  const navTxt = sv2 ? `方位 ${String(Math.round(bearingOf(sv2.h)) % 360).padStart(3, '0')}°（${compassName(bearingOf(sv2.h))}）　海底 ${seabedAt(sv2.pos.x, sv2.pos.y).toFixed(1)}m` : '';
+  const key = [mode, near, share, kmh, alt, vname, vt, periscope, navTxt].join('|');
   if (key === lastUi) return;
   lastUi = key;
   el('state').textContent = mode === 'drive' ? `${vname}を${DRIVE_VERB[vt]}中` : mode === 'ride' ? `${vname}に相乗り中` : STATE_TEXT[mode];
   el('alt').textContent = alt;
+  el('navLine').hidden = !navTxt; el('navLine').textContent = navTxt;
   el('speedBox').hidden = !driving;
   el('speed').textContent = kmh;
   el('speedUnit').textContent = sea ? 'kt' : 'km/h';
@@ -2212,9 +2275,9 @@ function updateUi() {
   el('promptText').textContent = driving || aboard ? `${vname}から` : share ? `${vname}に相乗り` : `${vname}に`;
   el('promptBtn').textContent = driving || aboard ? '降りる' : '乗る';
   const wet = !driving && !aboard && (mode === 'swim' || mode === 'dive');
-  tAct.hidden = vt === 'ship' || !!aboard;
+  tAct.hidden = vt === 'ship' || vt === 'sub' || !!aboard;
   tAct.textContent = vt === 'sub' ? 'うく' : vt === 'plane' ? '上昇' : vt ? 'サイド' : wet ? 'うく' : 'ジャンプ';
-  tDive.hidden = !(wet || vt === 'sub' || vt === 'plane');
+  tDive.hidden = !(wet || vt === 'plane');
   tDive.textContent = vt === 'plane' ? '下降' : 'もぐる';
   const kind = vt || (aboard ? 'ride' : wet ? 'wet' : 'walk');
   el('hint').textContent = HINT[kind];
@@ -2244,13 +2307,13 @@ function buildMapImage() {   // 地形を上から見た絵を 1 回だけ作る
 mapEl.addEventListener('click', () => { mapWide = !mapWide; mapTick = 1; });
 function updateMap(dt) {
   const v = ride && vtype(ride) === 'sub' ? ride : aboard && vtype(aboard.v) === 'sub' ? aboard.v : null;
-  if (mapEl.hidden !== !v) mapEl.hidden = !v;
+  if (mapEl.hidden !== !v) { mapEl.hidden = !v; document.body.classList.toggle('mapOn', !!v); }
   if (!v) return;
   mapTick += dt;
   if (mapTick < 0.15) return;
   mapTick = 0;
   if (!mapImg) mapImg = buildMapImage();
-  mapEl.style.top = Math.round(document.querySelector('.hud').getBoundingClientRect().bottom + 8) + 'px';
+  mapEl.style.top = Math.round(el('who').getBoundingClientRect().bottom + 8) + 'px';
   const S = mapCv.width, span = mapWide ? Math.max(XW, ZW) : 160;
   const cx = mapWide ? XC : v.pos.x, cz = mapWide ? ZC : v.pos.y, k = S / span;
   const toX = (x) => (x - cx) * k + S / 2, toY = (z) => (z - cz) * k + S / 2;
@@ -2259,7 +2322,8 @@ function updateMap(dt) {
   mapCx.drawImage(mapImg, toX(X0), toY(Z0), XW * k, ZW * k);
   mapCx.strokeStyle = 'rgba(255,255,255,0.7)'; mapCx.lineWidth = 2; mapCx.strokeRect(toX(X0), toY(Z0), XW * k, ZW * k);
   for (const pm of PALMS) { mapCx.fillStyle = '#2f7d2c'; mapCx.beginPath(); mapCx.arc(toX(pm.x), toY(pm.z), Math.max(1.5, 1.2 * k), 0, 7); mapCx.fill(); }
-  for (const o of net.others.values()) {   // ほかの人
+  for (const o of net.others.values()) {   // ほかの人（潜っている潜水艦の人は出さない）
+    if (o.hid) continue;
     const p = o.avatar.position;
     mapCx.fillStyle = o.col; mapCx.strokeStyle = '#fff'; mapCx.lineWidth = 1.5;
     mapCx.beginPath(); mapCx.arc(toX(p.x), toY(p.z), 4, 0, 7); mapCx.fill(); mapCx.stroke();
@@ -2272,7 +2336,316 @@ function updateMap(dt) {
   mapCx.lineTo(x - dx * 7 + dy * 6, y - dy * 7 - dx * 6);
   mapCx.lineTo(x - dx * 7 - dy * 6, y - dy * 7 + dx * 6);
   mapCx.closePath(); mapCx.fill(); mapCx.stroke();
+  for (const o of net.others.values()) {   // 音で見つけた潜水艦（動いている・装填中・撃った直後だけ）
+    if (!(o.t && o.t.m === 'drive' && o.t.ns)) continue;
+    const x = toX(o.t.x), y = toY(o.t.z), pulse = 6 + ((clock.elapsedTime * 1.5) % 1) * 8;
+    mapCx.strokeStyle = '#ffb347'; mapCx.lineWidth = 2;
+    mapCx.beginPath(); mapCx.arc(x, y, pulse, 0, 7); mapCx.stroke();
+    mapCx.fillStyle = '#ffb347'; mapCx.beginPath(); mapCx.moveTo(x, y - 6); mapCx.lineTo(x + 6, y); mapCx.lineTo(x, y + 6); mapCx.lineTo(x - 6, y); mapCx.closePath(); mapCx.fill();
+  }
+  for (const t of torps) { mapCx.fillStyle = t.mine ? '#ff5a3c' : '#ff2a2a'; mapCx.strokeStyle = '#fff'; mapCx.lineWidth = 1; mapCx.beginPath(); mapCx.arc(toX(t.x), toY(t.z), 3.5, 0, 7); mapCx.fill(); mapCx.stroke(); }
+  mapCx.font = '800 20px sans-serif'; mapCx.textAlign = 'center'; mapCx.lineWidth = 4; mapCx.strokeStyle = 'rgba(0,0,0,0.5)'; mapCx.fillStyle = '#fff';
+  mapCx.strokeText('北', S / 2, 22); mapCx.fillText('北', S / 2, 22);
   el('mapMode').textContent = mapWide ? '全体 500m' : '近く 160m';
+}
+
+/* ================= 潜水艦：進路・速力・深度を指示して走る ================= */
+// 方位は北（地図の上、-z）を 0° にして時計回り。東（+x）が 90°
+const bearingOf = (h) => ((((Math.PI - h) * 180) / Math.PI) % 360 + 360) % 360;
+const hOfBearing = (b) => Math.PI - (b * Math.PI) / 180;
+const KT = 1852 / 3600;   // 1 ノット = 0.514 m/s
+const COMPASS = ['北', '北東', '東', '南東', '南', '南西', '西', '北西'];
+const compassName = (b) => COMPASS[Math.round(b / 45) % 8];
+const ord = { hdg: 0, kt: 0, dp: 0, thdg: 0, tdp: 10 };
+let helmTab = 'nav';
+// 魚雷発射管：方位と深度を決めて「装填」すると 5 秒で 2 本入る。装填中と発射後 2 秒は音で相手のレーダーに映る
+const TUBES = 2, LOAD_TIME = 5;
+const tube = { n: 0, hd: 0, dp: 10, until: 0, firedAt: -99 };
+function subNoisy(v) { return Math.abs(v.vF) > 0.3 || clock.elapsedTime < tube.until || clock.elapsedTime - tube.firedAt < 2; }
+const helmSub = () => (driving && ride && vtype(ride) === 'sub' ? ride : null);
+const subDepth = (v) => Math.max(0, SEA - v.y);
+const seabedAt = (x, z) => Math.max(0, SEA - heightAt(x, z));
+function maxKt(v) { return Math.round(subMax(v) / KT); }
+// 魚雷 1 発で最高 10 ノット、2 発で沈没
+function subMax(v) { return vtype(v) === 'sub' && v.hits ? Math.min(v.item.def.vehicle.maxSpeed, 10 * KT) : v.item.def.vehicle.maxSpeed; }
+function initOrders(v) {
+  ord.hdg = Math.round(bearingOf(v.h)); ord.kt = 0; ord.dp = Math.round(subDepth(v));
+  ord.thdg = ord.hdg; ord.tdp = Math.max(2, Math.round(subDepth(v)) || 10);
+  helmShown = '';
+  tube.n = 0; tube.until = 0;
+}
+function loadTubes() {
+  const v = helmSub();
+  if (!v) return;
+  if (clock.elapsedTime < tube.until) return;
+  tube.hd = ord.thdg; tube.dp = ord.tdp; tube.until = clock.elapsedTime + LOAD_TIME; tube.n = 0;
+  showMsg(`装填をはじめました（5 秒）。方位 ${String(Math.round(tube.hd) % 360).padStart(3, '0')}°・深度 ${Math.round(tube.dp)}m`);
+}
+function clampOrders(v) {
+  ord.hdg = ((ord.hdg % 360) + 360) % 360; ord.thdg = ((ord.thdg % 360) + 360) % 360;
+  ord.kt = THREE.MathUtils.clamp(ord.kt, -Math.max(1, Math.round(maxKt(v) * 0.4)), maxKt(v));
+  ord.dp = THREE.MathUtils.clamp(ord.dp, 0, 200);
+  ord.tdp = THREE.MathUtils.clamp(ord.tdp, 1, 200);
+}
+// 指示から、かじ・出力・うく／もぐるを決める（PC のキーは指示の数字を動かす）
+function orderInput(v, dt) {
+  const V = v.item.def.vehicle;
+  if (!periscope) {
+    ord.hdg += ((keys.KeyD || keys.ArrowRight ? 1 : 0) - (keys.KeyA || keys.ArrowLeft ? 1 : 0)) * 30 * dt;
+    ord.kt += ((keys.KeyW || keys.ArrowUp ? 1 : 0) - (keys.KeyS || keys.ArrowDown ? 1 : 0)) * 4 * dt;
+  }
+  ord.dp += ((keys.KeyC || keys.ControlLeft || keys.KeyQ ? 1 : 0) - (keys.Space ? 1 : 0)) * 5 * dt;
+  clampOrders(v);
+  const want = ord.kt * KT;
+  const thr = want >= 0 ? want / V.maxSpeed : want / (V.maxSpeed * 0.6);   // stepBoat では V.maxSpeed をかけ直す
+  const err = wrapA(hOfBearing(ord.hdg) - v.h);
+  let turn = THREE.MathUtils.clamp(err * 3, -1, 1);
+  if (v.vF < -0.2) turn = -turn;   // 後ろへ進むときは、かじが逆に効くので打ち消す
+  const g = hullGround(v.pos.x, v.pos.y, visYaw(v), V);
+  const maxDive = Math.max(0, SEA - g - 0.2 - V.draft);
+  const target = Math.min(ord.dp, maxDive);
+  v.dpLimit = ord.dp > maxDive + 0.5 ? maxDive : null;
+  const up = THREE.MathUtils.clamp(((v.dive || 0) - target) * 0.6, -1, 1);
+  return { thr: THREE.MathUtils.clamp(thr, -1, 1), turn, up };
+}
+
+const helmEl = el('helm');
+let helmShown = '';
+function updateHelm() {
+  const v = helmSub();
+  document.body.classList.toggle('helmOn', !!v);
+  if (helmEl.hidden !== !v) { helmEl.hidden = !v; el('subChat').hidden = el('subExit').hidden = !v; }
+  if (!v) { el('subBtns').style.bottom = ''; return; }
+  el('subBtns').style.bottom = window.innerWidth < 760 ? helmEl.offsetHeight + 24 + 'px' : '';
+  const b = bearingOf(v.h);
+  const vals = { oHdg: String(Math.round(ord.hdg) % 360).padStart(3, '0'), oKt: String(Math.round(ord.kt)), oDp: String(Math.round(ord.dp)),
+    tHdg: String(Math.round(ord.thdg) % 360).padStart(3, '0'), tDp: String(Math.round(ord.tdp)) };
+  const now = { cHdg: String(Math.round(b) % 360).padStart(3, '0'), cKt: String(Math.round(v.vF / KT)), cDp: subDepth(v).toFixed(0) };
+  if (tube.until && clock.elapsedTime >= tube.until) { tube.until = 0; tube.n = TUBES; showMsg(`魚雷 ${TUBES} 本の装填が終わりました`); }
+  const left = Math.max(0, tube.until - clock.elapsedTime);
+  const tst = left > 0 ? `装填中… あと ${Math.ceil(left)} 秒（音で相手のレーダーに映ります）` : tube.n ? `装填済み ${tube.n} 本：方位 ${String(Math.round(tube.hd) % 360).padStart(3, '0')}°・深度 ${Math.round(tube.dp)}m` : '魚雷なし。方位と深度を決めて「装填」';
+  const st = helmTab === 'torp' ? tst : v.dpLimit != null ? `海底が近いので ${v.dpLimit.toFixed(0)}m までしかもぐれません` : `いま ${compassName(b)}へ ${Math.abs(v.vF / KT).toFixed(1)}kt`;
+  const key = [helmTab, JSON.stringify(vals), JSON.stringify(now), tube.n, st].join('|');
+  if (key === helmShown) return;
+  helmShown = key;
+  el('helmNav').hidden = helmTab !== 'nav'; el('helmTorp').hidden = helmTab !== 'torp';
+  for (const b2 of helmEl.querySelectorAll('[data-tab]')) b2.setAttribute('aria-pressed', String(b2.dataset.tab === helmTab));
+  for (const id in vals) { const i = el(id); if (document.activeElement !== i) i.value = vals[id]; }
+  for (const id in now) el(id).textContent = now[id];
+  el('helmMsg').textContent = st;
+  const fire = el('fireBtn');
+  fire.disabled = left > 0 || !tube.n;
+  fire.textContent = `発射（${tube.n}）`;
+  el('loadBtn').disabled = left > 0;
+  el('loadBtn').textContent = left > 0 ? `装填中 ${Math.ceil(left)}` : '装填';
+}
+el('subChat').addEventListener('click', openChat);
+el('subExit').addEventListener('click', () => toggleRide());
+helmEl.addEventListener('click', (e) => {
+  const v = helmSub();
+  const t = e.target.closest('button');
+  if (!v || !t) return;
+  if (t.dataset.tab) helmTab = t.dataset.tab;
+  if (t.dataset.d) { const [k, d] = t.dataset.d.split(':'); ord[k] = Math.round(ord[k]) + Number(d); }
+  if (t.dataset.q === 'surface') ord.dp = 0;
+  if (t.dataset.q === 'dive') ord.dp = Math.max(ord.dp, 20);
+  if (t.dataset.q === 'stop') ord.kt = 0;
+  if (t.dataset.q === 'bow') ord.thdg = Math.round(bearingOf(v.h));
+  if (t.id === 'fireBtn') fireTorpedo();
+  if (t.dataset.q === 'load') loadTubes();
+  clampOrders(v); helmShown = '';
+});
+for (const [id, k] of [['oHdg', 'hdg'], ['oKt', 'kt'], ['oDp', 'dp'], ['tHdg', 'thdg'], ['tDp', 'tdp']]) {
+  const i = el(id);
+  i.addEventListener('change', () => { const n = Number(i.value); const v = helmSub(); if (isFinite(n) && v) { ord[k] = n; clampOrders(v); } helmShown = ''; });
+  i.addEventListener('keydown', (e) => { if (e.key === 'Enter') { i.blur(); cv.focus(); } });
+}
+
+/* ================= 魚雷：20 ノット、射程 400m。方位と深度を決めて撃つ ================= */
+const TORP_SPEED = 20 * KT, TORP_RANGE = 400;
+const torps = [];
+const torpGeo = new THREE.CylinderGeometry(0.27, 0.27, 3, 10); torpGeo.rotateX(Math.PI / 2);
+const torpMat = new THREE.MeshLambertMaterial({ color: 0x3a4148 });
+const finGeo = new THREE.BoxGeometry(0.9, 0.05, 0.3), noseGeo = new THREE.SphereGeometry(0.27, 10, 6);
+function torpMesh() {
+  const g = new THREE.Group();
+  g.add(new THREE.Mesh(torpGeo, torpMat));
+  const nose = new THREE.Mesh(noseGeo, torpMat); nose.position.z = 1.5; g.add(nose);
+  const f1 = new THREE.Mesh(finGeo, torpMat); f1.position.z = -1.35; g.add(f1);
+  const f2 = f1.clone(); f2.rotation.z = Math.PI / 2; g.add(f2);
+  scene.add(g);
+  return g;
+}
+// 水面に残る泡の筋（だれからも見える）
+const WAKE_N = 400, wakeBorn = new Float32Array(WAKE_N).fill(-99), wakePos = new Float32Array(WAKE_N * 2);
+const wakes = new THREE.InstancedMesh(new THREE.CircleGeometry(0.7, 10).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.45, depthWrite: false }), WAKE_N);
+wakes.frustumCulled = false; wakes.renderOrder = 3; scene.add(wakes);
+let wakeI = 0;
+const tmpM = new THREE.Matrix4(), tmpS = new THREE.Vector3(), tmpQ = new THREE.Quaternion(), tmpP = new THREE.Vector3();
+function addWake(x, z) { wakeBorn[wakeI] = clock.elapsedTime; wakePos[wakeI * 2] = x; wakePos[wakeI * 2 + 1] = z; wakeI = (wakeI + 1) % WAKE_N; }
+function stepWakes() {
+  const t = clock.elapsedTime;
+  for (let i = 0; i < WAKE_N; i++) {
+    const age = t - wakeBorn[i], s = age < 0 || age > 4 ? 0 : (0.6 + age * 0.5) * (1 - age / 4);
+    tmpP.set(wakePos[i * 2], SEA + 0.03, wakePos[i * 2 + 1]); tmpS.set(s, 1, s);
+    wakes.setMatrixAt(i, tmpM.compose(tmpP, tmpQ, tmpS));
+  }
+  wakes.instanceMatrix.needsUpdate = true;
+}
+function launchTorpedo(d, mine) {
+  const t = { id: d.id, mine, x: d.x, y: d.y, z: d.z, h: d.h, hd: d.hd, dp: d.dp, src: d.src, dist: 0, age: 0, wakeT: 0, mesh: torpMesh() };
+  torps.push(t);
+  placeTorp(t);
+  return t;
+}
+function fireTorpedo() {
+  const v = helmSub();
+  if (!v) return;
+  if (clock.elapsedTime < tube.until) { showMsg('魚雷を装填中です'); return; }
+  if (!tube.n) { showMsg('魚雷が入っていません。「魚雷」で方位と深度を決めて「装填」'); return; }
+  const V = v.item.def.vehicle, h = visYaw(v);
+  const x = v.pos.x + Math.sin(h) * (V.halfLength + 1.8), z = v.pos.y + Math.cos(h) * (V.halfLength + 1.8);
+  if (outsideBox(x, z, 1) || heightAt(x, z) > SEA - 1.5) { showMsg('前が浅くて魚雷を撃てません'); return; }
+  const y = Math.max(heightAt(x, z) + 0.6, Math.min(v.y - V.draft * 0.5, SEA - 1));
+  tube.n--; tube.firedAt = clock.elapsedTime; helmShown = '';
+  const d = { id: newId().slice(0, 12), x, y, z, h, hd: hOfBearing(tube.hd), dp: tube.dp, src: v.id || 'local' };
+  launchTorpedo(d, true);
+  showMsg(`魚雷発射！ 方位 ${String(Math.round(tube.hd) % 360).padStart(3, '0')}°・深度 ${Math.round(tube.dp)}m（残り ${tube.n} 本）`);
+  if (net.room) net.room.emit('torp', Object.assign({}, d, { x: +x.toFixed(2), y: +y.toFixed(2), z: +z.toFixed(2), h: +h.toFixed(3), hd: +d.hd.toFixed(3) })).catch(() => {});
+}
+function placeTorp(t) {
+  t.mesh.position.set(t.x, t.y, t.z);
+  t.mesh.rotation.set(0, t.h, 0);
+  t.mesh.visible = t.mine || (underwater && camera.position.distanceTo(t.mesh.position) < 30);
+}
+function removeTorp(t) { scene.remove(t.mesh); const i = torps.indexOf(t); if (i >= 0) torps.splice(i, 1); }
+function torpHit(t) {   // 当たったもの：'ground'／乗り物／置物。何もなければ null
+  if (outsideBox(t.x, t.z, 0.5) || t.y < heightAt(t.x, t.z) + 0.15) return { kind: 'ground' };
+  for (const v of vehicles) {
+    if (v.sunk || v.id === t.src && t.age < 3 || v === ride && t.age < 3) continue;
+    const V = v.item.def.vehicle, h = visYaw(v), dx = t.x - v.pos.x, dz = t.z - v.pos.y;
+    const lx = dx * Math.cos(h) - dz * Math.sin(h), lz = dx * Math.sin(h) + dz * Math.cos(h);
+    const lo = v.y - (V.draft || 0) - 0.4, hi = v.y + (V.height || 1) - (V.draft || 0);
+    if (Math.abs(lx) < V.halfWidth + 0.3 && Math.abs(lz - (V.centerZ || 0)) < V.halfLength + 0.3 && t.y > lo && t.y < hi) return { kind: 'vehicle', v };
+  }
+  for (const pr of props) { const b = pr.box; if (t.x > b.min.x - 0.2 && t.x < b.max.x + 0.2 && t.z > b.min.z - 0.2 && t.z < b.max.z + 0.2 && t.y > b.min.y - 0.2 && t.y < b.max.y) return { kind: 'prop' }; }
+  return null;
+}
+function stepTorps(dt) {
+  for (const t of [...torps]) {
+    t.age += dt;
+    t.h += THREE.MathUtils.clamp(wrapA(t.hd - t.h), -0.6 * dt, 0.6 * dt);   // 決めた方位へ曲がる
+    t.y += THREE.MathUtils.clamp(SEA - t.dp - t.y, -3 * dt, 3 * dt);
+    const step = TORP_SPEED * dt;
+    t.x += Math.sin(t.h) * step; t.z += Math.cos(t.h) * step; t.dist += step;
+    t.wakeT += dt;
+    if (t.wakeT > 0.25) { t.wakeT = 0; addWake(t.x - Math.sin(t.h) * 2, t.z - Math.cos(t.h) * 2); }
+    placeTorp(t);
+    if (t.mine) {
+      const hit = torpHit(t);
+      if (hit) {
+        const hv = hit.kind === 'vehicle' ? hit.v : null;
+        boom(t.x, t.y, t.z, hv);
+        if (hv) showMsg(hv.sunk ? `命中！ ${hv.name} を撃沈しました` : vtype(hv) === 'sub' ? `命中！ ${hv.name} の速力が落ちました（あと 1 発で沈没）` : `命中！ ${hv.name} に当たりました`);
+        else showMsg(hit.kind === 'ground' ? '魚雷は海底か陸に当たりました' : '魚雷は置物に当たりました');
+        if (net.room) net.room.emit('boom', { id: t.id, x: +t.x.toFixed(2), y: +t.y.toFixed(2), z: +t.z.toFixed(2), hit: hv && hv.shared ? hv.id : null }).catch(() => {});
+        removeTorp(t);
+        continue;
+      }
+    }
+    if (t.dist >= TORP_RANGE || t.age > 60) { if (t.mine) showMsg('魚雷は射程 400m を走りきりました'); removeTorp(t); }
+  }
+  stepWakes();
+}
+// 爆発：水の中の光と、浅ければ水柱
+const booms = [];
+const boomGeo = new THREE.SphereGeometry(1, 16, 10), colGeo = new THREE.CylinderGeometry(1.2, 3, 1, 14, 1, true);
+colGeo.translate(0, 0.5, 0);
+let shakeUntil = 0, shakePow = 0;
+function boom(x, y, z, hitV) {
+  const flash = new THREE.Mesh(boomGeo, new THREE.MeshBasicMaterial({ color: 0xffd08a, transparent: true, opacity: 0.9, depthWrite: false, fog: false }));
+  flash.position.set(x, y, z); scene.add(flash);
+  const b = { flash, col: null, t: 0 };
+  if (SEA - y < 14) {
+    b.col = new THREE.Mesh(colGeo, new THREE.MeshLambertMaterial({ color: 0xffffff, transparent: true, opacity: 0.85, depthWrite: false, side: THREE.DoubleSide }));
+    b.col.position.set(x, SEA, z); scene.add(b.col);
+  }
+  booms.push(b);
+  for (let i = 0; i < 14; i++) { const a = Math.random() * 6.28, r = Math.random() * 3; addWake(x + Math.cos(a) * r, z + Math.sin(a) * r); }
+  const d = camera.position.distanceTo(flash.position);
+  const mineHit = hitV && (hitV === ride || (aboard && aboard.v === hitV));
+  if (d < 80 || mineHit) { shakePow = mineHit ? 0.6 : 0.35 * (1 - d / 80); shakeUntil = clock.elapsedTime + (mineHit ? 1.2 : 0.7); }
+  if (mineHit) { hitV.vF *= 0.2; hitV.roll += 0.25; hitV.pitch -= 0.1; }
+  if (hitV && vtype(hitV) === 'sub' && !hitV.sunk) damageSub(hitV, mineHit);
+}
+const SINK_LIFE = 180;   // 沈んでから 3 分で消える
+function damageSub(v, mine) {
+  v.hits = (v.hits || 0) + 1;
+  if (v.hits < 2) {
+    if (mine) showMsg(`魚雷が命中！ ${v.name} は最高 10 ノットまでしか出せません`);
+    if (ride === v) { ord.kt = Math.min(ord.kt, 10); helmShown = ''; }
+    return;
+  }
+  v.sunk = clock.elapsedTime; v.remote = null; v.vF = 0;
+  if (ride === v) { leaveRide(true); player.vy = 2; }
+  if (aboard && aboard.v === v) getOff();
+  if (mine) showMsg(`${v.name} は 2 発目の魚雷で沈没しました。脱出！`);
+}
+function stepSunk(v, dt) {
+  const V = v.item.def.vehicle, bed = heightAt(v.pos.x, v.pos.y) + V.draft;
+  v.y = Math.max(bed, v.y - dt * 1.5);   // ゆっくり海の底へ
+  v.pitch += (0.25 - v.pitch) * Math.min(1, dt * 0.5); v.roll += (0.5 - v.roll) * Math.min(1, dt * 0.5);
+  showCar(v);
+  if (v.item.hull) v.item.hull.visible = true;
+  if (v.item.light) { setSubLight(v, false); v.item.light.beam.visible = false; }
+  if (Math.random() < dt * 4) addWake(v.pos.x + (Math.random() - 0.5) * 3, v.pos.y + (Math.random() - 0.5) * 3);   // 泡
+  if (clock.elapsedTime - v.sunk > SINK_LIFE) {
+    if (v.shared && v.id && net.db) net.db.remove(v.id).catch(() => {});   // みんなの世界からも消す（だれが消しても同じ）
+    if (v.shared) unloadSharedProp(v.id); else removeVehicle(v);
+  }
+}
+function stepBooms(dt) {
+  for (const b of [...booms]) {
+    b.t += dt;
+    const s = 1 + b.t * 9;
+    b.flash.scale.setScalar(s); b.flash.material.opacity = Math.max(0, 0.9 - b.t * 1.3);
+    if (b.col) { const k = Math.min(1, b.t / 0.5); b.col.scale.set(1 + b.t * 0.6, 12 * k * Math.max(0, 1 - Math.max(0, b.t - 0.8) / 1.2), 1 + b.t * 0.6); b.col.material.opacity = Math.max(0, 0.85 - b.t * 0.4); }
+    if (b.t > 2.2) { scene.remove(b.flash); b.flash.material.dispose(); if (b.col) { scene.remove(b.col); b.col.material.dispose(); } booms.splice(booms.indexOf(b), 1); }
+  }
+  if (clock.elapsedTime < shakeUntil) {
+    const k = shakePow * (shakeUntil - clock.elapsedTime);
+    camera.position.x += (Math.random() - 0.5) * k; camera.position.y += (Math.random() - 0.5) * k;
+  }
+}
+// ほかの人の魚雷と爆発
+function onTorp(p) {
+  const d = p && p.data;
+  if (!d || typeof d.id !== 'string' || !/^[A-Za-z0-9_-]{1,40}$/.test(d.id) || torps.some((t) => t.id === d.id)) return;
+  if (torps.length > 40) return;
+  launchTorpedo({ id: d.id, x: num(d.x, X0, X1), y: num(d.y, Y_BOTTOM, SEA), z: num(d.z, Z0, Z1), h: num(d.h, -10, 10), hd: num(d.hd, -10, 10), dp: num(d.dp, 1, 200, 10),
+    src: typeof d.src === 'string' ? d.src.slice(0, 40) : '' }, false);
+}
+function onBoom(p) {
+  const d = p && p.data;
+  if (!d || typeof d.id !== 'string') return;
+  const t = torps.find((t) => t.id === d.id);
+  if (t) removeTorp(t);
+  const hv = typeof d.hit === 'string' ? vehicles.find((v) => v.id === d.hit) : null;
+  boom(num(d.x, X0, X1), num(d.y, Y_BOTTOM, SEA), num(d.z, Z0, Z1), hv);
+}
+
+/* ================= 潜っているほかの潜水艦は見えない（浮上すると見える） ================= */
+function hideSubmerged(v) {
+  if (vtype(v) !== 'sub' || !v.item.hull) return;
+  const V = v.item.def.vehicle, mine = v === ride || (aboard && aboard.v === v);
+  const under = v.y + (V.hullTop != null ? V.hullTop : V.height - V.draft) < SEA - 0.05;
+  const near = underwater && Math.hypot(camera.position.x - v.pos.x, camera.position.z - v.pos.y) < 20;
+  const hide = !mine && under && !near;
+  v.hidden = hide;
+  v.item.hull.visible = !hide;
+  const L = v.item.light;
+  if (L) L.beam.visible = L.on && !hide;
+  if (v.item.periscope) v.item.periscope.pivot.visible = !hide || v.y + v.item.periscope.eye.y > SEA + 0.1;   // 潜望鏡だけ水の上に出ていれば見える
 }
 
 /* ================= ループ ================= */
@@ -2294,6 +2667,9 @@ function frame() {
   updateAtmosphere();
   updateUi();
   updateMap(dt);
+  updateHelm();
+  stepTorps(dt);
+  stepBooms(dt);
   netTick += dt;
   if (netTick > 0.25) { netTick = 0; sendPresence(); }
   renderer.render(scene, camera);
@@ -2317,6 +2693,7 @@ window.__world = {
   get aboard() { return aboard; }, get ride() { return ride; }, worldHour, setHourOffset(h) { hourOffset = h; },
   hullGround, findWaterSpot, rescueBoat, get periscope() { return periscope; }, toggleLight, setPeriscope,
   teleport(x, z, y) { player.pos.set(x, y ?? heightAt(x, z), z); player.vy = 0; },
+  torps, tube, ord, booms, get clockT() { return clock.elapsedTime; },
 };
 
 camera.position.set(player.pos.x, player.pos.y + 6, player.pos.z + 10);
