@@ -121,6 +121,14 @@ body.mapOn #msg { position: fixed; left: 50%; transform: translateX(-50%); top: 
 #helm .hq button.fire { background: #c8402a; color: #fff; border-color: transparent; font-size: 14px; }
 #helm .hq button:disabled { opacity: 0.55; cursor: default; }
 #helm .hmsg { margin-top: 6px; font-size: 11px; color: var(--ink-dim); }
+#helm .htabs .minibtn { flex: 0 0 36px; }
+#helm.mini #helmNav, #helm.mini #helmTorp, #helm.mini .hmsg { display: none !important; }
+#helm .hq button[aria-pressed="true"] { background: var(--ink); color: #fff; border-color: transparent; }
+#helm .hrow.off { display: none !important; }
+#helm .optbtn { display: none; }
+@media (pointer: coarse) { #helm .hrow.opt { display: none; } #helm.showOpt .hrow.opt { display: grid; } #helm .optbtn { display: block; } #helm.showOpt .optbtn { background: var(--ink); color: #fff; } }
+#sonar { font: 700 10px var(--font-mono); color: var(--ink); margin-top: 4px; line-height: 1.5; }
+#sonar .deaf { color: #c8402a; }
 body.mapOn .side .pill { display: none; }
 body.helmOn #prompt, body.helmOn #hint { display: none !important; }
 body.helmOn .subbtns { flex-wrap: wrap; justify-content: flex-end; max-width: calc(100vw - 32px); }
@@ -155,12 +163,14 @@ body.helmOn .subbtns { flex-wrap: wrap; justify-content: flex-end; max-width: ca
   <span class="state" id="state">歩いている</span>
   <span class="alt" id="alt">高さ</span>
   <span class="nav" id="navLine" hidden></span>
+  <span class="nav" id="hpLine" hidden></span>
   <span class="speed" id="speedBox" hidden><span id="speed">0</span><small id="speedUnit">km/h</small></span>
 </div>
 
 <div id="map" hidden role="button" aria-label="地図（押すと 近く／全体 を切りかえ）">
   <canvas id="mapCv" width="296" height="296"></canvas>
   <div class="mapcap"><span id="mapMode">近く 160m</span><span>タップで切替</span></div>
+  <div id="sonar" aria-live="polite"></div>
 </div>
 
 <div class="side">
@@ -215,7 +225,7 @@ body.helmOn .subbtns { flex-wrap: wrap; justify-content: flex-end; max-width: ca
 <div class="hint" id="hint">左側をなぞって移動、右側をなぞって視点、2 本指でズーム</div>
 <div id="scope" hidden></div><div id="scopeDir" hidden></div>
 <div id="helm" hidden>
-  <div class="htabs"><button type="button" data-tab="nav" aria-pressed="true">操艦</button><button type="button" data-tab="torp" aria-pressed="false">魚雷</button></div>
+  <div class="htabs"><button type="button" data-tab="nav" aria-pressed="true">操艦</button><button type="button" data-tab="torp" aria-pressed="false">魚雷</button><button type="button" data-q="mini" class="minibtn" aria-label="たたむ／ひろげる">－</button></div>
   <div id="helmNav">
     <div class="hrow"><span class="hl">進路</span><button type="button" data-d="hdg:-10">−10</button><button type="button" data-d="hdg:-1">−1</button><span class="val"><input id="oHdg" inputmode="numeric" aria-label="進路"><small>°</small><em id="cHdg"></em></span><button type="button" data-d="hdg:1">+1</button><button type="button" data-d="hdg:10">+10</button></div>
     <div class="hrow"><span class="hl">速力</span><button type="button" data-d="kt:-5">−5</button><button type="button" data-d="kt:-1">−1</button><span class="val"><input id="oKt" inputmode="numeric" aria-label="速力"><small>kt</small><em id="cKt"></em></span><button type="button" data-d="kt:1">+1</button><button type="button" data-d="kt:5">+5</button></div>
@@ -223,9 +233,11 @@ body.helmOn .subbtns { flex-wrap: wrap; justify-content: flex-end; max-width: ca
     <div class="hq"><button type="button" data-q="surface">浮上</button><button type="button" data-q="dive">潜航</button><button type="button" data-q="stop">停止</button></div>
   </div>
   <div id="helmTorp" hidden>
-    <div class="hrow"><span class="hl">方位</span><button type="button" data-d="thdg:-10">−10</button><button type="button" data-d="thdg:-1">−1</button><span class="val"><input id="tHdg" inputmode="numeric" aria-label="方位"><small>°</small></span><button type="button" data-d="thdg:1">+1</button><button type="button" data-d="thdg:10">+10</button></div>
-    <div class="hrow"><span class="hl">深度</span><button type="button" data-d="tdp:-5">−5</button><button type="button" data-d="tdp:-1">−1</button><span class="val"><input id="tDp" inputmode="numeric" aria-label="深度"><small>m</small></span><button type="button" data-d="tdp:1">+1</button><button type="button" data-d="tdp:5">+5</button></div>
-    <div class="hq"><button type="button" data-q="bow">艦首の方位</button><button type="button" data-q="load" id="loadBtn">装填</button><button type="button" class="fire" id="fireBtn">発射</button></div>
+    <div class="hq"><button type="button" data-tt="war" aria-pressed="true">弾頭魚雷</button><button type="button" data-tt="decoy" aria-pressed="false">デコイ</button></div>
+    <div class="hrow opt" id="rowDp"><span class="hl">深度</span><button type="button" data-d="tdp:-5">−5</button><button type="button" data-d="tdp:-1">−1</button><span class="val"><input id="tDp" inputmode="numeric" aria-label="深度"><small>m</small></span><button type="button" data-d="tdp:1">+1</button><button type="button" data-d="tdp:5">+5</button></div>
+    <div class="hrow opt" id="rowDist"><span class="hl">爆発</span><button type="button" data-d="tdist:-50">−50</button><button type="button" data-d="tdist:-10">−10</button><span class="val"><input id="tDist" inputmode="numeric" aria-label="爆発"><small>m</small></span><button type="button" data-d="tdist:10">+10</button><button type="button" data-d="tdist:50">+50</button></div>
+    <div class="hrow opt" id="rowTime"><span class="hl">時間</span><button type="button" data-d="ttime:-5">−5</button><button type="button" data-d="ttime:-1">−1</button><span class="val"><input id="tTime" inputmode="numeric" aria-label="時間"><small>秒</small></span><button type="button" data-d="ttime:1">+1</button><button type="button" data-d="ttime:5">+5</button></div>
+    <div class="hq"><button type="button" data-q="opt" class="optbtn">設定</button><button type="button" data-q="load" id="loadBtn">装填</button><button type="button" class="fire" id="fireBtn">発射</button></div>
   </div>
   <div class="hmsg" id="helmMsg"></div>
 </div>
@@ -2230,7 +2242,7 @@ const K = (k, t) => `<span>${k.map((x) => `<kbd>${x}</kbd>`).join('')}${t}</span
 const KEYS_HTML = {
   car: K(['W'], 'アクセル') + K(['S'], 'ブレーキ／バック') + K(['A', 'D'], 'ハンドル') + K(['Space'], 'サイドブレーキ') + K(['E'], '降りる') + '<span>ドラッグで視点</span>',
   ship: K(['W'], '前へ') + K(['S'], '後ろへ') + K(['A', 'D'], 'かじ') + K(['R'], '救出') + K(['E'], '降りる') + '<span>ドラッグで視点</span>',
-  sub: K(['←', '→'], '進路') + K(['↑', '↓'], '速力') + K(['Space'], '浅く') + K(['C'], '深く') + K(['B'], '魚雷を装填') + K(['G'], '発射') + K(['L'], 'ライト') + K(['P'], '潜望鏡') + K(['Z', 'X'], '潜望鏡を回す') + K(['R'], '救出') + K(['E'], '降りる'),
+  sub: K(['←', '→'], '進路') + K(['↑', '↓'], '速力') + K(['Space'], '浅く') + K(['C'], '深く') + K(['B'], '装填') + K(['G'], '発射（艦首の向き）') + K(['L'], 'ライト') + K(['P'], '潜望鏡') + K(['Z', 'X'], '潜望鏡を回す') + K(['R'], '救出') + K(['E'], '降りる'),
   plane: K(['W'], '出力を上げる') + K(['S'], '下げる・ブレーキ') + K(['A', 'D'], '曲がる') + K(['Space'], '上昇') + K(['C'], '下降') + K(['E'], '降りる'),
   ride: K(['E'], '降りる') + '<span>ドラッグで視点・ホイールで距離</span>',
   wet: K(['W'], '前へ') + K(['A', 'D'], '向きを変える') + K(['Space'], 'うく') + K(['C'], 'もぐる') + '<span>ドラッグで視点・ホイールで遠く／近く</span>',
@@ -2262,12 +2274,14 @@ function updateUi() {
   const share = nv && nv.remote && isBoat(nv);
   const sv2 = vt === 'sub' ? ride : aboard && vtype(aboard.v) === 'sub' ? aboard.v : null;
   const navTxt = sv2 ? `方位 ${String(Math.round(bearingOf(sv2.h)) % 360).padStart(3, '0')}°（${compassName(bearingOf(sv2.h))}）　海底 ${seabedAt(sv2.pos.x, sv2.pos.y).toFixed(1)}m` : '';
-  const key = [mode, near, share, kmh, alt, vname, vt, periscope, navTxt].join('|');
+  const hpTxt = sv2 ? `HP ${subHp(sv2)}／${HP_MAX}（最高 ${maxKt(sv2)}kt）` : '';
+  const key = [mode, near, share, kmh, alt, vname, vt, periscope, navTxt, hpTxt].join('|');
   if (key === lastUi) return;
   lastUi = key;
   el('state').textContent = mode === 'drive' ? `${vname}を${DRIVE_VERB[vt]}中` : mode === 'ride' ? `${vname}に相乗り中` : STATE_TEXT[mode];
   el('alt').textContent = alt;
   el('navLine').hidden = !navTxt; el('navLine').textContent = navTxt;
+  el('hpLine').hidden = !hpTxt; el('hpLine').textContent = hpTxt;
   el('speedBox').hidden = !driving;
   el('speed').textContent = kmh;
   el('speedUnit').textContent = sea ? 'kt' : 'km/h';
@@ -2337,55 +2351,75 @@ function updateMap(dt) {
   mapCx.lineTo(x - dx * 7 - dy * 6, y - dy * 7 + dx * 6);
   mapCx.closePath(); mapCx.fill(); mapCx.stroke();
   for (const o of net.others.values()) {   // 音で見つけた潜水艦（動いている・装填中・撃った直後だけ）
-    if (!(o.t && o.t.m === 'drive' && o.t.ns)) continue;
+    if (!(o.t && o.t.m === 'drive' && o.t.ns) || deaf()) continue;
     const x = toX(o.t.x), y = toY(o.t.z), pulse = 6 + ((clock.elapsedTime * 1.5) % 1) * 8;
     mapCx.strokeStyle = '#ffb347'; mapCx.lineWidth = 2;
     mapCx.beginPath(); mapCx.arc(x, y, pulse, 0, 7); mapCx.stroke();
     mapCx.fillStyle = '#ffb347'; mapCx.beginPath(); mapCx.moveTo(x, y - 6); mapCx.lineTo(x + 6, y); mapCx.lineTo(x, y + 6); mapCx.lineTo(x - 6, y); mapCx.closePath(); mapCx.fill();
   }
-  for (const t of torps) { mapCx.fillStyle = t.mine ? '#ff5a3c' : '#ff2a2a'; mapCx.strokeStyle = '#fff'; mapCx.lineWidth = 1; mapCx.beginPath(); mapCx.arc(toX(t.x), toY(t.z), 3.5, 0, 7); mapCx.fill(); mapCx.stroke(); }
+  for (const t of torps) { mapCx.fillStyle = t.mine && t.decoy ? '#ffd24a' : t.mine ? '#ff5a3c' : '#ff2a2a'; mapCx.strokeStyle = '#fff'; mapCx.lineWidth = 1; mapCx.beginPath(); mapCx.arc(toX(t.x), toY(t.z), 3.5, 0, 7); mapCx.fill(); mapCx.stroke(); }
   mapCx.font = '800 20px sans-serif'; mapCx.textAlign = 'center'; mapCx.lineWidth = 4; mapCx.strokeStyle = 'rgba(0,0,0,0.5)'; mapCx.fillStyle = '#fff';
   mapCx.strokeText('北', S / 2, 22); mapCx.fillText('北', S / 2, 22);
   el('mapMode').textContent = mapWide ? '全体 500m' : '近く 160m';
+  // 音を出している相手の、ここから見た方位と深度
+  const lines = [];
+  if (deaf()) lines.push(`<span class="deaf">爆発音で聞こえない（あと ${Math.ceil(deafUntil - clock.elapsedTime)} 秒）</span>`);
+  else for (const o of net.others.values()) {
+    if (!(o.t && o.t.m === 'drive' && o.t.ns)) continue;
+    const sv = o.t.v ? vehicles.find((x) => x.id === o.t.v) : null;
+    if (sv && vtype(sv) !== 'sub') continue;
+    lines.push(`音：方位 ${fmtB(bearingOf(Math.atan2(o.t.x - v.pos.x, o.t.z - v.pos.y)))}°・深度 ${Math.max(0, SEA - o.t.y).toFixed(0)}m`);
+  }
+  if (!lines.length) lines.push('音は聞こえません');
+  const sh = lines.join('<br>');
+  if (el('sonar').innerHTML !== sh) el('sonar').innerHTML = sh;
 }
 
 /* ================= 潜水艦：進路・速力・深度を指示して走る ================= */
 // 方位は北（地図の上、-z）を 0° にして時計回り。東（+x）が 90°
 const bearingOf = (h) => ((((Math.PI - h) * 180) / Math.PI) % 360 + 360) % 360;
 const hOfBearing = (b) => Math.PI - (b * Math.PI) / 180;
+const fmtB = (b) => String(Math.round(b) % 360).padStart(3, '0');
 const KT = 1852 / 3600;   // 1 ノット = 0.514 m/s
 const COMPASS = ['北', '北東', '東', '南東', '南', '南西', '西', '北西'];
 const compassName = (b) => COMPASS[Math.round(b / 45) % 8];
-const ord = { hdg: 0, kt: 0, dp: 0, thdg: 0, tdp: 10 };
+// 指示（操艦）と、次に装填する魚雷の設定
+const ord = { hdg: 0, kt: 0, dp: 0, ttype: 'war', tdp: 10, tdist: 400, ttime: 10 };
 let helmTab = 'nav';
-// 魚雷発射管：方位と深度を決めて「装填」すると 5 秒で 2 本入る。装填中と発射後 2 秒は音で相手のレーダーに映る
-const TUBES = 2, LOAD_TIME = 5;
-const tube = { n: 0, hd: 0, dp: 10, until: 0, firedAt: -99 };
-function subNoisy(v) { return Math.abs(v.vF) > 0.3 || clock.elapsedTime < tube.until || clock.elapsedTime - tube.firedAt < 2; }
+// HP：最大 15。最高速力（ノット）は HP と同じ。直撃で -7、50m 以内の爆発で -2、0 で沈没
+const HP_MAX = 15, HIT_DMG = 7, NEAR_DMG = 2, NEAR_R = 50;
+const subHp = (v) => (v.hp == null ? HP_MAX : v.hp);
+function subMax(v) { const m = v.item.def.vehicle.maxSpeed; return vtype(v) === 'sub' ? Math.min(m, Math.max(0, subHp(v)) * KT) : m; }
+function maxKt(v) { return Math.round(subMax(v) / KT); }
+// 魚雷発射管：設定して「装填」すると 10 秒で 2 本（HP 5 以下は 1 本）。装填中と発射後 2 秒は音が出る
+const LOAD_TIME = 10;
+const tube = { n: 0, type: 'war', dp: 10, dist: 400, time: 10, until: 0, firedAt: -99 };
+// 魚雷が爆発してから 5 秒間は、だれの音も聞こえない
+let deafUntil = 0;
+const deaf = () => clock.elapsedTime < deafUntil;
+function subNoisy(v) { return !deaf() && (Math.abs(v.vF) > 0.3 || clock.elapsedTime < tube.until || clock.elapsedTime - tube.firedAt < 2); }
 const helmSub = () => (driving && ride && vtype(ride) === 'sub' ? ride : null);
 const subDepth = (v) => Math.max(0, SEA - v.y);
 const seabedAt = (x, z) => Math.max(0, SEA - heightAt(x, z));
-function maxKt(v) { return Math.round(subMax(v) / KT); }
-// 魚雷 1 発で最高 10 ノット、2 発で沈没
-function subMax(v) { return vtype(v) === 'sub' && v.hits ? Math.min(v.item.def.vehicle.maxSpeed, 10 * KT) : v.item.def.vehicle.maxSpeed; }
 function initOrders(v) {
   ord.hdg = Math.round(bearingOf(v.h)); ord.kt = 0; ord.dp = Math.round(subDepth(v));
-  ord.thdg = ord.hdg; ord.tdp = Math.max(2, Math.round(subDepth(v)) || 10);
+  ord.tdp = Math.max(2, Math.round(subDepth(v)) || 10);
   helmShown = '';
   tube.n = 0; tube.until = 0;
 }
 function loadTubes() {
   const v = helmSub();
-  if (!v) return;
-  if (clock.elapsedTime < tube.until) return;
-  tube.hd = ord.thdg; tube.dp = ord.tdp; tube.until = clock.elapsedTime + LOAD_TIME; tube.n = 0;
-  showMsg(`装填をはじめました（5 秒）。方位 ${String(Math.round(tube.hd) % 360).padStart(3, '0')}°・深度 ${Math.round(tube.dp)}m`);
+  if (!v || clock.elapsedTime < tube.until) return;
+  Object.assign(tube, { type: ord.ttype, dp: ord.tdp, dist: ord.tdist, time: ord.ttime, until: clock.elapsedTime + LOAD_TIME, n: 0 });
+  showMsg(`${tube.type === 'decoy' ? 'デコイ' : '魚雷'}の装填をはじめました（10 秒）`);
 }
 function clampOrders(v) {
-  ord.hdg = ((ord.hdg % 360) + 360) % 360; ord.thdg = ((ord.thdg % 360) + 360) % 360;
+  ord.hdg = ((ord.hdg % 360) + 360) % 360;
   ord.kt = THREE.MathUtils.clamp(ord.kt, -Math.max(1, Math.round(maxKt(v) * 0.4)), maxKt(v));
   ord.dp = THREE.MathUtils.clamp(ord.dp, 0, 200);
   ord.tdp = THREE.MathUtils.clamp(ord.tdp, 1, 200);
+  ord.tdist = THREE.MathUtils.clamp(ord.tdist, 20, 400);
+  ord.ttime = THREE.MathUtils.clamp(ord.ttime, 1, 15);
 }
 // 指示から、かじ・出力・うく／もぐるを決める（PC のキーは指示の数字を動かす）
 function orderInput(v, dt) {
@@ -2397,7 +2431,7 @@ function orderInput(v, dt) {
   ord.dp += ((keys.KeyC || keys.ControlLeft || keys.KeyQ ? 1 : 0) - (keys.Space ? 1 : 0)) * 5 * dt;
   clampOrders(v);
   const want = ord.kt * KT;
-  const thr = want >= 0 ? want / V.maxSpeed : want / (V.maxSpeed * 0.6);   // stepBoat では V.maxSpeed をかけ直す
+  const thr = want >= 0 ? want / V.maxSpeed : want / (V.maxSpeed * 0.6);
   const err = wrapA(hOfBearing(ord.hdg) - v.h);
   let turn = THREE.MathUtils.clamp(err * 3, -1, 1);
   if (v.vF < -0.2) turn = -turn;   // 後ろへ進むときは、かじが逆に効くので打ち消す
@@ -2418,18 +2452,24 @@ function updateHelm() {
   if (!v) { el('subBtns').style.bottom = ''; return; }
   el('subBtns').style.bottom = window.innerWidth < 760 ? helmEl.offsetHeight + 24 + 'px' : '';
   const b = bearingOf(v.h);
-  const vals = { oHdg: String(Math.round(ord.hdg) % 360).padStart(3, '0'), oKt: String(Math.round(ord.kt)), oDp: String(Math.round(ord.dp)),
-    tHdg: String(Math.round(ord.thdg) % 360).padStart(3, '0'), tDp: String(Math.round(ord.tdp)) };
-  const now = { cHdg: String(Math.round(b) % 360).padStart(3, '0'), cKt: String(Math.round(v.vF / KT)), cDp: subDepth(v).toFixed(0) };
-  if (tube.until && clock.elapsedTime >= tube.until) { tube.until = 0; tube.n = TUBES; showMsg(`魚雷 ${TUBES} 本の装填が終わりました`); }
+  const vals = { oHdg: fmtB(ord.hdg), oKt: String(Math.round(ord.kt)), oDp: String(Math.round(ord.dp)),
+    tDp: String(Math.round(ord.tdp)), tDist: String(Math.round(ord.tdist)), tTime: String(Math.round(ord.ttime)) };
+  const now = { cHdg: fmtB(b), cKt: String(Math.round(v.vF / KT)), cDp: subDepth(v).toFixed(0) };
+  if (tube.until && clock.elapsedTime >= tube.until) {
+    tube.until = 0; tube.n = subHp(v) > 5 ? 2 : 1;
+    showMsg(`${tube.type === 'decoy' ? 'デコイ' : '魚雷'} ${tube.n} 本の装填が終わりました`);
+  }
   const left = Math.max(0, tube.until - clock.elapsedTime);
-  const tst = left > 0 ? `装填中… あと ${Math.ceil(left)} 秒（音で相手のレーダーに映ります）` : tube.n ? `装填済み ${tube.n} 本：方位 ${String(Math.round(tube.hd) % 360).padStart(3, '0')}°・深度 ${Math.round(tube.dp)}m` : '魚雷なし。方位と深度を決めて「装填」';
+  const what = tube.type === 'decoy' ? `デコイ（${tube.time} 秒で爆発）` : `弾頭魚雷（${tube.dist}m で爆発）`;
+  const tst = left > 0 ? `装填中… あと ${Math.ceil(left)} 秒（音が出ています）` : tube.n ? `${what} ${tube.n} 本・深度 ${tube.dp}m。艦首の向きへ撃ちます` : `空です。設定して「装填」${subHp(v) <= 5 ? '（HP 5 以下なので 1 本ずつ）' : ''}`;
   const st = helmTab === 'torp' ? tst : v.dpLimit != null ? `海底が近いので ${v.dpLimit.toFixed(0)}m までしかもぐれません` : `いま ${compassName(b)}へ ${Math.abs(v.vF / KT).toFixed(1)}kt`;
-  const key = [helmTab, JSON.stringify(vals), JSON.stringify(now), tube.n, st].join('|');
+  const key = [helmTab, JSON.stringify(vals), JSON.stringify(now), tube.n, ord.ttype, st].join('|');
   if (key === helmShown) return;
   helmShown = key;
   el('helmNav').hidden = helmTab !== 'nav'; el('helmTorp').hidden = helmTab !== 'torp';
   for (const b2 of helmEl.querySelectorAll('[data-tab]')) b2.setAttribute('aria-pressed', String(b2.dataset.tab === helmTab));
+  for (const b2 of helmEl.querySelectorAll('[data-tt]')) b2.setAttribute('aria-pressed', String(b2.dataset.tt === ord.ttype));
+  el('rowDist').classList.toggle('off', ord.ttype !== 'war'); el('rowTime').classList.toggle('off', ord.ttype !== 'decoy');
   for (const id in vals) { const i = el(id); if (document.activeElement !== i) i.value = vals[id]; }
   for (const id in now) el(id).textContent = now[id];
   el('helmMsg').textContent = st;
@@ -2445,33 +2485,35 @@ helmEl.addEventListener('click', (e) => {
   const v = helmSub();
   const t = e.target.closest('button');
   if (!v || !t) return;
-  if (t.dataset.tab) helmTab = t.dataset.tab;
+  if (t.dataset.tab) { helmTab = t.dataset.tab; helmEl.classList.remove('mini'); }
+  if (t.dataset.tt) ord.ttype = t.dataset.tt;
   if (t.dataset.d) { const [k, d] = t.dataset.d.split(':'); ord[k] = Math.round(ord[k]) + Number(d); }
   if (t.dataset.q === 'surface') ord.dp = 0;
   if (t.dataset.q === 'dive') ord.dp = Math.max(ord.dp, 20);
   if (t.dataset.q === 'stop') ord.kt = 0;
-  if (t.dataset.q === 'bow') ord.thdg = Math.round(bearingOf(v.h));
+  if (t.dataset.q === 'opt') helmEl.classList.toggle('showOpt');
+  if (t.dataset.q === 'mini') helmEl.classList.toggle('mini');
   if (t.id === 'fireBtn') fireTorpedo();
   if (t.dataset.q === 'load') loadTubes();
   clampOrders(v); helmShown = '';
 });
-for (const [id, k] of [['oHdg', 'hdg'], ['oKt', 'kt'], ['oDp', 'dp'], ['tHdg', 'thdg'], ['tDp', 'tdp']]) {
+for (const [id, k] of [['oHdg', 'hdg'], ['oKt', 'kt'], ['oDp', 'dp'], ['tDp', 'tdp'], ['tDist', 'tdist'], ['tTime', 'ttime']]) {
   const i = el(id);
   i.addEventListener('change', () => { const n = Number(i.value); const v = helmSub(); if (isFinite(n) && v) { ord[k] = n; clampOrders(v); } helmShown = ''; });
   i.addEventListener('keydown', (e) => { if (e.key === 'Enter') { i.blur(); cv.focus(); } });
 }
 
-/* ================= 魚雷：20 ノット、射程 400m。方位と深度を決めて撃つ ================= */
-const TORP_SPEED = 20 * KT, TORP_RANGE = 400;
+/* ================= 魚雷：艦首の向きへまっすぐ。弾頭は 20 ノット・決めた距離で爆発、デコイは 15 ノット・決めた秒数で爆発（被害なし） ================= */
+const TORP_SPEED = 20 * KT, DECOY_SPEED = 15 * KT, TORP_RANGE = 400;
 const torps = [];
 const torpGeo = new THREE.CylinderGeometry(0.27, 0.27, 3, 10); torpGeo.rotateX(Math.PI / 2);
-const torpMat = new THREE.MeshLambertMaterial({ color: 0x3a4148 });
+const torpMat = new THREE.MeshLambertMaterial({ color: 0x3a4148 }), decoyMat = new THREE.MeshLambertMaterial({ color: 0x8a6d2b });
 const finGeo = new THREE.BoxGeometry(0.9, 0.05, 0.3), noseGeo = new THREE.SphereGeometry(0.27, 10, 6);
-function torpMesh() {
-  const g = new THREE.Group();
-  g.add(new THREE.Mesh(torpGeo, torpMat));
-  const nose = new THREE.Mesh(noseGeo, torpMat); nose.position.z = 1.5; g.add(nose);
-  const f1 = new THREE.Mesh(finGeo, torpMat); f1.position.z = -1.35; g.add(f1);
+function torpMesh(decoy) {
+  const g = new THREE.Group(), m = decoy ? decoyMat : torpMat;
+  g.add(new THREE.Mesh(torpGeo, m));
+  const nose = new THREE.Mesh(noseGeo, m); nose.position.z = 1.5; g.add(nose);
+  const f1 = new THREE.Mesh(finGeo, m); f1.position.z = -1.35; g.add(f1);
   const f2 = f1.clone(); f2.rotation.z = Math.PI / 2; g.add(f2);
   scene.add(g);
   return g;
@@ -2493,7 +2535,9 @@ function stepWakes() {
   wakes.instanceMatrix.needsUpdate = true;
 }
 function launchTorpedo(d, mine) {
-  const t = { id: d.id, mine, x: d.x, y: d.y, z: d.z, h: d.h, hd: d.hd, dp: d.dp, src: d.src, dist: 0, age: 0, wakeT: 0, mesh: torpMesh() };
+  const decoy = d.k === 'decoy';
+  const t = { id: d.id, mine, decoy, x: d.x, y: d.y, z: d.z, h: d.h, dp: d.dp, src: d.src, speed: decoy ? DECOY_SPEED : TORP_SPEED,
+    maxDist: decoy ? TORP_RANGE : d.dist, maxTime: decoy ? d.time : 60, dist: 0, age: 0, wakeT: 0, mesh: torpMesh(decoy) };
   torps.push(t);
   placeTorp(t);
   return t;
@@ -2501,17 +2545,17 @@ function launchTorpedo(d, mine) {
 function fireTorpedo() {
   const v = helmSub();
   if (!v) return;
-  if (clock.elapsedTime < tube.until) { showMsg('魚雷を装填中です'); return; }
-  if (!tube.n) { showMsg('魚雷が入っていません。「魚雷」で方位と深度を決めて「装填」'); return; }
+  if (clock.elapsedTime < tube.until) { showMsg('装填中です'); return; }
+  if (!tube.n) { showMsg('魚雷が入っていません。「魚雷」で設定して「装填」'); return; }
   const V = v.item.def.vehicle, h = visYaw(v);
   const x = v.pos.x + Math.sin(h) * (V.halfLength + 1.8), z = v.pos.y + Math.cos(h) * (V.halfLength + 1.8);
-  if (outsideBox(x, z, 1) || heightAt(x, z) > SEA - 1.5) { showMsg('前が浅くて魚雷を撃てません'); return; }
+  if (outsideBox(x, z, 1) || heightAt(x, z) > SEA - 1.5) { showMsg('前が浅くて撃てません'); return; }
   const y = Math.max(heightAt(x, z) + 0.6, Math.min(v.y - V.draft * 0.5, SEA - 1));
   tube.n--; tube.firedAt = clock.elapsedTime; helmShown = '';
-  const d = { id: newId().slice(0, 12), x, y, z, h, hd: hOfBearing(tube.hd), dp: tube.dp, src: v.id || 'local' };
+  const d = { id: newId().slice(0, 12), k: tube.type, x, y, z, h, dp: tube.dp, dist: tube.dist, time: tube.time, src: v.id || 'local' };
   launchTorpedo(d, true);
-  showMsg(`魚雷発射！ 方位 ${String(Math.round(tube.hd) % 360).padStart(3, '0')}°・深度 ${Math.round(tube.dp)}m（残り ${tube.n} 本）`);
-  if (net.room) net.room.emit('torp', Object.assign({}, d, { x: +x.toFixed(2), y: +y.toFixed(2), z: +z.toFixed(2), h: +h.toFixed(3), hd: +d.hd.toFixed(3) })).catch(() => {});
+  showMsg(`${tube.type === 'decoy' ? 'デコイ' : '魚雷'}発射！ 方位 ${fmtB(bearingOf(h))}°・深度 ${tube.dp}m（残り ${tube.n} 本）`);
+  if (net.room) net.room.emit('torp', Object.assign({}, d, { x: +x.toFixed(2), y: +y.toFixed(2), z: +z.toFixed(2), h: +h.toFixed(3) })).catch(() => {});
 }
 function placeTorp(t) {
   t.mesh.position.set(t.x, t.y, t.z);
@@ -2531,39 +2575,50 @@ function torpHit(t) {   // 当たったもの：'ground'／乗り物／置物。
   for (const pr of props) { const b = pr.box; if (t.x > b.min.x - 0.2 && t.x < b.max.x + 0.2 && t.z > b.min.z - 0.2 && t.z < b.max.z + 0.2 && t.y > b.min.y - 0.2 && t.y < b.max.y) return { kind: 'prop' }; }
   return null;
 }
+const nearSubs = (x, y, z, except) => vehicles.filter((v) => v !== except && !v.sunk && vtype(v) === 'sub' && Math.hypot(v.pos.x - x, v.y - y, v.pos.y - z) < NEAR_R);
+// 自分の魚雷が爆発：当たり・近くの潜水艦を決めて、みんなに知らせる
+function explode(t, hit) {
+  const hv = hit && hit.kind === 'vehicle' ? hit.v : null;
+  const near = t.decoy ? [] : nearSubs(t.x, t.y, t.z, hv);
+  const data = { id: t.id, x: +t.x.toFixed(2), y: +t.y.toFixed(2), z: +t.z.toFixed(2), dc: t.decoy ? 1 : 0,
+    hit: !t.decoy && hv && hv.shared ? hv.id : null, near: near.filter((v) => v.shared && v.id).map((v) => v.id) };
+  boom(t.x, t.y, t.z, t.decoy ? null : hv, near, t.decoy);
+  if (t.decoy) showMsg(hv ? `デコイが ${hv.name} に当たりました（被害なし）` : 'デコイが爆発しました（被害なし）');
+  else {
+    const parts = [];
+    const nm = (v) => (isMine(v) ? '自分の艦' : v.name);
+    if (hv) parts.push(hv.sunk ? `${nm(hv)} を撃沈！` : vtype(hv) === 'sub' ? `${nm(hv)} に直撃！（HP ${subHp(hv)}）` : `${nm(hv)} に命中`);
+    for (const v of near) parts.push(v.sunk ? `${nm(v)} が沈没！` : `${nm(v)} の近くで爆発（HP ${subHp(v)}）`);
+    showMsg(parts.length ? parts.join('　') : hit ? '魚雷は海底か陸・置物に当たりました' : `魚雷は ${Math.round(t.dist)}m 進んで爆発しました`);
+  }
+  if (net.room) net.room.emit('boom', data).catch(() => {});
+  removeTorp(t);
+}
 function stepTorps(dt) {
   for (const t of [...torps]) {
     t.age += dt;
-    t.h += THREE.MathUtils.clamp(wrapA(t.hd - t.h), -0.6 * dt, 0.6 * dt);   // 決めた方位へ曲がる
     t.y += THREE.MathUtils.clamp(SEA - t.dp - t.y, -3 * dt, 3 * dt);
-    const step = TORP_SPEED * dt;
+    const step = Math.min(t.speed * dt, Math.max(0, t.maxDist - t.dist) + 0.01);
     t.x += Math.sin(t.h) * step; t.z += Math.cos(t.h) * step; t.dist += step;
     t.wakeT += dt;
     if (t.wakeT > 0.25) { t.wakeT = 0; addWake(t.x - Math.sin(t.h) * 2, t.z - Math.cos(t.h) * 2); }
     placeTorp(t);
     if (t.mine) {
       const hit = torpHit(t);
-      if (hit) {
-        const hv = hit.kind === 'vehicle' ? hit.v : null;
-        boom(t.x, t.y, t.z, hv);
-        if (hv) showMsg(hv.sunk ? `命中！ ${hv.name} を撃沈しました` : vtype(hv) === 'sub' ? `命中！ ${hv.name} の速力が落ちました（あと 1 発で沈没）` : `命中！ ${hv.name} に当たりました`);
-        else showMsg(hit.kind === 'ground' ? '魚雷は海底か陸に当たりました' : '魚雷は置物に当たりました');
-        if (net.room) net.room.emit('boom', { id: t.id, x: +t.x.toFixed(2), y: +t.y.toFixed(2), z: +t.z.toFixed(2), hit: hv && hv.shared ? hv.id : null }).catch(() => {});
-        removeTorp(t);
-        continue;
-      }
-    }
-    if (t.dist >= TORP_RANGE || t.age > 60) { if (t.mine) showMsg('魚雷は射程 400m を走りきりました'); removeTorp(t); }
+      if (hit || t.dist >= t.maxDist || t.age >= t.maxTime) { explode(t, hit); continue; }
+    } else if (t.age > 70) removeTorp(t);   // 知らせが届かなかったとき
   }
   stepWakes();
 }
-// 爆発：水の中の光と、浅ければ水柱
+// 爆発：水の中の光と、浅ければ水柱。5 秒間は音が聞こえなくなる
 const booms = [];
 const boomGeo = new THREE.SphereGeometry(1, 16, 10), colGeo = new THREE.CylinderGeometry(1.2, 3, 1, 14, 1, true);
 colGeo.translate(0, 0.5, 0);
 let shakeUntil = 0, shakePow = 0;
-function boom(x, y, z, hitV) {
-  const flash = new THREE.Mesh(boomGeo, new THREE.MeshBasicMaterial({ color: 0xffd08a, transparent: true, opacity: 0.9, depthWrite: false, fog: false }));
+const isMine = (v) => v && (v === ride || (aboard && aboard.v === v));
+function boom(x, y, z, hitV, near, decoy) {
+  deafUntil = clock.elapsedTime + 5;
+  const flash = new THREE.Mesh(boomGeo, new THREE.MeshBasicMaterial({ color: decoy ? 0xfff1c8 : 0xffd08a, transparent: true, opacity: decoy ? 0.6 : 0.9, depthWrite: false, fog: false }));
   flash.position.set(x, y, z); scene.add(flash);
   const b = { flash, col: null, t: 0 };
   if (SEA - y < 14) {
@@ -2573,23 +2628,26 @@ function boom(x, y, z, hitV) {
   booms.push(b);
   for (let i = 0; i < 14; i++) { const a = Math.random() * 6.28, r = Math.random() * 3; addWake(x + Math.cos(a) * r, z + Math.sin(a) * r); }
   const d = camera.position.distanceTo(flash.position);
-  const mineHit = hitV && (hitV === ride || (aboard && aboard.v === hitV));
-  if (d < 80 || mineHit) { shakePow = mineHit ? 0.6 : 0.35 * (1 - d / 80); shakeUntil = clock.elapsedTime + (mineHit ? 1.2 : 0.7); }
+  const mineHit = isMine(hitV), mineNear = (near || []).some(isMine);
+  if (d < 80 || mineHit || mineNear) { shakePow = mineHit ? 0.6 : mineNear ? 0.45 : 0.35 * (1 - d / 80); shakeUntil = clock.elapsedTime + (mineHit ? 1.2 : 0.7); }
+  if (decoy) return;
   if (mineHit) { hitV.vF *= 0.2; hitV.roll += 0.25; hitV.pitch -= 0.1; }
-  if (hitV && vtype(hitV) === 'sub' && !hitV.sunk) damageSub(hitV, mineHit);
+  if (hitV && vtype(hitV) === 'sub' && !hitV.sunk) damageSub(hitV, HIT_DMG, '魚雷が直撃！');
+  for (const v of near || []) if (!v.sunk) damageSub(v, NEAR_DMG, '近くで魚雷が爆発！');
 }
 const SINK_LIFE = 180;   // 沈んでから 3 分で消える
-function damageSub(v, mine) {
-  v.hits = (v.hits || 0) + 1;
-  if (v.hits < 2) {
-    if (mine) showMsg(`魚雷が命中！ ${v.name} は最高 10 ノットまでしか出せません`);
-    if (ride === v) { ord.kt = Math.min(ord.kt, 10); helmShown = ''; }
+function damageSub(v, dmg, what) {
+  v.hp = Math.max(0, subHp(v) - dmg);
+  const mine = isMine(v);
+  if (v.hp > 0) {
+    if (mine) showMsg(`${what} HP ${v.hp}／${HP_MAX}（最高 ${v.hp} ノット）`);
+    if (ride === v) { ord.kt = Math.min(ord.kt, maxKt(v)); helmShown = ''; }
     return;
   }
   v.sunk = clock.elapsedTime; v.remote = null; v.vF = 0;
   if (ride === v) { leaveRide(true); player.vy = 2; }
   if (aboard && aboard.v === v) getOff();
-  if (mine) showMsg(`${v.name} は 2 発目の魚雷で沈没しました。脱出！`);
+  if (mine) showMsg(`${what} HP が 0 になり ${v.name} は沈没しました。脱出！`);
 }
 function stepSunk(v, dt) {
   const V = v.item.def.vehicle, bed = heightAt(v.pos.x, v.pos.y) + V.draft;
@@ -2618,20 +2676,25 @@ function stepBooms(dt) {
   }
 }
 // ほかの人の魚雷と爆発
+const OK_ID = /^[A-Za-z0-9_-]{1,40}$/;
 function onTorp(p) {
   const d = p && p.data;
-  if (!d || typeof d.id !== 'string' || !/^[A-Za-z0-9_-]{1,40}$/.test(d.id) || torps.some((t) => t.id === d.id)) return;
+  if (!d || typeof d.id !== 'string' || !OK_ID.test(d.id) || torps.some((t) => t.id === d.id)) return;
   if (torps.length > 40) return;
-  launchTorpedo({ id: d.id, x: num(d.x, X0, X1), y: num(d.y, Y_BOTTOM, SEA), z: num(d.z, Z0, Z1), h: num(d.h, -10, 10), hd: num(d.hd, -10, 10), dp: num(d.dp, 1, 200, 10),
-    src: typeof d.src === 'string' ? d.src.slice(0, 40) : '' }, false);
+  launchTorpedo({ id: d.id, k: d.k === 'decoy' ? 'decoy' : 'war', x: num(d.x, X0, X1), y: num(d.y, Y_BOTTOM, SEA), z: num(d.z, Z0, Z1), h: num(d.h, -10, 10), dp: num(d.dp, 1, 200, 10),
+    dist: num(d.dist, 20, TORP_RANGE, TORP_RANGE), time: num(d.time, 1, 15, 10), src: typeof d.src === 'string' ? d.src.slice(0, 40) : '' }, false);
 }
 function onBoom(p) {
   const d = p && p.data;
   if (!d || typeof d.id !== 'string') return;
   const t = torps.find((t) => t.id === d.id);
   if (t) removeTorp(t);
-  const hv = typeof d.hit === 'string' ? vehicles.find((v) => v.id === d.hit) : null;
-  boom(num(d.x, X0, X1), num(d.y, Y_BOTTOM, SEA), num(d.z, Z0, Z1), hv);
+  const x = num(d.x, X0, X1), y = num(d.y, Y_BOTTOM, SEA), z = num(d.z, Z0, Z1), decoy = d.dc === 1;
+  const hv = !decoy && typeof d.hit === 'string' ? vehicles.find((v) => v.id === d.hit) : null;
+  const ids = Array.isArray(d.near) ? d.near.filter((s) => typeof s === 'string' && OK_ID.test(s)).slice(0, 20) : [];
+  // 知らせにある「みんなの潜水艦」と、自分だけの潜水艦で近くにあるもの
+  const near = decoy ? [] : vehicles.filter((v) => v !== hv && vtype(v) === 'sub' && (ids.includes(v.id) || (!v.shared && Math.hypot(v.pos.x - x, v.y - y, v.pos.y - z) < NEAR_R)));
+  boom(x, y, z, hv, near, decoy);
 }
 
 /* ================= 潜っているほかの潜水艦は見えない（浮上すると見える） ================= */
