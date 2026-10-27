@@ -2608,7 +2608,7 @@ function stepTorps(dt) {
     const step = Math.min(t.speed * dt, Math.max(0, t.maxDist - t.dist) + 0.01);
     t.x += Math.sin(t.h) * step; t.z += Math.cos(t.h) * step; t.dist += step;
     t.wakeT += dt;
-    if (t.wakeT > 0.25) { t.wakeT = 0; addWake(t.x - Math.sin(t.h) * 2, t.z - Math.cos(t.h) * 2); }
+    if (t.wakeT > 0.25 && !t.decoy) { t.wakeT = 0; addWake(t.x - Math.sin(t.h) * 2, t.z - Math.cos(t.h) * 2); }   // デコイは水面に泡の筋を残さない
     placeTorp(t);
     if (t.mine) {
       const hit = torpHit(t);
