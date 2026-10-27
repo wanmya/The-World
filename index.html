@@ -2791,7 +2791,8 @@ function hideSubmerged(v) {
   v.item.hull.visible = !hide;
   const L = v.item.light;
   if (L) L.beam.visible = L.on && !hide;
-  if (v.item.periscope) v.item.periscope.pivot.visible = !hide || v.y + v.item.periscope.eye.y > SEA + 0.1;   // 潜望鏡だけ水の上に出ていれば見える
+  const deep = !mine && SEA - v.y >= 10;   // 深度10m以上は潜望鏡も見えない
+  if (v.item.periscope) v.item.periscope.pivot.visible = !deep && (!hide || v.y + v.item.periscope.eye.y > SEA + 0.1);   // 潜望鏡だけ水の上に出ていれば見える
 }
 
 /* ================= メニュー（なまえ・置く・ひとこと・自分が出した物） ================= */
