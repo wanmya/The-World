@@ -59,6 +59,10 @@ body { margin: 0; background: var(--sky); color: var(--ink); font-family: var(--
 #myList .row span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #myList .row button { font: 800 12px var(--font-ui); border: 1px solid var(--line); background: #fff; color: var(--ink); border-radius: 999px; padding: 5px 10px; cursor: pointer; }
 #myList .row button.del { color: #c8402a; }
+#pingWarn { position: fixed; z-index: 8; left: 50%; top: 45%; transform: translate(-50%, -50%); pointer-events: none; padding: 14px 22px; border-radius: 12px;
+  background: rgba(200, 40, 30, 0.88); color: #fff; font: 900 clamp(20px, 6vw, 34px) var(--font-ui); white-space: nowrap; animation: pingBlink 0.3s steps(2, start) infinite; }
+@keyframes pingBlink { to { visibility: hidden; } }
+@media (prefers-reduced-motion: reduce) { #pingWarn { animation: none; } }
 #myList .none { font: 600 12px var(--font-ui); color: var(--ink-dim); }
 #msg { position: fixed; z-index: 4; left: 50%; transform: translateX(-50%); top: max(110px, 22vh); max-width: min(400px, calc(100vw - 32px)); font-size: 13px; font-weight: 700; color: var(--ink); background: var(--panel); border-radius: 8px; padding: 6px 10px; text-align: center; pointer-events: none; }
 body.mapOn #msg { top: max(145px, 30vh); }
@@ -204,6 +208,7 @@ body.helmOn .subbtns { flex-wrap: wrap; justify-content: flex-end; max-width: ca
   <div id="myList"></div>
 </div>
 <div id="msg" hidden></div>
+<div id="pingWarn" hidden role="alert">ピンガーが打たれました</div>
 <input type="file" id="file" accept=".glb,.gltf,model/gltf-binary" hidden>
 
 <div id="place" role="dialog" aria-modal="true" aria-labelledby="placeTitle" hidden>
@@ -267,6 +272,7 @@ body.helmOn .subbtns { flex-wrap: wrap; justify-content: flex-end; max-width: ca
   <button type="button" id="rescueBtn">救出</button>
   <button type="button" id="lightBtn" aria-pressed="false">ライト</button>
   <button type="button" id="scopeBtn" aria-pressed="false">潜望鏡</button>
+  <button type="button" id="pingBtn" hidden>ピンガー</button>
   <button type="button" id="subChat" hidden>ひとこと</button>
   <button type="button" id="subExit" hidden>降りる</button>
 </div>
@@ -1205,6 +1211,7 @@ document.addEventListener('keydown', (e) => {
   if (e.code === 'KeyP') setPeriscope(!periscope);
   if (e.code === 'KeyG') fireTorpedo();
   if (e.code === 'KeyB') loadTubes();
+  if (e.code === 'KeyN') sendPing();
   if (e.code === 'KeyT' || e.code === 'Enter') { e.preventDefault(); keys[e.code] = false; openChat(); return; }
   if (e.code === 'Space' || e.code.startsWith('Arrow')) e.preventDefault();
 });
@@ -2114,6 +2121,7 @@ async function startNet() {
   });
   ch.on('broadcast', { event: 'torp' }, ({ payload }) => { const p = heard(payload); if (p) onTorp(p); });
   ch.on('broadcast', { event: 'boom' }, ({ payload }) => { const p = heard(payload); if (p) onBoom(p); });
+  ch.on('broadcast', { event: 'ping' }, ({ payload }) => { const p = heard(payload); if (p) onPing(p); });
   ch.on('presence', { event: 'leave' }, ({ key }) => { if (others.delete(key)) syncPeers(peerList()); });
   // 置いた物の知らせは別の通り道にする（こちらがうまくいかなくても、みんなの姿は見える）
   sb.channel('world-props').on('postgres_changes', { event: '*', schema: 'public', table: 'props' }, (m) => {
@@ -2236,7 +2244,7 @@ const K = (k, t) => `<span>${k.map((x) => `<kbd>${x}</kbd>`).join('')}${t}</span
 const KEYS_HTML = {
   car: K(['W'], 'アクセル') + K(['S'], 'ブレーキ／バック') + K(['A', 'D'], 'ハンドル') + K(['Space'], 'サイドブレーキ') + K(['E'], '降りる') + '<span>ドラッグで視点</span>',
   ship: K(['W'], '前へ') + K(['S'], '後ろへ') + K(['A', 'D'], 'かじ') + K(['R'], '救出') + K(['E'], '降りる') + '<span>ドラッグで視点</span>',
-  sub: K(['←', '→'], '進路') + K(['↑', '↓'], '速力') + K(['Space'], '浅く') + K(['C'], '深く') + K(['B'], '装填') + K(['G'], '発射（艦首の向き）') + K(['L'], 'ライト') + K(['P'], '潜望鏡') + K(['Z', 'X'], '潜望鏡を回す') + K(['R'], '救出') + K(['E'], '降りる'),
+  sub: K(['←', '→'], '進路') + K(['↑', '↓'], '速力') + K(['Space'], '浅く') + K(['C'], '深く') + K(['B'], '装填') + K(['G'], '発射（艦首の向き）') + K(['N'], 'ピンガー') + K(['L'], 'ライト') + K(['P'], '潜望鏡') + K(['Z', 'X'], '潜望鏡を回す') + K(['R'], '救出') + K(['E'], '降りる'),
   plane: K(['W'], '出力を上げる') + K(['S'], '下げる・ブレーキ') + K(['A', 'D'], '曲がる') + K(['Space'], '上昇') + K(['C'], '下降') + K(['E'], '降りる'),
   ride: K(['E'], '降りる') + '<span>ドラッグで視点・ホイールで距離</span>',
   wet: K(['W'], '前へ') + K(['A', 'D'], '向きを変える') + K(['Space'], 'うく') + K(['C'], 'もぐる') + '<span>ドラッグで視点・ホイールで遠く／近く</span>',
@@ -2287,7 +2295,7 @@ function updateUi() {
   const kind = vt || (aboard ? 'ride' : wet ? 'wet' : 'walk');
   el('hint').textContent = HINT[kind];
   el('subBtns').hidden = vt !== 'sub' && vt !== 'ship';
-  el('lightBtn').hidden = el('scopeBtn').hidden = vt !== 'sub';
+  el('lightBtn').hidden = el('scopeBtn').hidden = el('pingBtn').hidden = vt !== 'sub';
   if (vt === 'sub') el('lightBtn').setAttribute('aria-pressed', String(!!(ride.item.light && ride.item.light.on)));
   el('keys').innerHTML = KEYS_HTML[kind];
 }
@@ -2357,10 +2365,8 @@ function updateMap(dt) {
     mapCx.beginPath(); mapCx.arc(x, y, pulse, 0, 7); mapCx.stroke();
     mapCx.fillStyle = '#ffb347'; mapCx.beginPath(); mapCx.moveTo(x, y - 6); mapCx.lineTo(x + 6, y); mapCx.lineTo(x, y + 6); mapCx.lineTo(x - 6, y); mapCx.closePath(); mapCx.fill();
   };
-  if (!deaf()) {
-    for (const o of net.others.values()) if (o.t && o.t.m === 'drive' && o.t.ns) contact(o.t.x, o.t.z);   // 動いている・装填中・撃った直後だけ
-    for (const t of torps) if (t.decoy) contact(t.x, t.z);
-  }
+  for (const [peer, o] of net.others) if (heardSub(peer, o)) contact(o.t.x, o.t.z);   // 音（動いている・装填中・撃った直後）とピンガー
+  if (!deaf()) for (const t of torps) if (t.decoy) contact(t.x, t.z);
   for (const t of torps) if (!t.decoy) { mapCx.fillStyle = t.mine && t.decoy ? '#ffd24a' : t.mine ? '#ff5a3c' : '#ff2a2a'; mapCx.strokeStyle = '#fff'; mapCx.lineWidth = 1; mapCx.beginPath(); mapCx.arc(toX(t.x), toY(t.z), 3.5, 0, 7); mapCx.fill(); mapCx.stroke(); }
   mapCx.font = '800 20px sans-serif'; mapCx.textAlign = 'center'; mapCx.lineWidth = 4; mapCx.strokeStyle = 'rgba(0,0,0,0.5)'; mapCx.fillStyle = '#fff';
   mapCx.strokeText('北', S / 2, 22); mapCx.fillText('北', S / 2, 22);
@@ -2368,11 +2374,10 @@ function updateMap(dt) {
   // 音を出している相手の、ここから見た方位と深度
   const lines = [];
   if (deaf()) lines.push(`<span class="deaf">爆発音で聞こえない（あと ${Math.ceil(deafUntil - clock.elapsedTime)} 秒）</span>`);
-  else for (const o of net.others.values()) {
-    if (!(o.t && o.t.m === 'drive' && o.t.ns)) continue;
-    const sv = o.t.v ? vehicles.find((x) => x.id === o.t.v) : null;
-    if (sv && vtype(sv) !== 'sub') continue;
-    lines.push(`音：方位 ${fmtB(bearingOf(Math.atan2(o.t.x - v.pos.x, o.t.z - v.pos.y)))}°・深度 ${Math.max(0, SEA - o.t.y).toFixed(0)}m`);
+  if (clock.elapsedTime < myPingUntil) lines.push(`ピンガー中（あと ${Math.ceil(myPingUntil - clock.elapsedTime)} 秒）`);
+  for (const [peer, o] of net.others) {
+    if (!heardSub(peer, o)) continue;
+    lines.push(`${(pingers.get(peer) || 0) > clock.elapsedTime ? 'ピンガー' : clock.elapsedTime < myPingUntil && !(o.t.ns && !deaf()) ? '反響' : '音'}：方位 ${fmtB(bearingOf(Math.atan2(o.t.x - v.pos.x, o.t.z - v.pos.y)))}°・深度 ${Math.max(0, SEA - o.t.y).toFixed(0)}m`);
   }
   if (!deaf()) for (const t of torps) if (t.decoy && !t.mine) lines.push(`音：方位 ${fmtB(bearingOf(Math.atan2(t.x - v.pos.x, t.z - v.pos.y)))}°・深度 ${Math.max(0, SEA - t.y).toFixed(0)}m`);   // デコイも潜水艦の音に聞こえる
   if (!lines.length) lines.push('音は聞こえません');
@@ -2702,6 +2707,40 @@ function onBoom(p) {
   // 知らせにある「みんなの潜水艦」と、自分だけの潜水艦で近くにあるもの
   const near = decoy ? [] : vehicles.filter((v) => v !== hv && vtype(v) === 'sub' && (ids.includes(v.id) || (!v.shared && Math.hypot(v.pos.x - x, v.y - y, v.pos.y - z) < NEAR_R)));
   boom(x, y, z, hv, near, decoy);
+}
+
+/* ================= ピンガー：打つと 5 秒間、相手の位置がわかる。そのあいだ自分も相手のレーダーに映る ================= */
+const PING_TIME = 5;
+let myPingUntil = 0;
+const pingers = new Map();   // ピンガーを打った人（tab）→ 映る時間の終わり
+const isSubDriver = (o) => {
+  if (!(o.t && o.t.m === 'drive' && o.t.v)) return false;
+  const sv = vehicles.find((x) => x.id === o.t.v);
+  return !sv || vtype(sv) === 'sub';
+};
+// レーダーに映るか：音を出している（爆発後 5 秒は聞こえない）、ピンガーを打ってきた、自分のピンガーの反響
+function heardSub(peer, o) {
+  if (!isSubDriver(o)) return false;
+  return (o.t.ns && !deaf()) || (pingers.get(peer) || 0) > clock.elapsedTime || clock.elapsedTime < myPingUntil;
+}
+function sendPing() {
+  const v = helmSub();
+  if (!v) return;
+  if (clock.elapsedTime < myPingUntil) { showMsg('ピンガーの反響を聞いています'); return; }
+  myPingUntil = clock.elapsedTime + PING_TIME;
+  showMsg('ピンガーを打ちました。5 秒間、相手の位置がわかります（相手にも自分の位置が知られます）');
+  if (net.room) net.room.emit('ping', {}).catch(() => {});
+}
+el('pingBtn').addEventListener('click', sendPing);
+let pingWarnTimer = 0;
+function onPing(p) {
+  pingers.set(p.tab, clock.elapsedTime + PING_TIME);
+  const inSub = helmSub() || (aboard && vtype(aboard.v) === 'sub');
+  if (!inSub) return;
+  const w = el('pingWarn');
+  w.hidden = false;
+  clearTimeout(pingWarnTimer);
+  pingWarnTimer = setTimeout(() => { w.hidden = true; }, 1500);
 }
 
 /* ================= 潜っているほかの潜水艦は見えない（浮上すると見える） ================= */
