@@ -2884,6 +2884,28 @@ function onTorpGuide(p) {   // ほかの人の誘導魚雷の向きを合わせ�
   if (d.gone) { removeTorp(t); return; }
   t.x = num(d.x, X0, X1, t.x); t.y = num(d.y, Y_BOTTOM, SEA, t.y); t.z = num(d.z, Z0, Z1, t.z); t.h = num(d.h, -100, 100, t.h); t.dp = num(d.dp, 1, 100, t.dp);
 }
+/* 潜水艦の船体に 30° 以下の浅い角度で当たった魚雷は、爆発せず鏡のように跳ね返る（入った角度＝出る角度）。
+   船体は箱とみなし、めり込みの浅いほうの面（横腹か、艦首・艦尾）に当たったことにする */
+const GLANCE = (30 * Math.PI) / 180;
+function glance(t, v) {
+  const V = v.item.def.vehicle, h = visYaw(v), c = Math.cos(h), s = Math.sin(h);
+  const dx = t.x - v.pos.x, dz = t.z - v.pos.y;
+  const lx = dx * c - dz * s, lz = dx * s + dz * c - (V.centerZ || 0);   // 潜水艦から見た位置（+z が艦首）
+  let ux = Math.sin(t.h) * c - Math.cos(t.h) * s, uz = Math.sin(t.h) * s + Math.cos(t.h) * c;   // 魚雷の向き（潜水艦から見て）
+  const ox = V.halfWidth + 0.3 - Math.abs(lx), oz = V.halfLength + 0.3 - Math.abs(lz);
+  const side = ox < oz;   // 横腹に当たった
+  const graze = Math.asin(Math.min(1, Math.abs(side ? ux : uz)));   // 面となす角
+  if (graze > GLANCE) return false;
+  if (side) ux = -ux; else uz = -uz;   // 面に垂直な向きだけ反対にする
+  t.h = Math.atan2(ux * c + uz * s, -ux * s + uz * c);
+  // 船体の外へ押し出す
+  const nx = side ? Math.sign(lx) * (V.halfWidth + 0.5) : lx, nz = side ? lz : Math.sign(lz) * (V.halfLength + 0.5);
+  t.x = v.pos.x + nx * c + (nz + (V.centerZ || 0)) * s; t.z = v.pos.y - nx * s + (nz + (V.centerZ || 0)) * c;
+  placeTorp(t);
+  showMsg(`魚雷が ${isMine(v) ? '自分の艦' : v.name} に浅い角度で当たり、跳ね返りました`);
+  if (net.room) net.room.emit('tg', { id: t.id, x: +t.x.toFixed(2), y: +t.y.toFixed(2), z: +t.z.toFixed(2), h: +t.h.toFixed(3), dp: +t.dp.toFixed(1) }).catch(() => {});
+  return true;
+}
 function stepTorps(dt) {
   for (const t of [...torps]) {
     t.age += dt;
@@ -2896,6 +2918,7 @@ function stepTorps(dt) {
     placeTorp(t);
     if (t.mine) {
       const hit = torpHit(t);
+      if (hit && hit.kind === 'vehicle' && vtype(hit.v) === 'sub' && glance(t, hit.v)) continue;   // 浅い角度なので跳ね返った
       if (t.guide && !hit && (t.dist >= t.maxDist || t.age >= t.maxTime)) {   // 誘導魚雷は当たらないと爆発しない。燃料切れで沈む
         showMsg('誘導魚雷は何にも当たらず、燃料が切れました');
         if (net.room) net.room.emit('tg', { id: t.id, gone: 1 }).catch(() => {});
