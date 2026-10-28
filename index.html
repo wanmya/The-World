@@ -2073,7 +2073,7 @@ function sendPresence() {
     p: at.map((v) => r(v)), f: r(wrapA(ride ? ride.h : player.face)), m: ride ? 'drive' : aboard ? 'ride' : player.mode, col: myColor,
     pv: aboard && aboard.v.shared ? aboard.v.id : null, ps: aboard ? aboard.seat : null,   // 相乗りしている船と、立っている場所
     lt: ride && ride.item.light && ride.item.light.on ? 1 : 0, py: ride && ride.item.periscope ? r(periYaw) : 0,   // 潜水艦のライトと潜望鏡の向き
-    ns: ride && vtype(ride) === 'sub' && subNoisy(ride) ? 1 : 0,
+    ns: ride && isBoat(ride) && (vtype(ride) === 'sub' || ride.item.def.vehicle.aegis ? subNoisy(ride) : Math.abs(ride.vF) > 0.3) ? 1 : 0,   // スクリューの音
     sp: ride && isBoat(ride) ? Math.round(Math.abs(ride.vF) / KT) : 0,   // 速さ（ノット）。5 ノット以下は 300m まで近づかないと聞こえない
     gy: ride && ride.item.guns ? [r((ride.item.guns.main[0] || { pivot: { rotation: { y: 0 } } }).pivot.rotation.y), r((ride.item.guns.ciws[0] || { pivot: { rotation: { y: 0 } } }).pivot.rotation.y)] : null,   // イージス艦の砲塔の向き   // 潜水艦の音（動いている・装填中・撃った直後）
     c: myCar ? pose(myCar) : null,
@@ -3059,7 +3059,7 @@ const pingers = new Map();   // ピンガーを打った人（tab）→ 映る�
 const isSubDriver = (o) => {
   if (!(o.t && o.t.m === 'drive' && o.t.v)) return false;
   const sv = vehicles.find((x) => x.id === o.t.v);
-  return !sv || vtype(sv) === 'sub';
+  return !sv || isBoat(sv);   // 潜水艦だけでなく、船・イージス艦のスクリュー音も聞こえる
 };
 // レーダーに映るか：音を出している（爆発後 5 秒は聞こえない）、ピンガーを打ってきた、自分のピンガーの反響
 // ソナーが音を聞ける距離：500m。相手が 5 ノット以下なら 300m
@@ -3086,15 +3086,22 @@ function subContacts() {
 }
 let subTarget = null;   // 魚雷を向ける目標（レーダーの印の key）
 // 音が消えた相手の「さっきまで居た点」。また聞こえたら消す
-const lastHeard = new Map(), ghosts = new Map();
+const lastHeard = new Map(), ghosts = new Map(), GHOST_LIFE = 90;   // 点は 90 秒で消える
 function trackGhosts() {
   const now = new Set();
   for (const c of subContacts()) {
     if (c.parked) continue;
+    if (!c.key.startsWith('p:') && !c.key.startsWith('a:')) continue;   // デコイは消えるだけ（点を残さない）
     now.add(c.key); lastHeard.set(c.key, { x: c.x, y: c.y, z: c.z }); ghosts.delete(c.key);
   }
-  for (const [k, p] of lastHeard) if (!now.has(k)) { ghosts.set(k, p); lastHeard.delete(k); }
-  for (const k of ghosts.keys()) if (k.startsWith('p:') && !net.others.has(k.slice(2))) ghosts.delete(k);   // いなくなった人
+  const t = clock.elapsedTime;
+  for (const [k, p] of lastHeard) if (!now.has(k)) { ghosts.set(k, Object.assign(p, { t })); lastHeard.delete(k); }
+  for (const [k, g] of ghosts) {
+    let gone = t - g.t > GHOST_LIFE;   // 古くなった点は消す
+    if (k.startsWith('p:')) { const o = net.others.get(k.slice(2)); gone ||= !o || !isSubDriver(o); }   // いなくなった・降りた人
+    if (k.startsWith('a:')) gone ||= !aiSub || aiSub.sunk || 'a:' + aiSub.id !== k;
+    if (gone) { ghosts.delete(k); if (subTarget === k) { subTarget = null; helmShown = ''; } }
+  }
 }
 function selectSubTarget(key) {
   subTarget = subTarget === key ? null : key;
