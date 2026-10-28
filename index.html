@@ -2436,11 +2436,11 @@ function buildMapImage() {   // 地形を上から見た絵を 1 回だけ作る
   return c;
 }
 mapEl.addEventListener('click', (e) => {   // 小さいときはタップで拡大。大きいときは「近く／全体」と「閉じる」
-  if (helmAegis() && mapEl.classList.contains('big') && e.target === mapCv && radarMarks.length) {   // イージス艦：印をタップして目標にする
+  if ((helmAegis() || helmSub()) && mapEl.classList.contains('big') && e.target === mapCv) {   // イージス艦・潜水艦：印をタップして目標にする
     const r0 = mapCv.getBoundingClientRect(), s = 296 / r0.width, px = (e.clientX - r0.left) * s, py = (e.clientY - r0.top) * s;
     let best = null, bd = 22;
     for (const m of radarMarks) { const d = Math.hypot(m.px - px, m.py - py); if (d < bd) { bd = d; best = m; } }
-    if (best) selectTarget(best.t);
+    if (best) { if (helmAegis()) selectTarget(best.t); else selectSubTarget(best.t.key); }
     return;
   }
   const r = e.target.closest('[data-range]');
@@ -2501,8 +2501,13 @@ function updateMap(dt) {
     mapCx.beginPath(); mapCx.arc(p.x, p.y, 4, 0, 7); mapCx.fill(); mapCx.stroke();
   }
   // 音で見つけた潜水艦（デコイも同じ印）：方位・距離・深度
-  const contact = (wx, wz, wy) => {
+  const contact = (wx, wz, wy, key) => {
     const p = polar(wx, wz), pulse = 6 + ((clock.elapsedTime * 1.5) % 1) * 8;
+    if (key) radarMarks.push({ px: p.x, py: p.y, t: { key, name: key } });
+    if (key && subTarget === key) {   // 選んだ目標：赤い照準
+      mapCx.strokeStyle = '#ff3b30'; mapCx.lineWidth = 2;
+      mapCx.beginPath(); mapCx.arc(p.x, p.y, 11, 0, 7); mapCx.moveTo(p.x - 16, p.y); mapCx.lineTo(p.x + 16, p.y); mapCx.moveTo(p.x, p.y - 16); mapCx.lineTo(p.x, p.y + 16); mapCx.stroke();
+    }
     mapCx.strokeStyle = '#ffb347'; mapCx.lineWidth = 2;
     mapCx.beginPath(); mapCx.arc(p.x, p.y, pulse, 0, 7); mapCx.stroke();
     mapCx.fillStyle = '#ffb347'; mapCx.beginPath(); mapCx.moveTo(p.x, p.y - 6); mapCx.lineTo(p.x + 6, p.y); mapCx.lineTo(p.x, p.y + 6); mapCx.lineTo(p.x - 6, p.y); mapCx.closePath(); mapCx.fill();
@@ -2514,8 +2519,7 @@ function updateMap(dt) {
       mapCx.fillStyle = '#ffd9a0'; mapCx.fillText(t, tx, p.y - 8);
     }
   };
-  if (!ag) for (const [peer, o] of net.others) if (heardSub(peer, o)) contact(o.t.x, o.t.z, o.t.y);   // 音（動いている・装填中・撃った直後）とピンガー
-  if (!ag && !deaf()) for (const t of torps) if (t.decoy) contact(t.x, t.z, t.y);
+  if (!ag) { radarMarks = []; for (const c of subContacts()) contact(c.x, c.z, c.y, c.key); }   // 音（動いている・装填中・撃った直後）とピンガー、デコイ
   if (!ag) for (const t of torps) if (!t.decoy) {
     const p = polar(t.x, t.z);
     mapCx.fillStyle = t.mine ? '#ff5a3c' : '#ff2a2a'; mapCx.strokeStyle = '#fff'; mapCx.lineWidth = 1;
@@ -2588,7 +2592,7 @@ function initOrders(v) {
   ord.hdg = Math.round(bearingOf(v.h)); ord.kt = 0; ord.dp = Math.round(subDepth(v));
   ord.tdp = Math.max(2, Math.round(subDepth(v)) || 10);
   helmShown = '';
-  tube.n = 0; tube.until = 0;
+  tube.n = 0; tube.until = 0; subTarget = null;
 }
 function loadTubes() {
   const v = helmSub();
@@ -2647,8 +2651,10 @@ function updateHelm() {
   }
   const left = Math.max(0, tube.until - clock.elapsedTime);
   const what = ord.ttype === 'decoy' ? `デコイ（${Math.round(ord.ttime)} 秒で消える）` : ord.ttype === 'guide' ? '誘導魚雷（音を追う・当たると爆発）' : `弾頭魚雷（${Math.round(ord.tdist)}m で爆発）`;
+  const sa = subAim(v);
+  const aimTxt = sa ? `目標へ 方位 ${fmtB(bearingOf(sa.h))}°・深度 ${sa.dp}m` : `${subTarget ? '目標が聞こえない → ' : ''}艦首の向き・深度 ${Math.round(ord.tdp)}m`;
   const am = ammoOf(v), stock = `残弾 弾頭${am.war}・誘導${am.guide}・デコイ${am.decoy}`;
-  const tst = left > 0 ? `装填中… あと ${Math.ceil(left)} 秒（音が出ています）` : tube.n ? `${tube.n} 本装填ずみ。発射：${what}・深度 ${Math.round(ord.tdp)}m・艦首の向き` : `空です。「装填」を押してください${subHp(v) <= 5 ? '（HP 5 以下なので 1 本ずつ）' : ''}`;
+  const tst = left > 0 ? `装填中… あと ${Math.ceil(left)} 秒（音が出ています）` : tube.n ? `${tube.n} 本装填ずみ。発射：${what}・${aimTxt}` : `空です。「装填」を押してください${subHp(v) <= 5 ? '（HP 5 以下なので 1 本ずつ）' : ''}`;
   const st = helmTab === 'torp' ? `${tst}（${stock}）` : v.dpLimit != null ? `海底が近いので ${v.dpLimit.toFixed(0)}m までしかもぐれません` : `いま ${compassName(b)}へ ${Math.abs(v.vF / KT).toFixed(1)}kt`;
   const key = [helmTab, JSON.stringify(vals), JSON.stringify(now), tube.n, ord.ttype, st].join('|');
   if (key === helmShown) return;
@@ -2738,13 +2744,15 @@ function fireTorpedo() {
   if (!tube.n) { showMsg('魚雷が入っていません。「装填」を押してください'); return; }
   const type = ord.ttype, am = ammoOf(v);
   if (!am[type]) { showMsg(`${TNAME[type]}の残弾がありません。ほかの種類を選んでください`); return; }
-  const V = v.item.def.vehicle, h = visYaw(v);
+  const aim = subAim(v);   // レーダーで選んだ目標が映っていれば、その方位と深度へ。いなければ艦首の向き
+  if (subTarget && !aim) showMsg('目標がレーダーから消えたので、艦首の向きに撃ちます');
+  const V = v.item.def.vehicle, h = aim ? aim.h : visYaw(v);
   const x = v.pos.x + Math.sin(h) * (V.halfLength + 1.8), z = v.pos.y + Math.cos(h) * (V.halfLength + 1.8);
   if (outsideBox(x, z, 1) || heightAt(x, z) > SEA - 1.5) { showMsg('前が浅くて撃てません'); return; }
   const y = Math.max(heightAt(x, z) + 0.6, Math.min(v.y - V.draft * 0.5, SEA - 1));
   tube.n--; am[type]--; helmShown = '';
   if (type !== 'decoy') tube.firedAt = clock.elapsedTime;   // デコイだけは発射音がしない
-  const dp = Math.round(ord.tdp);
+  const dp = aim ? aim.dp : Math.round(ord.tdp);
   const d = { id: newId().slice(0, 12), k: type, x, y, z, h, dp, dist: Math.round(ord.tdist), time: Math.round(ord.ttime), src: v.id || 'local' };
   launchTorpedo(d, true);
   showMsg(`${TNAME[type]}発射！ 方位 ${fmtB(bearingOf(h))}°・深度 ${dp}m（装填のこり ${tube.n} 本・${TNAME[type]}の残弾 ${am[type]}）`);
@@ -2947,6 +2955,26 @@ function heardSub(peer, o) {
   if (!isSubDriver(o)) return false;
   return (o.t.ns && !deaf()) || (pingers.get(peer) || 0) > clock.elapsedTime || clock.elapsedTime < myPingUntil;
 }
+// レーダーに映っている音（選べる目標）：key は 'p:<人>' か 't:<魚雷>'（デコイは潜水艦と見分けがつかない）
+function subContacts() {
+  const list = [];
+  for (const [peer, o] of net.others) if (heardSub(peer, o)) list.push({ key: 'p:' + peer, x: o.t.x, y: o.t.y, z: o.t.z });
+  if (!deaf()) for (const t of torps) if (t.decoy) list.push({ key: 't:' + t.id, x: t.x, y: t.y, z: t.z });
+  return list;
+}
+let subTarget = null;   // 魚雷を向ける目標（レーダーの印の key）
+function selectSubTarget(key) {
+  subTarget = subTarget === key ? null : key;
+  showMsg(subTarget ? '目標を選びました。発射すると、その方位と深度へ魚雷を撃ちます' : '目標を解除しました（艦首の向きに撃ちます）');
+  helmShown = ''; mapTick = 1;
+}
+// 目標がいまレーダーに映っていれば、その方位（h）と深度
+function subAim(v) {
+  if (!subTarget) return null;
+  const c = subContacts().find((c) => c.key === subTarget);
+  if (!c) return null;
+  return { h: Math.atan2(c.x - v.pos.x, c.z - v.pos.y), dp: THREE.MathUtils.clamp(Math.round(SEA - c.y), 1, 100), d: Math.hypot(c.x - v.pos.x, c.z - v.pos.y) };
+}
 function sendPing() {
   const v = helmSub();
   if (!v) return;
@@ -3092,6 +3120,7 @@ el('untargetBtn').addEventListener('click', () => { if (aegisTarget) selectTarge
 // イージス艦のレーダー：見えている船・乗り物・人を四角で。選んだ目標は赤い照準
 let radarMarks = [];
 window.__marks = () => radarMarks.map((m) => ({ px: m.px, py: m.py, name: m.t.name }));
+window.__subTarget = () => subTarget;
 function drawAegisRadar(ag, polar, big) {
   radarMarks = [];
   const sel = targetNow(ag);
