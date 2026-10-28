@@ -116,6 +116,7 @@ body.mapOn #msg { top: max(145px, 30vh); }
 .tbtn.on { background: var(--accent); color: #fff; }
 .subbtns { z-index: 3; position: fixed; right: max(16px, env(safe-area-inset-right, 0px)); bottom: calc(76px + env(safe-area-inset-bottom, 0px)); display: flex; gap: 10px; }
 @media (pointer: coarse) { .subbtns { bottom: calc(118px + env(safe-area-inset-bottom, 0px)); } }
+.subbtns button.eject { background: #d9473a; color: #fff; border-color: #b8362b; }
 .subbtns button { min-width: 64px; height: 44px; padding: 0 14px; border-radius: 999px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); font: 800 13px var(--font-ui); cursor: pointer; }
 .subbtns button[aria-pressed="true"] { background: var(--accent); color: #fff; border-color: transparent; }
 #scope { position: fixed; inset: 0; pointer-events: none; z-index: 1; }
@@ -241,6 +242,7 @@ body.helmOn .subbtns { flex-wrap: wrap; justify-content: flex-end; max-width: ca
     <button type="button" data-go="car" class="pveh"><b>自動車</b><small>ボディ＋タイヤ 2〜6 個</small></button>
     <button type="button" data-go="boat" class="pveh"><b>船舶</b><small>船・潜水艦</small></button>
     <button type="button" data-cat="plane" class="pveh"><b>航空機</b><small>前を +Z に向けた形</small></button>
+    <button type="button" data-cat="robot" class="pveh"><b>人型ロボット</b><small>胴体・コックピット・手足（前を +Z）</small></button>
   </div>
   <div class="pcats" data-screen="car" hidden>
     <button type="button" data-cat="car" data-wheels="2" class="pveh"><b>2 輪</b><small>タイヤ前・タイヤ後</small></button>
@@ -296,6 +298,7 @@ body.helmOn .subbtns { flex-wrap: wrap; justify-content: flex-end; max-width: ca
   <button type="button" id="untargetBtn" hidden>目標解除</button>
   <button type="button" id="subChat" hidden>ひとこと</button>
   <button type="button" id="subExit" hidden>降りる</button>
+  <button type="button" id="ejectBtn" class="eject" hidden>脱出</button>
 </div>
 <div class="touch">
   <button class="tbtn" id="tDive" type="button" hidden>もぐる</button>
@@ -625,7 +628,67 @@ function rigPlane(item, root, model, gltf, def) {
   };
   item.size = size;
 }
-const RIGS = { car: rigAutoCar, ship: rigBoat, sub: rigBoat, plane: rigPlane };
+/* ================= 人型ロボット =================
+   部品：胴体・コックピット・左右の 肩・上腕・手・もも・ひざ・足。前が +Z。足はスキーのようにすべって進む。
+   ばらばらの部品から、股・ひざ・足首・肩に関節を作って、すべる動き（スケーティング）をつける。 */
+const ROBOT_LIMITS = { height: 30, width: 20, length: 20 };
+const RB = { body: /^(胴体|body|torso)/i, cockpit: /^(コックピット|cockpit)/i };
+const RB_SIDE = { L: '(左|left[ _-]?|l[ _-])', R: '(右|right[ _-]?|r[ _-])' };
+const RB_PART = { shoulder: '(肩|shoulder)', arm: '(上腕|upper[ _-]?arm|arm)', hand: '(手|hand)', thigh: '(もも|thigh)', knee: '(ひざ|膝|knee|shin)', foot: '(足|foot|ski)' };
+function rigRobot(item, root, model, gltf, def) {
+  const find = (re) => { let f = null; model.traverse((o) => { if (!f && o !== model && re.test((o.name || '').trim())) f = o; }); return f; };
+  const parts = { body: find(RB.body), cockpit: find(RB.cockpit) };
+  for (const sd of ['L', 'R']) for (const k in RB_PART) parts[k + sd] = find(new RegExp(`^${RB_SIDE[sd]}${RB_PART[k]}$`, 'i')) || find(new RegExp(`^${RB_SIDE[sd]}${RB_PART[k]}`, 'i'));
+  const reasons = [];
+  if (!parts.body) reasons.push('「胴体」という名前の部品がありません');
+  if (!parts.cockpit) reasons.push('「コックピット」という名前の部品がありません（脱出で飛び出します）');
+  if (!parts.footL || !parts.footR) reasons.push('「左足」「右足」という名前の部品がありません（スキーのようにすべる足）');
+  if (reasons.length) throw new RuleError('robot', reasons);
+  let box = modelBox(root, model);
+  const size = box.getSize(new THREE.Vector3());
+  if (size.y > ROBOT_LIMITS.height) reasons.push(`高さが ${size.y.toFixed(1)}m です（${ROBOT_LIMITS.height}m まで）`);
+  if (size.x > ROBOT_LIMITS.width) reasons.push(`幅が ${size.x.toFixed(1)}m です（${ROBOT_LIMITS.width}m まで）`);
+  if (size.z > ROBOT_LIMITS.length) reasons.push(`奥行きが ${size.z.toFixed(1)}m です（${ROBOT_LIMITS.length}m まで）`);
+  if (size.y < 0.5) reasons.push('小さすぎます（高さ 0.5m 以上にしてください）');
+  if (reasons.length) throw new RuleError('robot', reasons);
+  const c = box.getCenter(new THREE.Vector3());
+  model.position.x -= c.x; model.position.z -= c.z; model.position.y -= box.min.y;   // 足の裏を地面に
+  root.updateMatrixWorld(true);
+  const bx = (o) => (o ? new THREE.Box3().setFromObject(o) : null);
+  const B = {}; for (const k in parts) B[k] = bx(parts[k]);
+  const pivotAt = (p) => { const g = new THREE.Group(); g.position.copy(model.worldToLocal(p.clone())); model.add(g); g.updateMatrixWorld(true); return g; };
+  const legs = {}, arms = {};
+  for (const sd of ['L', 'R']) {
+    const fB = B['foot' + sd], tB = B['thigh' + sd], kB = B['knee' + sd];
+    const fc = fB.getCenter(new THREE.Vector3());
+    const hipP = tB ? new THREE.Vector3(tB.getCenter(new THREE.Vector3()).x, tB.max.y, tB.getCenter(new THREE.Vector3()).z) : new THREE.Vector3(fc.x, fB.max.y + size.y * 0.4, fc.z);
+    const kneeP = kB ? new THREE.Vector3(kB.getCenter(new THREE.Vector3()).x, tB ? (tB.min.y + kB.max.y) / 2 : kB.max.y, kB.getCenter(new THREE.Vector3()).z) : new THREE.Vector3(hipP.x, (hipP.y + fB.max.y) / 2, hipP.z);
+    const ankP = new THREE.Vector3(kneeP.x, kB ? Math.max(fB.max.y * 0.5 + fB.min.y * 0.5, (kB.min.y + fB.max.y) / 2) : fB.max.y, kneeP.z);
+    const hip = pivotAt(hipP), knee = pivotAt(kneeP), ank = pivotAt(ankP);
+    hip.attach(knee); knee.attach(ank);
+    if (parts['thigh' + sd]) hip.attach(parts['thigh' + sd]);
+    if (parts['knee' + sd]) knee.attach(parts['knee' + sd]);
+    ank.attach(parts['foot' + sd]);
+    legs[sd] = { hip, knee, ank, L1: Math.max(0.1, hipP.y - kneeP.y), L2: Math.max(0.1, kneeP.y - ankP.y) };
+    const sB = B['shoulder' + sd] || B['arm' + sd];
+    if (sB) {
+      const sc = sB.getCenter(new THREE.Vector3());
+      const sh = pivotAt(new THREE.Vector3(sc.x, B['shoulder' + sd] ? sc.y : sB.max.y, sc.z));
+      for (const k of ['shoulder', 'arm', 'hand']) if (parts[k + sd]) sh.attach(parts[k + sd]);
+      arms[sd] = sh;
+    }
+  }
+  item.robot = { legs, arms, baseY: model.position.y, model, phase: 0, amp: 0, crouch: 0.1 };
+  item.cockpit = parts.cockpit;
+  item.def.vehicle = {
+    type: 'robot', halfWidth: Math.min(size.x, size.z * 1.4) / 2, halfLength: size.z / 2, centerZ: 0, height: size.y,
+    maxSpeed: 16, accel: 4.2, brake: 9, reverseMax: 3, maxSteer: 0.55, glide: 0.45,
+    wheelbase: Math.max(1, size.z * 0.6), wheelRadius: 0.5, wade: SEA - Math.min(3, size.y * 0.5),
+    exit: [-(size.x / 2 + 0.8), 0],
+  };
+  item.size = size;
+}
+const RIGS = { car: rigAutoCar, ship: rigBoat, sub: rigBoat, plane: rigPlane, robot: rigRobot };
 
 /* ================= ワールドの形 =================
    1km × 1km（高さ 200m）の箱。はじめの 200m の陸と入り江はそのままに、南（-z）と左右の海へ広げた。
@@ -1141,8 +1204,8 @@ function placeCar() {
    自動車を選ぶと、ボディ＋4 タイヤのルールで読み取って、みんなで乗れる車になる。 */
 const props = [];   // { item, box, id(共有なら), name, cat }
 const SHARE_MAX = 1.5 * 1024 * 1024, CHUNK = 180000, TRI_MAX = 30000;
-const CATS = { building: '建物', plant: '植物', prop: '置物', car: '自動車', ship: '船', sub: '潜水艦', plane: '航空機' };
-const VEHICLE_CATS = new Set(['car', 'ship', 'sub', 'plane']);
+const CATS = { building: '建物', plant: '植物', prop: '置物', car: '自動車', ship: '船', sub: '潜水艦', plane: '航空機', robot: '人型ロボット' };
+const VEHICLE_CATS = new Set(['car', 'ship', 'sub', 'plane', 'robot']);
 function bufToB64(buf) {
   const u = new Uint8Array(buf); let s = '';
   for (let i = 0; i < u.length; i += 0x8000) s += String.fromCharCode.apply(null, u.subarray(i, i + 0x8000));
@@ -1279,7 +1342,7 @@ function askCategory(buf, name) {
   resetPlaceDialog(`${name} を何として置く？`);
 }
 function closePlace() { placeEl.hidden = true; pendingFile = null; }
-const RULE_HEAD = { car: '自動車のルールに合いませんでした', ship: '船のルールに合いませんでした', sub: '潜水艦のルールに合いませんでした', plane: '航空機のルールに合いませんでした' };
+const RULE_HEAD = { robot: '人型ロボットのルールに合いませんでした', car: '自動車のルールに合いませんでした', ship: '船のルールに合いませんでした', sub: '潜水艦のルールに合いませんでした', plane: '航空機のルールに合いませんでした' };
 async function placeWithCategory(buf, name, cat, wheels) {
   for (const x of placeEl.querySelectorAll('button')) x.disabled = true;
   try {
@@ -1336,6 +1399,7 @@ document.addEventListener('keydown', (e) => {
   if (e.code === 'KeyG') fireTorpedo();
   if (e.code === 'KeyB') loadTubes();
   if (e.code === 'KeyN') sendPing();
+  if (e.code === 'KeyX' && ride && vtype(ride) === 'robot') ejectRobot();
   if (e.code === 'KeyT' || e.code === 'Enter') { e.preventDefault(); keys[e.code] = false; openChat(); return; }
   if (e.code === 'Space' || e.code.startsWith('Arrow')) e.preventDefault();
 });
@@ -1542,6 +1606,7 @@ function chooseBow(v) {
   v.yawOff = vis - h; v.h = h;
 }
 function toggleRide() {
+  if (pod && pod.mine && !pod.landed) return;   // 脱出して飛んでいるあいだは何もできない
   if (aboard) { getOff(); return; }
   if (ride) { leaveRide(false); return; }
   const v = nearCar();
@@ -1556,6 +1621,7 @@ function toggleRide() {
   }
   ride = v; driving = true; avatar.visible = false;
   v.settled = false;
+  if (v.noPod) showPod(v);   // 脱出したロボットには、新しいコックピットがつく
   if (isBoat(v) && !v.item.def.vehicle.fixedBow) chooseBow(v);
   if (vtype(v) === 'sub' || v.item.def.vehicle.aegis) initOrders(v);
 }
@@ -1715,7 +1781,7 @@ function stepCar(car, dt) {
     else car.vF = Math.max(-V.reverseMax, car.vF - V.accel * 0.7 * brk * dt);
   }
   car.vF -= 9.8 * Math.sin(car.pitch) * 0.8 * dt;   // 坂道：上りは遅く、下りは速く
-  if (!gas && !brk) car.vF -= Math.sign(car.vF) * Math.min(Math.abs(car.vF), 2.2 * dt);
+  if (!gas && !brk) car.vF -= Math.sign(car.vF) * Math.min(Math.abs(car.vF), (V.glide ?? 2.2) * dt);   // ロボットはスキーなので、よくすべる
   if (hand) car.vF -= Math.sign(car.vF) * Math.min(Math.abs(car.vF), 5 * dt);
   if (!mine) car.vF = 0;   // 降りたらパーキングブレーキ
   car.vF -= car.vF * Math.abs(car.vF) * 0.004 * dt;
@@ -1724,6 +1790,7 @@ function stepCar(car, dt) {
   const target = steerIn * V.maxSteer / (1 + Math.abs(car.vF) / 10);
   car.steer += (target - car.steer) * Math.min(1, dt * 8);
   let yawRate = (car.vF / V.wheelbase) * Math.tan(car.steer);
+  if (V.type === 'robot') yawRate += (car.steer / V.maxSteer) * 0.9 * Math.max(0, 1 - Math.abs(car.vF) / 4);   // ロボットは止まっていても向きを変えられる
   if (hand) yawRate *= 1.35;
   const old = { x: car.pos.x, z: car.pos.y, h: car.h };
   car.h += yawRate * dt;
@@ -1771,12 +1838,12 @@ function stepCar(car, dt) {
   if (bumped) hitWall(car);
   // 地形：急すぎる坂・深い水なら、元の位置に戻して止める
   let pose = carPose(car);
-  const tooSteep = Math.abs(pose.pitch) > MAX_TILT || Math.abs(pose.roll) > MAX_TILT, tooDeep = pose.y < MAX_WADE;
+  const tooSteep = Math.abs(pose.pitch) > MAX_TILT || Math.abs(pose.roll) > MAX_TILT, tooDeep = pose.y < (V.wade ?? MAX_WADE);
   if ((tooSteep && Math.abs(pose.pitch) > Math.abs(car.pitch) - 0.01) || (tooDeep && pose.y < car.y)) {
     car.pos.x = old.x; car.pos.y = old.z; car.h = old.h;
     hitWall(car);
     pose = carPose(car);
-    if (mine) showMsg(tooDeep ? 'ここから先は深くて車では進めません。降りて泳いでみて' : '坂が急すぎて登れません');
+    if (mine) showMsg(tooDeep ? `ここから先は深くて${V.type === 'robot' ? 'ロボット' : '車'}では進めません` : '坂が急すぎて登れません');
   }
   const k = Math.min(1, dt * 14);
   car.y += (pose.y - car.y) * k; car.pitch += (pose.pitch - car.pitch) * k; car.roll += (pose.roll - car.roll) * k;
@@ -1789,6 +1856,134 @@ function stepCar(car, dt) {
   }
 }
 function hitWall(car) { car.vF *= -0.15; car.vL *= 0.3; }
+
+/* ---- 人型ロボット：すべる動き ---- */
+function animRobot(v, dt, acc) {
+  const r = v.item.robot;
+  let sp = Math.abs(v.vF), pushing;
+  if (acc == null) {   // ほかの人が動かしている：位置の変わり方から速さを出す
+    const lp = v._lp || (v._lp = new THREE.Vector2().copy(v.pos));
+    const now = v.pos.distanceTo(lp) / Math.max(dt, 1e-3); lp.copy(v.pos);
+    v._sp = (v._sp || 0) + (now - (v._sp || 0)) * Math.min(1, dt * 3);
+    pushing = v._sp > (v._spOld || 0) + 0.002 || (v._sp > 1 && v._sp < 14); v._spOld = v._sp; sp = v._sp;
+  } else pushing = acc > 0.3 && v === ride;
+  const k = Math.min(1, dt * 4);
+  r.amp += ((pushing ? 1 : 0) - r.amp) * Math.min(1, dt * 2.5);
+  r.crouch += ((sp > 0.5 ? 0.22 + 0.25 * Math.min(1, sp / 12) : 0.06) - r.crouch) * k;
+  if (r.amp > 0.01) r.phase += dt * (2.4 + sp * 0.07);
+  const s = Math.sin(r.phase), c = r.crouch, a = r.amp;
+  let drop = Infinity;
+  for (const sd of ['L', 'R']) {
+    const L = r.legs[sd], push = Math.max(0, sd === 'L' ? s : -s) * a, lift = Math.max(0, sd === 'L' ? -s : s) * a;
+    const hx = -c - lift * 0.25, kx = 2 * c + lift * 0.55, hz = (sd === 'L' ? 1 : -1) * push * 0.32;
+    L.hip.rotation.set(hx + push * 0.2, 0, hz); L.knee.rotation.x = kx; L.ank.rotation.set(-(hx + push * 0.2) - kx, 0, -hz);
+    const d = L.L1 * (1 - Math.cos(hx + push * 0.2) * Math.cos(hz)) + L.L2 * (1 - Math.cos(hx + push * 0.2 + kx) * Math.cos(hz));
+    drop = Math.min(drop, d);
+  }
+  for (const sd of ['L', 'R']) {
+    const A = r.arms[sd];
+    if (A) A.rotation.set((sd === 'L' ? -s : s) * 0.55 * a - c * 0.4, 0, (sd === 'L' ? 1 : -1) * (0.08 + 0.12 * a));
+  }
+  r.model.position.y = r.baseY - (isFinite(drop) ? drop : 0);
+  r.model.rotation.x = c * 0.35;   // 前かがみ
+}
+
+/* ---- 脱出：コックピットが後ろ斜め上に飛び出して（約 100m）、パラシュートで降りる ---- */
+const pods = [];
+let pod = null;   // 自分が乗っているコックピット
+const EJECT_V = 42;   // 45° で打ち出すと、パラシュートが開くまでに約 100m（後ろへ 90m・上へ 45m）
+function showPod(v) { if (v.item.cockpit) v.item.cockpit.visible = true; v.noPod = false; }
+function makePod(v, x, y, z, vx, vy, vz, mine) {
+  const cp = v.item.cockpit;
+  v.item.root.updateMatrixWorld(true);
+  const obj = cp.clone(true);
+  const q = cp.getWorldQuaternion(new THREE.Quaternion()), sc = cp.getWorldScale(new THREE.Vector3());
+  obj.quaternion.copy(q); obj.scale.copy(sc); obj.position.set(x, y, z);
+  scene.add(obj);
+  obj.updateMatrixWorld(true);
+  const bb = new THREE.Box3().setFromObject(obj);
+  cp.visible = false; v.noPod = true;
+  const p = { obj, pos: new THREE.Vector3(x, y, z), vel: new THREE.Vector3(vx, vy, vz), chute: null, landed: false, t: 0, mine, bottom: y - bb.min.y, top: bb.max.y - y, spin: new THREE.Vector3((Math.random() - 0.5) * 2, (Math.random() - 0.5) * 2, (Math.random() - 0.5) * 2) };
+  pods.push(p);
+  return p;
+}
+function makeChute(p) {
+  const g = new THREE.Group(), R = 5;
+  const can = new THREE.Mesh(new THREE.SphereGeometry(R, 16, 6, 0, Math.PI * 2, 0, Math.PI / 2.4),
+    new THREE.MeshLambertMaterial({ color: 0xff7a2f, side: THREE.DoubleSide }));
+  can.scale.y = 0.55; can.position.y = 8; g.add(can);
+  const stripe = new THREE.Mesh(new THREE.SphereGeometry(R * 1.01, 16, 2, 0, Math.PI * 2, 0, Math.PI / 6), new THREE.MeshLambertMaterial({ color: 0xffffff, side: THREE.DoubleSide }));
+  stripe.scale.y = 0.55; stripe.position.y = 8; g.add(stripe);
+  const pts = [];
+  for (let i = 0; i < 8; i++) { const a = (i / 8) * Math.PI * 2; pts.push(0, p.top, 0, Math.cos(a) * R * 0.85, 8 + R * 0.55 * 0.35, Math.sin(a) * R * 0.85); }
+  const lg = new THREE.BufferGeometry(); lg.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
+  g.add(new THREE.LineSegments(lg, new THREE.LineBasicMaterial({ color: 0x333333 })));
+  g.scale.setScalar(0.2);
+  scene.add(g);
+  return g;
+}
+function ejectRobot() {
+  const v = ride;
+  if (!v || vtype(v) !== 'robot' || v.noPod || !v.item.cockpit) return;
+  v.item.root.updateMatrixWorld(true);
+  const cpw = v.item.cockpit.getWorldPosition(new THREE.Vector3());
+  const h = visYaw(v), back = new THREE.Vector3(-Math.sin(h), 0, -Math.cos(h));
+  const hv = EJECT_V * Math.SQRT1_2;
+  const vel = [back.x * hv + Math.sin(h) * v.vF, hv, back.z * hv + Math.cos(h) * v.vF];
+  leaveRide(true);
+  pod = makePod(v, cpw.x, cpw.y, cpw.z, ...vel, true);
+  camDist = Math.max(camDist, 24);
+  showMsg('脱出！ コックピットが飛び出しました');
+  if (net.room && v.shared && v.id) net.room.emit('eject', { id: v.id, x: +cpw.x.toFixed(2), y: +cpw.y.toFixed(2), z: +cpw.z.toFixed(2), vx: +vel[0].toFixed(2), vy: +vel[1].toFixed(2), vz: +vel[2].toFixed(2) }).catch(() => {});
+}
+function onEject(p) {   // ほかの人が脱出した：同じように飛ばして見せる
+  const d = p.data || p;
+  const v = vehicles.find((x) => x.id === d.id && x.item.robot);
+  if (!v || v.noPod) return;
+  makePod(v, num(d.x, X0, X1), num(d.y, Y_BOTTOM, Y_TOP), num(d.z, Z0, Z1), num(d.vx, -60, 60), num(d.vy, -60, 60), num(d.vz, -60, 60), false);
+}
+function followPod() {
+  player.pos.copy(pod.pos); player.pos.y -= pod.bottom; player.vy = 0; player.moving = false;
+}
+function stepPods(dt) {
+  for (const p of [...pods]) {
+    p.t += dt;
+    if (!p.landed) {
+      if (!p.chute && p.vel.y <= 0 && p.t > 0.5) { p.chute = makeChute(p); if (p.mine) showMsg('パラシュートが開きました'); }
+      if (p.chute) {
+        p.vel.y += (-5 - p.vel.y) * Math.min(1, dt * 1.5);   // ゆっくり降りる
+        const f = Math.exp(-0.9 * dt); p.vel.x *= f; p.vel.z *= f;
+        const s = p.chute.scale.x; p.chute.scale.setScalar(Math.min(1, s + dt * 1.6));
+        p.obj.quaternion.slerp(new THREE.Quaternion().setFromEuler(new THREE.Euler(0, p.obj.rotation.y, 0)), Math.min(1, dt * 2));
+      } else {
+        p.vel.y -= 9.8 * dt;
+        p.obj.rotation.x += p.spin.x * dt * 0.6; p.obj.rotation.z += p.spin.z * dt * 0.6;
+      }
+      p.pos.addScaledVector(p.vel, dt);
+      if (p.pos.x < X0 + 2 || p.pos.x > X1 - 2) { p.pos.x = clampX(p.pos.x, 2); p.vel.x = 0; }
+      if (p.pos.z < Z0 + 2 || p.pos.z > Z1 - 2) { p.pos.z = clampZ(p.pos.z, 2); p.vel.z = 0; }
+      const floor = floorAt(p.pos.x, p.pos.z);
+      if (p.pos.y - p.bottom <= floor && p.vel.y <= 0) {
+        p.pos.y = floor + p.bottom; p.landed = true; p.t = 0;
+        if (p.mine) {
+          const wet = heightAt(p.pos.x, p.pos.z) < SEA;
+          player.pos.set(clampX(p.pos.x + 2.5, P_R), wet ? FLOAT_Y : heightAt(p.pos.x + 2.5, p.pos.z), clampZ(p.pos.z, P_R)); player.vy = 0;
+          showMsg(wet ? '海に着水しました' : '着地しました。ロボットにもう一度乗ると、新しいコックピットがつきます');
+          pod = null;
+        }
+      }
+      p.obj.position.copy(p.pos);
+      if (p.chute) p.chute.position.copy(p.pos);
+    } else {
+      if (p.chute) { p.chute.position.y -= dt * 3; p.chute.scale.y = Math.max(0.05, p.chute.scale.y - dt * 0.8); }   // しぼむ
+      if (p.t > 12) {
+        scene.remove(p.obj); if (p.chute) scene.remove(p.chute);
+        pods.splice(pods.indexOf(p), 1);
+      }
+    }
+  }
+}
+document.getElementById('ejectBtn').addEventListener('click', () => ejectRobot());
 
 /* ---- 乗り物ごとの動き ---- */
 function stepVehicle(v, dt) {
@@ -1803,12 +1998,14 @@ function stepVehicle(v, dt) {
     if (v.item.periscope) v.item.periscope.pivot.rotation.y = t.py || 0;
     if (v.item.guns && t.gy) { for (const g of v.item.guns.main) g.pivot.rotation.y = t.gy[0]; for (const g of v.item.guns.ciws) g.pivot.rotation.y = t.gy[1]; }
     showCar(v);
+    if (v.item.robot) { if (v.noPod) showPod(v); animRobot(v, dt, null); }
     hideSubmerged(v);
     return;
   }
   const t = vtype(v);
   if (t === 'ship' || t === 'sub') { stepBoat(v, dt); hideSubmerged(v); }
   else if (t === 'plane') stepPlane(v, dt);
+  else if (t === 'robot') { const v0 = v.vF; stepCar(v, dt); animRobot(v, dt, (v.vF - v0) / Math.max(dt, 1e-3)); }
   else stepCar(v, dt);
 }
 function driveInput(mine) {
@@ -2263,6 +2460,7 @@ async function startNet() {
   ch.on('broadcast', { event: 'tg' }, ({ payload }) => { const p = heard(payload); if (p) onTorpGuide(p); });
   ch.on('broadcast', { event: 'ping' }, ({ payload }) => { const p = heard(payload); if (p) onPing(p); });
   ch.on('broadcast', { event: 'load' }, ({ payload }) => { const p = heard(payload); if (p) onLoadSound(p); });
+  ch.on('broadcast', { event: 'eject' }, ({ payload }) => { const p = heard(payload); if (p) onEject(p); });
   ch.on('presence', { event: 'leave' }, ({ key }) => { if (others.delete(key)) syncPeers(peerList()); });
   // 置いた物の知らせは別の通り道にする（こちらがうまくいかなくても、みんなの姿は見える）
   sb.channel('world-props').on('postgres_changes', { event: '*', schema: 'public', table: 'props' }, (m) => {
@@ -2385,7 +2583,7 @@ function updateCamera(dt) {
 const el = (id) => document.getElementById(id);
 let lastUi = '';
 const STATE_TEXT = { walk: '歩いている', swim: '泳いでいる', dive: 'もぐっている', drive: 'がっち号を運転中' };
-const DRIVE_VERB = { car: '運転', ship: '操縦', sub: '操縦', plane: '操縦' };
+const DRIVE_VERB = { car: '運転', ship: '操縦', sub: '操縦', plane: '操縦', robot: '操縦' };
 const K = (k, t) => `<span>${k.map((x) => `<kbd>${x}</kbd>`).join('')}${t}</span>`;
 const KEYS_HTML = {
   car: K(['W'], 'アクセル') + K(['S'], 'ブレーキ／バック') + K(['A', 'D'], 'ハンドル') + K(['Space'], 'サイドブレーキ') + K(['E'], '降りる') + '<span>ドラッグで視点</span>',
@@ -2393,6 +2591,7 @@ const KEYS_HTML = {
   sub: K(['←', '→'], '進路') + K(['↑', '↓'], '速力') + K(['Space'], '浅く') + K(['C'], '深く') + K(['B'], '装填') + K(['G'], '発射（艦首の向き）') + K(['N'], 'ピンガー') + K(['L'], 'ライト') + K(['P'], '潜望鏡') + K(['Z', 'X'], '潜望鏡を回す') + K(['R'], '救出') + K(['E'], '降りる'),
   plane: K(['W'], '出力を上げる') + K(['S'], '下げる・ブレーキ') + K(['A', 'D'], '曲がる') + K(['Space'], '上昇') + K(['C'], '下降') + K(['E'], '降りる'),
   ride: K(['E'], '降りる') + '<span>ドラッグで視点・ホイールで距離</span>',
+  robot: K(['W'], '加速') + K(['S'], 'ブレーキ／バック') + K(['A', 'D'], '向き') + K(['Space'], 'ブレーキ') + K(['X'], '脱出') + K(['E'], '降りる') + '<span>ドラッグで視点</span>',
   aegis: K(['←', '→'], '進路') + K(['↑', '↓'], '速力') + K(['R'], '救出') + K(['E'], '降りる') + '<span>ドラッグで視点・ホイールで距離</span>',
   wet: K(['W'], '前へ') + K(['A', 'D'], '向きを変える') + K(['Space'], 'うく') + K(['C'], 'もぐる') + '<span>ドラッグで視点・ホイールで遠く／近く</span>',
   walk: K(['W'], '前へ') + K(['S'], '後ろへ') + K(['A', 'D'], '向きを変える') + K(['Shift'], '走る') + K(['Space'], 'ジャンプ') + K(['E'], '乗る') + K(['T'], 'ひとこと') + '<span>ドラッグで視点・ホイールで遠く／近く</span><span>.glb をドロップで置ける</span>',
@@ -2403,6 +2602,7 @@ const HINT = {
   sub: '左下の板で進路・速力・深度を指示。「魚雷」で方位と深度を決めて発射。潜望鏡は画面をなぞって回す',
   plane: '左側を上になぞると出力アップ、下でダウン。「上昇」「下降」で高さ',
   ride: '相乗り中。右側をなぞって見回せます',
+  robot: '左側をなぞって操縦（上で加速・下でブレーキ）。足のスキーですべって進む。「脱出」でコックピットごと飛び出す',
   wet: '左側をなぞって泳ぐ。「もぐる」で下へ、「うく」で上へ。2 本指でズーム',
   walk: '左側をなぞって移動、右側をなぞって視点、2 本指でズーム',
 };
@@ -2442,12 +2642,13 @@ function updateUi() {
   el('promptBtn').textContent = driving || aboard ? '降りる' : '乗る';
   const wet = !driving && !aboard && (mode === 'swim' || mode === 'dive');
   tAct.hidden = vt === 'ship' || vt === 'sub' || !!aboard;
-  tAct.textContent = vt === 'sub' ? 'うく' : vt === 'plane' ? '上昇' : vt ? 'サイド' : wet ? 'うく' : 'ジャンプ';
+  tAct.textContent = vt === 'sub' ? 'うく' : vt === 'plane' ? '上昇' : vt === 'robot' ? 'ブレーキ' : vt ? 'サイド' : wet ? 'うく' : 'ジャンプ';
   tDive.hidden = !(wet || vt === 'plane');
   tDive.textContent = vt === 'plane' ? '下降' : 'もぐる';
   const kind = ride && ride.item.def.vehicle.aegis ? 'aegis' : vt || (aboard ? 'ride' : wet ? 'wet' : 'walk');
   el('hint').textContent = HINT[kind] || HINT.ship;
-  el('subBtns').hidden = vt !== 'sub' && vt !== 'ship';
+  el('subBtns').hidden = vt !== 'sub' && vt !== 'ship' && vt !== 'robot';
+  el('ejectBtn').hidden = vt !== 'robot';
   el('lightBtn').hidden = el('scopeBtn').hidden = el('pingBtn').hidden = vt !== 'sub';
   el('gunBtn').hidden = el('ciwsBtn').hidden = el('untargetBtn').hidden = !ag;
   if (vt === 'sub') el('lightBtn').setAttribute('aria-pressed', String(!!(ride.item.light && ride.item.light.on)));
@@ -3689,10 +3890,11 @@ let netTick = 0;
 function frame() {
   const dt = Math.min(0.05, clock.getDelta());
   if (aboard && !vehicles.includes(aboard.v)) getOff();
-  if (!driving && !aboard) stepPlayer(dt);
+  if (pod && pod.mine && !pod.landed) followPod(); else if (!driving && !aboard) stepPlayer(dt);
+  stepPods(dt);
   for (const v of vehicles) stepVehicle(v, dt);
   if (aboard) { player.pos.copy(seatWorld(aboard.v, aboard.seat)); player.vy = 0; player.face = visYaw(aboard.v); player.mode = 'walk'; }
-  avatar.visible = !driving && !(aboard && vtype(aboard.v) === 'sub');
+  avatar.visible = !driving && !(aboard && vtype(aboard.v) === 'sub') && !(pod && pod.mine && !pod.landed);
   avatar.position.copy(player.pos);
   avatar.rotation.y = player.face;
   avatar.rotation.x = player.mode === 'dive' ? 0.9 : 0;
