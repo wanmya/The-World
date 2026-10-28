@@ -46,6 +46,7 @@
 - 乗り物の種類を増やしたとき：Supabase の SQL Editor で `supabase-update-2.sql` を 1 回実行する
 - 世界を 500m×500m に広げたとき：Supabase の SQL Editor で `supabase-update-3.sql` を 1 回実行する（広げた海や島にも物を置けるようになる）
 - 世界を 1km×1km に広げたとき：同じように `supabase-update-4.sql` を 1 回実行する
+- 人型ロボットを入れたとき：同じように `supabase-update-5.sql` を 1 回実行する（実行するまで、ロボットは置いた人の画面にしか出ない）
 
 ## 操作
 

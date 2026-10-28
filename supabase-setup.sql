@@ -5,7 +5,7 @@
 create table if not exists public.props (
   id uuid primary key,
   name text not null check (char_length(name) between 1 and 40),
-  cat text not null check (cat in ('building', 'plant', 'prop', 'car', 'ship', 'sub', 'plane')),
+  cat text not null check (cat in ('building', 'plant', 'prop', 'car', 'ship', 'sub', 'plane', 'robot')),
   x double precision not null check (x between -500 and 500),
   z double precision not null check (z between -900 and 100),
   rot double precision not null default 0 check (rot between -100 and 100),
