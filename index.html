@@ -3555,7 +3555,13 @@ el('mVoice').addEventListener('click', () => {
   if (!voicePref && canSpeak) speechSynthesis.cancel();
   setMenu(false);
   showMsg(`音声の報告を${voicePref ? 'オン' : 'オフ'}にしました`);
-  if (voicePref) { audioCtx(); setTimeout(() => sonarPing(0.9), 150); }   // 試しに 1 回鳴らす
+  if (voicePref) {   // 試しに 1 回鳴らす
+    audioCtx();
+    setTimeout(() => {
+      sonarPing(0.9);
+      showMsg(actx && actx.state === 'running' ? '音声の報告をオンにしました。いまソナー音が鳴りました（聞こえないときは、タブやサイトの音のミュート、パソコンの音量ミキサーを確かめてください）' : 'ソナー音を出せません（このブラウザでは音が止められています）');
+    }, 150);
+  }
 });
 
 /* ================= 潜っているほかの潜水艦は見えない（浮上すると見える） ================= */
