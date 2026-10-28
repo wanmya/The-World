@@ -2240,6 +2240,7 @@ async function startNet() {
   });
   ch.on('broadcast', { event: 'torp' }, ({ payload }) => { const p = heard(payload); if (p) onTorp(p); });
   ch.on('broadcast', { event: 'boom' }, ({ payload }) => { const p = heard(payload); if (p) onBoom(p); });
+  ch.on('broadcast', { event: 'hp' }, ({ payload }) => { const p = heard(payload); if (p) onHpSync(p); });
   ch.on('broadcast', { event: 'gun' }, ({ payload }) => { const p = heard(payload); if (p) onGun(p); });
   ch.on('broadcast', { event: 'tg' }, ({ payload }) => { const p = heard(payload); if (p) onTorpGuide(p); });
   ch.on('broadcast', { event: 'ping' }, ({ payload }) => { const p = heard(payload); if (p) onPing(p); });
@@ -2395,7 +2396,7 @@ function updateUi() {
   const sv2 = vt === 'sub' ? ride : aboard && vtype(aboard.v) === 'sub' ? aboard.v : null;
   const navTxt = sv2 ? `方位 ${String(Math.round(bearingOf(sv2.h)) % 360).padStart(3, '0')}°（${compassName(bearingOf(sv2.h))}）　海底 ${seabedAt(sv2.pos.x, sv2.pos.y).toFixed(1)}m` : '';
   const shipV = !sv2 && ride && vt === 'ship' ? ride : null, ag = shipV && shipV.item.def.vehicle.aegis ? shipV : null;
-  const hpTxt = sv2 ? `HP ${subHp(sv2)}／${HP_MAX}（最高 ${maxKt(sv2)}kt）` : shipV ? `HP ${subHp(shipV)}／${HP_MAX}` : '';
+  const hpTxt = sv2 ? `HP ${subHp(sv2)}／${HP_MAX}（最高 ${maxKt(sv2)}kt・安全 ${safeDepth(sv2)}m）` : shipV ? `HP ${subHp(shipV)}／${HP_MAX}` : '';
   let tgtTxt = '';
   if (ag) {
     const t = targetNow(ag);
@@ -2512,14 +2513,18 @@ function updateMap(dt) {
     mapCx.beginPath(); mapCx.arc(p.x, p.y, 4, 0, 7); mapCx.fill(); mapCx.stroke();
   }
   // 音で見つけた潜水艦（デコイも同じ印）：方位・距離・深度
-  const contact = (wx, wz, wy, key, parked) => {
+  const contact = (wx, wz, wy, key, parked, ghost) => {
     const p = polar(wx, wz), pulse = 6 + ((clock.elapsedTime * 1.5) % 1) * 8;
     if (key && !p.out) radarMarks.push({ px: p.x, py: p.y, t: { key, name: key } });
     if (key && subTarget === key) {   // 選んだ目標：赤い照準
       mapCx.strokeStyle = '#ff3b30'; mapCx.lineWidth = 2;
       mapCx.beginPath(); mapCx.arc(p.x, p.y, 11, 0, 7); mapCx.moveTo(p.x - 16, p.y); mapCx.lineTo(p.x + 16, p.y); mapCx.moveTo(p.x, p.y - 16); mapCx.lineTo(p.x, p.y + 16); mapCx.stroke();
     }
-    if (parked) {   // 停泊中（誰も乗っていない）：灰色の四角
+    if (ghost) {   // さっきまで居た点：点滅しない水色の輪
+      mapCx.strokeStyle = '#8fd3ff'; mapCx.lineWidth = 2; mapCx.setLineDash([3, 3]);
+      mapCx.beginPath(); mapCx.arc(p.x, p.y, 6, 0, 7); mapCx.stroke(); mapCx.setLineDash([]);
+      mapCx.fillStyle = '#8fd3ff'; mapCx.beginPath(); mapCx.arc(p.x, p.y, 2, 0, 7); mapCx.fill();
+    } else if (parked) {   // 停泊中（誰も乗っていない）：灰色の四角
       mapCx.fillStyle = '#b8c2c8'; mapCx.strokeStyle = '#000'; mapCx.lineWidth = 1;
       mapCx.fillRect(p.x - 4, p.y - 4, 8, 8); mapCx.strokeRect(p.x - 4, p.y - 4, 8, 8);
     } else {
@@ -2532,10 +2537,14 @@ function updateMap(dt) {
       mapCx.font = '700 9px sans-serif'; mapCx.textAlign = p.x > C ? 'right' : 'left';
       const tx = p.x + (p.x > C ? -10 : 10);
       mapCx.lineWidth = 3; mapCx.strokeStyle = 'rgba(0,0,0,0.75)'; mapCx.strokeText(t, tx, p.y - 8);
-      mapCx.fillStyle = parked ? '#dfe6ea' : '#ffd9a0'; mapCx.fillText(t, tx, p.y - 8);
+      mapCx.fillStyle = ghost ? '#bfe6ff' : parked ? '#dfe6ea' : '#ffd9a0'; mapCx.fillText(t, tx, p.y - 8);
     }
   };
-  if (!ag) { radarMarks = []; for (const c of subContacts()) contact(c.x, c.z, c.y, c.key, c.parked); }   // 音（動いている・装填中・撃った直後）とピンガー、デコイ
+  if (!ag) {
+    radarMarks = []; trackGhosts();
+    for (const [k, g] of ghosts) contact(g.x, g.z, g.y, k, false, true);   // さっきまで居た点（水色の輪）
+    for (const c of subContacts()) contact(c.x, c.z, c.y, c.key, c.parked);
+  }   // 音（動いている・装填中・撃った直後）とピンガー、デコイ
   if (!ag) for (const t of torps) if (!t.decoy) {
     const p = polar(t.x, t.z);
     mapCx.fillStyle = t.mine ? '#ff5a3c' : '#ff2a2a'; mapCx.strokeStyle = '#fff'; mapCx.lineWidth = 1;
@@ -2588,6 +2597,28 @@ const ord = { hdg: 0, kt: 0, dp: 0, ttype: 'war', tdp: 10, tdist: 400, ttime: 10
 let helmTab = 'nav';
 // HP：最大 15。最高速力（ノット）は HP と同じ。直撃で -7、50m 以内の爆発で -2、0 で沈没
 const HP_MAX = 15, HIT_DMG = 7, NEAR_DMG = 2, NEAR_R = 50;
+/* 圧壊深度：HP が満タンなら 80m まで平気。HP が 1 減るごとに 6m 浅くなる（HP 10 なら 50m）。
+   それより深いと 10 秒ごとに HP が減る：安全な深さから 10m ごとに 3 ずつ増える（+0〜10m は -3、+10〜20m は -6 …）。HP 0 で圧壊・沈没 */
+const CRUSH_EVERY = 10;
+const safeDepth = (v) => Math.max(0, 80 - (HP_MAX - subHp(v)) * 6);
+const crushDmg = (v) => { const over = subDepth(v) - safeDepth(v); return over > 0.5 ? 3 * (Math.floor(over / 10) + 1) : 0; };
+let crushT = 0;
+function stepCrush(dt) {
+  const v = helmSub();
+  if (!v || v.sunk || !crushDmg(v)) { crushT = 0; return; }
+  crushT += dt;
+  if (crushT < CRUSH_EVERY) return;
+  crushT -= CRUSH_EVERY;
+  const dmg = crushDmg(v);
+  damageSub(v, dmg, dmg >= subHp(v) ? '水圧で圧壊！' : '水圧で船体がきしむ！');
+  if (net.room && v.shared && v.id) net.room.emit('hp', { id: v.id, hp: subHp(v) }).catch(() => {});   // みんなの画面の HP もそろえる
+}
+function onHpSync(p) {
+  const d = p && p.data, v = d && typeof d.id === 'string' && vehicles.find((x) => x.id === d.id);
+  if (!v || v.sunk || !isBoat(v)) return;
+  const dmg = subHp(v) - num(d.hp, 0, HP_MAX, subHp(v));
+  if (dmg > 0) damageSub(v, dmg, '水圧で圧壊！');
+}
 const subHp = (v) => (v.hp == null ? HP_MAX : v.hp);
 function subMax(v) { const m = v.item.def.vehicle.maxSpeed; return vtype(v) === 'sub' ? Math.min(m, Math.max(0, subHp(v)) * KT) : m; }
 function maxKt(v) { return Math.round(subMax(v) / KT); }
@@ -2608,7 +2639,7 @@ function initOrders(v) {
   ord.hdg = Math.round(bearingOf(v.h)); ord.kt = 0; ord.dp = Math.round(subDepth(v));
   ord.tdp = Math.max(2, Math.round(subDepth(v)) || 10);
   helmShown = '';
-  tube.n = 0; tube.until = 0; subTarget = null;
+  tube.n = 0; tube.until = 0; subTarget = null; lastHeard.clear(); ghosts.clear();
 }
 function loadTubes() {
   const v = helmSub();
@@ -2668,10 +2699,11 @@ function updateHelm() {
   const left = Math.max(0, tube.until - clock.elapsedTime);
   const what = ord.ttype === 'decoy' ? `デコイ（${Math.round(ord.ttime)} 秒で消える）` : ord.ttype === 'guide' ? '誘導魚雷（音を追う・当たると爆発）' : `弾頭魚雷（${Math.round(ord.tdist)}m で爆発）`;
   const sa = subAim(v);
-  const aimTxt = sa ? `目標へ 方位 ${fmtB(bearingOf(sa.h))}°・深度 ${sa.dp}m` : `${subTarget ? '目標が聞こえない → ' : ''}艦首の向き・深度 ${Math.round(ord.tdp)}m`;
+  const aimTxt = sa ? `${sa.ghost ? 'さっきまで居た点へ' : '目標へ'} 方位 ${fmtB(bearingOf(sa.h))}°・深度 ${sa.dp}m` : `${subTarget ? '目標が聞こえない → ' : ''}艦首の向き・深度 ${Math.round(ord.tdp)}m`;
   const am = ammoOf(v), stock = `残弾 弾頭${am.war}・誘導${am.guide}・デコイ${am.decoy}`;
   const tst = left > 0 ? `装填中… あと ${Math.ceil(left)} 秒（音が出ています）` : tube.n ? `${tube.n} 本装填ずみ。発射：${what}・${aimTxt}` : `空です。「装填」を押してください${subHp(v) <= 5 ? '（HP 5 以下なので 1 本ずつ）' : ''}`;
-  const st = helmTab === 'torp' ? `${tst}（${stock}）` : v.dpLimit != null ? `海底が近いので ${v.dpLimit.toFixed(0)}m までしかもぐれません` : `いま ${compassName(b)}へ ${Math.abs(v.vF / KT).toFixed(1)}kt`;
+  const cd = crushDmg(v);
+  const st = cd && helmTab === 'nav' ? `⚠ 圧壊深度！ 安全な深さは ${safeDepth(v)}m まで。あと ${Math.ceil(CRUSH_EVERY - crushT)} 秒で HP -${cd}` : helmTab === 'torp' ? `${tst}（${stock}）` : v.dpLimit != null ? `海底が近いので ${v.dpLimit.toFixed(0)}m までしかもぐれません` : `いま ${compassName(b)}へ ${Math.abs(v.vF / KT).toFixed(1)}kt`;
   const key = [helmTab, JSON.stringify(vals), JSON.stringify(now), tube.n, ord.ttype, st].join('|');
   if (key === helmShown) return;
   helmShown = key;
@@ -2762,6 +2794,7 @@ function fireTorpedo() {
   if (!am[type]) { showMsg(`${TNAME[type]}の残弾がありません。ほかの種類を選んでください`); return; }
   const aim = subAim(v);   // レーダーで選んだ目標が映っていれば、その方位と深度へ。いなければ艦首の向き
   if (subTarget && !aim) showMsg('目標がレーダーから消えたので、艦首の向きに撃ちます');
+  else if (aim && aim.ghost) showMsg('目標がさっきまで居た点へ撃ちます');
   const V = v.item.def.vehicle, h = aim ? aim.h : visYaw(v);
   const x = v.pos.x + Math.sin(h) * (V.halfLength + 1.8), z = v.pos.y + Math.cos(h) * (V.halfLength + 1.8);
   if (outsideBox(x, z, 1) || heightAt(x, z) > SEA - 1.5) { showMsg('前が浅くて撃てません'); return; }
@@ -2985,6 +3018,17 @@ function subContacts() {
   return list;
 }
 let subTarget = null;   // 魚雷を向ける目標（レーダーの印の key）
+// 音が消えた相手の「さっきまで居た点」。また聞こえたら消す
+const lastHeard = new Map(), ghosts = new Map();
+function trackGhosts() {
+  const now = new Set();
+  for (const c of subContacts()) {
+    if (c.parked) continue;
+    now.add(c.key); lastHeard.set(c.key, { x: c.x, y: c.y, z: c.z }); ghosts.delete(c.key);
+  }
+  for (const [k, p] of lastHeard) if (!now.has(k)) { ghosts.set(k, p); lastHeard.delete(k); }
+  for (const k of ghosts.keys()) if (k.startsWith('p:') && !net.others.has(k.slice(2))) ghosts.delete(k);   // いなくなった人
+}
 function selectSubTarget(key) {
   subTarget = subTarget === key ? null : key;
   showMsg(subTarget ? '目標を選びました。発射すると、その方位と深度へ魚雷を撃ちます' : '目標を解除しました（艦首の向きに撃ちます）');
@@ -2993,9 +3037,9 @@ function selectSubTarget(key) {
 // 目標がいまレーダーに映っていれば、その方位（h）と深度
 function subAim(v) {
   if (!subTarget) return null;
-  const c = subContacts().find((c) => c.key === subTarget);
+  const c = subContacts().find((c) => c.key === subTarget) || (ghosts.has(subTarget) ? Object.assign({ ghost: true }, ghosts.get(subTarget)) : null);
   if (!c) return null;
-  return { h: Math.atan2(c.x - v.pos.x, c.z - v.pos.y), dp: THREE.MathUtils.clamp(Math.round(SEA - c.y), 1, 100), d: Math.hypot(c.x - v.pos.x, c.z - v.pos.y) };
+  return { ghost: !!c.ghost, h: Math.atan2(c.x - v.pos.x, c.z - v.pos.y), dp: THREE.MathUtils.clamp(Math.round(SEA - c.y), 1, 100), d: Math.hypot(c.x - v.pos.x, c.z - v.pos.y) };
 }
 function sendPing() {
   const v = helmSub();
@@ -3143,6 +3187,7 @@ el('untargetBtn').addEventListener('click', () => { if (aegisTarget) selectTarge
 let radarMarks = [];
 window.__marks = () => radarMarks.map((m) => ({ px: m.px, py: m.py, name: m.t.name }));
 window.__subTarget = () => subTarget;
+window.__ghosts = () => [...ghosts.keys()];
 function drawAegisRadar(ag, polar, big) {
   radarMarks = [];
   const sel = targetNow(ag);
@@ -3273,6 +3318,7 @@ function frame() {
   updateHelm();
   stepTorps(dt);
   stepAegis(dt);
+  stepCrush(dt);
   stepShells(dt);
   stepBooms(dt);
   netTick += dt;
