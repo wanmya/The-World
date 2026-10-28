@@ -2634,7 +2634,7 @@ const HP_MAX = 15, HIT_DMG = 7, NEAR_DMG = 2, NEAR_R = 50;
    それより深いと 10 秒ごとに HP が減る：安全な深さから 10m ごとに 3 ずつ増える（+0〜10m は -3、+10〜20m は -6 …）。HP 0 で圧壊・沈没 */
 const CRUSH_EVERY = 10;
 const safeDepth = (v) => Math.max(0, 80 - (HP_MAX - subHp(v)) * 6);
-const crushDmg = (v) => { const over = subDepth(v) - safeDepth(v); return over > 0.5 ? 3 * (Math.floor(over / 10) + 1) : 0; };
+const crushDmg = (v) => { const over = subDepth(v) - safeDepth(v); return over > 0.5 ? 2 * (Math.floor(over / 10) + 1) : 0; };
 let crushT = 0;
 function stepCrush(dt) {
   const v = helmSub();
@@ -2784,7 +2784,8 @@ for (const [id, k] of [['oHdg', 'hdg'], ['oKt', 'kt'], ['oDp', 'dp'], ['tDp', 't
 }
 
 /* ================= 魚雷：艦首の向きへ発射。弾頭は 20 ノット・決めた距離で爆発、誘導は 20 ノットで音を追い当たると爆発、デコイは 15 ノット・決めた秒数で爆発（被害なし） ================= */
-const TORP_SPEED = 40 * KT, GUIDE_SPEED = 30 * KT, DECOY_SPEED = 20 * KT, TORP_RANGE = 400;
+const TORP_SPEED = 30 * KT, GUIDE_SPEED = 25 * KT, DECOY_SPEED = 20 * KT, TORP_RANGE = 400;
+const SAFE_FIRE = 150;   // これより近い敵には撃てない（爆発に巻き込まれる）。デコイは別
 // 誘導魚雷：前 ±80°・300m 以内の音（動いている潜水艦とデコイ）を追う。音が消えたらまっすぐ。両方聞こえると見失って蛇行
 const SEEK_R = 300, SEEK_CONE = (80 * Math.PI) / 180, SEEK_TURN = (20 * Math.PI) / 180;
 const torps = [];
@@ -2835,6 +2836,15 @@ function fireTorpedo() {
   if (subTarget && !aim) showMsg('目標がレーダーから消えたので、艦首の向きに撃ちます');
   else if (aim && aim.ghost) showMsg('目標がさっきまで居た点へ撃ちます');
   const V = v.item.def.vehicle, h = aim ? aim.h : visYaw(v);
+  if (type !== 'decoy') {   // 安全距離：目標（選んでいなければ、撃つ向き ±45° にいる近くの相手）が 150m 以内なら撃たない
+    let near = aim && !aim.ghost ? aim.d : Infinity;
+    if (!aim) for (const c of subContacts()) {
+      if (c.key.startsWith('t:')) continue;
+      const dx = c.x - v.pos.x, dz = c.z - v.pos.y, d = Math.hypot(dx, dz);
+      if (d < near && Math.abs(wrapA(Math.atan2(dx, dz) - h)) < Math.PI / 4) near = d;
+    }
+    if (near < SAFE_FIRE) { showMsg(`⚠ 敵が近すぎます（${Math.round(near)}m）。${SAFE_FIRE}m 以上離れないと撃てません（爆発に巻き込まれます）。デコイは撃てます`); return; }
+  }
   const x = v.pos.x + Math.sin(h) * (V.halfLength + 1.8), z = v.pos.y + Math.cos(h) * (V.halfLength + 1.8);
   if (outsideBox(x, z, 1) || heightAt(x, z) > SEA - 1.5) { showMsg('前が浅くて撃てません'); return; }
   const y = Math.max(heightAt(x, z) + 0.6, Math.min(v.y - V.draft * 0.5, SEA - 1));
@@ -3400,7 +3410,7 @@ function stepAi(dt) {
     if (c) {
       const d = Math.hypot(c.x - v.pos.x, c.z - v.pos.y), fresh = t - c.t < 3;
       // 撃つ：聞こえている目標の方位と深度へ（ずれは難しさしだい）。少し考えてから
-      if (fresh && a.tube.n && d < 420 && t - a.lastFire > lv.react * 3 && t - c.first > lv.react) {
+      if (fresh && a.tube.n && d < 420 && d >= SAFE_FIRE + 10 && t - a.lastFire > lv.react * 3 && t - c.first > lv.react) {
         const err = ((Math.random() * 2 - 1) * lv.err * Math.PI) / 180;
         const h = Math.atan2(c.x - v.pos.x, c.z - v.pos.y) + err;
         const type = lv.guide && a.ammo.guide && d > 120 ? 'guide' : a.ammo.war ? 'war' : a.ammo.guide ? 'guide' : null;
@@ -3409,6 +3419,7 @@ function stepAi(dt) {
       // 近づく。300m より近ければ（ふつう・つよい）機関を止めて静かに待つ
       a.ord.hdg = Math.round(bearingTo(v, c.x, c.z));
       a.ord.kt = lv.quiet && d < 300 ? 0 : Math.min(topKt, d > 300 ? 8 : 5);
+      if (d < SAFE_FIRE + 20) { a.ord.hdg = Math.round((bearingTo(v, c.x, c.z) + 180) % 360); a.ord.kt = Math.min(topKt, 8); }   // 近すぎて撃てないので離れる
       a.ord.dp = THREE.MathUtils.clamp(Math.round(SEA - c.y), 8, maxDp);
     } else {
       // 見回り：ときどき向きを変えて進み、ときどき止まって耳をすます
@@ -3473,7 +3484,7 @@ function say(text, urgent) {
     speechSynthesis.cancel();
   }
   const u = new SpeechSynthesisUtterance(text.replace(/注水音/g, 'ちゅうすいおん').replace(/魚雷接近/g, 'ぎょらいせっきん').replace(/方位/g, 'ほうい').replace(/距離/g, 'きょり'));   // 読み方をはっきりさせる
-  u.lang = 'ja-JP'; if (jaVoice) u.voice = jaVoice; u.rate = 1.15; u.pitch = maleVoice ? 0.9 : 0.5;   // 男性の声がなければ低くする
+  u.lang = 'ja-JP'; if (jaVoice) u.voice = jaVoice; u.rate = 1.4; u.pitch = maleVoice ? 0.9 : 0.5;   // 男性の声がなければ低くする
   speakingUrgent = !!urgent; u.onend = u.onerror = () => { speakingUrgent = false; };
   speechSynthesis.speak(u);
 }
