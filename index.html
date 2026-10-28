@@ -218,6 +218,7 @@ body.helmOn .subbtns { flex-wrap: wrap; justify-content: flex-end; max-width: ca
     <p class="mh">船・潜水艦</p>
     <button class="mi" type="button" data-proxy="scopeBtn" id="mScope">潜望鏡</button>
     <button class="mi" type="button" data-proxy="lightBtn" id="mLight">ライト</button>
+    <button class="mi" type="button" id="mVoice">音声の報告：オン</button>
     <button class="mi" type="button" data-proxy="rescueBtn">救出（浅瀬から出す）</button>
     <button class="mi" type="button" data-proxy="subExit">降りる</button>
   </div>
@@ -1881,8 +1882,8 @@ function stepBoat(v, dt) {
     v.vF -= Math.sign(v.vF) * dec;
   } else if (ordered && Math.abs(v.vF) > 0.2 && Math.sign(target) !== Math.sign(v.vF)) {   // 逆進：スクリューを逆に回して短い距離で止まる
     v.vF -= Math.sign(v.vF) * Math.min(Math.abs(v.vF), 1.5 * dt);
-  } else v.vF += (Math.min(target, subMax(v)) - v.vF) * Math.min(1, dt * (k.thr ? 0.7 : 0.4));
-  const yawRate = k.turn * V.turn * (0.35 + Math.min(1, Math.abs(v.vF) / 4) * 0.65) * (v.vF < -0.2 ? -1 : 1);
+  } else v.vF += (Math.min(target, subMax(v)) - v.vF) * Math.min(1, dt * (k.thr ? (ordered ? 0.35 : 0.7) : 0.4));   // 潜水艦・イージス艦はゆっくり加速
+  const yawRate = k.turn * V.turn * (ordered ? 1 / 3 : 1) * (0.35 + Math.min(1, Math.abs(v.vF) / 4) * 0.65) * (v.vF < -0.2 ? -1 : 1);   // 潜水艦・イージス艦はゆっくり回頭
   const old = { x: v.pos.x, z: v.pos.y, h: v.h }, oldG = hullGround(v.pos.x, v.pos.y, visYaw(v), V);
   v.h += yawRate * dt;
   v.pos.x += Math.sin(v.h) * v.vF * dt; v.pos.y += Math.cos(v.h) * v.vF * dt;
@@ -2261,6 +2262,7 @@ async function startNet() {
   ch.on('broadcast', { event: 'gun' }, ({ payload }) => { const p = heard(payload); if (p) onGun(p); });
   ch.on('broadcast', { event: 'tg' }, ({ payload }) => { const p = heard(payload); if (p) onTorpGuide(p); });
   ch.on('broadcast', { event: 'ping' }, ({ payload }) => { const p = heard(payload); if (p) onPing(p); });
+  ch.on('broadcast', { event: 'load' }, ({ payload }) => { const p = heard(payload); if (p) onLoadSound(p); });
   ch.on('presence', { event: 'leave' }, ({ key }) => { if (others.delete(key)) syncPeers(peerList()); });
   // 置いた物の知らせは別の通り道にする（こちらがうまくいかなくても、みんなの姿は見える）
   sb.channel('world-props').on('postgres_changes', { event: '*', schema: 'public', table: 'props' }, (m) => {
@@ -2680,6 +2682,7 @@ function loadTubes() {
   if (!(am.war + am.guide + am.decoy)) { showMsg('残弾がありません'); return; }
   Object.assign(tube, { until: clock.elapsedTime + LOAD_TIME, n: 0 });   // 種類は発射するときに選ぶ
   showMsg('装填をはじめました（10 秒）');
+  if (net.room) net.room.emit('load', {}).catch(() => {});   // 注水音（近くの潜水艦に聞こえる）
 }
 function clampOrders(v) {
   ord.hdg = ((ord.hdg % 360) + 360) % 360;
@@ -3393,7 +3396,7 @@ function stepAi(dt) {
     a.evadeUntil = t + 12;
   } else if (t > a.evadeUntil) {
     const c = a.contact && t - a.contact.t < 40 ? a.contact : null;
-    if (a.tube.n === 0 && !a.tube.until && (a.ammo.war + a.ammo.guide + a.ammo.decoy) > 0 && (c || lv.quiet)) a.tube.until = t + LOAD_TIME;   // 装填（10 秒・音が出る）
+    if (a.tube.n === 0 && !a.tube.until && (a.ammo.war + a.ammo.guide + a.ammo.decoy) > 0 && (c || lv.quiet)) { a.tube.until = t + LOAD_TIME; floodHeard(v.pos.x, v.pos.y); }   // 装填（10 秒・音が出る）
     if (c) {
       const d = Math.hypot(c.x - v.pos.x, c.z - v.pos.y), fresh = t - c.t < 3;
       // 撃つ：聞こえている目標の方位と深度へ（ずれは難しさしだい）。少し考えてから
@@ -3440,6 +3443,103 @@ function aiPinged() {   // コンピュータがピンガーを打った：プ�
 for (const b of document.querySelectorAll('[data-ai]')) b.addEventListener('click', () => { setMenu(false); if (b.dataset.ai === 'stop') stopAiBattle(); else startAiBattle(b.dataset.ai); });
 window.__ai = () => aiSub;
 
+/* ================= 自動音声：ソナー員の報告 =================
+   聞こえている音だけを読み上げる。魚雷の接近（方位・距離）と、敵の装填の注水音（方位・距離）。 */
+let voicePref = true;
+try { voicePref = localStorage.getItem('voice') !== 'off'; } catch (e) {}
+const canSpeak = 'speechSynthesis' in window;
+let jaVoice = null, speakingUrgent = false;
+function pickVoice() { if (canSpeak) jaVoice = speechSynthesis.getVoices().find((v) => /^ja/i.test(v.lang)) || null; }
+if (canSpeak) { pickVoice(); speechSynthesis.addEventListener?.('voiceschanged', pickVoice); }
+// スマホは最初のタッチのあとでないと声が出ないので、そのときに一度だけ空の声で起こしておく
+addEventListener('pointerdown', () => { audioCtx(); if (canSpeak) { try { const u = new SpeechSynthesisUtterance(' '); u.volume = 0; speechSynthesis.speak(u); } catch (e) {} } }, { once: true });
+function say(text, urgent) {
+  if (!voicePref || !helmSub()) return;
+  showMsg(text);
+  if (!canSpeak) return;
+  if (speechSynthesis.speaking || speechSynthesis.pending) {
+    if (!urgent || speakingUrgent) return;   // しゃべっている途中は、急ぎ（魚雷）のときだけ割り込む
+    speechSynthesis.cancel();
+  }
+  const u = new SpeechSynthesisUtterance(text);
+  u.lang = 'ja-JP'; if (jaVoice) u.voice = jaVoice; u.rate = 1.15;
+  speakingUrgent = !!urgent; u.onend = u.onerror = () => { speakingUrgent = false; };
+  speechSynthesis.speak(u);
+}
+const sayNum = (n) => String(Math.round(n));
+// 敵の装填（注水音）
+function floodHeard(x, z) {
+  const me = helmSub();
+  if (!me || deaf()) return;
+  const d = Math.hypot(x - me.pos.x, z - me.pos.y);
+  if (d > SONAR_R) return;
+  say(`注水音、方位${sayNum(bearingTo(me, x, z))}、距離${sayNum(Math.round(d / 10) * 10)}`, false);
+}
+function onLoadSound(p) {
+  const o = net.others.get(p.tab);
+  if (o && o.t && isSubDriver(o)) floodHeard(o.t.x, o.t.z);
+}
+// 近づいてくる魚雷（自分の魚雷とデコイは除く）。見つけたときと、100m 近づくごとに知らせる
+const torpCalls = new Map();
+let voiceT = 0;
+function stepVoice(dt) {
+  stepBeep(dt);
+  voiceT -= dt;
+  if (voiceT > 0) return;
+  voiceT = 0.5;
+  nearTorp = Infinity;
+  const me = helmSub();
+  if (!me || deaf()) return;
+  const alive = new Set();
+  for (const t of torps) {
+    if (t.decoy || (t.mine && !t.ai)) continue;
+    const dx = me.pos.x - t.x, dz = me.pos.y - t.z, d = Math.hypot(dx, dz);
+    if (d > SONAR_R) continue;
+    alive.add(t.id);
+    const toward = (Math.sin(t.h) * dx + Math.cos(t.h) * dz) / Math.max(1, d) > 0.3;   // こちらへ向かっている
+    if (!toward) continue;
+    nearTorp = Math.min(nearTorp, d);
+    const band = Math.ceil(d / 100), last = torpCalls.get(t.id);
+    if (last != null && band >= last) continue;
+    torpCalls.set(t.id, band);
+    say(`魚雷接近、方位${sayNum(bearingTo(me, t.x, t.z))}、距離${sayNum(Math.max(10, Math.round(d / 10) * 10))}`, true);
+  }
+  for (const id of torpCalls.keys()) if (!alive.has(id)) torpCalls.delete(id);
+}
+// ソナーの音：近づく魚雷があると「ポーーン…ポーン…ポン、ポン…ポ、ポ、ポ」。近いほど短く、間もつまる
+let actx = null, nearTorp = Infinity, beepWait = 0;
+function audioCtx() {
+  try {
+    if (!actx) { const AC = window.AudioContext || window.webkitAudioContext; if (AC) actx = new AC(); }
+    if (actx && actx.state === 'suspended') actx.resume();
+  } catch (e) { actx = null; }
+  return actx;
+}
+function sonarPing(len) {
+  const c = actx;
+  if (!c || c.state !== 'running') return;
+  const t = c.currentTime, o = c.createOscillator(), g = c.createGain();
+  o.type = 'sine'; o.frequency.setValueAtTime(1150, t); o.frequency.exponentialRampToValueAtTime(1080, t + len);
+  g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.35, t + 0.015); g.gain.exponentialRampToValueAtTime(0.0001, t + len);
+  o.connect(g).connect(c.destination); o.start(t); o.stop(t + len + 0.05);
+}
+function stepBeep(dt) {
+  beepWait -= dt;
+  if (!voicePref || !helmSub() || !(nearTorp < SONAR_R)) return;
+  if (beepWait > 0) return;
+  const k = THREE.MathUtils.clamp((nearTorp - 20) / (SONAR_R - 20), 0, 1);   // 0：すぐそば 〜 1：500m
+  const len = 0.06 + 1.1 * k * k, gap = 0.12 + 2.2 * k;
+  sonarPing(len);
+  beepWait = len * 0.6 + gap;
+}
+el('mVoice').addEventListener('click', () => {
+  voicePref = !voicePref;
+  try { localStorage.setItem('voice', voicePref ? 'on' : 'off'); } catch (e) {}
+  if (!voicePref && canSpeak) speechSynthesis.cancel();
+  setMenu(false);
+  showMsg(`音声の報告を${voicePref ? 'オン' : 'オフ'}にしました`);
+});
+
 /* ================= 潜っているほかの潜水艦は見えない（浮上すると見える） ================= */
 function hideSubmerged(v) {
   if (vtype(v) !== 'sub' || !v.item.hull) return;
@@ -3466,7 +3566,8 @@ function renderVehMenu() {
   const vt = ride ? vtype(ride) : null, boat = driving && (vt === 'ship' || vt === 'sub');
   el('vehMenu').hidden = !boat;
   if (!boat) return;
-  el('mScope').hidden = el('mLight').hidden = vt !== 'sub';
+  el('mScope').hidden = el('mLight').hidden = el('mVoice').hidden = vt !== 'sub';
+  el('mVoice').textContent = `音声の報告：${voicePref ? 'オン' : 'オフ'}`;
   el('mScope').textContent = periscope ? '潜望鏡をやめる' : '潜望鏡をのぞく';
   el('mLight').textContent = ride.item.light && ride.item.light.on ? 'ライトを消す' : 'ライトをつける';
 }
@@ -3571,6 +3672,7 @@ function frame() {
   stepAegis(dt);
   stepCrush(dt);
   stepAi(dt);
+  stepVoice(dt);
   stepShells(dt);
   stepBooms(dt);
   netTick += dt;
