@@ -3449,10 +3449,21 @@ let voicePref = true;
 try { voicePref = localStorage.getItem('voice') !== 'off'; } catch (e) {}
 const canSpeak = 'speechSynthesis' in window;
 let jaVoice = null, speakingUrgent = false;
-function pickVoice() { if (canSpeak) jaVoice = speechSynthesis.getVoices().find((v) => /^ja/i.test(v.lang)) || null; }
+// 男性の声をさがす（声の種類は端末しだい。なければ声を低くする）
+const MALE_RE = /otoya|hattori|ichiro|keita|daichi|naoki|takumi|male|男性|ja-jp-x-ja[cd]/i;
+let maleVoice = false, actx = null;
+function pickVoice() {
+  if (!canSpeak) return;
+  const ja = speechSynthesis.getVoices().filter((v) => /^ja/i.test(v.lang));
+  const m = ja.find((v) => MALE_RE.test(v.name + ' ' + v.voiceURI) && !/female|女性/i.test(v.name));
+  jaVoice = m || ja[0] || null; maleVoice = !!m;
+}
 if (canSpeak) { pickVoice(); speechSynthesis.addEventListener?.('voiceschanged', pickVoice); }
 // スマホは最初のタッチのあとでないと声が出ないので、そのときに一度だけ空の声で起こしておく
-addEventListener('pointerdown', () => { audioCtx(); if (canSpeak) { try { const u = new SpeechSynthesisUtterance(' '); u.volume = 0; speechSynthesis.speak(u); } catch (e) {} } }, { once: true });
+// 音はさわったあとでないと出ない（スマホは指を離したとき）。止まっていたら、さわるたびに動かし直す
+for (const ev of ['pointerdown', 'pointerup', 'touchend', 'click', 'keydown']) addEventListener(ev, () => { if (!actx || actx.state !== 'running') audioCtx(); }, { passive: true, capture: true });
+try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch (e) {}   // iPhone：マナーモードでも鳴らす
+addEventListener('pointerup', () => { if (canSpeak) { try { const u = new SpeechSynthesisUtterance(' '); u.volume = 0; speechSynthesis.speak(u); } catch (e) {} } }, { once: true });
 function say(text, urgent) {
   if (!voicePref || !helmSub()) return;
   showMsg(text);
@@ -3461,8 +3472,8 @@ function say(text, urgent) {
     if (!urgent || speakingUrgent) return;   // しゃべっている途中は、急ぎ（魚雷）のときだけ割り込む
     speechSynthesis.cancel();
   }
-  const u = new SpeechSynthesisUtterance(text);
-  u.lang = 'ja-JP'; if (jaVoice) u.voice = jaVoice; u.rate = 1.15;
+  const u = new SpeechSynthesisUtterance(text.replace(/注水音/g, 'ちゅうすいおん').replace(/魚雷接近/g, 'ぎょらいせっきん').replace(/方位/g, 'ほうい').replace(/距離/g, 'きょり'));   // 読み方をはっきりさせる
+  u.lang = 'ja-JP'; if (jaVoice) u.voice = jaVoice; u.rate = 1.15; u.pitch = maleVoice ? 0.9 : 0.5;   // 男性の声がなければ低くする
   speakingUrgent = !!urgent; u.onend = u.onerror = () => { speakingUrgent = false; };
   speechSynthesis.speak(u);
 }
@@ -3507,7 +3518,8 @@ function stepVoice(dt) {
   for (const id of torpCalls.keys()) if (!alive.has(id)) torpCalls.delete(id);
 }
 // ソナーの音：近づく魚雷があると「ポーーン…ポーン…ポン、ポン…ポ、ポ、ポ」。近いほど短く、間もつまる
-let actx = null, nearTorp = Infinity, beepWait = 0;
+let nearTorp = Infinity, beepWait = 0;
+window.__audio = () => (actx ? actx.state : "none");
 function audioCtx() {
   try {
     if (!actx) { const AC = window.AudioContext || window.webkitAudioContext; if (AC) actx = new AC(); }
@@ -3520,8 +3532,13 @@ function sonarPing(len) {
   if (!c || c.state !== 'running') return;
   const t = c.currentTime, o = c.createOscillator(), g = c.createGain();
   o.type = 'sine'; o.frequency.setValueAtTime(1150, t); o.frequency.exponentialRampToValueAtTime(1080, t + len);
-  g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.35, t + 0.015); g.gain.exponentialRampToValueAtTime(0.0001, t + len);
-  o.connect(g).connect(c.destination); o.start(t); o.stop(t + len + 0.05);
+  g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.6, t + 0.012); g.gain.exponentialRampToValueAtTime(0.0001, t + len);
+  o.connect(g); g.connect(c.destination);
+  // 水中で響くように、小さなこだまを重ねる
+  const d = c.createDelay(1), fb = c.createGain(); d.delayTime.value = 0.11; fb.gain.value = 0.35;
+  g.connect(d); d.connect(fb); fb.connect(d); fb.connect(c.destination);
+  o.start(t); o.stop(t + len + 0.05);
+  setTimeout(() => { try { g.disconnect(); d.disconnect(); fb.disconnect(); } catch (e) {} }, (len + 1.5) * 1000);
 }
 function stepBeep(dt) {
   beepWait -= dt;
@@ -3538,6 +3555,7 @@ el('mVoice').addEventListener('click', () => {
   if (!voicePref && canSpeak) speechSynthesis.cancel();
   setMenu(false);
   showMsg(`音声の報告を${voicePref ? 'オン' : 'オフ'}にしました`);
+  if (voicePref) { audioCtx(); setTimeout(() => sonarPing(0.9), 150); }   // 試しに 1 回鳴らす
 });
 
 /* ================= 潜っているほかの潜水艦は見えない（浮上すると見える） ================= */
