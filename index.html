@@ -54,6 +54,10 @@ body { margin: 0; background: var(--sky); color: var(--ink); font-family: var(--
 #menu[hidden] { display: none; }
 #menu .who { margin: 0 0 2px; align-self: flex-start; }
 #menu .mi { text-align: left; font: 800 14px var(--font-ui); color: var(--ink); background: #f3f6f9; border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; cursor: pointer; }
+#vehMenu { display: flex; flex-direction: column; gap: 8px; }
+#vehMenu[hidden] { display: none; }
+/* 船・潜水艦のボタンは、ピンガー（とイージス艦の主砲・CIWS）以外は ☰ メニューの中 */
+#subBtns #rescueBtn, #subBtns #lightBtn, #subBtns #scopeBtn, #subBtns #subChat, #subBtns #subExit { display: none !important; }
 #menu .mh { margin: 6px 0 0; font: 800 12px var(--font-ui); color: var(--ink-dim); }
 #myList .row { display: flex; align-items: center; gap: 6px; font: 700 13px var(--font-ui); color: var(--ink); }
 #myList .row span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -204,6 +208,13 @@ body.helmOn .subbtns { flex-wrap: wrap; justify-content: flex-end; max-width: ca
   <button class="mi" id="renameBtn" type="button" hidden>なまえ</button>
   <button class="mi" id="addItem" type="button">glTF を置く</button>
   <button class="mi" id="chatBtn" type="button">ひとこと</button>
+  <div id="vehMenu" hidden>
+    <p class="mh">船・潜水艦</p>
+    <button class="mi" type="button" data-proxy="scopeBtn" id="mScope">潜望鏡</button>
+    <button class="mi" type="button" data-proxy="lightBtn" id="mLight">ライト</button>
+    <button class="mi" type="button" data-proxy="rescueBtn">救出（浅瀬から出す）</button>
+    <button class="mi" type="button" data-proxy="subExit">降りる</button>
+  </div>
   <p class="mh">自分が出した物</p>
   <div id="myList"></div>
 </div>
@@ -3175,8 +3186,18 @@ function hideSubmerged(v) {
 const menuEl = el('menu'), menuBtn = el('menuBtn');
 function setMenu(open) {
   menuEl.hidden = !open; menuBtn.setAttribute('aria-expanded', String(open));
-  if (open) renderMyList();
+  if (open) { renderMyList(); renderVehMenu(); }
 }
+// 乗っている船・潜水艦のボタン（画面からメニューへ移したもの）
+function renderVehMenu() {
+  const vt = ride ? vtype(ride) : null, boat = driving && (vt === 'ship' || vt === 'sub');
+  el('vehMenu').hidden = !boat;
+  if (!boat) return;
+  el('mScope').hidden = el('mLight').hidden = vt !== 'sub';
+  el('mScope').textContent = periscope ? '潜望鏡をやめる' : '潜望鏡をのぞく';
+  el('mLight').textContent = ride.item.light && ride.item.light.on ? 'ライトを消す' : 'ライトをつける';
+}
+for (const b of document.querySelectorAll('#vehMenu [data-proxy]')) b.addEventListener('click', () => { el(b.dataset.proxy).click(); setMenu(false); });
 menuBtn.addEventListener('click', (e) => { e.stopPropagation(); setMenu(menuEl.hidden); });
 document.addEventListener('pointerdown', (e) => { if (!menuEl.hidden && !menuEl.contains(e.target) && !menuBtn.contains(e.target)) setMenu(false); });
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !menuEl.hidden) setMenu(false); });
