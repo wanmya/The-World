@@ -1538,7 +1538,7 @@ function restPose(v) {
 function nearCar() {
   let best = null, bd = Infinity;
   for (const v of vehicles) {
-    if (v.ai) continue;   // コンピュータの潜水艦には乗れない
+    if (v.ai || v.doom) continue;   // コンピュータの潜水艦と、脱出したあとのロボットには乗れない
     const V = v.item.def.vehicle;
     if (Math.abs(player.pos.y - v.y) > Math.max(2, (V.height || 0) + 1)) continue;
     const d = Math.hypot(player.pos.x - v.pos.x, player.pos.z - v.pos.y) - Math.max(V.halfWidth, V.halfLength * 0.7);
@@ -1930,17 +1930,96 @@ function ejectRobot() {
   const h = visYaw(v), back = new THREE.Vector3(-Math.sin(h), 0, -Math.cos(h));
   const hv = EJECT_V * Math.SQRT1_2;
   const vel = [back.x * hv + Math.sin(h) * v.vF, hv, back.z * hv + Math.cos(h) * v.vF];
+  const rs = robotRespawnSpot(v);
   leaveRide(true);
+  doomRobot(v, rs, true);
   pod = makePod(v, cpw.x, cpw.y, cpw.z, ...vel, true);
   camDist = Math.max(camDist, 24);
   showMsg('脱出！ コックピットが飛び出しました');
-  if (net.room && v.shared && v.id) net.room.emit('eject', { id: v.id, x: +cpw.x.toFixed(2), y: +cpw.y.toFixed(2), z: +cpw.z.toFixed(2), vx: +vel[0].toFixed(2), vy: +vel[1].toFixed(2), vz: +vel[2].toFixed(2) }).catch(() => {});
+  if (net.room && v.shared && v.id) net.room.emit('eject', { id: v.id, rx: +rs[0].toFixed(2), rz: +rs[1].toFixed(2), rh: +rs[2].toFixed(3), x: +cpw.x.toFixed(2), y: +cpw.y.toFixed(2), z: +cpw.z.toFixed(2), vx: +vel[0].toFixed(2), vy: +vel[1].toFixed(2), vz: +vel[2].toFixed(2) }).catch(() => {});
 }
 function onEject(p) {   // ほかの人が脱出した：同じように飛ばして見せる
   const d = p.data || p;
   const v = vehicles.find((x) => x.id === d.id && x.item.robot);
   if (!v || v.noPod) return;
   makePod(v, num(d.x, X0, X1), num(d.y, Y_BOTTOM, Y_TOP), num(d.z, Z0, Z1), num(d.vx, -60, 60), num(d.vy, -60, 60), num(d.vz, -60, 60), false);
+  doomRobot(v, [num(d.rx, X0 + 2, X1 - 2, v.pos.x), num(d.rz, Z0 + 2, Z1 - 2, v.pos.y), num(d.rh, -10, 10, v.h)], false);
+}
+// 脱出した 1.5 秒後に本体が爆発して木っ端みじんになり、がっち号のとなりで復活する
+const ROBOT_BOOM_AT = 1.5, ROBOT_BACK_AT = 5;
+const frags = [];
+function robotRespawnSpot(v) {
+  const V = v.item.def.vehicle;
+  let x, z, f;
+  if (myCar) { x = myCar.pos.x; z = myCar.pos.y; f = myCar.h; }
+  else { f = SPAWN.face; x = SPAWN.x + Math.cos(f) * 4; z = SPAWN.z - Math.sin(f) * 4; }
+  const d = 3 + V.halfWidth + 1.5, c = Math.cos(f), sn = Math.sin(f);
+  for (const k of [d, -d, d * 1.8, -d * 1.8]) {   // がっち号の横（陸の上）
+    const px = clampX(x + c * k, 4), pz = clampZ(z - sn * k, 4);
+    if (heightAt(px, pz) > SEA + 0.3) return [px, pz, f];
+  }
+  return [clampX(x, 4), clampZ(z, 4), f];
+}
+function doomRobot(v, spot, mine) { v.doom = { t: clock.elapsedTime, spot, mine, boomed: false }; }
+function explodeRobot(v) {
+  const root = v.item.root;
+  root.updateMatrixWorld(true);
+  const c = new THREE.Vector3(v.pos.x, v.y + (v.item.def.vehicle.height || 3) * 0.5, v.pos.y);
+  root.traverse((o) => {
+    if (!o.isMesh || !o.visible) return;
+    const m = new THREE.Mesh(o.geometry, o.material);
+    o.matrixWorld.decompose(m.position, m.quaternion, m.scale);
+    scene.add(m);
+    const dir = m.position.clone().sub(c); dir.y = Math.abs(dir.y) + 0.6; dir.normalize();
+    frags.push({ mesh: m, vel: dir.multiplyScalar(8 + Math.random() * 10).add(new THREE.Vector3(0, 6 + Math.random() * 6, 0)), spin: new THREE.Vector3(Math.random() * 8 - 4, Math.random() * 8 - 4, Math.random() * 8 - 4), t: 0, life: 2.5 + Math.random() * 1.5, s0: m.scale.clone() });
+  });
+  root.visible = false; v.wrecked = true;
+  // 火の玉と煙
+  for (let i = 0; i < 9; i++) {
+    const fire = i < 6, mat = new THREE.MeshBasicMaterial({ color: fire ? (i % 2 ? 0xff6a1a : 0xffc04a) : 0x3a3a3a, transparent: true, opacity: fire ? 0.9 : 0.6, depthWrite: false, blending: fire ? THREE.AdditiveBlending : THREE.NormalBlending });
+    const m = new THREE.Mesh(boomGeo, mat);
+    m.position.copy(c).add(new THREE.Vector3(Math.random() * 3 - 1.5, Math.random() * 3 - 1, Math.random() * 3 - 1.5));
+    scene.add(m);
+    frags.push({ mesh: m, puff: true, fire, vel: new THREE.Vector3(Math.random() - 0.5, fire ? 2 + Math.random() * 2 : 3 + Math.random() * 2, Math.random() - 0.5), t: -(fire ? i * 0.08 : 0.3 + i * 0.15), life: fire ? 1.4 : 3.5, k: fire ? 2.5 + Math.random() * 1.5 : 3 + Math.random() * 2 });
+  }
+  flashAt(c.x, c.y, c.z, 2.5);
+}
+function stepWrecks(dt) {
+  const now = clock.elapsedTime;
+  for (const v of vehicles) {
+    const d = v.doom;
+    if (!d) continue;
+    if (!d.boomed && now - d.t >= ROBOT_BOOM_AT) { d.boomed = true; explodeRobot(v); }
+    if (d.boomed && now - d.t >= ROBOT_BACK_AT && v !== ride && !v.remote) {
+      v.doom = null; v.wrecked = false;
+      parkAt(v, d.spot[0], d.spot[1], d.spot[2]);
+      v.item.root.visible = true; showPod(v); showCar(v);
+      flashAt(v.pos.x, v.y + 1, v.pos.y, 0.6);
+      if (d.mine) {
+        showMsg(`${v.name} ががっち号のとなりで復活しました`);
+        if (v.shared && v.id && net.db) net.db.move(v.id, Math.round(v.pos.x * 100) / 100, Math.round(v.pos.y * 100) / 100, Math.round(v.h * 1000) / 1000).catch(() => {});
+      }
+    }
+  }
+  for (const f of [...frags]) {
+    f.t += dt;
+    if (f.t < 0) { f.mesh.visible = false; continue; }
+    f.mesh.visible = true;
+    f.mesh.position.addScaledVector(f.vel, dt);
+    if (f.puff) {
+      const k = f.t / f.life;
+      f.mesh.scale.setScalar(f.k * (0.3 + k * 1.2));
+      f.mesh.material.opacity = (f.fire ? 0.9 : 0.6) * Math.max(0, 1 - k);
+    } else {
+      f.vel.y -= 9.8 * dt;
+      f.mesh.rotation.x += f.spin.x * dt; f.mesh.rotation.y += f.spin.y * dt; f.mesh.rotation.z += f.spin.z * dt;
+      const g = floorAt(f.mesh.position.x, f.mesh.position.z);
+      if (f.mesh.position.y < g) { f.mesh.position.y = g; f.vel.y *= -0.3; f.vel.x *= 0.5; f.vel.z *= 0.5; }
+      const k = Math.max(0, 1 - Math.max(0, f.t - f.life * 0.6) / (f.life * 0.4));
+      f.mesh.scale.copy(f.s0).multiplyScalar(k);
+    }
+    if (f.t > f.life) { scene.remove(f.mesh); if (f.puff) f.mesh.material.dispose(); frags.splice(frags.indexOf(f), 1); }
+  }
 }
 function followPod() {
   player.pos.copy(pod.pos); player.pos.y -= pod.bottom; player.vy = 0; player.moving = false;
@@ -1968,7 +2047,7 @@ function stepPods(dt) {
         if (p.mine) {
           const wet = heightAt(p.pos.x, p.pos.z) < SEA;
           player.pos.set(clampX(p.pos.x + 2.5, P_R), wet ? FLOAT_Y : heightAt(p.pos.x + 2.5, p.pos.z), clampZ(p.pos.z, P_R)); player.vy = 0;
-          showMsg(wet ? '海に着水しました' : '着地しました。ロボットにもう一度乗ると、新しいコックピットがつきます');
+          showMsg(wet ? '海に着水しました' : '着地しました');
           pod = null;
         }
       }
@@ -1998,7 +2077,7 @@ function stepVehicle(v, dt) {
     if (v.item.periscope) v.item.periscope.pivot.rotation.y = t.py || 0;
     if (v.item.guns && t.gy) { for (const g of v.item.guns.main) g.pivot.rotation.y = t.gy[0]; for (const g of v.item.guns.ciws) g.pivot.rotation.y = t.gy[1]; }
     showCar(v);
-    if (v.item.robot) { if (v.noPod) showPod(v); animRobot(v, dt, null); }
+    if (v.item.robot) { if (v.noPod && !v.doom) showPod(v); animRobot(v, dt, null); }
     hideSubmerged(v);
     return;
   }
@@ -3892,6 +3971,7 @@ function frame() {
   if (aboard && !vehicles.includes(aboard.v)) getOff();
   if (pod && pod.mine && !pod.landed) followPod(); else if (!driving && !aboard) stepPlayer(dt);
   stepPods(dt);
+  stepWrecks(dt);
   for (const v of vehicles) stepVehicle(v, dt);
   if (aboard) { player.pos.copy(seatWorld(aboard.v, aboard.seat)); player.vy = 0; player.face = visYaw(aboard.v); player.mode = 'walk'; }
   avatar.visible = !driving && !(aboard && vtype(aboard.v) === 'sub') && !(pod && pod.mine && !pod.landed);
