@@ -2155,9 +2155,9 @@ function stepBuses() {
     b.nextName = L.names.get(nk) || '';
     const near = Math.hypot(b.x - cx, b.z - cz) < VIEW_R || (!!busRide && busRide.b === b);
     b.root.visible = near;
-    if (!near) continue;
-    b.root.position.set(b.x, b.y, b.z);
+    b.root.position.set(b.x, b.y, b.z);   // 見えないバスも位置は合わせる（乗っているほかの人の位置に使う）
     b.root.rotation.set(-b.pitch, b.h, 0);
+    if (!near) { b.root.updateMatrixWorld(true); continue; }
     for (const leaves of b.doors) for (const d of leaves) { d.g.position.x = BUS_DIM.hw - 0.02 + b.open * 0.08; d.g.position.z = d.z + d.k * b.open * (d.w - 0.05); }
     b.root.updateMatrixWorld(true);
   }
