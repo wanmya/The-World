@@ -144,6 +144,16 @@ body.mapOn #msg { top: max(145px, 30vh); }
 #helm .htabs { display: flex; gap: 6px; margin-bottom: 6px; }
 #helm .htabs button { flex: 1; height: 32px; border-radius: 999px; border: 1px solid var(--line); background: #fff; color: var(--ink); font: 800 13px var(--font-ui); cursor: pointer; }
 #helm .htabs button[aria-pressed="true"] { background: var(--ink); color: #fff; border-color: transparent; }
+#helm .dials { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+#helm .dial { display: grid; justify-items: center; gap: 2px; padding: 4px 2px; border: 1px solid var(--line); border-radius: 10px; background: #fff; }
+#helm .dial .dl { font-size: 11px; color: var(--ink-dim); }
+#helm .dgs { display: flex; align-items: center; gap: 3px; }
+#helm .dg { display: grid; justify-items: center; gap: 2px; }
+#helm .dg button { width: 30px; height: 24px; border-radius: 6px; border: 1px solid var(--line); background: #f3f6f9; color: var(--ink); font: 800 11px var(--font-ui); cursor: pointer; padding: 0; touch-action: manipulation; }
+#helm .dg b { font: 800 18px var(--font-mono); color: var(--accent); min-width: 22px; text-align: center; }
+#helm .dial em { font-size: 10px; }
+#helm .hq button.tl[aria-pressed="true"] { background: #c8402a; color: #fff; }
+#helm .hq button.tr[aria-pressed="true"] { background: #1f8f5f; color: #fff; }
 #helm .hrow { display: grid; grid-template-columns: 38px 34px 34px 1fr 34px 34px; gap: 4px; align-items: center; margin-top: 4px; }
 #helm .hl { font-size: 12px; color: var(--ink-dim); }
 #helm .hrow button, #helm .hq button { height: 34px; border-radius: 8px; border: 1px solid var(--line); background: #fff; color: var(--ink); font: 800 12px var(--font-mono); cursor: pointer; padding: 0; touch-action: manipulation; }
@@ -297,10 +307,13 @@ body.helmOn .subbtns { flex-wrap: wrap; justify-content: flex-end; max-width: ca
 <div id="helm" hidden>
   <div class="htabs"><button type="button" data-tab="nav" aria-pressed="true">操艦</button><button type="button" data-tab="torp" aria-pressed="false">魚雷</button><button type="button" data-q="mini" class="minibtn" aria-label="たたむ／ひろげる">－</button></div>
   <div id="helmNav">
-    <div class="hrow"><span class="hl">進路</span><button type="button" data-d="hdg:-10">−10</button><button type="button" data-d="hdg:-1">−1</button><span class="val"><input id="oHdg" inputmode="numeric" aria-label="進路"><small>°</small><em id="cHdg"></em></span><button type="button" data-d="hdg:1">+1</button><button type="button" data-d="hdg:10">+10</button></div>
-    <div class="hrow"><span class="hl">速力</span><button type="button" data-d="kt:-5">−5</button><button type="button" data-d="kt:-1">−1</button><span class="val"><input id="oKt" inputmode="numeric" aria-label="速力"><small>kt</small><em id="cKt"></em></span><button type="button" data-d="kt:1">+1</button><button type="button" data-d="kt:5">+5</button></div>
-    <div class="hrow" id="rowNavDp"><span class="hl">深度</span><button type="button" data-d="dp:-10">−10</button><button type="button" data-d="dp:-1">−1</button><span class="val"><input id="oDp" inputmode="numeric" aria-label="深度"><small>m</small><em id="cDp"></em></span><button type="button" data-d="dp:1">+1</button><button type="button" data-d="dp:10">+10</button></div>
-    <div class="hq" id="rowNavQ"><button type="button" data-q="surface">浮上</button><button type="button" data-q="dive">潜航</button><button type="button" data-q="stop">停止</button></div>
+    <div class="dials">
+      <div class="dial" id="dAng"><span class="dl">角度</span><div class="dgs"><div class="dg"><button type="button" data-n="ang:10" aria-label="角度 10 増やす">▲</button><b id="vAngT">0</b><button type="button" data-n="ang:-10" aria-label="角度 10 減らす">▼</button></div><div class="dg"><button type="button" data-n="ang:1" aria-label="角度 1 増やす">▲</button><b id="vAngO">0</b><button type="button" data-n="ang:-1" aria-label="角度 1 減らす">▼</button></div><small>°</small></div><em id="cHdg"></em></div>
+      <div class="dial" id="dSpd"><span class="dl">速力</span><div class="dgs"><div class="dg"><button type="button" data-n="spd:10" aria-label="速力 10 増やす">▲</button><b id="vSpdT">0</b><button type="button" data-n="spd:-10" aria-label="速力 10 減らす">▼</button></div><div class="dg"><button type="button" data-n="spd:1" aria-label="速力 1 増やす">▲</button><b id="vSpdO">0</b><button type="button" data-n="spd:-1" aria-label="速力 1 減らす">▼</button></div><small>kt</small></div><em id="cKt"></em></div>
+      <div class="dial" id="rowNavDp"><span class="dl">深度</span><div class="dgs"><div class="dg"><button type="button" data-n="dp:10" aria-label="深度 10 増やす">▲</button><b id="vDpT">0</b><button type="button" data-n="dp:-10" aria-label="深度 10 減らす">▼</button></div><div class="dg"><button type="button" data-n="dp:1" aria-label="深度 1 増やす">▲</button><b id="vDpO">0</b><button type="button" data-n="dp:-1" aria-label="深度 1 減らす">▼</button></div><small>m</small></div><em id="cDp"></em></div>
+    </div>
+    <div class="hq"><button type="button" data-turn="left" class="tl">取舵</button><button type="button" data-turn="course">針路</button><button type="button" data-turn="right" class="tr">面舵</button></div>
+    <div class="hq" id="rowNavQ"><button type="button" data-q="rev" id="revBtn">逆進</button><button type="button" data-q="stop">機関停止</button></div>
   </div>
   <div id="helmTorp" hidden>
     <div class="hq"><button type="button" data-tt="war" aria-pressed="true">弾頭</button><button type="button" data-tt="guide" aria-pressed="false">誘導</button><button type="button" data-tt="decoy" aria-pressed="false">デコイ</button></div>
@@ -3954,7 +3967,10 @@ const KT = 1852 / 3600;   // 1 ノット = 0.514 m/s
 const COMPASS = ['北', '北東', '東', '南東', '南', '南西', '西', '北西'];
 const compassName = (b) => COMPASS[Math.round(b / 45) % 8];
 // 指示（操艦）と、次に装填する魚雷の設定
-const ord = { hdg: 0, kt: 0, dp: 0, ttype: 'war', tdp: 10, tdist: 400, ttime: 10 };
+const ord = { hdg: 0, kt: 0, dp: 0, ang: 0, spd: 0, rev: false, ttype: 'war', tdp: 10, tdist: 400, ttime: 10 };
+// 旋回中の指示：null か {mode:'left'|'right'|'course', remain（残りの角度）, prevB（前の方位）}
+let helmTurn = null;
+const TURN_NAME = { left: '取舵', right: '面舵', course: '針路' };
 let helmTab = 'nav';
 // HP：最大 15。最高速力（ノット）は HP と同じ。直撃で -7、50m 以内の爆発で -2、0 で沈没
 const HP_MAX = 15, HIT_DMG = 7, NEAR_DMG = 2, NEAR_R = 50;
@@ -3999,6 +4015,7 @@ const subDepth = (v) => Math.max(0, SEA - v.y);
 const seabedAt = (x, z) => Math.max(0, SEA - heightAt(x, z));
 function initOrders(v) {
   ord.hdg = Math.round(bearingOf(v.h)); ord.kt = 0; ord.dp = Math.round(subDepth(v));
+  ord.ang = 0; ord.spd = 0; ord.rev = false; helmTurn = null;
   ord.tdp = Math.max(2, Math.round(subDepth(v)) || 10);
   helmShown = '';
   tube.n = 0; tube.until = 0; subTarget = null; lastHeard.clear(); ghosts.clear();
@@ -4014,19 +4031,46 @@ function loadTubes() {
 }
 function clampOrders(v) {
   ord.hdg = ((ord.hdg % 360) + 360) % 360;
-  ord.kt = THREE.MathUtils.clamp(ord.kt, -Math.max(1, Math.round(maxKt(v) * 0.4)), maxKt(v));
+  const maxRev = Math.max(1, Math.round(maxKt(v) * 0.4));
+  ord.ang = THREE.MathUtils.clamp(ord.ang, 0, 360);
+  ord.spd = THREE.MathUtils.clamp(ord.spd, 0, ord.rev ? maxRev : maxKt(v));
+  ord.kt = ord.rev ? -ord.spd : ord.spd;   // 逆進中はスクリューを逆に回す
   ord.dp = THREE.MathUtils.clamp(ord.dp, 0, 100);
   ord.tdp = THREE.MathUtils.clamp(ord.tdp, 1, 100);
   ord.tdist = THREE.MathUtils.clamp(ord.tdist, 20, 400);
   ord.ttime = THREE.MathUtils.clamp(ord.ttime, 1, 15);
 }
 // 指示から、かじ・出力・うく／もぐるを決める（PC のキーは指示の数字を動かす）
+// 面舵・取舵：決めた角度だけ回る。針路：決めた方位へ近いほうから回る
+function startHelmTurn(v, mode) {
+  const b = bearingOf(v.h);
+  if (helmTurn && helmTurn.mode === mode) { helmTurn = null; ord.hdg = Math.round(b); return; }   // もう一度押すと止める
+  const a = Math.round(ord.ang);
+  if (mode !== 'course' && a < 1) { showMsg('角度を ▲ で決めてから押してください'); return; }
+  helmTurn = { mode, remain: a, prevB: b, target: a % 360 };
+  stepHelmTurn(v);
+}
+function stepHelmTurn(v) {
+  const t = helmTurn, b = bearingOf(v.h);
+  if (t.mode === 'course') {
+    ord.hdg = t.target;
+    if (Math.abs(((t.target - b + 540) % 360) - 180) < 1) helmTurn = null;
+    return;
+  }
+  const dir = t.mode === 'right' ? 1 : -1;
+  t.remain -= (((b - t.prevB + 540) % 360) - 180) * dir;
+  t.prevB = b;
+  if (t.remain <= 0.5) { ord.hdg = Math.round(b); helmTurn = null; return; }
+  ord.hdg = b + dir * Math.min(t.remain, 40);
+}
 function orderInput(v, dt, o = ord) {   // o：指示（プレイヤーは ord、コンピュータは v.ai.ord）
   const V = v.item.def.vehicle;
   if (o === ord && !periscope) {
-    ord.hdg += ((keys.KeyD || keys.ArrowRight ? 1 : 0) - (keys.KeyA || keys.ArrowLeft ? 1 : 0)) * 30 * dt;
-    ord.kt += ((keys.KeyW || keys.ArrowUp ? 1 : 0) - (keys.KeyS || keys.ArrowDown ? 1 : 0)) * 4 * dt;
+    const kt = (keys.KeyD || keys.ArrowRight ? 1 : 0) - (keys.KeyA || keys.ArrowLeft ? 1 : 0);
+    if (kt) { helmTurn = null; ord.hdg += kt * 30 * dt; }   // PC のキーで向きを変えると、旋回の指示は取り消し
+    ord.spd += ((keys.KeyW || keys.ArrowUp ? 1 : 0) - (keys.KeyS || keys.ArrowDown ? 1 : 0)) * 4 * dt;
   }
+  if (o === ord && helmTurn) stepHelmTurn(v);
   if (o === ord) ord.dp += ((keys.KeyC || keys.ControlLeft || keys.KeyQ ? 1 : 0) - (keys.Space ? 1 : 0)) * 5 * dt;
   if (o === ord) clampOrders(v);
   const want = o.kt * KT;
@@ -4054,8 +4098,9 @@ function updateHelm() {
   if (!v) { el('subBtns').style.bottom = ''; return; }
   el('subBtns').style.bottom = window.innerWidth < 760 ? helmEl.offsetHeight + 24 + 'px' : '';
   const b = bearingOf(v.h);
-  const vals = { oHdg: fmtB(ord.hdg), oKt: String(Math.round(ord.kt)), oDp: String(Math.round(ord.dp)),
-    tDp: String(Math.round(ord.tdp)), tDist: String(Math.round(ord.tdist)), tTime: String(Math.round(ord.ttime)) };
+  const dig = { vAngT: Math.floor(Math.round(ord.ang) / 10), vAngO: Math.round(ord.ang) % 10, vSpdT: Math.floor(Math.round(ord.spd) / 10), vSpdO: Math.round(ord.spd) % 10, vDpT: Math.floor(Math.round(ord.dp) / 10), vDpO: Math.round(ord.dp) % 10 };
+  const tn = helmTurn ? (helmTurn.mode === 'course' ? `針路 ${fmtB(helmTurn.target)}° へ旋回中（もう一度押すと止まる）` : `${TURN_NAME[helmTurn.mode]} 旋回中… あと ${Math.max(0, Math.round(helmTurn.remain))}°（もう一度押すと止まる）`) : '';
+  const vals = { tDp: String(Math.round(ord.tdp)), tDist: String(Math.round(ord.tdist)), tTime: String(Math.round(ord.ttime)) };
   const now = { cHdg: fmtB(b), cKt: String(Math.round(v.vF / KT)), cDp: subDepth(v).toFixed(0) };
   if (isSub && tube.until && clock.elapsedTime >= tube.until) {
     const am = ammoOf(v);
@@ -4069,12 +4114,15 @@ function updateHelm() {
   const am = ammoOf(v), stock = `残弾 弾頭${am.war}・誘導${am.guide}・デコイ${am.decoy}`;
   const tst = left > 0 ? `装填中… あと ${Math.ceil(left)} 秒（音が出ています）` : tube.n ? `${tube.n} 本装填ずみ。発射：${what}・${aimTxt}` : `空です。「装填」を押してください${subHp(v) <= 5 ? '（HP 5 以下なので 1 本ずつ）' : ''}`;
   const cd = isSub ? crushDmg(v) : 0;
-  const st = cd && helmTab === 'nav' ? `⚠ 圧壊深度！ 安全な深さは ${safeDepth(v)}m まで。あと ${Math.ceil(CRUSH_EVERY - crushT)} 秒で HP -${cd}` : helmTab === 'torp' ? `${tst}（${stock}）` : v.dpLimit != null ? `海底が近いので ${v.dpLimit.toFixed(0)}m までしかもぐれません` : `いま ${compassName(b)}へ ${Math.abs(v.vF / KT).toFixed(1)}kt${!ord.kt && Math.abs(v.vF) > 0.3 ? '（機関停止・惰性で無音）' : ''}`;
-  const key = [helmTab, JSON.stringify(vals), JSON.stringify(now), tube.n, ord.ttype, st].join('|');
+  const st = cd && helmTab === 'nav' ? `⚠ 圧壊深度！ 安全な深さは ${safeDepth(v)}m まで。あと ${Math.ceil(CRUSH_EVERY - crushT)} 秒で HP -${cd}` : helmTab === 'torp' ? `${tst}（${stock}）` : tn ? tn : v.dpLimit != null ? `海底が近いので ${v.dpLimit.toFixed(0)}m までしかもぐれません` : `いま ${compassName(b)}へ ${Math.abs(v.vF / KT).toFixed(1)}kt${ord.rev ? '（逆進）' : ''}${!ord.kt && Math.abs(v.vF) > 0.3 ? '（機関停止・惰性で無音）' : ''}`;
+  const key = [helmTab, JSON.stringify(vals), JSON.stringify(dig), JSON.stringify(now), tube.n, ord.ttype, ord.rev, helmTurn && helmTurn.mode, st].join('|');
   if (key === helmShown) return;
   helmShown = key;
   el('helmNav').hidden = helmTab !== 'nav'; el('helmTorp').hidden = helmTab !== 'torp';
-  el('rowNavDp').hidden = el('rowNavQ').hidden = !isSub; helmEl.querySelector('[data-tab="torp"]').hidden = !isSub;
+  el('rowNavDp').hidden = !isSub;
+  for (const id in dig) el(id).textContent = dig[id];
+  for (const b2 of helmEl.querySelectorAll('[data-turn]')) b2.setAttribute('aria-pressed', String(!!helmTurn && helmTurn.mode === b2.dataset.turn));
+  el('revBtn').setAttribute('aria-pressed', String(ord.rev)); helmEl.querySelector('[data-tab="torp"]').hidden = !isSub;
   for (const b2 of helmEl.querySelectorAll('[data-tab]')) b2.setAttribute('aria-pressed', String(b2.dataset.tab === helmTab));
   for (const b2 of helmEl.querySelectorAll('[data-tt]')) { b2.setAttribute('aria-pressed', String(b2.dataset.tt === ord.ttype)); b2.textContent = `${{ war: '弾頭', guide: '誘導', decoy: 'デコイ' }[b2.dataset.tt]} ${am[b2.dataset.tt]}`; }
   el('rowDist').classList.toggle('off', ord.ttype !== 'war'); el('rowTime').classList.toggle('off', ord.ttype !== 'decoy');
@@ -4096,16 +4144,17 @@ helmEl.addEventListener('click', (e) => {
   if (t.dataset.tab) { helmTab = t.dataset.tab; helmEl.classList.remove('mini'); }
   if (t.dataset.tt && TNAME[t.dataset.tt]) ord.ttype = t.dataset.tt;
   if (t.dataset.d) { const [k, d] = t.dataset.d.split(':'); ord[k] = Math.round(ord[k]) + Number(d); }
-  if (t.dataset.q === 'surface') ord.dp = 0;
-  if (t.dataset.q === 'dive') ord.dp = Math.max(ord.dp, 20);
-  if (t.dataset.q === 'stop') ord.kt = 0;
+  if (t.dataset.n) { const [k, d] = t.dataset.n.split(':'); ord[k] = Math.round(ord[k]) + Number(d); }   // 角度は押すだけ、速力・深度はすぐ効く
+  if (t.dataset.turn) startHelmTurn(v, t.dataset.turn);
+  if (t.dataset.q === 'rev') { ord.rev = !ord.rev; if (ord.rev && !Math.round(ord.spd)) ord.spd = Math.max(1, Math.round(maxKt(v) * 0.4)); }
+  if (t.dataset.q === 'stop') { ord.spd = 0; ord.rev = false; }
   if (t.dataset.q === 'opt') helmEl.classList.toggle('showOpt');
   if (t.dataset.q === 'mini') helmEl.classList.toggle('mini');
   if (t.id === 'fireBtn') fireTorpedo();
   if (t.dataset.q === 'load') loadTubes();
   clampOrders(v); helmShown = '';
 });
-for (const [id, k] of [['oHdg', 'hdg'], ['oKt', 'kt'], ['oDp', 'dp'], ['tDp', 'tdp'], ['tDist', 'tdist'], ['tTime', 'ttime']]) {
+for (const [id, k] of [['tDp', 'tdp'], ['tDist', 'tdist'], ['tTime', 'ttime']]) {
   const i = el(id);
   i.addEventListener('change', () => { const n = Number(i.value); const v = helmShip(); if (isFinite(n) && v) { ord[k] = n; clampOrders(v); } helmShown = ''; });
   i.addEventListener('keydown', (e) => { if (e.key === 'Enter') { i.blur(); cv.focus(); } });
@@ -4164,6 +4213,9 @@ function fireTorpedo() {
   if (subTarget && !aim) showMsg('目標がレーダーから消えたので、艦首の向きに撃ちます');
   else if (aim && aim.ghost) showMsg('目標がさっきまで居た点へ撃ちます');
   const V = v.item.def.vehicle, h = aim ? aim.h : visYaw(v);
+  // 魚雷は艦首の前 ±90° にしか撃てない
+  const off = Math.round(Math.abs(wrapA(h - v.h)) * 180 / Math.PI);
+  if (off > 90) { showMsg(`⚠ 目標が艦首から ${off}° の向きにいます。魚雷は艦首の前 ±90° にしか撃てません。艦首を目標へ向けてください`); return; }
   if (type !== 'decoy') {   // 安全距離：目標（選んでいなければ、撃つ向き ±45° にいる近くの相手）が 150m 以内なら撃たない
     let near = aim && !aim.ghost ? aim.d : Infinity;
     if (!aim) for (const c of subContacts()) {
@@ -4337,7 +4389,7 @@ function damageSub(v, dmg, what) {
   const mine = isMine(v);
   if (v.hp > 0) {
     if (mine) showMsg(`${what} HP ${v.hp}／${HP_MAX}（最高 ${v.hp} ノット）`);
-    if (ride === v) { ord.kt = Math.min(ord.kt, maxKt(v)); helmShown = ''; }
+    if (ride === v) { ord.spd = Math.min(ord.spd, maxKt(v)); helmShown = ''; }
     return;
   }
   v.sunk = clock.elapsedTime; v.remote = null; v.vF = 0;
@@ -4679,6 +4731,7 @@ function stopAiBattle(quiet) {
 }
 function aiFire(v, type, h, dp, dist) {
   const a = v.ai, V = v.item.def.vehicle;
+  if (Math.abs(wrapA(h - v.h)) > Math.PI / 2) return false;   // 艦首の前 ±90° だけ
   const x = v.pos.x + Math.sin(h) * (V.halfLength + 1.8), z = v.pos.y + Math.cos(h) * (V.halfLength + 1.8);
   if (outsideBox(x, z, 1) || heightAt(x, z) > SEA - 1.5 || !a.tube.n || !a.ammo[type]) return false;
   const y = Math.max(heightAt(x, z) + 0.6, Math.min(v.y - V.draft * 0.5, SEA - 1));
