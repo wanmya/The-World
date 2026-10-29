@@ -313,13 +313,13 @@ body.helmOn .subbtns { flex-wrap: wrap; justify-content: flex-end; max-width: ca
       <div class="dial" id="rowNavDp"><span class="dl">深度</span><div class="dgs"><div class="dg"><button type="button" data-n="dp:10" aria-label="深度 10 増やす">▲</button><b id="vDpT">0</b><button type="button" data-n="dp:-10" aria-label="深度 10 減らす">▼</button></div><div class="dg"><button type="button" data-n="dp:1" aria-label="深度 1 増やす">▲</button><b id="vDpO">0</b><button type="button" data-n="dp:-1" aria-label="深度 1 減らす">▼</button></div><small>m</small></div><em id="cDp"></em></div>
     </div>
     <div class="hq"><button type="button" data-turn="left" class="tl">取舵</button><button type="button" data-turn="course">針路</button><button type="button" data-turn="right" class="tr">面舵</button></div>
-    <div class="hq" id="rowNavQ"><button type="button" data-q="rev" id="revBtn">逆進</button><button type="button" data-q="stop">機関停止</button></div>
+    <div class="hq" id="rowNavQ"><button type="button" data-q="rev" id="revBtn">逆進</button><button type="button" data-q="stop">機関停止</button><button type="button" id="pingBtn" hidden>ピンガー</button></div>
   </div>
   <div id="helmTorp" hidden>
     <div class="hq"><button type="button" data-tt="war" aria-pressed="true">弾頭</button><button type="button" data-tt="guide" aria-pressed="false">誘導</button><button type="button" data-tt="decoy" aria-pressed="false">デコイ</button></div>
     <div class="hrow opt" id="rowDp"><span class="hl">深度</span><button type="button" data-d="tdp:-5">−5</button><button type="button" data-d="tdp:-1">−1</button><span class="val"><input id="tDp" inputmode="numeric" aria-label="深度"><small>m</small></span><button type="button" data-d="tdp:1">+1</button><button type="button" data-d="tdp:5">+5</button></div>
     <div class="hrow opt" id="rowDist"><span class="hl">爆発</span><button type="button" data-d="tdist:-50">−50</button><button type="button" data-d="tdist:-10">−10</button><span class="val"><input id="tDist" inputmode="numeric" aria-label="爆発"><small>m</small></span><button type="button" data-d="tdist:10">+10</button><button type="button" data-d="tdist:50">+50</button></div>
-    <div class="hrow opt" id="rowTime"><span class="hl">時間</span><button type="button" data-d="ttime:-5">−5</button><button type="button" data-d="ttime:-1">−1</button><span class="val"><input id="tTime" inputmode="numeric" aria-label="時間"><small>秒</small></span><button type="button" data-d="ttime:1">+1</button><button type="button" data-d="ttime:5">+5</button></div>
+    
     <div class="hq"><button type="button" data-q="opt" class="optbtn">設定</button><button type="button" data-q="load" id="loadBtn">装填</button><button type="button" class="fire" id="fireBtn">発射</button></div>
   </div>
   <div class="hmsg" id="helmMsg"></div>
@@ -328,7 +328,6 @@ body.helmOn .subbtns { flex-wrap: wrap; justify-content: flex-end; max-width: ca
   <button type="button" id="rescueBtn">救出</button>
   <button type="button" id="lightBtn" aria-pressed="false">ライト</button>
   <button type="button" id="scopeBtn" aria-pressed="false">潜望鏡</button>
-  <button type="button" id="pingBtn" hidden>ピンガー</button>
   <button type="button" id="gunBtn" aria-pressed="true" hidden>主砲</button>
   <button type="button" id="ciwsBtn" aria-pressed="true" hidden>CIWS</button>
   <button type="button" id="untargetBtn" hidden>目標解除</button>
@@ -3786,10 +3785,11 @@ function busUi() {
 /* ================= 潜水艦の地図（乗っているあいだだけ） ================= */
 const mapEl = el('map'), mapCv = el('mapCv'), mapCx = mapCv.getContext('2d');
 let mapImg = null, mapWide = false, mapTick = 0;
-const RADAR_STEPS = [100, 200, 300, 400, 500];
-const radarR = { sub: 300, aegis: 500 };   // レーダーの半径（「近く／遠く」で 100〜500m）
-// 地図の絵：自分のまわり 1.4km 四方（1 ピクセル = 4m、上が -z の海側）。遠くへ行ったら、少しずつ描き直す
-const MAP_SPAN = 1400, MAP_PX = 350;
+const RADAR_STEPS = [100, 200, 300, 400, 500, 700, 1000];
+const RADAR_MAX = { sub: 1000, aegis: 500 };
+const radarR = { sub: 300, aegis: 500 };   // レーダーの半径（「近く／遠く」で 100m〜潜水艦 1000m・イージス艦 500m）
+// 地図の絵：自分のまわり 2.6km 四方（1 ピクセル = 5m、上が -z の海側）。遠くへ行ったら、少しずつ描き直す
+const MAP_SPAN = 2600, MAP_PX = 520;   // 半径 1000m のレーダーでも足りるように
 let mapBuild = null;
 function mapColor(h, x, z, out, k) {
   let r, gg, b;
@@ -3800,7 +3800,7 @@ function mapColor(h, x, z, out, k) {
   out[k] = r; out[k + 1] = gg; out[k + 2] = b; out[k + 3] = 255;
 }
 function stepMapImage(px, pz) {
-  const far = !mapImg || Math.max(Math.abs(px - mapImg.cx), Math.abs(pz - mapImg.cz)) > MAP_SPAN * 0.25;
+  const far = !mapImg || Math.max(Math.abs(px - mapImg.cx), Math.abs(pz - mapImg.cz)) > 250;
   if (!mapBuild && far) {
     const cx = Math.round(px / 100) * 100, cz = Math.round(pz / 100) * 100;
     const c = document.createElement('canvas'); c.width = c.height = MAP_PX;
@@ -3808,7 +3808,7 @@ function stepMapImage(px, pz) {
     mapBuild = { c, g, im: g.createImageData(MAP_PX, MAP_PX), row: 0, cx, cz, x0: cx - MAP_SPAN / 2, z0: cz - MAP_SPAN / 2 };
   }
   if (!mapBuild) return;
-  const B = mapBuild, st = MAP_SPAN / MAP_PX, end = Math.min(MAP_PX, B.row + (mapImg ? 50 : MAP_PX));
+  const B = mapBuild, st = MAP_SPAN / MAP_PX, end = Math.min(MAP_PX, B.row + (mapImg ? 30 : MAP_PX));
   for (; B.row < end; B.row++) for (let i = 0; i < MAP_PX; i++) {
     const x = B.x0 + (i + 0.5) * st, z = B.z0 + (B.row + 0.5) * st;
     mapColor(outsideBox(x, z) ? -100 : rawHeight(x, z), x, z, B.im.data, (B.row * MAP_PX + i) * 4);
@@ -3828,7 +3828,7 @@ mapEl.addEventListener('click', (e) => {   // 小さいときはタップで拡�
     const k = helmAegis() ? 'aegis' : 'sub', i = RADAR_STEPS.indexOf(radarR[k]);
     if (r.dataset.range === 'close') mapEl.classList.remove('big');
     else if (r.dataset.range === 'in') radarR[k] = RADAR_STEPS[Math.max(0, i - 1)];
-    else if (r.dataset.range === 'out') radarR[k] = RADAR_STEPS[Math.min(RADAR_STEPS.length - 1, i + 1)];
+    else if (r.dataset.range === 'out') radarR[k] = Math.min(RADAR_MAX[k], RADAR_STEPS[Math.min(RADAR_STEPS.length - 1, i + 1)]);
   }
   else mapEl.classList.toggle('big');
   mapTick = 1;
@@ -3845,7 +3845,7 @@ function updateMap(dt) {
   if (!mapEl.classList.contains('big')) mapEl.style.top = Math.round(el('menuBtn').getBoundingClientRect().bottom + 8) + 'px';
   const want = mapEl.classList.contains('big') ? 640 : 296;
   if (mapCv.width !== want) mapCv.width = mapCv.height = want;
-  const U = mapCv.width / 296, S = 296, C = S / 2, RP = 132, RANGE = radarR[ag ? 'aegis' : 'sub'], k = RP / RANGE, RING = RANGE <= 200 ? 50 : 100;   // 半径 300m（イージス艦は 500m）。100m ごとの円
+  const U = mapCv.width / 296, S = 296, C = S / 2, RP = 132, RANGE = radarR[ag ? 'aegis' : 'sub'], k = RP / RANGE, RING = RANGE <= 200 ? 50 : RANGE <= 500 ? 100 : 200;   // 半径 300m（イージス艦は 500m）。100m ごとの円
   mapCx.setTransform(U, 0, 0, U, 0, 0);   // 大きく映すときも、同じ大きさで描いて拡大する
   const big = mapEl.classList.contains('big');
   const H = bearingOf(v.h), Hr = (H * Math.PI) / 180;   // 艦首の方位を上にする（まわりが回る）
@@ -3967,7 +3967,7 @@ const KT = 1852 / 3600;   // 1 ノット = 0.514 m/s
 const COMPASS = ['北', '北東', '東', '南東', '南', '南西', '西', '北西'];
 const compassName = (b) => COMPASS[Math.round(b / 45) % 8];
 // 指示（操艦）と、次に装填する魚雷の設定
-const ord = { hdg: 0, kt: 0, dp: 0, ang: 0, spd: 0, rev: false, ttype: 'war', tdp: 10, tdist: 400, ttime: 10 };
+const ord = { hdg: 0, kt: 0, dp: 0, ang: 0, spd: 0, rev: false, ttype: 'war', tdp: 10, tdist: 400, ttime: 20 };
 // 旋回中の指示：null か {mode:'left'|'right'|'course', remain（残りの角度）, prevB（前の方位）}
 let helmTurn = null;
 const TURN_NAME = { left: '取舵', right: '面舵', course: '針路' };
@@ -4037,8 +4037,8 @@ function clampOrders(v) {
   ord.kt = ord.rev ? -ord.spd : ord.spd;   // 逆進中はスクリューを逆に回す
   ord.dp = THREE.MathUtils.clamp(ord.dp, 0, 100);
   ord.tdp = THREE.MathUtils.clamp(ord.tdp, 1, 100);
-  ord.tdist = THREE.MathUtils.clamp(ord.tdist, 20, 400);
-  ord.ttime = THREE.MathUtils.clamp(ord.ttime, 1, 15);
+  ord.tdist = THREE.MathUtils.clamp(ord.tdist, 20, WAR_RANGE);
+  ord.ttime = DECOY_TIME;
 }
 // 指示から、かじ・出力・うく／もぐるを決める（PC のキーは指示の数字を動かす）
 // 面舵・取舵：決めた角度だけ回る。針路：決めた方位へ近いほうから回る
@@ -4100,7 +4100,7 @@ function updateHelm() {
   const b = bearingOf(v.h);
   const dig = { vAngT: Math.floor(Math.round(ord.ang) / 10), vAngO: Math.round(ord.ang) % 10, vSpdT: Math.floor(Math.round(ord.spd) / 10), vSpdO: Math.round(ord.spd) % 10, vDpT: Math.floor(Math.round(ord.dp) / 10), vDpO: Math.round(ord.dp) % 10 };
   const tn = helmTurn ? (helmTurn.mode === 'course' ? `針路 ${fmtB(helmTurn.target)}° へ旋回中（もう一度押すと止まる）` : `${TURN_NAME[helmTurn.mode]} 旋回中… あと ${Math.max(0, Math.round(helmTurn.remain))}°（もう一度押すと止まる）`) : '';
-  const vals = { tDp: String(Math.round(ord.tdp)), tDist: String(Math.round(ord.tdist)), tTime: String(Math.round(ord.ttime)) };
+  const vals = { tDp: String(Math.round(ord.tdp)), tDist: String(Math.round(ord.tdist)) };
   const now = { cHdg: fmtB(b), cKt: String(Math.round(v.vF / KT)), cDp: subDepth(v).toFixed(0) };
   if (isSub && tube.until && clock.elapsedTime >= tube.until) {
     const am = ammoOf(v);
@@ -4125,7 +4125,7 @@ function updateHelm() {
   el('revBtn').setAttribute('aria-pressed', String(ord.rev)); helmEl.querySelector('[data-tab="torp"]').hidden = !isSub;
   for (const b2 of helmEl.querySelectorAll('[data-tab]')) b2.setAttribute('aria-pressed', String(b2.dataset.tab === helmTab));
   for (const b2 of helmEl.querySelectorAll('[data-tt]')) { b2.setAttribute('aria-pressed', String(b2.dataset.tt === ord.ttype)); b2.textContent = `${{ war: '弾頭', guide: '誘導', decoy: 'デコイ' }[b2.dataset.tt]} ${am[b2.dataset.tt]}`; }
-  el('rowDist').classList.toggle('off', ord.ttype !== 'war'); el('rowTime').classList.toggle('off', ord.ttype !== 'decoy');
+  el('rowDist').classList.toggle('off', ord.ttype !== 'war');
   for (const id in vals) { const i = el(id); if (document.activeElement !== i) i.value = vals[id]; }
   for (const id in now) el(id).textContent = now[id];
   el('helmMsg').textContent = st;
@@ -4154,14 +4154,14 @@ helmEl.addEventListener('click', (e) => {
   if (t.dataset.q === 'load') loadTubes();
   clampOrders(v); helmShown = '';
 });
-for (const [id, k] of [['tDp', 'tdp'], ['tDist', 'tdist'], ['tTime', 'ttime']]) {
+for (const [id, k] of [['tDp', 'tdp'], ['tDist', 'tdist']]) {
   const i = el(id);
   i.addEventListener('change', () => { const n = Number(i.value); const v = helmShip(); if (isFinite(n) && v) { ord[k] = n; clampOrders(v); } helmShown = ''; });
   i.addEventListener('keydown', (e) => { if (e.key === 'Enter') { i.blur(); cv.focus(); } });
 }
 
 /* ================= 魚雷：艦首の向きへ発射。弾頭は 20 ノット・決めた距離で爆発、誘導は 20 ノットで音を追い当たると爆発、デコイは 15 ノット・決めた秒数で爆発（被害なし） ================= */
-const TORP_SPEED = 30 * KT, GUIDE_SPEED = 25 * KT, DECOY_SPEED = 20 * KT, TORP_RANGE = 400;
+const TORP_SPEED = 30 * KT, GUIDE_SPEED = 25 * KT, DECOY_SPEED = 20 * KT, WAR_RANGE = 1000, GUIDE_RANGE = 500, DECOY_RANGE = 400, DECOY_TIME = 20;   // 弾頭の射程・誘導の燃料・デコイの時間
 const SAFE_FIRE = 150;   // これより近い敵には撃てない（爆発に巻き込まれる）。デコイは別
 // 誘導魚雷：前 ±80°・300m 以内の音（動いている潜水艦とデコイ）を追う。音が消えたらまっすぐ。両方聞こえると見失って蛇行
 const SEEK_R = 300, SEEK_CONE = (80 * Math.PI) / 180, SEEK_TURN = (20 * Math.PI) / 180;
@@ -4197,7 +4197,7 @@ function stepWakes() {
 function launchTorpedo(d, mine) {
   const decoy = d.k === 'decoy', guide = d.k === 'guide';
   const t = { id: d.id, mine, decoy, guide, x: d.x, y: d.y, z: d.z, h: d.h, dp: d.dp, src: d.src, speed: decoy ? DECOY_SPEED : guide ? GUIDE_SPEED : TORP_SPEED,
-    maxDist: decoy || guide ? TORP_RANGE : d.dist, maxTime: decoy ? d.time : 60, dist: 0, age: 0, wakeT: 0, syncT: 0, seek: '', mesh: torpMesh(decoy, guide) };
+    maxDist: decoy ? DECOY_RANGE : guide ? GUIDE_RANGE : d.dist, maxTime: decoy ? DECOY_TIME : 120, dist: 0, age: 0, wakeT: 0, syncT: 0, seek: '', mesh: torpMesh(decoy, guide) };
   torps.push(t);
   placeTorp(t);
   return t;
@@ -4430,7 +4430,7 @@ function onTorp(p) {
   if (!d || typeof d.id !== 'string' || !OK_ID.test(d.id) || torps.some((t) => t.id === d.id)) return;
   if (torps.length > 40) return;
   launchTorpedo({ id: d.id, k: d.k === 'decoy' || d.k === 'guide' ? d.k : 'war', x: num(d.x, X0, X1), y: num(d.y, Y_BOTTOM, SEA), z: num(d.z, Z0, Z1), h: num(d.h, -10, 10), dp: num(d.dp, 1, 200, 10),
-    dist: num(d.dist, 20, TORP_RANGE, TORP_RANGE), time: num(d.time, 1, 15, 10), src: typeof d.src === 'string' ? d.src.slice(0, 40) : '' }, false);
+    dist: num(d.dist, 20, WAR_RANGE, WAR_RANGE), time: DECOY_TIME, src: typeof d.src === 'string' ? d.src.slice(0, 40) : '' }, false);
 }
 function onBoom(p) {
   const d = p && p.data;
@@ -4737,7 +4737,7 @@ function aiFire(v, type, h, dp, dist) {
   const y = Math.max(heightAt(x, z) + 0.6, Math.min(v.y - V.draft * 0.5, SEA - 1));
   a.tube.n--; a.ammo[type]--;
   if (type !== 'decoy') a.tube.firedAt = now_();
-  const t = launchTorpedo({ id: 'ai' + Math.random().toString(36).slice(2, 10), k: type, x, y, z, h, dp: THREE.MathUtils.clamp(Math.round(dp), 1, 100), dist: THREE.MathUtils.clamp(Math.round(dist), 20, 400), time: 8 + Math.random() * 6, src: v.id }, true);
+  const t = launchTorpedo({ id: 'ai' + Math.random().toString(36).slice(2, 10), k: type, x, y, z, h, dp: THREE.MathUtils.clamp(Math.round(dp), 1, 100), dist: THREE.MathUtils.clamp(Math.round(dist), 20, WAR_RANGE), time: DECOY_TIME, src: v.id }, true);
   t.ai = true;
   return true;
 }
