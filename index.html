@@ -3908,11 +3908,11 @@ function busUi() {
 /* ================= 潜水艦の地図（乗っているあいだだけ） ================= */
 const mapEl = el('map'), mapCv = el('mapCv'), mapCx = mapCv.getContext('2d');
 let mapImg = null, mapWide = false, mapTick = 0;
-const RADAR_STEPS = [100, 200, 300, 400, 500, 700, 1000];
-const RADAR_MAX = { sub: 1000, aegis: 500 };
-const radarR = { sub: 300, aegis: 500 };   // レーダーの半径（「近く／遠く」で 100m〜潜水艦 1000m・イージス艦 500m）
-// 地図の絵：自分のまわり 2.6km 四方（1 ピクセル = 5m、上が -z の海側）。遠くへ行ったら、少しずつ描き直す
-const MAP_SPAN = 2600, MAP_PX = 520;   // 半径 1000m のレーダーでも足りるように
+const RADAR_STEPS = [100, 200, 300, 400, 500, 700, 1000, 1500];
+const RADAR_MAX = { sub: 1500, aegis: 500 };
+const radarR = { sub: 300, aegis: 500 };   // レーダーの半径（「近く／遠く」で 100m〜潜水艦 1500m・イージス艦 500m）
+// 地図の絵：自分のまわり 3.6km 四方（1 ピクセル = 6m、上が -z の海側）。遠くへ行ったら、少しずつ描き直す
+const MAP_SPAN = 3600, MAP_PX = 600;   // 半径 1500m のレーダーでも足りるように
 let mapBuild = null;
 function mapColor(h, x, z, out, k) {
   let r, gg, b;
@@ -3968,7 +3968,7 @@ function updateMap(dt) {
   if (!mapEl.classList.contains('big')) mapEl.style.top = Math.round(el('menuBtn').getBoundingClientRect().bottom + 8) + 'px';
   const want = mapEl.classList.contains('big') ? 640 : 296;
   if (mapCv.width !== want) mapCv.width = mapCv.height = want;
-  const U = mapCv.width / 296, S = 296, C = S / 2, RP = 132, RANGE = radarR[ag ? 'aegis' : 'sub'], k = RP / RANGE, RING = RANGE <= 200 ? 50 : RANGE <= 500 ? 100 : 200;   // 半径 300m（イージス艦は 500m）。100m ごとの円
+  const U = mapCv.width / 296, S = 296, C = S / 2, RP = 132, RANGE = radarR[ag ? 'aegis' : 'sub'], k = RP / RANGE, RING = RANGE <= 200 ? 50 : RANGE <= 500 ? 100 : RANGE <= 1000 ? 200 : 300;   // 半径 300m（イージス艦は 500m）。100m ごとの円
   mapCx.setTransform(U, 0, 0, U, 0, 0);   // 大きく映すときも、同じ大きさで描いて拡大する
   const big = mapEl.classList.contains('big');
   const H = bearingOf(v.h), Hr = (H * Math.PI) / 180;   // 艦首の方位を上にする（まわりが回る）
@@ -4096,7 +4096,7 @@ let helmTurn = null;
 const TURN_NAME = { left: '取舵', right: '面舵', course: '針路' };
 let helmTab = 'nav';
 // HP：最大 15。最高速力（ノット）は HP と同じ。直撃で -7、50m 以内の爆発で -2、0 で沈没
-const HP_MAX = 15, HIT_DMG = 7, NEAR_DMG = 2, NEAR_R = 50;
+const HP_MAX = 15, HIT_DMG = 7, NEAR_DMG = 2, NEAR_R = 150;   // 爆発から 150m 以内は HP -2
 /* 圧壊深度：HP が満タンなら 80m まで平気。HP が 1 減るごとに 6m 浅くなる（HP 10 なら 50m）。
    それより深いと 10 秒ごとに HP が減る：安全な深さから 10m ごとに 3 ずつ増える（+0〜10m は -3、+10〜20m は -6 …）。HP 0 で圧壊・沈没 */
 const CRUSH_EVERY = 10;
@@ -4626,19 +4626,31 @@ const isSubDriver = (o) => {
   return !sv || isBoat(sv);   // 潜水艦だけでなく、船・イージス艦のスクリュー音も聞こえる
 };
 // レーダーに映るか：音を出している（爆発後 5 秒は聞こえない）、ピンガーを打ってきた、自分のピンガーの反響
-// ソナーが音を聞ける距離：500m。相手が 5 ノット以下なら 300m
-const SONAR_R = 500, SONAR_QUIET_R = 300;
+// ソナーが音を聞ける距離：800m までは必ず、1500m まで。800m からは 100m ごとに聞こえる確率が 10% ずつ下がる（800〜900m は 80%）。
+// 聞こえるかどうかは 10 秒ごとに決め直す。相手が 5 ノット以下なら 300m まで
+const SONAR_R = 500, SONAR_SURE = 800, SONAR_MAX = 1500, SONAR_QUIET_R = 300;
+function sonarHears(d, quiet, key) {
+  if (quiet) return d <= SONAR_QUIET_R;
+  if (d <= SONAR_SURE) return true;
+  if (d > SONAR_MAX) return false;
+  const p = 0.8 - 0.1 * Math.floor((d - SONAR_SURE) / 100);
+  let h = Math.floor(Date.now() / 10000) * 2654435761 >>> 0;   // 10 秒ごと・相手ごとに決まる
+  for (let i = 0; i < key.length; i++) h = Math.imul(h ^ key.charCodeAt(i), 16777619) >>> 0;
+  h = Math.imul(h ^ (h >>> 15), 2246822519) >>> 0; h ^= h >>> 13;
+  return (h >>> 0) / 4294967296 < p;
+}
 function heardSub(peer, o) {
   if (!isSubDriver(o)) return false;
   const me = ride || (aboard && aboard.v);
-  const inRange = !me || Math.hypot(o.t.x - me.pos.x, o.t.z - me.pos.y) <= (o.t.sp <= 5 ? SONAR_QUIET_R : SONAR_R);
+  const inRange = !me || sonarHears(Math.hypot(o.t.x - me.pos.x, o.t.z - me.pos.y), o.t.sp <= 5, 'p:' + peer);
   return (o.t.ns && !deaf() && inRange) || (pingers.get(peer) || 0) > clock.elapsedTime || clock.elapsedTime < myPingUntil;
 }
 // レーダーに映っている音（選べる目標）：key は 'p:<人>' か 't:<魚雷>'（デコイは潜水艦と見分けがつかない）
 function subContacts() {
   const list = [];
   for (const [peer, o] of net.others) if (heardSub(peer, o)) list.push({ key: 'p:' + peer, x: o.t.x, y: o.t.y, z: o.t.z });
-  if (!deaf()) for (const t of torps) if (t.decoy) list.push({ key: 't:' + t.id, x: t.x, y: t.y, z: t.z });
+  const me0 = ride || (aboard && aboard.v);
+  if (!deaf()) for (const t of torps) if (t.decoy && (!me0 || sonarHears(Math.hypot(t.x - me0.pos.x, t.z - me0.pos.y), false, 't:' + t.id))) list.push({ key: 't:' + t.id, x: t.x, y: t.y, z: t.z });
   // 誰も乗っていない停泊中の船・潜水艦（イージス艦も）。灰色の印
   for (const u of vehicles) {
     if (u.ai) { if (!u.sunk && aiHeardByMe(u)) list.push({ key: 'a:' + u.id, x: u.pos.x, y: u.y, z: u.pos.y }); continue; }   // コンピュータの潜水艦（音が聞こえたときだけ）
@@ -4876,7 +4888,7 @@ function aiHeardByMe(v) {
   if (!me) return false;
   if (now_() < v.ai.pingUntil || now_() < myPingUntil) return true;
   const d = Math.hypot(v.pos.x - me.pos.x, v.pos.y - me.pos.y);
-  return aiNoisy(v) && d <= (Math.abs(v.vF) / KT <= 5 ? SONAR_QUIET_R : SONAR_R);
+  return aiNoisy(v) && sonarHears(d, Math.abs(v.vF) / KT <= 5, 'a:' + v.id);
 }
 async function startAiBattle(lvKey) {
   const me = helmSub();
@@ -4937,9 +4949,9 @@ function stepAi(dt) {
   const heard = [];
   if (me && !me.sunk) {
     const d = Math.hypot(me.pos.x - v.pos.x, me.pos.y - v.pos.y), slow = Math.abs(me.vF) / KT <= 5;
-    if ((subNoisy(me) && d <= lv.hear * (slow ? SONAR_QUIET_R : SONAR_R)) || t < myPingUntil || t < a.pingUntil) heard.push({ x: me.pos.x, y: me.y, z: me.pos.y, d });
+    if ((subNoisy(me) && sonarHears(d / lv.hear, slow, 'me')) || t < myPingUntil || t < a.pingUntil) heard.push({ x: me.pos.x, y: me.y, z: me.pos.y, d });
   }
-  if (!deaf()) for (const o of torps) if (o.decoy && !o.ai) { const d = Math.hypot(o.x - v.pos.x, o.z - v.pos.y); if (d <= lv.hear * SONAR_R) heard.push({ x: o.x, y: o.y, z: o.z, d }); }
+  if (!deaf()) for (const o of torps) if (o.decoy && !o.ai) { const d = Math.hypot(o.x - v.pos.x, o.z - v.pos.y); if (sonarHears(d / lv.hear, false, 't:' + o.id)) heard.push({ x: o.x, y: o.y, z: o.z, d }); }
   if (heard.length) {
     const c = heard.reduce((p, q) => (q.d < p.d ? q : p));
     if (!a.contact || t - a.contact.t > 2) a.contact = Object.assign({ t, first: t }, c); else Object.assign(a.contact, c, { t });
@@ -4969,7 +4981,7 @@ function stepAi(dt) {
     if (c) {
       const d = Math.hypot(c.x - v.pos.x, c.z - v.pos.y), fresh = t - c.t < 3;
       // 撃つ：聞こえている目標の方位と深度へ（ずれは難しさしだい）。少し考えてから
-      if (fresh && tubeCount(a.tube, 'r') && d < SONAR_R && d >= SAFE_FIRE + 10 && t - a.lastFire > lv.react * 3 && t - c.first > lv.react) {
+      if (fresh && tubeCount(a.tube, 'r') && d < 900 && d >= SAFE_FIRE + 10 && t - a.lastFire > lv.react * 3 && t - c.first > lv.react) {
         const err = ((Math.random() * 2 - 1) * lv.err * Math.PI) / 180;
         const h = Math.atan2(c.x - v.pos.x, c.z - v.pos.y) + err;
         const type = lv.guide && a.ammo.guide && d > 120 ? 'guide' : a.ammo.war ? 'war' : a.ammo.guide ? 'guide' : null;
@@ -5055,7 +5067,7 @@ function floodHeard(x, z) {
   const me = helmSub();
   if (!me || deaf()) return;
   const d = Math.hypot(x - me.pos.x, z - me.pos.y);
-  if (d > SONAR_R) return;
+  if (!sonarHears(d, false, 'flood')) return;
   say(`注水音、方位${sayNum(bearingTo(me, x, z))}、距離${sayNum(Math.round(d / 10) * 10)}`, false);
 }
 function onLoadSound(p) {
