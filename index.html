@@ -932,6 +932,15 @@ const CARS = [
   { r: 5, type: 'truck', color: 0xf2f2f2, park: [6, 0.6] }, { r: 5, type: 'sedan', color: 0x8f2a52, park: [4, 0.5] },
   { r: 6, type: 'sedan', color: 0xe6d34a, park: [0, 0.6] }, { r: 6, type: 'van', color: 0x4a4f57, park: [1, 0.55] },
   { r: 7, type: 'sedan', color: 0x3c9db8, park: [0, 0.3] }, { r: 7, type: 'truck', color: 0x9a3b2a, park: [3, 0.45] },
+  // ふやした車（2026-10-29）
+  { r: 0, type: 'van', color: 0x7a8c99, park: [0, 0.5] }, { r: 0, type: 'sedan', color: 0xc4602d, park: [5, 0.4] },
+  { r: 1, type: 'truck', color: 0x3f7f3a, park: [0, 0.6] }, { r: 1, type: 'sedan', color: 0xe8e4d8, park: [5, 0.5] },
+  { r: 2, type: 'sedan', color: 0x5b3f8f, park: [1, 0.4] }, { r: 2, type: 'truck', color: 0xd0d4d8, park: [0, 0.2] },
+  { r: 3, type: 'van', color: 0x2c6e8a, park: [2, 0.5] }, { r: 3, type: 'sedan', color: 0xa8a8a8, park: [1, 0.2] },
+  { r: 4, type: 'truck', color: 0xb04a3a, park: [0, 0.5] }, { r: 4, type: 'sedan', color: 0x1f1f24, park: [2, 0.4] },
+  { r: 5, type: 'sedan', color: 0xf0c75a, park: [1, 0.5] }, { r: 5, type: 'van', color: 0x6a8f4a, park: [2, 0.75] },
+  { r: 6, type: 'truck', color: 0x35507a, park: [3, 0.5] }, { r: 6, type: 'sedan', color: 0xd9d9de, park: [5, 0.4] },
+  { r: 7, type: 'van', color: 0x8b6a4a, park: [2, 0.6] }, { r: 7, type: 'sedan', color: 0x4fa3a0, park: [4, 0.3] },
 ];
 const RD_STEP = 2;
 const roadNet = (() => {
@@ -2415,6 +2424,7 @@ function simulate(v, others, cruise, laps) {
       const [myLeg, myES] = lanePos(s), myKey = v.laneKey[myLeg], nextKey = v.laneKey[(myLeg + 1) % P.legs.length];
       const legLen = roadNet.edges[P.legs[myLeg][0]].L;
       for (const o of others) {
+        if (!o.keySet.has(myKey) && !o.keySet.has(nextKey)) continue;   // 同じ車線を通らない車は見なくてよい
         const ri2 = Math.min(nRec - 1, Math.round(((((v.phase + tau - o.phase) % T_ALL) + T_ALL) % T_ALL) / REC_DT));   // 相手の時計に合わせる
         const key = o.keyRec[ri2], es = o.esRec[ri2];
         if (key < 0 || ((o.flRec[ri2] & 32) && !(isBus && o.kind === 'bus'))) continue;
@@ -2470,6 +2480,7 @@ function laneRecords(v) {
     v.path = P; v.marks = pathMarks(P, isBus);
     // 車線の番号：道ごと・向きごと。2 車線の道では、バスは外側、車は内側
     v.laneKey = legs.map(([ei, dir]) => ei * 4 + (dir > 0 ? 0 : 2) + (!isBus && R.edges[ei].w > 10.5 ? 1 : 0));
+    v.keySet = new Set(v.laneKey);
     return v;
   };
   LINES.forEach((ln, li) => { for (let k = 0; k < ln.buses; k++) traffic.push(mk('bus', ln.legs, { line: ln, lineIndex: li, k, phase: 0 })); });
@@ -4320,7 +4331,7 @@ helmEl.addEventListener('click', (e) => {
 });
 
 /* ================= 魚雷：艦首の向きへ発射。弾頭は 20 ノット・決めた距離で爆発、誘導は 20 ノットで音を追い当たると爆発、デコイは 15 ノット・決めた秒数で爆発（被害なし） ================= */
-const TORP_SPEED = 70 * KT, GUIDE_SPEED = 60 * KT, DECOY_SPEED = 25 * KT, WAR_RANGE = 1200, GUIDE_RANGE = 800, DECOY_RANGE = 400, DECOY_TIME = 20;   // 弾頭の射程・誘導の燃料・デコイの時間
+const TORP_SPEED = 60 * KT, GUIDE_SPEED = 50 * KT, DECOY_SPEED = 25 * KT, WAR_RANGE = 1200, GUIDE_RANGE = 800, DECOY_RANGE = 400, DECOY_TIME = 20;   // 弾頭の射程・誘導の燃料・デコイの時間
 const SAFE_FIRE = 300;   // これより近い敵には撃てない（爆発に巻き込まれる）。デコイは別
 // 誘導魚雷：前 ±80°・300m 以内の音（動いている潜水艦とデコイ）を追う。音が消えたらまっすぐ。両方聞こえると見失って蛇行
 const SEEK_R = 300, SEEK_CONE = (80 * Math.PI) / 180, SEEK_TURN = (20 * Math.PI) / 180;
@@ -5075,12 +5086,18 @@ function say(text, urgent) {
     if (!urgent || speakingUrgent) return;   // しゃべっている途中は、急ぎ（魚雷）のときだけ割り込む
     speechSynthesis.cancel();
   }
-  const u = new SpeechSynthesisUtterance(text.replace(/注水音/g, 'ちゅうすいおん').replace(/魚雷接近/g, 'ぎょらいせっきん').replace(/方位/g, 'ほうい').replace(/距離/g, 'きょり'));   // 読み方をはっきりさせる
+  const u = new SpeechSynthesisUtterance(text.replace(/注水音/g, 'ちゅうすいおん').replace(/魚雷接近/g, 'ぎょらいせっきん').replace(/右舷/g, 'うげん').replace(/左舷/g, 'さげん').replace(/前方/g, 'ぜんぽう').replace(/後方/g, 'こうほう').replace(/方位/g, 'ほうい').replace(/距離/g, 'きょり'));   // 読み方をはっきりさせる
   u.lang = 'ja-JP'; if (jaVoice) u.voice = jaVoice; u.rate = 1.4; u.pitch = maleVoice ? 0.9 : 0.5;   // 男性の声がなければ低くする
   speakingUrgent = !!urgent; u.onend = u.onerror = () => { speakingUrgent = false; };
   speechSynthesis.speak(u);
 }
 const sayNum = (n) => String(Math.round(n));
+// 自分の艦から見た向き：前方・右舷前方・右舷・右舷後方・後方・左舷後方・左舷・左舷前方
+function sideName(me, x, z) {
+  const rb = ((bearingTo(me, x, z) - bearingOf(me.h)) % 360 + 540) % 360 - 180;   // 右がプラス
+  const a = Math.abs(rb), side = rb > 0 ? '右舷' : '左舷';
+  return a < 22.5 ? '前方' : a > 157.5 ? '後方' : a < 67.5 ? side + '前方' : a > 112.5 ? side + '後方' : side;
+}
 // 敵の装填（注水音）
 function floodHeard(x, z) {
   const me = helmSub();
@@ -5116,7 +5133,7 @@ function stepVoice(dt) {
     const band = Math.ceil(d / 100), last = torpCalls.get(t.id);
     if (last != null && band >= last) continue;
     torpCalls.set(t.id, band);
-    say(`魚雷接近、方位${sayNum(bearingTo(me, t.x, t.z))}、距離${sayNum(Math.max(10, Math.round(d / 10) * 10))}`, true);
+    say(`魚雷接近、${sideName(me, t.x, t.z)}、方位${sayNum(bearingTo(me, t.x, t.z))}、距離${sayNum(Math.max(10, Math.round(d / 10) * 10))}`, true);
   }
   for (const id of torpCalls.keys()) if (!alive.has(id)) torpCalls.delete(id);
 }
