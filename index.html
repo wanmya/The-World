@@ -691,12 +691,15 @@ function rigRobot(item, root, model, gltf, def) {
 const RIGS = { car: rigAutoCar, ship: rigBoat, sub: rigBoat, plane: rigPlane, robot: rigRobot };
 
 /* ================= ワールドの形 =================
-   1km × 1km（高さ 200m）の箱。はじめの 200m の陸と入り江はそのままに、南（-z）と左右の海へ広げた。
+   10km × 10km。北の半分は陸（平原・小高い山・川）、南の半分は海（いちばん深い所で 100m）。海の向こうに新しい大陸がある。
+   まん中の 1km は前の世界そのまま。近くだけ地形を作って描き、500m より遠くはだんだん霞む。
+   （前の説明）1km × 1km（高さ 200m）の箱。はじめの 200m の陸と入り江はそのままに、南（-z）と左右の海へ広げた。
    y=0 が海面、箱の底は y=-110、天井は y=150。沖へ行くほど深く、いちばん深い所は 100m。海には小島がいくつかと、潜水艦がくぐれるトンネルの島がある。
    地形は「決まった種のノイズ」から作るので、だれの画面でも同じ形になる（送る必要がない）。 */
-const X0 = -500, X1 = 500, Z0 = -900, Z1 = 100, Y_BOTTOM = -110, Y_TOP = 150, SEA = 0;
+const X0 = -5000, X1 = 5000, Z0 = -5000, Z1 = 5000, Y_BOTTOM = -110, Y_TOP = 150, SEA = 0;   // 10km × 10km
+const OLD = { x0: -500, x1: 500, z0: -900, z1: 100 };   // 前の 1km の世界（島・トンネル・入り江はそのまま）
 const XW = X1 - X0, ZW = Z1 - Z0, XC = (X0 + X1) / 2, ZC = (Z0 + Z1) / 2;
-const CELL = 2, NX = XW / CELL, NZ = ZW / CELL, HNX = NX + 1, HNZ = NZ + 1;   // 高さは 2m ごとの格子で持つ
+const CELL = 2;   // 高さは 2m ごとの格子
 const clampX = (x, m = 0) => Math.min(X1 - m, Math.max(X0 + m, x));
 const clampZ = (z, m = 0) => Math.min(Z1 - m, Math.max(Z0 + m, z));
 const outsideBox = (x, z, m = 0) => x < X0 + m || x > X1 - m || z < Z0 + m || z > Z1 - m;
@@ -750,7 +753,7 @@ function archTop(x, z) {
   const T = TUNNEL;
   return Math.abs(x - T.x) < T.wall && Math.abs(z - T.z) < T.len ? T.top : -Infinity;
 }
-function rawHeight(x, z) {
+function oldHeight(x, z) {
   const n = fbm(x, z);
   const rBay = Math.hypot((x - BAY.x) * 0.95, z - BAY.z);
   const rOpen = 80 + (z - COAST_Z) + fbm(x * 0.4 + 200, 3) * 10;
@@ -772,42 +775,87 @@ function rawHeight(x, z) {
   }
   return Math.max(h, -100);
 }
-const HGT = new Float32Array(HNX * HNZ);
-for (let j = 0; j < HNZ; j++) for (let i = 0; i < HNX; i++) HGT[j * HNX + i] = rawHeight(X0 + i * CELL, Z0 + j * CELL);
-
-/* 40m ごとの区画に分け、はじめの陸・島・波打ち際は 2m、でこぼこした所は 4m、平らな深い海の底は 8m の三角形にする（スマホを軽く）。
-   粗い区画の中の点は、粗い三角形の上にそろえておく（粗い区画から先に）。だからすき間はできず、heightAt もぴったり合う。 */
-const TILE = 20, TX = NX / TILE, TZ = NZ / TILE;
-const STEP = new Uint8Array(TX * TZ);   // 区画ごとの三角形の大きさ（格子 1 / 2 / 4 個分）
-const nearRect = (o, r, x0, z0, x1, z1) => Math.hypot(Math.max(x0 - o.x, 0, o.x - x1), Math.max(z0 - o.z, 0, o.z - z1)) < r;
-for (let tj = 0; tj < TZ; tj++) for (let ti = 0; ti < TX; ti++) {
-  const x0 = X0 + ti * TILE * CELL, z0 = Z0 + tj * TILE * CELL, x1 = x0 + TILE * CELL, z1 = z0 + TILE * CELL;
-  let lo = Infinity, hi = -Infinity;
-  for (let j = tj * TILE; j <= (tj + 1) * TILE; j++) for (let i = ti * TILE; i <= (ti + 1) * TILE; i++) { const h = HGT[j * HNX + i]; lo = Math.min(lo, h); hi = Math.max(hi, h); }
-  const nearIsle = nearRect(ISLAND, 40, x0, z0, x1, z1) || ISLETS.some((o) => nearRect(o, Math.max(o.rx, o.rz) + 8, x0, z0, x1, z1))
-    || (x1 > TUNNEL.x - TUNNEL.rx - 4 && x0 < TUNNEL.x + TUNNEL.rx + 4 && z1 > TUNNEL.z - TUNNEL.rz - 4 && z0 < TUNNEL.z + TUNNEL.rz + 4);
-  const oldLand = x1 > -112 && x0 < 112 && z1 > -112;
-  const shore = lo < 4 && hi > -6 && x1 > -180 && x0 < 180;
-  STEP[tj * TX + ti] = oldLand || nearIsle || shore ? 1 : hi < -20 ? (hi - lo > 15 ? 2 : 4) : lo > 3 ? 4 : 2;   // 深い海の底と遠くの丘は粗く
+// 海岸からの距離 r（陸側が大きい。前の世界と同じ形）から、海の底 → 浜 → 草の丘の高さ
+function coastProfile(r, x, z, n) {
+  let h = -32 + 29 * ss(25, 68, r) + 3 * ss(66, 80, r) + 2.6 * ss(79, 92, r);
+  h += n * 1.6 * (1 - ss(70, 90, r));
+  h -= 68 * ss(-150, -600, r) * (1 + n * 0.08);
+  const inland = ss(92, 118, r);
+  h += inland * (4 + Math.min(r - 92, 200) * 0.07 + (fbm(x * 1.7 + 50, z * 1.7) * 0.5 + 0.5) * 7);
+  return h;
 }
-for (const s of [4, 2]) for (let tj = 0; tj < TZ; tj++) for (let ti = 0; ti < TX; ti++) {
-  if (STEP[tj * TX + ti] !== s) continue;
-  for (let J = tj * TILE; J < (tj + 1) * TILE; J += s) for (let I = ti * TILE; I < (ti + 1) * TILE; I += s) {
-    const h00 = HGT[J * HNX + I], h10 = HGT[J * HNX + I + s], h01 = HGT[(J + s) * HNX + I], h11 = HGT[(J + s) * HNX + I + s];
-    for (let b = 0; b <= s; b++) for (let a = 0; a <= s; a++) {
-      if ((a === 0 || a === s) && (b === 0 || b === s)) continue;
-      const fx = a / s, fz = b / s;
-      HGT[(J + b) * HNX + I + a] = fx + fz <= 1 ? h00 + (h10 - h00) * fx + (h01 - h00) * fz : h11 + (h01 - h11) * (1 - fx) + (h10 - h11) * (1 - fz);
-    }
+// 陸の奥：平原と小高い山（山があるのは場所しだい）
+function landRelief(r, x, z) {
+  const L = ss(250, 1100, r);
+  if (L <= 0) return 0;
+  const region = ss(-0.35, 0.35, vnoise(x / 2400 + 7.3, z / 2400 + 3.1));   // 山のある地方
+  const ridge = 1 - Math.abs(vnoise(x / 650 + 1.7, z / 650 + 8.2)), ridge2 = 1 - Math.abs(vnoise(x / 260 + 4.4, z / 260 + 2.9));
+  const mtn = region * (70 * ridge * ridge + 28 * ridge2 * ridge2 * ridge) ;
+  const plain = 5 * vnoise(x / 520 + 9, z / 520 + 4) + 2 * vnoise(x / 140, z / 140 + 6);
+  return L * (mtn + plain);
+}
+// 新しい大陸（南の海の向こう）。海岸からの距離をだいたいで出す
+const CONT = { x: 700, z: -3500, rx: 2300, rz: 950 };
+function continentR(x, z) {
+  const q = Math.hypot((x - CONT.x) / CONT.rx, (z - CONT.z) / CONT.rz) + 0.22 * vnoise(x / 800 + 3, z / 800 + 1) + 0.08 * vnoise(x / 240 + 7, z / 240 + 2);
+  return 80 + (1 - q) * 900;
+}
+const coastZ = (x) => COAST_Z + (650 * vnoise(x / 1700 + 11.3, 4.1) + 260 * vnoise(x / 600 + 2, 9.7) + 60 * vnoise(x / 170, 3.3)) * ss(450, 2200, Math.abs(x));
+// 川：ゆがめたノイズが 0 になる線にそって、海面より低い水路と、なだらかな谷を作る
+function river(x, z, h) {
+  if (h < -2.5) return h;
+  const wx = x + 380 * vnoise(x / 1100 + 2.2, z / 1100 + 7.7), wz = z + 380 * vnoise(x / 1100 + 9.1, z / 1100 + 1.3);
+  const d = Math.abs(vnoise(wx / 2300 + 5.5, wz / 2300 + 0.5) + 0.35 * vnoise(wx / 800 + 1.5, wz / 800 + 3.5));
+  if (d > 0.16) return h;
+  const valley = ss(0.012, 0.16, d);   // 0：川の中 〜 1：谷の外
+  if (h > 1.4) h = 1.4 + (h - 1.4) * Math.pow(valley, 1.4);
+  return Math.min(h, -2.6 + (h + 2.6) * ss(0.006, 0.016, d));   // 水路（深さ 2〜3m）
+}
+function newHeight(x, z) {
+  const n = fbm(x, z);
+  const r = 80 + (z - coastZ(x)) + fbm(x * 0.4 + 200, 3) * 10 + n * 9;
+  let h = coastProfile(r, x, z, n) + landRelief(r, x, z);
+  const rc = continentR(x, z);
+  if (rc > -700) h = Math.max(h, coastProfile(rc + n * 9, x, z, n) + landRelief(rc, x + 3000, z));
+  h = river(x, z, h);
+  return THREE.MathUtils.clamp(h, -100, 140);
+}
+// 前の世界の中はそのまま。外へ 400m かけて新しい地形へつなぐ
+function rawHeight(x, z) {
+  const d = Math.max(OLD.x0 - x, x - OLD.x1, OLD.z0 - z, z - OLD.z1, 0);
+  if (d <= 0) return oldHeight(x, z);
+  const m = ss(0, 400, d);
+  if (m >= 1) return newHeight(x, z);
+  return oldHeight(x, z) * (1 - m) + newHeight(x, z) * m;
+}
+/* 高さは 128m 四方の区画ごとに、使うときに作って覚えておく（2m 格子）。古い区画から忘れる */
+const CH = 64, CHM = CH * CELL, CHN = CH + 1;   // 区画 = 64 マス = 128m
+const chunkCache = new Map();
+let lastCK = null, lastCD = null;
+function chunkData(ci, cj) {
+  const key = ci * 4096 + cj;
+  if (key === lastCK) return lastCD;
+  let d = chunkCache.get(key);
+  if (!d) {
+    d = new Float32Array(CHN * CHN);
+    const x0 = X0 + ci * CHM, z0 = Z0 + cj * CHM;
+    for (let j = 0; j < CHN; j++) for (let i = 0; i < CHN; i++) d[j * CHN + i] = rawHeight(x0 + i * CELL, z0 + j * CELL);
+    chunkCache.set(key, d);
+    if (chunkCache.size > 700) chunkCache.delete(chunkCache.keys().next().value);
   }
+  lastCK = key; lastCD = d;
+  return d;
 }
-
-// 表示している三角形とぴったり同じ高さを返す
+// 表示している（いちばん細かい）三角形とぴったり同じ高さを返す
 function heightAt(x, z) {
   const gx = (clampX(x) - X0) / CELL, gz = (clampZ(z) - Z0) / CELL;
-  const i = Math.min(NX - 1, Math.floor(gx)), j = Math.min(NZ - 1, Math.floor(gz));
-  const fx = gx - i, fz = gz - j;
-  const h00 = HGT[j * HNX + i], h10 = HGT[j * HNX + i + 1], h01 = HGT[(j + 1) * HNX + i], h11 = HGT[(j + 1) * HNX + i + 1];
+  let ci = Math.floor(gx / CH), cj = Math.floor(gz / CH);
+  if (ci >= (X1 - X0) / CHM) ci--; if (cj >= (Z1 - Z0) / CHM) cj--;
+  const d = chunkData(ci, cj);
+  const lx = gx - ci * CH, lz = gz - cj * CH;
+  const i = Math.min(CH - 1, Math.floor(lx)), j = Math.min(CH - 1, Math.floor(lz));
+  const fx = lx - i, fz = lz - j;
+  const h00 = d[j * CHN + i], h10 = d[j * CHN + i + 1], h01 = d[(j + 1) * CHN + i], h11 = d[(j + 1) * CHN + i + 1];
   return fx + fz <= 1 ? h00 + (h10 - h00) * fx + (h01 - h00) * fz : h11 + (h01 - h11) * (1 - fx) + (h10 - h11) * (1 - fz);
 }
 
@@ -825,7 +873,7 @@ view.appendChild(renderer.domElement);
 const scene = new THREE.Scene();
 const HORIZON = new THREE.Color(0xbfe2ff), DEEP = new THREE.Color(0x1d6d96);
 scene.fog = new THREE.Fog(HORIZON.clone(), 70, 200);
-const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 900);
+const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1300);
 
 const hemi = new THREE.HemisphereLight(0xdcefff, 0x8a9a6a, 1.6);
 scene.add(hemi);
@@ -844,6 +892,7 @@ const sky = new THREE.Mesh(new THREE.SphereGeometry(600, 32, 16), new THREE.Shad
   vertexShader: 'varying vec3 vP; void main(){ vP = position; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
   fragmentShader: 'uniform vec3 top; uniform vec3 bottom; varying vec3 vP; void main(){ float h = normalize(vP).y; gl_FragColor = vec4(mix(bottom, top, pow(clamp(h, 0.0, 1.0), 0.55)), 1.0); }',
 }));
+sky.renderOrder = -2;
 scene.add(sky);
 
 const cloudMat = new THREE.MeshLambertMaterial({ color: 0xffffff, fog: false });
@@ -882,8 +931,10 @@ const stars = new THREE.Points((() => {
   g.setAttribute('position', new THREE.Float32BufferAttribute(p, 3));
   return g;
 })(), starMat);
+stars.renderOrder = -2;
 scene.add(stars);
 let dayLight = 1, lastClock = '';
+const FOG_NEAR = coarse ? 450 : 500, FOG_FAR = coarse ? 950 : 1100;
 function updateAtmosphere() {
   const hr = worldHour(), ang = ((hr - 6) / 24) * Math.PI * 2;   // 6 時に日の出、12 時に真上、18 時に日の入り
   const elev = Math.sin(ang);
@@ -914,11 +965,12 @@ function updateAtmosphere() {
     scene.background = scene.fog.color;
     sunI *= 1 - depth * 0.55; hemiI *= 1 - depth * 0.45;
   } else {
-    scene.fog.color.copy(skyBot); scene.fog.near = 80; scene.fog.far = 260 + camDist * 2;
+    scene.fog.color.copy(skyBot); scene.fog.near = FOG_NEAR + camDist; scene.fog.far = FOG_FAR + camDist;   // 500m まではくっきり、その先はだんだん霞む
     scene.background = null;
   }
   sky.visible = clouds.visible = !underwater;
-  sky.position.set(camera.position.x, 0, camera.position.z); stars.position.copy(sky.position);
+  sky.position.set(camera.position.x, 0, camera.position.z); stars.position.copy(sky.position); clouds.position.copy(sky.position);
+  water.position.set(Math.round(camera.position.x / 5) * 5, SEA, Math.round(camera.position.z / 5) * 5);
   stars.visible = !underwater && starMat.opacity > 0.01;
   sun.intensity = sunI; hemi.intensity = hemiI;
   renderer.toneMappingExposure = 0.9 + 0.2 * day;
@@ -940,7 +992,7 @@ function surfaceColor(cx, cy, cz, ny, out) {
   const grassLine = 3.0 + fbm(cx * 2, cz * 2) * 0.9;
   if (cy > grassLine) {
     if (ny < 0.74) out.copy(COL.cliff);
-    else out.copy(COL.grass1).lerp(COL.grass2, v).lerp(COL.grassHigh, ss(8, 24, cy) * 0.7);
+    else out.copy(COL.grass1).lerp(COL.grass2, v).lerp(COL.grassHigh, ss(8, 24, cy) * 0.7).lerp(COL.rock, ss(45, 95, cy) * 0.85);   // 高い山は岩っぽく
   } else if (cy > 0.35) out.copy(COL.sand).lerp(COL.sandWet, ss(1.2, 0.35, cy) * 0.5);
   else if (cy > -1.5) out.copy(COL.sandWet);
   else {
@@ -949,78 +1001,94 @@ function surfaceColor(cx, cy, cz, ny, out) {
   }
   return out.multiplyScalar(0.93 + v * 0.14);
 }
-{
-  let tris = 0;
-  for (let t = 0; t < TX * TZ; t++) tris += (TILE / STEP[t]) ** 2 * 2;
+/* ---- 地形を描く：カメラのまわりの区画だけ。近いほど細かく（2m）、遠いほど粗く（4・8・16m）。
+   区画のふちに下へのびる「すそ」をつけて、細かさのちがう区画のすき間を隠す ---- */
+const TERRAIN_MAT = new THREE.MeshLambertMaterial({ vertexColors: true });
+const LOD_D = coarse ? [100, 300, 600] : [160, 420, 780], VIEW_R = coarse ? 950 : 1100;
+const NCI = (X1 - X0) / CHM, NCJ = (Z1 - Z0) / CHM;
+const tiles = new Map();   // key → { mesh, lod }
+function buildTile(ci, cj, s) {
+  const n = CH / s, x0 = X0 + ci * CHM, z0 = Z0 + cj * CHM, st = s * CELL;
+  const H = new Float32Array((n + 1) * (n + 1));
+  if (s === 1) H.set(chunkData(ci, cj));
+  else for (let j = 0; j <= n; j++) for (let i = 0; i <= n; i++) H[j * (n + 1) + i] = rawHeight(x0 + i * st, z0 + j * st);
+  const tris = n * n * 2 + n * 4 * 2;
   const pos = new Float32Array(tris * 9), col = new Float32Array(tris * 9);
   let k = 0;
   const a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3(), e1 = new THREE.Vector3(), e2 = new THREE.Vector3();
-  const put = (p, i, j) => p.set(X0 + i * CELL, HGT[j * HNX + i], Z0 + j * CELL);
-  const tri = () => {
+  const put = (p, i, j) => p.set(x0 + i * st, H[j * (n + 1) + i], z0 + j * st);
+  const tri = (ny) => {
     e1.subVectors(b, a); e2.subVectors(c, a); e1.cross(e2).normalize();
-    surfaceColor((a.x + b.x + c.x) / 3, (a.y + b.y + c.y) / 3, (a.z + b.z + c.z) / 3, e1.y, tmpC);
+    surfaceColor((a.x + b.x + c.x) / 3, (a.y + b.y + c.y) / 3, (a.z + b.z + c.z) / 3, ny ?? e1.y, tmpC);
     for (const p of [a, b, c]) { pos[k] = p.x; pos[k + 1] = p.y; pos[k + 2] = p.z; col[k] = tmpC.r; col[k + 1] = tmpC.g; col[k + 2] = tmpC.b; k += 3; }
   };
-  for (let tj = 0; tj < TZ; tj++) for (let ti = 0; ti < TX; ti++) {
-    const s = STEP[tj * TX + ti];
-    for (let j = tj * TILE; j < (tj + 1) * TILE; j += s) for (let i = ti * TILE; i < (ti + 1) * TILE; i += s) {
-      put(a, i, j); put(b, i, j + s); put(c, i + s, j); tri();
-      put(a, i, j + s); put(b, i + s, j + s); put(c, i + s, j); tri();
-    }
+  for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) {
+    put(a, i, j); put(b, i, j + 1); put(c, i + 1, j); tri();
+    put(a, i, j + 1); put(b, i + 1, j + 1); put(c, i + 1, j); tri();
   }
+  // すそ（4 辺）
+  const drop = 2 + s * 3;
+  const edge = (i0, j0, i1, j1) => {
+    put(a, i0, j0); put(b, i1, j1); c.copy(a); c.y -= drop; tri(1);
+    put(a, i1, j1); b.copy(a); b.y -= drop; put(c, i0, j0); c.y -= drop; tri(1);
+  };
+  for (let t = 0; t < n; t++) { edge(t, 0, t + 1, 0); edge(t + 1, n, t, n); edge(0, t + 1, 0, t); edge(n, t, n, t + 1); }
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
   g.setAttribute('color', new THREE.BufferAttribute(col, 3));
-  g.computeVertexNormals();   // 三角形がばらばらなので、そのまま面の向きになる
-  const ground = new THREE.Mesh(g, new THREE.MeshLambertMaterial({ vertexColors: true }));
-  ground.receiveShadow = true;
-  scene.add(ground);
-  window.__terrainTris = tris; window.__steps = [...STEP].reduce((c, t) => (c[t] = (c[t] || 0) + 1, c), {});
+  g.computeVertexNormals();
+  const nr = g.attributes.normal.array;
+  for (let q = n * n * 2 * 9; q < nr.length; q += 3) { nr[q] = 0; nr[q + 1] = 1; nr[q + 2] = 0; }   // すそは上向きの明るさにする（線が見えないように）
+  g.computeBoundingSphere();
+  const m = new THREE.Mesh(g, TERRAIN_MAT);
+  m.receiveShadow = s === 1;
+  m.matrixAutoUpdate = false;
+  return m;
 }
-
-/* ---- 箱の側面：地中の断面（表土 → 土 → 石 → 岩盤）と、海の断面 ---- */
-function edgePoints() {   // 箱の 4 辺を、格子の点でたどる
-  const rows = [[], [], [], []];
-  for (let i = 0; i < HNX; i++) { rows[0].push([i, 0]); rows[1].push([i, NZ]); }
-  for (let j = 0; j < HNZ; j++) { rows[2].push([0, j]); rows[3].push([NX, j]); }
-  return rows;
+const detailMemo = new Map();
+function detailTile(ci, cj) {
+  const key = ci * 4096 + cj;
+  if (detailMemo.has(key)) return detailMemo.get(key);
+  const x0 = X0 + ci * CHM, z0 = Z0 + cj * CHM, x1 = x0 + CHM, z1 = z0 + CHM;
+  const near = (o, r) => Math.hypot(Math.max(x0 - o.x, 0, o.x - x1), Math.max(z0 - o.z, 0, o.z - z1)) < r;
+  const v = near(ISLAND, 40) || ISLETS.some((o) => near(o, Math.max(o.rx, o.rz) + 10)) || near(TUNNEL, TUNNEL.rx + 10) || (x1 > -130 && x0 < 130 && z1 > -130 && z0 < 100);
+  detailMemo.set(key, v);
+  return v;
 }
-{
-  const pos = [], col = [], idx = [], wpos = [], widx = [];
-  for (const row of edgePoints()) {
-    const base = pos.length / 3, wbase = wpos.length / 3;
-    for (const [i, j] of row) {
-      const x = X0 + i * CELL, z = Z0 + j * CELL, h = HGT[j * HNX + i];
-      surfaceColor(x, h, z, 1, tmpC);
-      const top = h > 0.35 ? (h > 3 ? COL.dirt : COL.sand) : COL.seabed;
-      const layers = [[h, tmpC.clone()], [h - 0.7, top], [h - 5, COL.dirt2], [Math.max(Y_BOTTOM + 1, Math.min(h - 6, -22)), COL.stone], [Y_BOTTOM, COL.bedrock]];
-      for (const [y, cc] of layers) { pos.push(x, y, z); col.push(cc.r, cc.g, cc.b); }
-      wpos.push(x, SEA, z, x, Math.min(h, SEA), z);
-    }
-    for (let s = 0; s < row.length - 1; s++) {
-      for (let l = 0; l < 4; l++) {
-        const p = base + s * 5 + l, q = base + (s + 1) * 5 + l;
-        idx.push(p, q, p + 1, q, q + 1, p + 1);
-      }
-      const p = wbase + s * 2, q = wbase + (s + 1) * 2;
-      widx.push(p, q, p + 1, q, q + 1, p + 1);
-    }
+let terrainTris = 0;
+function updateTerrain(all) {
+  const cx = camera.position.x, cz = camera.position.z;
+  const want = [];
+  const r = Math.ceil(VIEW_R / CHM) + 1, ci0 = Math.floor((cx - X0) / CHM), cj0 = Math.floor((cz - Z0) / CHM);
+  for (let cj = cj0 - r; cj <= cj0 + r; cj++) for (let ci = ci0 - r; ci <= ci0 + r; ci++) {
+    if (ci < 0 || cj < 0 || ci >= NCI || cj >= NCJ) continue;
+    const mx = X0 + (ci + 0.5) * CHM, mz = Z0 + (cj + 0.5) * CHM;
+    const d = Math.max(0, Math.hypot(mx - cx, mz - cz) - CHM * 0.45);
+    if (d > VIEW_R) continue;
+    let lod = d < LOD_D[0] ? 1 : d < LOD_D[1] ? 2 : d < LOD_D[2] ? 4 : 8;
+    if (detailTile(ci, cj)) lod = d < (coarse ? 150 : 250) ? 1 : 2;   // 小さな島・トンネル・はじめの浜は、遠くても細かく（形がくずれないように）
+    want.push([ci * 4096 + cj, ci, cj, lod, d]);
   }
-  const g = new THREE.BufferGeometry();
-  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-  g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
-  g.setIndex(idx); g.computeVertexNormals();
-  scene.add(new THREE.Mesh(g, new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide })));
-  const bottom = new THREE.Mesh(new THREE.PlaneGeometry(XW, ZW), new THREE.MeshLambertMaterial({ color: COL.bedrock, side: THREE.DoubleSide }));
-  bottom.rotation.x = -Math.PI / 2; bottom.position.set(XC, Y_BOTTOM, ZC);
-  scene.add(bottom);
-  const wg = new THREE.BufferGeometry();
-  wg.setAttribute('position', new THREE.Float32BufferAttribute(wpos, 3));
-  wg.setIndex(widx); wg.computeVertexNormals();
-  const wall = new THREE.Mesh(wg, new THREE.MeshLambertMaterial({ color: 0x2b86c9, transparent: true, opacity: 0.45, side: THREE.DoubleSide, depthWrite: false }));
-  wall.renderOrder = 2;
-  scene.add(wall);
+  const keep = new Set(want.map((w) => w[0]));
+  for (const [key, t] of tiles) if (!keep.has(key)) { scene.remove(t.mesh); t.mesh.geometry.dispose(); tiles.delete(key); }
+  want.sort((p, q) => p[4] - q[4]);
+  const t0 = performance.now();
+  for (const [key, ci, cj, lod] of want) {
+    const t = tiles.get(key);
+    if (t && t.lod === lod) continue;
+    if (!all && performance.now() - t0 > 6) break;   // 1 フレームで作りすぎない
+    const mesh = buildTile(ci, cj, lod);
+    if (t) { scene.remove(t.mesh); t.mesh.geometry.dispose(); }
+    scene.add(mesh);
+    tiles.set(key, { mesh, lod });
+  }
+  let n = 0; for (const t of tiles.values()) n += t.mesh.geometry.attributes.position.count / 3;
+  terrainTris = n;
 }
+window.__terrainTris = () => terrainTris;
+window.__rawHeight = rawHeight;
+
+
 
 /* ---- 海面：スケッチの赤い斜線。さざ波の模様がゆっくり流れる ---- */
 function waterTexture() {
@@ -1036,21 +1104,23 @@ function waterTexture() {
   const t = new THREE.CanvasTexture(c);
   t.colorSpace = THREE.SRGBColorSpace;
   t.wrapS = t.wrapT = THREE.RepeatWrapping;
-  t.repeat.set(XW / 5, ZW / 5);
+  t.repeat.set(WATER_W / 5, WATER_W / 5);
   return t;
 }
+const WATER_W = 2600;   // 海面はカメラについて動く（5m ごとにずらすので、もようはずれない）
 const waterTex = waterTexture();
-const water = new THREE.Mesh(new THREE.PlaneGeometry(XW, ZW), new THREE.MeshPhongMaterial({
+const water = new THREE.Mesh(new THREE.PlaneGeometry(WATER_W, WATER_W), new THREE.MeshPhongMaterial({
   color: 0x2f8fd6, map: waterTex, transparent: true, opacity: 0.7, shininess: 90, specular: 0xffffff, side: THREE.DoubleSide, depthWrite: false,
 }));
 water.rotation.x = -Math.PI / 2; water.position.set(XC, SEA, ZC); water.renderOrder = 3;
+// 遠くの海面ほど、空を映して底が見えなくなる（斜めから見るほど不透明に）
+water.material.onBeforeCompile = (sh) => {
+  sh.fragmentShader = sh.fragmentShader.replace('#include <dithering_fragment>', `#include <dithering_fragment>
+    { float fr = pow(1.0 - abs(dot(normalize(vViewPosition), normalize(vNormal))), 4.0); gl_FragColor.a = mix(gl_FragColor.a, 1.0, clamp(fr * 1.6, 0.0, 1.0)); }`);
+};
 scene.add(water);
 
-// 箱のふち（スケッチの線）
-const boxFrame = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(XW, Y_TOP - Y_BOTTOM, ZW)),
-  new THREE.LineBasicMaterial({ color: 0x16324f, transparent: true, opacity: 0.35, fog: false }));
-boxFrame.position.set(XC, (Y_TOP + Y_BOTTOM) / 2, ZC);
-scene.add(boxFrame);
+
 
 /* ---- トンネルの島の岩の屋根（アーチ）。中は水面から 6m まではまっすぐ、てっぺんは 13m ---- */
 {
@@ -2643,7 +2713,7 @@ function updateCamera(dt) {
     }
   }
   const dist = driving ? Math.max(camDist, vtype(ride) === 'plane' ? 13 : isBoat(ride) ? Math.max(10, ride.item.def.vehicle.halfLength * 1.6) : 7.5) : camDist;
-  camera.far = Math.max(900, dist * 6);
+  camera.far = Math.max(VIEW_R + 200, dist * 6);
   camPos.set(Math.sin(camYaw) * Math.cos(camPitch), Math.sin(camPitch), Math.cos(camYaw) * Math.cos(camPitch)).multiplyScalar(dist).add(camTarget);
   camPos.y = Math.max(heightAt(camPos.x, camPos.z) + 0.4, camPos.y);   // 地面の中にカメラを入れない
   camera.position.lerp(camPos, 1 - Math.exp(-14 * dt));
@@ -2739,20 +2809,32 @@ const mapEl = el('map'), mapCv = el('mapCv'), mapCx = mapCv.getContext('2d');
 let mapImg = null, mapWide = false, mapTick = 0;
 const RADAR_STEPS = [100, 200, 300, 400, 500];
 const radarR = { sub: 300, aegis: 500 };   // レーダーの半径（「近く／遠く」で 100〜500m）
-function buildMapImage() {   // 地形を上から見た絵を 1 回だけ作る（1 ピクセル = 2m、上が -z の海側）
-  const c = document.createElement('canvas'); c.width = NX; c.height = NZ;
-  const g = c.getContext('2d'), im = g.createImageData(NX, NZ);
-  for (let j = 0; j < NZ; j++) for (let i = 0; i < NX; i++) {
-    const h = heightAt(X0 + (i + 0.5) * CELL, Z0 + (j + 0.5) * CELL), k = (j * NX + i) * 4;
-    let r, gg, b;
-    if (h < SEA) { const t = Math.min(1, (SEA - h) / 100); r = 70 - 55 * t; gg = 170 - 110 * t; b = 215 - 95 * t; }
-    else if (h < 1.6) { r = 236; gg = 218; b = 168; }
-    else { const t = Math.min(1, h / 40); r = 120 - 50 * t; gg = 185 - 60 * t; b = 95 - 40 * t; }
-    if (archTop(X0 + (i + 0.5) * CELL, Z0 + (j + 0.5) * CELL) > h) { r = 150; gg = 142; b = 130; }   // トンネルの屋根
-    im.data[k] = r; im.data[k + 1] = gg; im.data[k + 2] = b; im.data[k + 3] = 255;
+// 地図の絵：自分のまわり 1.4km 四方（1 ピクセル = 4m、上が -z の海側）。遠くへ行ったら、少しずつ描き直す
+const MAP_SPAN = 1400, MAP_PX = 350;
+let mapBuild = null;
+function mapColor(h, x, z, out, k) {
+  let r, gg, b;
+  if (h < SEA) { const t = Math.min(1, (SEA - h) / 100); r = 70 - 55 * t; gg = 170 - 110 * t; b = 215 - 95 * t; }
+  else if (h < 1.6) { r = 236; gg = 218; b = 168; }
+  else { const t = Math.min(1, h / 60); r = 120 - 50 * t; gg = 185 - 60 * t; b = 95 - 40 * t; if (h > 70) { r = gg = b = 150; } }
+  if (archTop(x, z) > h) { r = 150; gg = 142; b = 130; }   // トンネルの屋根
+  out[k] = r; out[k + 1] = gg; out[k + 2] = b; out[k + 3] = 255;
+}
+function stepMapImage(px, pz) {
+  const far = !mapImg || Math.max(Math.abs(px - mapImg.cx), Math.abs(pz - mapImg.cz)) > MAP_SPAN * 0.25;
+  if (!mapBuild && far) {
+    const cx = Math.round(px / 100) * 100, cz = Math.round(pz / 100) * 100;
+    const c = document.createElement('canvas'); c.width = c.height = MAP_PX;
+    const g = c.getContext('2d');
+    mapBuild = { c, g, im: g.createImageData(MAP_PX, MAP_PX), row: 0, cx, cz, x0: cx - MAP_SPAN / 2, z0: cz - MAP_SPAN / 2 };
   }
-  g.putImageData(im, 0, 0);
-  return c;
+  if (!mapBuild) return;
+  const B = mapBuild, st = MAP_SPAN / MAP_PX, end = Math.min(MAP_PX, B.row + (mapImg ? 50 : MAP_PX));
+  for (; B.row < end; B.row++) for (let i = 0; i < MAP_PX; i++) {
+    const x = B.x0 + (i + 0.5) * st, z = B.z0 + (B.row + 0.5) * st;
+    mapColor(outsideBox(x, z) ? -100 : rawHeight(x, z), x, z, B.im.data, (B.row * MAP_PX + i) * 4);
+  }
+  if (B.row >= MAP_PX) { B.g.putImageData(B.im, 0, 0); mapImg = { c: B.c, cx: B.cx, cz: B.cz, x0: B.x0, z0: B.z0 }; mapBuild = null; }
 }
 mapEl.addEventListener('click', (e) => {   // 小さいときはタップで拡大。大きいときは「近く／全体」と「閉じる」
   if ((helmAegis() || helmSub()) && mapEl.classList.contains('big') && e.target === mapCv) {   // イージス艦・潜水艦：印をタップして目標にする
@@ -2780,7 +2862,7 @@ function updateMap(dt) {
   mapTick += dt;
   if (mapTick < 0.15) return;
   mapTick = 0;
-  if (!mapImg) mapImg = buildMapImage();
+  stepMapImage(v.pos.x, v.pos.y);
   if (!mapEl.classList.contains('big')) mapEl.style.top = Math.round(el('menuBtn').getBoundingClientRect().bottom + 8) + 'px';
   const want = mapEl.classList.contains('big') ? 640 : 296;
   if (mapCv.width !== want) mapCv.width = mapCv.height = want;
@@ -2803,7 +2885,7 @@ function updateMap(dt) {
   mapCx.globalAlpha = 0.5;
   mapCx.translate(C, C); mapCx.rotate(-Hr); mapCx.scale(k, k); mapCx.translate(-v.pos.x, -v.pos.y);
   mapCx.imageSmoothingEnabled = true;
-  mapCx.drawImage(mapImg, X0, Z0, XW, ZW);
+  if (mapImg) mapCx.drawImage(mapImg.c, mapImg.x0, mapImg.z0, MAP_SPAN, MAP_SPAN);
   mapCx.globalAlpha = 0.7; mapCx.strokeStyle = '#fff'; mapCx.lineWidth = 2 / k; mapCx.strokeRect(X0, Z0, XW, ZW);
   mapCx.restore();
   // 距離の円と、45° ごとの線
@@ -3717,7 +3799,9 @@ function stepAi(dt) {
   // 陸・浅瀬・箱のふちをよける
   const hr = hOfBearing(a.ord.hdg), ax = v.pos.x + Math.sin(hr) * 50, az = v.pos.y + Math.cos(hr) * 50;
   if (outsideBox(ax, az, 30) || heightAt(ax, az) > -(a.ord.dp + 8)) {
-    a.ord.hdg = Math.round(bearingTo(v, XC, (Z0 + Z1) / 2 - 150));
+    let best = a.ord.hdg, bd = Infinity;   // まわり 8 方向で、いちばん深いほうへ
+    for (let b = 0; b < 360; b += 45) { const r2 = hOfBearing(b), hh = heightAt(v.pos.x + Math.sin(r2) * 90, v.pos.y + Math.cos(r2) * 90) + (outsideBox(v.pos.x + Math.sin(r2) * 90, v.pos.y + Math.cos(r2) * 90, 30) ? 999 : 0); if (hh < bd) { bd = hh; best = b; } }
+    a.ord.hdg = best;
     a.ord.dp = Math.min(a.ord.dp, Math.max(5, SEA - heightAt(ax, az) - 8));
   }
   a.ord.dp = Math.min(a.ord.dp, maxDp);
@@ -3965,7 +4049,7 @@ async function removeMine(t) {
 
 /* ================= ループ ================= */
 const clock = new THREE.Clock();
-let netTick = 0;
+let netTick = 0, firstFrame = true;
 function frame() {
   const dt = Math.min(0.05, clock.getDelta());
   if (aboard && !vehicles.includes(aboard.v)) getOff();
@@ -3981,6 +4065,7 @@ function frame() {
   stepOthers(dt);
   waterTex.offset.x = (clock.elapsedTime * 0.02) % 1; waterTex.offset.y = (clock.elapsedTime * 0.013) % 1;
   updateCamera(dt);
+  updateTerrain(firstFrame); firstFrame = false;
   updateAtmosphere();
   updateUi();
   updateMap(dt);
