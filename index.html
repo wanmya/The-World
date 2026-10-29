@@ -169,9 +169,10 @@ body.mapOn #msg { top: max(145px, 30vh); }
 #helm .htabs .minibtn { flex: 0 0 36px; }
 #helm.mini #helmNav, #helm.mini #helmTorp, #helm.mini .hmsg { display: none !important; }
 #helm .hq button[aria-pressed="true"] { background: var(--ink); color: #fff; border-color: transparent; }
-#helm .hrow.off { display: none !important; }
+#helm .hrow.off, #helm .dial.off { display: none !important; }
+#helm .dials.two { grid-template-columns: repeat(2, 1fr); margin-top: 6px; }
 #helm .optbtn { display: none; }
-@media (pointer: coarse) { #helm .hrow.opt { display: none; } #helm.showOpt .hrow.opt { display: grid; } #helm .optbtn { display: block; } #helm.showOpt .optbtn { background: var(--ink); color: #fff; } }
+@media (pointer: coarse) { #helm .hrow.opt, #helm .dials.opt { display: none; } #helm.showOpt .hrow.opt, #helm.showOpt .dials.opt { display: grid; } #helm .optbtn { display: block; } #helm.showOpt .optbtn { background: var(--ink); color: #fff; } }
 #sonar { font: 700 10px var(--font-mono); color: var(--ink); margin-top: 4px; line-height: 1.5; }
 #sonar .deaf { color: #c8402a; }
 body.helmOn #prompt, body.helmOn #hint { display: none !important; }
@@ -317,9 +318,7 @@ body.helmOn .subbtns { flex-wrap: wrap; justify-content: flex-end; max-width: ca
   </div>
   <div id="helmTorp" hidden>
     <div class="hq"><button type="button" data-tt="war" aria-pressed="true">弾頭</button><button type="button" data-tt="guide" aria-pressed="false">誘導</button><button type="button" data-tt="decoy" aria-pressed="false">デコイ</button></div>
-    <div class="hrow opt" id="rowDp"><span class="hl">深度</span><button type="button" data-d="tdp:-5">−5</button><button type="button" data-d="tdp:-1">−1</button><span class="val"><input id="tDp" inputmode="numeric" aria-label="深度"><small>m</small></span><button type="button" data-d="tdp:1">+1</button><button type="button" data-d="tdp:5">+5</button></div>
-    <div class="hrow opt" id="rowDist"><span class="hl">爆発</span><button type="button" data-d="tdist:-50">−50</button><button type="button" data-d="tdist:-10">−10</button><span class="val"><input id="tDist" inputmode="numeric" aria-label="爆発"><small>m</small></span><button type="button" data-d="tdist:10">+10</button><button type="button" data-d="tdist:50">+50</button></div>
-    
+    <div class="dials two opt" id="torpDials"><div class="dial" id="rowDp"><span class="dl">魚雷の深度</span><div class="dgs"><div class="dg"><button type="button" data-n="tdp:10" aria-label="魚雷の深度 10 増やす">▲</button><b id="vTdpT">0</b><button type="button" data-n="tdp:-10" aria-label="魚雷の深度 10 減らす">▼</button></div><div class="dg"><button type="button" data-n="tdp:1" aria-label="魚雷の深度 1 増やす">▲</button><b id="vTdpO">0</b><button type="button" data-n="tdp:-1" aria-label="魚雷の深度 1 減らす">▼</button></div><small>m</small></div></div><div class="dial" id="rowDist"><span class="dl">爆発する距離</span><div class="dgs"><div class="dg"><button type="button" data-n="tdist:100" aria-label="爆発する距離 100 増やす">▲</button><b id="vTdH">0</b><button type="button" data-n="tdist:-100" aria-label="爆発する距離 100 減らす">▼</button></div><div class="dg"><button type="button" data-n="tdist:10" aria-label="爆発する距離 10 増やす">▲</button><b id="vTdT">0</b><button type="button" data-n="tdist:-10" aria-label="爆発する距離 10 減らす">▼</button></div><div class="dg"><button type="button" data-n="tdist:1" aria-label="爆発する距離 1 増やす">▲</button><b id="vTdO">0</b><button type="button" data-n="tdist:-1" aria-label="爆発する距離 1 減らす">▼</button></div><small>m</small></div></div></div>
     <div class="hq"><button type="button" data-q="opt" class="optbtn">設定</button><button type="button" data-q="load" id="loadBtn">装填</button><button type="button" class="fire" id="fireBtn">発射</button></div>
   </div>
   <div class="hmsg" id="helmMsg"></div>
@@ -2281,7 +2280,7 @@ function makeCar(type, color) {
 
 /* ---- 道順から、走る線（車線の中心）を作る ---- */
 function buildPath(legs, isBus) {
-  const R = roadNet, px = [], pz = [], py = [], off = [], legOf = [], edgeS = [], nodeAt = [];
+  const R = roadNet, px = [], pz = [], py = [], off = [], rw = [], legOf = [], edgeS = [], nodeAt = [];
   for (let li = 0; li < legs.length; li++) {
     const [ei, dir] = legs[li], e = R.edges[ei];
     const next = legs[(li + 1) % legs.length], startNode = dir > 0 ? e.a : e.b, endNode = dir > 0 ? e.b : e.a;
@@ -2292,7 +2291,7 @@ function buildPath(legs, isBus) {
       const ww = isBus ? e.WBUS[i] : e.WB[i];
       const o = isBus ? ww / 2 - 1.75 : 1.75;
       px.push(e.X[i] + e.NX[i] * o * dir); pz.push(e.Z[i] + e.NZ[i] * o * dir); py.push(k === 0 ? startNode.y : e.Y[i]);
-      off.push(o); legOf.push(li); edgeS.push(dir > 0 ? e.S[i] : e.L - e.S[i]); nodeAt.push(k === 0 ? startNode : null);
+      off.push(o); rw.push(e.W[i] / 2); legOf.push(li); edgeS.push(dir > 0 ? e.S[i] : e.L - e.S[i]); nodeAt.push(k === 0 ? startNode : null);
     }
   }
   const N = px.length;
@@ -2302,7 +2301,7 @@ function buildPath(legs, isBus) {
   sm(X, 4, 2); sm(Z, 4, 2); sm(Y, 3, 1);
   const S = new Float32Array(N + 1);
   for (let i = 0; i < N; i++) { const j = (i + 1) % N; S[i + 1] = S[i] + Math.hypot(X[j] - X[i], Z[j] - Z[i]); }
-  return { N, X, Z, Y, S, L: S[N], legs, legOf: Int16Array.from(legOf), edgeS: Float32Array.from(edgeS), nodeAt };
+  return { N, X, Z, Y, S, L: S[N], legs, legOf: Int16Array.from(legOf), edgeS: Float32Array.from(edgeS), nodeAt, Off: Float32Array.from(off), RW: Float32Array.from(rw) };
 }
 function pathIndex(P, s) {   // s（0〜L）がどの区間か
   let lo = 0, hi = P.N - 1;
@@ -2318,11 +2317,11 @@ function pathPoint(P, s, out) {
 // 道順を、出発点（バスは最初のバス停、車はとめておく場所）から始まるように回す
 function rotatePath(P, k0) {
   const N = P.N, r = (A, T) => { const B = new T(N); for (let i = 0; i < N; i++) B[i] = A[(i + k0) % N]; return B; };
-  const X = r(P.X, Float32Array), Z = r(P.Z, Float32Array), Y = r(P.Y, Float32Array), legOf = r(P.legOf, Int16Array), edgeS = r(P.edgeS, Float32Array);
+  const X = r(P.X, Float32Array), Z = r(P.Z, Float32Array), Y = r(P.Y, Float32Array), legOf = r(P.legOf, Int16Array), edgeS = r(P.edgeS, Float32Array), Off = r(P.Off, Float32Array), RW = r(P.RW, Float32Array);
   const nodeAt = []; for (let i = 0; i < N; i++) nodeAt.push(P.nodeAt[(i + k0) % N]);
   const S = new Float32Array(N + 1);
   for (let i = 0; i < N; i++) { const j = (i + 1) % N; S[i + 1] = S[i] + Math.hypot(X[j] - X[i], Z[j] - Z[i]); }
-  return Object.assign({}, P, { X, Z, Y, S, L: S[N], legOf, edgeS, nodeAt });
+  return Object.assign({}, P, { X, Z, Y, S, L: S[N], legOf, edgeS, nodeAt, Off, RW });
 }
 // 走る線の上の印：交差点（停止線・曲がる向き・信号の組）、バス停
 function pathMarks(P, isBus) {
@@ -2350,6 +2349,7 @@ function pathMarks(P, isBus) {
 }
 // 走り方の計算：信号・バス停・前の車を見ながら、T_ALL 秒ぶん。結果は 0.5 秒ごとの「進んだ距離」と「ライトの状態」
 const traffic = [];
+let TRAFFIC_PASSES = 2;
 function simulate(v, others, cruise, laps) {
   const P = v.path, T = v.T, L = P.L, total = laps * L, nRec = Math.round(T_ALL / REC_DT) + 1;
   const rec = new Float32Array(nRec), flags = new Uint8Array(nRec);
@@ -2483,6 +2483,14 @@ function laneRecords(v) {
     laneRecords(v);
     done.push(v);
   }
+  // 2 回目：あとから決まった車も見て、もう一度走らせる（先に決めた車が、あとの車をすり抜けないように）
+  for (let pass = 0; pass < TRAFFIC_PASSES; pass++) for (const v of traffic) {
+    const mine = new Set(v.laneKey);
+    const res = simulate(v, traffic.filter((o) => o !== v && o.laneKey.some((k) => mine.has(k))), v.cruise, v.laps);   // 同じ車線を通る車だけ
+    if (res.finishedAt > T_ALL - 8) continue;
+    v.simIt = res.finishedAt; v.rec = res.rec; v.flags = res.flags;
+    laneRecords(v);
+  }
   window.__trafficMs = performance.now() - t0;
 }
 // 見た目を作る
@@ -2495,20 +2503,121 @@ for (const v of traffic) {
   scene.add(v.root);
 }
 const tp0 = { x: 0, y: 0, z: 0 }, tp1 = { x: 0, y: 0, z: 0 }, tp2 = { x: 0, y: 0, z: 0 };
+/* ---- 道の上のじゃまな物（人・置いた物・乗り物・遅れているバスや車）。止まるか、ウインカーを出してよける ---- */
+const OBS_NEAR = 260;   // カメラからこの距離までの車だけ、じゃまな物を見る
+function trafficObstacles() {
+  const out = [], cx = camera.position.x, cz = camera.position.z;
+  const add = (x, z, y, hx, hz, kind, ref) => { if (Math.abs(x - cx) < OBS_NEAR + 80 && Math.abs(z - cz) < OBS_NEAR + 80) out.push({ x, z, y, hx, hz, kind, ref }); };
+  const rect = (x, z, y, hw, hl, h, kind, ref) => { const s = Math.abs(Math.sin(h)), c = Math.abs(Math.cos(h)); add(x, z, y, hw * c + hl * s, hw * s + hl * c, kind, ref); };
+  if (!busRide && !driving) add(player.pos.x, player.pos.z, player.pos.y, 0.35, 0.35, 'person', null);
+  for (const o of net.others.values()) {
+    if (o.t && o.t.m === 'bus') continue;
+    if (o.avatar && o.avatar.visible) add(o.pos.x, o.pos.z, o.pos.y, 0.35, 0.35, 'person', null);
+    if (o.carObj && o.carObj.visible) rect(o.carObj.position.x, o.carObj.position.z, o.carObj.position.y, 1, 1.8, o.carObj.rotation.y, 'thing', null);
+  }
+  for (const v of vehicles) { const V = v.item.def.vehicle; if (!v.sunk) rect(v.pos.x, v.pos.y, v.y, V.halfWidth || 1, V.halfLength || 2, visYaw(v), 'thing', null); }
+  for (const pr of props) { const b = pr.box; add((b.min.x + b.max.x) / 2, (b.min.z + b.max.z) / 2, b.min.y, (b.max.x - b.min.x) / 2, (b.max.z - b.min.z) / 2, 'thing', null); }
+  for (const v of traffic) if (v.lag > 0.05 || Math.abs(v.side) > 0.2) rect(v.x, v.z, v.y, v.T.hw, v.T.hl, v.h, 'traffic', v);   // 予定より遅れている・よけている車だけ（ふだんの流れは計算ずみ）
+  return out;
+}
+// 前にあるじゃまな物：走る線にそって前を見て、いちばん近い物（車体の幅に重なるもの）
+function obstacleAhead(v, obs, look, side) {
+  const P = v.path, hl = v.T.hl, hw = v.T.hw;
+  let best = null;
+  for (const o of obs) {
+    if (o.ref === v || Math.abs(o.y - v.y) > 3.5) continue;
+    if (Math.hypot(o.x - v.x, o.z - v.z) > look + hl + 12 + Math.max(o.hx, o.hz)) continue;
+    // 走る線の上で、いちばん近い点
+    let bi = -1, bd = Infinity;
+    const i0 = pathIndex(P, ((v.s - hl) % P.L + P.L) % P.L);
+    for (let k = 0; k <= (look + 2 * hl) / 2 + 2; k++) { const i = (i0 + k) % P.N, d = (P.X[i] - o.x) ** 2 + (P.Z[i] - o.z) ** 2; if (d < bd) { bd = d; bi = i; } }
+    const j = (bi + 1) % P.N, tx0 = P.X[j] - P.X[bi], tz0 = P.Z[j] - P.Z[bi], tl = Math.hypot(tx0, tz0) || 1, tx = tx0 / tl, tz = tz0 / tl;
+    const nx = tz, nz = -tx;   // 左（路肩）向き
+    const dx = o.x - P.X[bi], dz = o.z - P.Z[bi];
+    const a = dx * tx + dz * tz, l = dx * nx + dz * nz;
+    const ea = o.hx * Math.abs(tx) + o.hz * Math.abs(tz), el = o.hx * Math.abs(nx) + o.hz * Math.abs(nz);
+    let sk = P.S[bi] - (((v.s - hl) % P.L + P.L) % P.L); if (sk < -P.L / 2) sk += P.L;
+    const gap = sk - 2 * hl + a - ea;   // 前のバンパーからの距離
+    if (gap > look || a + ea + sk < 0.5) continue;   // 遠い・もう横か後ろ
+    const m = o.kind === 'traffic' ? 0.3 : 0.5;
+    if (l + el < side - hw - m || l - el > side + hw + m) continue;   // 横にずれていて当たらない
+    if (!best || gap < best.gap) best = { o, gap, l, el, bi, endS: v.s + gap + 2 * ea + 2 * hl + 4 };
+  }
+  return best;
+}
+// よけられるか：対向車線や路肩に入っても、ほかの車とぶつからない
+function canSwerve(v, side, dist) {
+  const P = v.path, i = pathIndex(P, ((v.s % P.L) + P.L) % P.L), hw = v.T.hw;
+  const o = P.Off[i], rw = P.RW[i];
+  if (side > rw - o - hw - 0.2 || side < -(rw + o) + hw + 0.2) return false;   // 道からはみ出す
+  const hx = Math.sin(v.h), hz = Math.cos(v.h), nx = Math.cos(v.h), nz = -Math.sin(v.h);
+  for (const u of traffic) {
+    if (u === v || Math.abs(u.y - v.y) > 3.5) continue;
+    const dx = u.x - v.x, dz = u.z - v.z, ahead = dx * hx + dz * hz, lat = dx * nx + dz * nz;
+    if (ahead < -v.T.hl - 12 || ahead > dist + 70) continue;
+    if (Math.abs(lat - side) < hw + u.T.hw + 0.6) return false;   // よける先の帯にほかの車（対向車・並んでいる車）
+  }
+  return true;
+}
+function avoidObstacles(v, obs, dt, near, schedV) {
+  v.xfl = 0;
+  if (!near) {   // 遠くの車は見えないので、すぐ予定にもどす
+    v.lag = Math.max(0, v.lag - dt * 5); v.rate = 1; v.side = v.sideT = 0; v.avoid = null; return;
+  }
+  const hw = v.T.hw, dec = v.T.dec;
+  const look = Math.min(60, Math.max(10, (schedV * schedV) / (2 * dec) + 10));
+  // よけ終わったら、もとの車線へもどる
+  if (v.avoid && (v.s > v.avoid.endS || v.s < v.avoid.startS - 1)) { v.avoid = null; v.sideT = 0; }
+  let ob = obstacleAhead(v, obs, look, v.side);
+  if (ob && !v.avoid && ob.o.kind !== 'traffic' && schedV > 0.5) {   // よけられるなら、よける（人・物・止まっている乗り物）
+    const m = ob.o.kind === 'person' ? 1.0 : 0.6;
+    const right = ob.l - ob.el - hw - m, left = ob.l + ob.el + hw + m;
+    const cand = [right, left].filter((x) => Math.abs(x) < 4.5).sort((a, b) => Math.abs(a) - Math.abs(b));
+    for (const side of cand) if (canSwerve(v, side, ob.gap + 2 * v.T.hl + 2 * ob.el + 10)) { v.avoid = { endS: ob.endS, startS: v.s }; v.sideT = side; break; }
+  }
+  if (v.avoid) {   // よけている途中：よけた先で当たる物と、いまの位置ですぐ前に当たる物
+    const a = obstacleAhead(v, obs, look, v.sideT), b = obstacleAhead(v, obs, 10, v.side);
+    ob = a && b ? (a.gap < b.gap ? a : b) : a || b;
+  }
+  // 横へ寄せる（ゆっくり）。寄せているあいだはウインカー
+  const ds = v.sideT - v.side;
+  if (Math.abs(ds) > 0.05) { v.side += Math.sign(ds) * Math.min(Math.abs(ds), dt * Math.max(0.6, Math.min(1.6, schedV * 0.25))); v.xfl |= ds < 0 ? 4 : 2; }
+  else v.side = v.sideT;
+  // 止まる：じゃまな物までに止まれる速さにおさえる。どいたら少し速く走って予定に追いつく
+  let target = v.lag > 0.05 ? 1.3 : 1;
+  if (ob) {
+    const stopAt = ob.gap - (ob.o.kind === 'traffic' ? 1.5 : 3);
+    const vAllow = Math.sqrt(2 * dec * Math.max(0, stopAt));
+    if (schedV * target > vAllow) target = schedV > 0.05 ? vAllow / schedV : target;
+    if (stopAt < 0.3) target = 0;
+  }
+  const slowing = target < v.rate - 0.02;
+  v.rate += THREE.MathUtils.clamp(target - v.rate, -dt * 3, dt * 0.6);
+  v.rate = Math.max(0, v.rate);
+  v.lag = Math.max(0, v.lag + (1 - v.rate) * dt);
+  if (v.lag <= 0 && v.rate > 1) v.rate = 1;
+  if ((slowing || v.rate < 0.05) && schedV > 0.3) v.brakeT = 0.6;
+  if ((v.brakeT = Math.max(0, (v.brakeT || 0) - dt)) > 0) v.xfl |= 8;   // ブレーキ（少しのあいだ点けたまま）
+  if (v.lag > 6 && v.rate < 0.05) v.xfl |= 1;   // 長く止まったらハザード
+}
 function stepTraffic(dt) {
   const now = Date.now() / 1000, cx = camera.position.x, cz = camera.position.z;
   const blink = Math.floor(now * 3) % 2 === 0, night = dayLight < 0.35;
+  const obs = trafficObstacles();
+  const rdt = THREE.MathUtils.clamp(now - (stepTraffic.last || now), 0, 1); stepTraffic.last = now;   // 時計の進み（遅い端末でも予定とずれない）
   for (const v of traffic) {
-    const tau = (((now - v.phase) % T_ALL) + T_ALL) % T_ALL, r = tau / REC_DT, i0 = Math.min(v.rec.length - 2, Math.floor(r)), f = r - i0;
+    if (v.lag === undefined) Object.assign(v, { lag: 0, rate: 1, side: 0, sideT: 0, avoid: null, xfl: 0 });
+    const tau = (((now - v.phase - v.lag) % T_ALL) + T_ALL) % T_ALL, r = tau / REC_DT, i0 = Math.min(v.rec.length - 2, Math.floor(r)), f = r - i0;
     const s = v.rec[i0] + (v.rec[i0 + 1] - v.rec[i0]) * f, P = v.path;
-    v.s = s; v.speed = (v.rec[i0 + 1] - v.rec[i0]) / REC_DT; v.fl = v.flags[i0];
+    v.s = s; v.speed = (v.rec[i0 + 1] - v.rec[i0]) / REC_DT * v.rate; v.fl = v.flags[i0] | v.xfl;
     pathPoint(P, s, tp0); pathPoint(P, s + 3, tp1); pathPoint(P, s - 3, tp2);
     let x = tp0.x, z = tp0.z;
     const h = Math.atan2(tp1.x - tp2.x, tp1.z - tp2.z);
     if (v.kind === 'car') {   // とめておく場所では路肩へ寄せる
-      const d = Math.min(s, v.total - s), k = 2.6 * ss(26, 6, d), nx = Math.cos(h), nz = -Math.sin(h);
+      const d = Math.min(s, v.total - s), k = 3.0 * ss(26, 6, d), nx = Math.cos(h), nz = -Math.sin(h);
       x += nx * k; z += nz * k;
     }
+    if (v.side) { x += Math.cos(h) * v.side; z -= Math.sin(h) * v.side; }   // よけているときは横へずれる
     v.x = x; v.z = z; v.y = tp0.y; v.h = h; v.pitch = Math.atan2(tp1.y - tp2.y, 6);
     if (v.kind === 'bus') {
       const ls = ((s % P.L) + P.L) % P.L, st = v.marks.stops;
@@ -2519,6 +2628,7 @@ function stepTraffic(dt) {
       v.open += ((v.fl & 16 ? 1 : 0) - v.open) * Math.min(1, dt * 2.5);
     }
     const near = Math.hypot(x - cx, z - cz) < VIEW_R || (!!busRide && busRide.b === v);
+    avoidObstacles(v, obs, rdt, near, (v.rec[i0 + 1] - v.rec[i0]) / REC_DT);
     v.root.visible = near;
     v.root.position.set(x, v.y, z);
     v.root.rotation.set(-v.pitch, h, 0);
@@ -4100,7 +4210,9 @@ function updateHelm() {
   const b = bearingOf(v.h);
   const dig = { vAngT: Math.floor(Math.round(ord.ang) / 10), vAngO: Math.round(ord.ang) % 10, vSpdT: Math.floor(Math.round(ord.spd) / 10), vSpdO: Math.round(ord.spd) % 10, vDpT: Math.floor(Math.round(ord.dp) / 10), vDpO: Math.round(ord.dp) % 10 };
   const tn = helmTurn ? (helmTurn.mode === 'course' ? `針路 ${fmtB(helmTurn.target)}° へ旋回中（もう一度押すと止まる）` : `${TURN_NAME[helmTurn.mode]} 旋回中… あと ${Math.max(0, Math.round(helmTurn.remain))}°（もう一度押すと止まる）`) : '';
-  const vals = { tDp: String(Math.round(ord.tdp)), tDist: String(Math.round(ord.tdist)) };
+  const td = Math.round(ord.tdist), tp = Math.round(ord.tdp);
+  Object.assign(dig, { vTdpT: Math.floor(tp / 10), vTdpO: tp % 10, vTdH: Math.floor(td / 100), vTdT: Math.floor(td / 10) % 10, vTdO: td % 10 });
+  const vals = {};
   const now = { cHdg: fmtB(b), cKt: String(Math.round(v.vF / KT)), cDp: subDepth(v).toFixed(0) };
   if (isSub && tube.until && clock.elapsedTime >= tube.until) {
     const am = ammoOf(v);
@@ -4126,7 +4238,6 @@ function updateHelm() {
   for (const b2 of helmEl.querySelectorAll('[data-tab]')) b2.setAttribute('aria-pressed', String(b2.dataset.tab === helmTab));
   for (const b2 of helmEl.querySelectorAll('[data-tt]')) { b2.setAttribute('aria-pressed', String(b2.dataset.tt === ord.ttype)); b2.textContent = `${{ war: '弾頭', guide: '誘導', decoy: 'デコイ' }[b2.dataset.tt]} ${am[b2.dataset.tt]}`; }
   el('rowDist').classList.toggle('off', ord.ttype !== 'war');
-  for (const id in vals) { const i = el(id); if (document.activeElement !== i) i.value = vals[id]; }
   for (const id in now) el(id).textContent = now[id];
   el('helmMsg').textContent = st;
   const fire = el('fireBtn');
@@ -4154,11 +4265,6 @@ helmEl.addEventListener('click', (e) => {
   if (t.dataset.q === 'load') loadTubes();
   clampOrders(v); helmShown = '';
 });
-for (const [id, k] of [['tDp', 'tdp'], ['tDist', 'tdist']]) {
-  const i = el(id);
-  i.addEventListener('change', () => { const n = Number(i.value); const v = helmShip(); if (isFinite(n) && v) { ord[k] = n; clampOrders(v); } helmShown = ''; });
-  i.addEventListener('keydown', (e) => { if (e.key === 'Enter') { i.blur(); cv.focus(); } });
-}
 
 /* ================= 魚雷：艦首の向きへ発射。弾頭は 20 ノット・決めた距離で爆発、誘導は 20 ノットで音を追い当たると爆発、デコイは 15 ノット・決めた秒数で爆発（被害なし） ================= */
 const TORP_SPEED = 30 * KT, GUIDE_SPEED = 25 * KT, DECOY_SPEED = 20 * KT, WAR_RANGE = 1000, GUIDE_RANGE = 500, DECOY_RANGE = 400, DECOY_TIME = 20;   // 弾頭の射程・誘導の燃料・デコイの時間
