@@ -2153,7 +2153,7 @@ function stepBuses() {
     b.stopName = st.stopped && L.stop[st.k] ? L.names.get(st.k) : '';
     let nk = st.k + 1; while (nk < L.N && !L.stop[nk]) nk++;
     b.nextName = L.names.get(nk) || '';
-    const near = Math.hypot(b.x - cx, b.z - cz) < VIEW_R || (busRide && busRide.b === b);
+    const near = Math.hypot(b.x - cx, b.z - cz) < VIEW_R || (!!busRide && busRide.b === b);
     b.root.visible = near;
     if (!near) continue;
     b.root.position.set(b.x, b.y, b.z);
