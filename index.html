@@ -176,6 +176,8 @@ body.mapOn #msg { top: max(145px, 30vh); }
 #helm .tubes .tr { background: #1f8f5f; color: #fff; border-color: transparent; }
 #helm .tubes .tl { background: #f2b33d; color: #222; border-color: transparent; }
 #helm .tubes .tq { background: #fdf3dc; color: #7a5a12; }
+#helm .dials .upd { grid-column: 1 / -1; height: 30px; border-radius: 8px; border: 1px solid var(--line); background: #fff; color: var(--ink); font: 800 12px var(--font-ui); cursor: pointer; touch-action: manipulation; }
+#helm .dials .upd:disabled { opacity: 0.5; }
 #helm .dials.two { grid-template-columns: repeat(2, 1fr); margin-top: 6px; }
 #helm .optbtn { display: none; }
 @media (pointer: coarse) { #helm .hrow.opt, #helm .dials.opt { display: none; } #helm.showOpt .hrow.opt, #helm.showOpt .dials.opt { display: grid; } #helm .optbtn { display: block; } #helm.showOpt .optbtn { background: var(--ink); color: #fff; } }
@@ -325,7 +327,7 @@ body.helmOn .subbtns { flex-wrap: wrap; justify-content: flex-end; max-width: ca
   </div>
   <div id="helmTorp" hidden>
     <div class="hq"><button type="button" data-tt="war" aria-pressed="true">弾頭</button><button type="button" data-tt="guide" aria-pressed="false">誘導</button><button type="button" data-tt="decoy" aria-pressed="false">デコイ</button></div>
-    <div class="dials two opt" id="torpDials"><div class="dial" id="rowDp"><span class="dl">魚雷の深度</span><div class="dgs"><div class="dg"><button type="button" data-n="tdp:10" aria-label="魚雷の深度 10 増やす">▲</button><b id="vTdpT">0</b><button type="button" data-n="tdp:-10" aria-label="魚雷の深度 10 減らす">▼</button></div><div class="dg"><button type="button" data-n="tdp:1" aria-label="魚雷の深度 1 増やす">▲</button><b id="vTdpO">0</b><button type="button" data-n="tdp:-1" aria-label="魚雷の深度 1 減らす">▼</button></div><small>m</small></div></div><div class="dial" id="rowDist"><span class="dl">爆発する距離</span><div class="dgs"><div class="dg"><button type="button" data-n="tdist:100" aria-label="爆発する距離 100 増やす">▲</button><b id="vTdH">0</b><button type="button" data-n="tdist:-100" aria-label="爆発する距離 100 減らす">▼</button></div><div class="dg"><button type="button" data-n="tdist:10" aria-label="爆発する距離 10 増やす">▲</button><b id="vTdT">0</b><button type="button" data-n="tdist:-10" aria-label="爆発する距離 10 減らす">▼</button></div><div class="dg"><button type="button" data-n="tdist:1" aria-label="爆発する距離 1 増やす">▲</button><b id="vTdO">0</b><button type="button" data-n="tdist:-1" aria-label="爆発する距離 1 減らす">▼</button></div><small>m</small></div></div></div>
+    <div class="dials two opt" id="torpDials"><div class="dial" id="rowDp"><span class="dl">魚雷の深度</span><div class="dgs"><div class="dg"><button type="button" data-n="tdp:10" aria-label="魚雷の深度 10 増やす">▲</button><b id="vTdpT">0</b><button type="button" data-n="tdp:-10" aria-label="魚雷の深度 10 減らす">▼</button></div><div class="dg"><button type="button" data-n="tdp:1" aria-label="魚雷の深度 1 増やす">▲</button><b id="vTdpO">0</b><button type="button" data-n="tdp:-1" aria-label="魚雷の深度 1 減らす">▼</button></div><small>m</small></div></div><div class="dial" id="rowDist"><span class="dl">爆発する距離</span><div class="dgs"><div class="dg"><button type="button" data-n="tdist:100" aria-label="爆発する距離 100 増やす">▲</button><b id="vTdH">0</b><button type="button" data-n="tdist:-100" aria-label="爆発する距離 100 減らす">▼</button></div><div class="dg"><button type="button" data-n="tdist:10" aria-label="爆発する距離 10 増やす">▲</button><b id="vTdT">0</b><button type="button" data-n="tdist:-10" aria-label="爆発する距離 10 減らす">▼</button></div><div class="dg"><button type="button" data-n="tdist:1" aria-label="爆発する距離 1 増やす">▲</button><b id="vTdO">0</b><button type="button" data-n="tdist:-1" aria-label="爆発する距離 1 減らす">▼</button></div><small>m</small></div></div><button type="button" class="upd" data-q="tupd" id="tupdBtn">更新（いまの目標の深度・距離を入れる）</button></div>
     <div class="tubes" id="tubeRow"></div>
     <div class="hq"><button type="button" data-q="opt" class="optbtn">設定</button><button type="button" data-q="load" id="loadBtn">装填</button><button type="button" class="fire" id="fireBtn">発射</button></div>
   </div>
@@ -4266,7 +4268,7 @@ function updateHelm() {
   const left = Math.max(0, tube.until - clock.elapsedTime);
   const what = ord.ttype === 'decoy' ? `デコイ（${Math.round(ord.ttime)} 秒で消える）` : ord.ttype === 'guide' ? '誘導魚雷（音を追う・当たると爆発）' : `弾頭魚雷（${Math.round(ord.tdist)}m で爆発）`;
   const sa = subAim(v);
-  const aimTxt = sa ? `${sa.ghost ? 'さっきまで居た点へ' : '目標へ'} 方位 ${fmtB(bearingOf(sa.h))}°・深度 ${sa.dp}m` : `${subTarget ? '目標が聞こえない → ' : ''}艦首の向き・深度 ${Math.round(ord.tdp)}m`;
+  const aimTxt = ord.ttype === 'decoy' ? `艦首の向き・深度 ${Math.round(ord.tdp)}m` : sa ? `${sa.ghost ? 'さっきまで居た点へ' : '目標へ'} 方位 ${fmtB(bearingOf(sa.h))}°・深度 ${Math.round(ord.tdp)}m` : `${subTarget ? '目標が聞こえない → ' : ''}艦首の向き・深度 ${Math.round(ord.tdp)}m`;
   const am = ammoOf(v), stock = `残弾 弾頭${am.war}・誘導${am.guide}・デコイ${am.decoy}`;
   const tst = nReady ? `${nReady} 門装填ずみ。発射：${what}・${aimTxt}${li >= 0 ? `（${li + 1} 番 装填中 あと ${Math.ceil(left)} 秒）` : ''}` : li >= 0 ? `${li + 1} 番 装填中… あと ${Math.ceil(left)} 秒（音が出ています）` : '空です。「装填」を 1 回押すごとに 1 門ずつ装填します（1 門 10 秒）';
   const cd = isSub ? crushDmg(v) : 0;
@@ -4283,6 +4285,7 @@ function updateHelm() {
   for (const b2 of helmEl.querySelectorAll('[data-tab]')) b2.setAttribute('aria-pressed', String(b2.dataset.tab === helmTab));
   for (const b2 of helmEl.querySelectorAll('[data-tt]')) { b2.setAttribute('aria-pressed', String(b2.dataset.tt === ord.ttype)); b2.textContent = `${{ war: '弾頭', guide: '誘導', decoy: 'デコイ' }[b2.dataset.tt]} ${am[b2.dataset.tt]}`; }
   el('rowDist').classList.toggle('off', ord.ttype !== 'war');
+  el('tupdBtn').disabled = !sa || ord.ttype === 'decoy';
   for (const id in now) el(id).textContent = now[id];
   el('helmMsg').textContent = st;
   const fire = el('fireBtn');
@@ -4298,14 +4301,18 @@ helmEl.addEventListener('click', (e) => {
   const v = helmShip();
   const t = e.target.closest('button');
   if (!v || !t) return;
-  if (t.dataset.tab) { helmTab = t.dataset.tab; helmEl.classList.remove('mini'); }
-  if (t.dataset.tt && TNAME[t.dataset.tt]) ord.ttype = t.dataset.tt;
+  if (t.dataset.tab) { if (t.dataset.tab === 'torp' && helmTab !== 'torp') fillFromTarget(v); helmTab = t.dataset.tab; helmEl.classList.remove('mini'); }
+  if (t.dataset.tt && TNAME[t.dataset.tt]) { if (t.dataset.tt === 'war' && ord.ttype !== 'war') fillFromTarget(v); ord.ttype = t.dataset.tt; }
+  if (t.dataset.q === 'tupd') {
+    if (fillFromTarget(v)) showMsg(`更新：目標は 方位 ${fmtB(ord.tbrg)}°・距離 ${Math.round(ord.tdist)}m・深度 ${Math.round(ord.tdp)}m`);
+    else showMsg(subTarget ? '目標が聞こえていないので更新できません' : 'レーダーで目標を選ぶと更新できます');
+  }
   if (t.dataset.d) { const [k, d] = t.dataset.d.split(':'); ord[k] = Math.round(ord[k]) + Number(d); }
   if (t.dataset.n) { const [k, d] = t.dataset.n.split(':'); ord[k] = Math.round(ord[k]) + Number(d); }   // 角度は押すだけ、速力・深度はすぐ効く
   if (t.dataset.turn) startHelmTurn(v, t.dataset.turn);
   if (t.dataset.q === 'rev') { ord.rev = !ord.rev; if (ord.rev && !Math.round(ord.spd)) ord.spd = Math.max(1, Math.round(maxKt(v) * 0.4)); }
   if (t.dataset.q === 'stop') { ord.spd = 0; ord.rev = false; }
-  if (t.dataset.q === 'opt') helmEl.classList.toggle('showOpt');
+  if (t.dataset.q === 'opt') { if (!helmEl.classList.contains('showOpt')) fillFromTarget(v); helmEl.classList.toggle('showOpt'); }
   if (t.dataset.q === 'mini') helmEl.classList.toggle('mini');
   if (t.id === 'fireBtn') fireTorpedo();
   if (t.dataset.q === 'load') loadTubes();
@@ -4372,8 +4379,8 @@ function fireTorpedo() {
   if (!tubeCount(tube, 'r')) { showMsg(tube.st.includes('l') ? '装填中です。終わるまで待ってください' : '魚雷が入っていません。「装填」を押してください'); return; }
   const type = ord.ttype, am = ammoOf(v);
   if (!am[type]) { showMsg(`${TNAME[type]}の残弾がありません。ほかの種類を選んでください`); return; }
-  const aim = subAim(v);   // レーダーで選んだ目標が映っていれば、その方位と深度へ。いなければ艦首の向き
-  if (subTarget && !aim) showMsg('目標がレーダーから消えたので、艦首の向きに撃ちます');
+  const aim = type === 'decoy' ? null : subAim(v);   // 目標が映っていれば、その方位へ（深度は設定の値）。いなければ艦首の向き。デコイはいつも艦首の向き
+  if (type !== 'decoy' && subTarget && !aim) showMsg('目標がレーダーから消えたので、艦首の向きに撃ちます');
   else if (aim && aim.ghost) showMsg('目標がさっきまで居た点へ撃ちます');
   const V = v.item.def.vehicle, h = aim ? aim.h : visYaw(v);
   // 魚雷は艦首の前 ±90° にしか撃てない
@@ -4392,8 +4399,8 @@ function fireTorpedo() {
   if (outsideBox(x, z, 1) || heightAt(x, z) > SEA - 1.5) { showMsg('前が浅くて撃てません'); return; }
   const y = Math.max(heightAt(x, z) + 0.6, Math.min(v.y - V.draft * 0.5, SEA - 1));
   // まっすぐ進んだとき、陸地や海底に当たらないか（当たるなら警告。もう一度押すと撃つ）
-  const dp0 = aim ? aim.dp : Math.round(ord.tdp);
-  const reach = aim ? aim.d : type === 'war' ? ord.tdist : type === 'guide' ? GUIDE_RANGE : DECOY_SPEED * DECOY_TIME;
+  const dp0 = Math.round(ord.tdp);
+  const reach = type === 'war' ? ord.tdist : aim ? aim.d : type === 'guide' ? GUIDE_RANGE : DECOY_SPEED * DECOY_TIME;
   const bump = torpPathHit(x, y, z, h, dp0, type === 'decoy' ? DECOY_SPEED : type === 'guide' ? GUIDE_SPEED : TORP_SPEED, reach);
   if (bump && clock.elapsedTime > fireConfirmUntil) {
     fireConfirmUntil = clock.elapsedTime + 6;
@@ -4403,7 +4410,7 @@ function fireTorpedo() {
   fireConfirmUntil = 0;
   const tn = tubeFire(tube); am[type]--; helmShown = '';
   if (type !== 'decoy') tube.firedAt = clock.elapsedTime;   // デコイだけは発射音がしない
-  const dp = aim ? aim.dp : Math.round(ord.tdp);
+  const dp = Math.round(ord.tdp);
   const d = { id: newId().slice(0, 12), k: type, x, y, z, h, dp, dist: Math.round(ord.tdist), time: Math.round(ord.ttime), src: v.id || 'local' };
   launchTorpedo(d, true);
   showMsg(`${tn} 番 ${TNAME[type]}発射！ 方位 ${fmtB(bearingOf(h))}°・深度 ${dp}m（装填ずみのこり ${tubeCount(tube, 'r')} 門・${TNAME[type]}の残弾 ${am[type]}）`);
@@ -4681,9 +4688,18 @@ function trackGhosts() {
     if (gone) { ghosts.delete(k); if (subTarget === k) { subTarget = null; helmShown = ''; } }
   }
 }
+// 目標のいまの方位・距離・深度を、魚雷の設定（深度・爆発する距離）に入れる
+function fillFromTarget(v) {
+  const a = v && vtype(v) === 'sub' ? subAim(v) : null;
+  if (!a) return false;
+  ord.tdp = a.dp; ord.tdist = THREE.MathUtils.clamp(Math.round(a.d), 20, WAR_RANGE); ord.tbrg = bearingOf(a.h);
+  helmShown = '';
+  return true;
+}
 function selectSubTarget(key) {
   subTarget = subTarget === key ? null : key;
-  showMsg(subTarget ? '目標を選びました。発射すると、その方位と深度へ魚雷を撃ちます' : '目標を解除しました（艦首の向きに撃ちます）');
+  if (subTarget) fillFromTarget(helmSub());
+  showMsg(subTarget ? `目標を選びました。魚雷の深度 ${Math.round(ord.tdp)}m・爆発する距離 ${Math.round(ord.tdist)}m を入れました（あとで変えられます。「更新」でいまの目標に合わせ直す）` : '目標を解除しました（艦首の向きに撃ちます）');
   helmShown = ''; mapTick = 1;
 }
 // 目標がいまレーダーに映っていれば、その方位（h）と深度
@@ -5028,6 +5044,7 @@ function aiPinged() {   // コンピュータがピンガーを打った：プ�
 }
 for (const b of document.querySelectorAll('[data-ai]')) b.addEventListener('click', () => { setMenu(false); if (b.dataset.ai === 'stop') stopAiBattle(); else startAiBattle(b.dataset.ai); });
 window.__ai = () => aiSub;
+window.__selSub = (k) => selectSubTarget(k);
 
 /* ================= 自動音声：ソナー員の報告 =================
    聞こえている音だけを読み上げる。魚雷の接近（方位・距離）と、敵の装填の注水音（方位・距離）。 */
