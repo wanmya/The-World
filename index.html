@@ -4307,7 +4307,7 @@ helmEl.addEventListener('click', (e) => {
 
 /* ================= 魚雷：艦首の向きへ発射。弾頭は 20 ノット・決めた距離で爆発、誘導は 20 ノットで音を追い当たると爆発、デコイは 15 ノット・決めた秒数で爆発（被害なし） ================= */
 const TORP_SPEED = 50 * KT, GUIDE_SPEED = 40 * KT, DECOY_SPEED = 25 * KT, WAR_RANGE = 1000, GUIDE_RANGE = 500, DECOY_RANGE = 400, DECOY_TIME = 20;   // 弾頭の射程・誘導の燃料・デコイの時間
-const SAFE_FIRE = 150;   // これより近い敵には撃てない（爆発に巻き込まれる）。デコイは別
+const SAFE_FIRE = 300;   // これより近い敵には撃てない（爆発に巻き込まれる）。デコイは別
 // 誘導魚雷：前 ±80°・300m 以内の音（動いている潜水艦とデコイ）を追う。音が消えたらまっすぐ。両方聞こえると見失って蛇行
 const SEEK_R = 300, SEEK_CONE = (80 * Math.PI) / 180, SEEK_TURN = (20 * Math.PI) / 180;
 const torps = [];
@@ -4347,6 +4347,18 @@ function launchTorpedo(d, mine) {
   placeTorp(t);
   return t;
 }
+let fireConfirmUntil = 0;
+// 魚雷の通り道を先に調べる：まっすぐ進み、深度は 1 秒に 3m ずつ合わせる。当たる所 { d, what } か null
+function torpPathHit(x, y, z, h, dp, speed, reach) {
+  const step = 4, sx = Math.sin(h) * step, sz = Math.cos(h) * step, dyMax = 3 * step / speed;
+  for (let d = step; d <= reach; d += step) {
+    x += sx; z += sz; y += THREE.MathUtils.clamp(SEA - dp - y, -dyMax, dyMax);
+    if (outsideBox(x, z, 0.5)) return { d, what: '世界の端' };
+    const g = heightAt(x, z);
+    if (y < g + 0.15) return { d, what: g > SEA - 0.5 ? '陸地' : '海底' };
+  }
+  return null;
+}
 function fireTorpedo() {
   const v = helmSub();
   if (!v) return;
@@ -4372,6 +4384,16 @@ function fireTorpedo() {
   const x = v.pos.x + Math.sin(h) * (V.halfLength + 1.8), z = v.pos.y + Math.cos(h) * (V.halfLength + 1.8);
   if (outsideBox(x, z, 1) || heightAt(x, z) > SEA - 1.5) { showMsg('前が浅くて撃てません'); return; }
   const y = Math.max(heightAt(x, z) + 0.6, Math.min(v.y - V.draft * 0.5, SEA - 1));
+  // まっすぐ進んだとき、陸地や海底に当たらないか（当たるなら警告。もう一度押すと撃つ）
+  const dp0 = aim ? aim.dp : Math.round(ord.tdp);
+  const reach = aim ? aim.d : type === 'war' ? ord.tdist : type === 'guide' ? GUIDE_RANGE : DECOY_SPEED * DECOY_TIME;
+  const bump = torpPathHit(x, y, z, h, dp0, type === 'decoy' ? DECOY_SPEED : type === 'guide' ? GUIDE_SPEED : TORP_SPEED, reach);
+  if (bump && clock.elapsedTime > fireConfirmUntil) {
+    fireConfirmUntil = clock.elapsedTime + 6;
+    showMsg(`⚠ このまま撃つと、約 ${Math.round(bump.d)}m 先で${bump.what}に当たります。艦の向きや深度を変えてください（6 秒以内にもう一度「発射」で、そのまま撃ちます）`);
+    return;
+  }
+  fireConfirmUntil = 0;
   const tn = tubeFire(tube); am[type]--; helmShown = '';
   if (type !== 'decoy') tube.firedAt = clock.elapsedTime;   // デコイだけは発射音がしない
   const dp = aim ? aim.dp : Math.round(ord.tdp);
@@ -4826,8 +4848,8 @@ function drawAegisRadar(ag, polar, big) {
 /* ================= コンピュータの潜水艦（自分のブラウザの中だけで動く。サーバーは使わない） =================
    プレイヤーと同じ潜水艦・同じルール。プレイヤーが音を出したとき（またはピンガー）しか居場所はわからず、デコイと潜水艦の区別もつかない。 */
 const AI_LV = {
-  easy: { name: 'やさしい', hear: 0.7, err: 15, react: 4, decoy: false, guide: false, maxKt: 18, ping: false, evade: false, quiet: false },
-  normal: { name: 'ふつう', hear: 1, err: 6, react: 2, decoy: true, guide: true, maxKt: 24, ping: false, evade: true, quiet: true },
+  easy: { name: 'やさしい', hear: 0.7, err: 15, react: 4, decoy: false, guide: false, maxKt: 30, ping: false, evade: false, quiet: false },
+  normal: { name: 'ふつう', hear: 1, err: 6, react: 2, decoy: true, guide: true, maxKt: 30, ping: false, evade: true, quiet: true },
   hard: { name: 'つよい', hear: 1, err: 2, react: 1, decoy: true, guide: true, maxKt: 30, ping: true, evade: true, quiet: true },
 };
 let aiSub = null;
@@ -4885,6 +4907,7 @@ function aiFire(v, type, h, dp, dist) {
   const x = v.pos.x + Math.sin(h) * (V.halfLength + 1.8), z = v.pos.y + Math.cos(h) * (V.halfLength + 1.8);
   if (outsideBox(x, z, 1) || heightAt(x, z) > SEA - 1.5 || !tubeCount(a.tube, 'r') || !a.ammo[type]) return false;
   const y = Math.max(heightAt(x, z) + 0.6, Math.min(v.y - V.draft * 0.5, SEA - 1));
+  if (type !== 'decoy' && torpPathHit(x, y, z, h, THREE.MathUtils.clamp(Math.round(dp), 1, 100), type === 'guide' ? GUIDE_SPEED : TORP_SPEED, Math.min(dist, WAR_RANGE))) return false;   // 陸や海底に当たるなら撃たない
   tubeFire(a.tube); a.ammo[type]--;
   if (type !== 'decoy') a.tube.firedAt = now_();
   const t = launchTorpedo({ id: 'ai' + Math.random().toString(36).slice(2, 10), k: type, x, y, z, h, dp: THREE.MathUtils.clamp(Math.round(dp), 1, 100), dist: THREE.MathUtils.clamp(Math.round(dist), 20, WAR_RANGE), time: DECOY_TIME, src: v.id }, true);
@@ -4941,7 +4964,7 @@ function stepAi(dt) {
     if (c) {
       const d = Math.hypot(c.x - v.pos.x, c.z - v.pos.y), fresh = t - c.t < 3;
       // 撃つ：聞こえている目標の方位と深度へ（ずれは難しさしだい）。少し考えてから
-      if (fresh && tubeCount(a.tube, 'r') && d < 420 && d >= SAFE_FIRE + 10 && t - a.lastFire > lv.react * 3 && t - c.first > lv.react) {
+      if (fresh && tubeCount(a.tube, 'r') && d < SONAR_R && d >= SAFE_FIRE + 10 && t - a.lastFire > lv.react * 3 && t - c.first > lv.react) {
         const err = ((Math.random() * 2 - 1) * lv.err * Math.PI) / 180;
         const h = Math.atan2(c.x - v.pos.x, c.z - v.pos.y) + err;
         const type = lv.guide && a.ammo.guide && d > 120 ? 'guide' : a.ammo.war ? 'war' : a.ammo.guide ? 'guide' : null;
@@ -4949,7 +4972,7 @@ function stepAi(dt) {
       }
       // 近づく。300m より近ければ（ふつう・つよい）機関を止めて静かに待つ
       a.ord.hdg = Math.round(bearingTo(v, c.x, c.z));
-      a.ord.kt = lv.quiet && d < 300 ? 0 : Math.min(topKt, d > 300 ? 8 : 5);
+      a.ord.kt = lv.quiet && d < SAFE_FIRE + 120 ? 0 : Math.min(topKt, d > SAFE_FIRE + 120 ? 8 : 5);
       if (d < SAFE_FIRE + 20) { a.ord.hdg = Math.round((bearingTo(v, c.x, c.z) + 180) % 360); a.ord.kt = Math.min(topKt, 8); }   // 近すぎて撃てないので離れる
       a.ord.dp = THREE.MathUtils.clamp(Math.round(SEA - c.y), 8, maxDp);
     } else {
