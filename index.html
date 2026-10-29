@@ -2533,7 +2533,7 @@ function obstacleAhead(v, obs, look, side) {
   const P = v.path, hl = v.T.hl, hw = v.T.hw;
   let best = null;
   for (const o of obs) {
-    if (o.ref === v || Math.abs(o.y - v.y) > 3.5) continue;
+    if (o.ref === v || Math.abs(o.y - v.y) > 3.5 || (o.kind === 'traffic' && v.noTraffic > 0)) continue;
     if (Math.hypot(o.x - v.x, o.z - v.z) > look + hl + 12 + Math.max(o.hx, o.hz)) continue;
     // 走る線の上で、いちばん近い点
     let bi = -1, bd = Infinity;
@@ -2547,6 +2547,7 @@ function obstacleAhead(v, obs, look, side) {
     let sk = P.S[bi] - (((v.s - hl) % P.L + P.L) % P.L); if (sk < -P.L / 2) sk += P.L;
     const gap = sk - 2 * hl + a - ea;   // 前のバンパーからの距離
     if (gap > look || a + ea + sk < 0.5) continue;   // 遠い・もう横か後ろ
+    if (o.kind === 'traffic' && gap < 0.3) continue;   // もう重なっている車同士は、おたがいに待たない（止まったままにならないように）
     const m = o.kind === 'traffic' ? 0.3 : 0.5;
     if (l + el < side - hw - m || l - el > side + hw + m) continue;   // 横にずれていて当たらない
     if (!best || gap < best.gap) best = { o, gap, l, el, bi, endS: v.s + gap + 2 * ea + 2 * hl + 4 };
@@ -2569,6 +2570,7 @@ function canSwerve(v, side, dist) {
 }
 function avoidObstacles(v, obs, dt, near, schedV) {
   v.xfl = 0;
+  v.noTraffic = Math.max(0, (v.noTraffic || 0) - dt);
   if (!near) {   // 遠くの車は見えないので、すぐ予定にもどす
     v.lag = Math.max(0, v.lag - dt * 5); v.rate = 1; v.side = v.sideT = 0; v.avoid = null; return;
   }
@@ -2599,6 +2601,9 @@ function avoidObstacles(v, obs, dt, near, schedV) {
     if (schedV * target > vAllow) target = schedV > 0.05 ? vAllow / schedV : target;
     if (stopAt < 0.3) target = 0;
   }
+  // 車同士で長く止まったままなら、しばらく車を気にせず進む（おたがいに待ち合うのを防ぐ）
+  v.stuckT = ob && ob.o.kind === 'traffic' && v.rate < 0.05 ? (v.stuckT || 0) + dt : 0;
+  if (v.stuckT > 12) { v.noTraffic = 6; v.stuckT = 0; }
   const slowing = target < v.rate - 0.02;
   v.rate += THREE.MathUtils.clamp(target - v.rate, -dt * 3, dt * 0.6);
   v.rate = Math.max(0, v.rate);
