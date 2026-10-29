@@ -4096,7 +4096,9 @@ let helmTurn = null;
 const TURN_NAME = { left: '取舵', right: '面舵', course: '針路' };
 let helmTab = 'nav';
 // HP：最大 15。最高速力（ノット）は HP と同じ。直撃で -7、50m 以内の爆発で -2、0 で沈没
-const HP_MAX = 15, HIT_DMG = 7, NEAR_DMG = 2, NEAR_R = 150;   // 爆発から 150m 以内は HP -2
+const HP_MAX = 15, HIT_DMG = 7, NEAR_R = 150;
+// 近くの爆発：50m 以内 -5、50〜100m -3、100〜150m -1
+const nearDmg = (d) => (d < 50 ? 5 : d < 100 ? 3 : d < 150 ? 1 : 0);
 /* 圧壊深度：HP が満タンなら 80m まで平気。HP が 1 減るごとに 6m 浅くなる（HP 10 なら 50m）。
    それより深いと 10 秒ごとに HP が減る：安全な深さから 10m ごとに 3 ずつ増える（+0〜10m は -3、+10〜20m は -6 …）。HP 0 で圧壊・沈没 */
 const CRUSH_EVERY = 10;
@@ -4311,7 +4313,7 @@ helmEl.addEventListener('click', (e) => {
 });
 
 /* ================= 魚雷：艦首の向きへ発射。弾頭は 20 ノット・決めた距離で爆発、誘導は 20 ノットで音を追い当たると爆発、デコイは 15 ノット・決めた秒数で爆発（被害なし） ================= */
-const TORP_SPEED = 50 * KT, GUIDE_SPEED = 40 * KT, DECOY_SPEED = 25 * KT, WAR_RANGE = 1000, GUIDE_RANGE = 500, DECOY_RANGE = 400, DECOY_TIME = 20;   // 弾頭の射程・誘導の燃料・デコイの時間
+const TORP_SPEED = 70 * KT, GUIDE_SPEED = 60 * KT, DECOY_SPEED = 25 * KT, WAR_RANGE = 1200, GUIDE_RANGE = 800, DECOY_RANGE = 400, DECOY_TIME = 20;   // 弾頭の射程・誘導の燃料・デコイの時間
 const SAFE_FIRE = 300;   // これより近い敵には撃てない（爆発に巻き込まれる）。デコイは別
 // 誘導魚雷：前 ±80°・300m 以内の音（動いている潜水艦とデコイ）を追う。音が消えたらまっすぐ。両方聞こえると見失って蛇行
 const SEEK_R = 300, SEEK_CONE = (80 * Math.PI) / 180, SEEK_TURN = (20 * Math.PI) / 180;
@@ -4552,7 +4554,7 @@ function boom(x, y, z, hitV, near, decoy) {
   if (decoy) return;
   if (mineHit) { hitV.vF *= 0.2; hitV.roll += 0.25; hitV.pitch -= 0.1; }
   if (hitV && isBoat(hitV) && !hitV.sunk) damageSub(hitV, HIT_DMG, '魚雷が直撃！');
-  for (const v of near || []) if (!v.sunk) damageSub(v, NEAR_DMG, '近くで魚雷が爆発！');
+  for (const v of near || []) { const dm = nearDmg(Math.hypot(v.pos.x - x, v.y - y, v.pos.y - z)); if (!v.sunk && dm) damageSub(v, dm, `近くで魚雷が爆発！（${Math.round(Math.hypot(v.pos.x - x, v.y - y, v.pos.y - z))}m）`); }
 }
 const SINK_LIFE = 180;   // 沈んでから 3 分で消える
 function damageSub(v, dmg, what) {
@@ -4984,7 +4986,7 @@ function stepAi(dt) {
       if (fresh && tubeCount(a.tube, 'r') && d < 900 && d >= SAFE_FIRE + 10 && t - a.lastFire > lv.react * 3 && t - c.first > lv.react) {
         const err = ((Math.random() * 2 - 1) * lv.err * Math.PI) / 180;
         const h = Math.atan2(c.x - v.pos.x, c.z - v.pos.y) + err;
-        const type = lv.guide && a.ammo.guide && d > 120 ? 'guide' : a.ammo.war ? 'war' : a.ammo.guide ? 'guide' : null;
+        const type = lv.guide && a.ammo.guide && d > 120 && d < GUIDE_RANGE - 40 ? 'guide' : a.ammo.war ? 'war' : a.ammo.guide ? 'guide' : null;
         if (type && aiFire(v, type, h, SEA - c.y + (Math.random() * 2 - 1) * (lv.err / 3), d + 40)) a.lastFire = t;
       }
       // 近づく。300m より近ければ（ふつう・つよい）機関を止めて静かに待つ
