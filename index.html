@@ -170,6 +170,12 @@ body.mapOn #msg { top: max(145px, 30vh); }
 #helm.mini #helmNav, #helm.mini #helmTorp, #helm.mini .hmsg { display: none !important; }
 #helm .hq button[aria-pressed="true"] { background: var(--ink); color: #fff; border-color: transparent; }
 #helm .hrow.off, #helm .dial.off { display: none !important; }
+#helm .tubes { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; margin-top: 6px; }
+#helm .tubes span { display: flex; justify-content: center; align-items: baseline; gap: 4px; padding: 3px 0; border-radius: 8px; border: 1px solid var(--line); background: #fff; font: 800 13px var(--font-mono); color: var(--ink-dim); }
+#helm .tubes small { font: 500 10px var(--font-ui); }
+#helm .tubes .tr { background: #1f8f5f; color: #fff; border-color: transparent; }
+#helm .tubes .tl { background: #f2b33d; color: #222; border-color: transparent; }
+#helm .tubes .tq { background: #fdf3dc; color: #7a5a12; }
 #helm .dials.two { grid-template-columns: repeat(2, 1fr); margin-top: 6px; }
 #helm .optbtn { display: none; }
 @media (pointer: coarse) { #helm .hrow.opt, #helm .dials.opt { display: none; } #helm.showOpt .hrow.opt, #helm.showOpt .dials.opt { display: grid; } #helm .optbtn { display: block; } #helm.showOpt .optbtn { background: var(--ink); color: #fff; } }
@@ -238,6 +244,7 @@ body.helmOn .subbtns { flex-wrap: wrap; justify-content: flex-end; max-width: ca
   <button class="mi" id="mapBtn" type="button">地図（M）</button>
   <button class="mi" id="busTrip" type="button">大陸のバス停「港」へ行く</button>
   <p class="mh">コンピュータと対戦（潜水艦に乗って）</p>
+  <button class="mi" type="button" id="aiPos" aria-pressed="false">スタート：800m 離れて（押すとランダム）</button>
   <div class="aibtns"><button class="mi" type="button" data-ai="easy">やさしい</button><button class="mi" type="button" data-ai="normal">ふつう</button><button class="mi" type="button" data-ai="hard">つよい</button></div>
   <button class="mi" type="button" data-ai="stop" id="aiStop" hidden>対戦をやめる</button>
   <div id="vehMenu" hidden>
@@ -319,6 +326,7 @@ body.helmOn .subbtns { flex-wrap: wrap; justify-content: flex-end; max-width: ca
   <div id="helmTorp" hidden>
     <div class="hq"><button type="button" data-tt="war" aria-pressed="true">弾頭</button><button type="button" data-tt="guide" aria-pressed="false">誘導</button><button type="button" data-tt="decoy" aria-pressed="false">デコイ</button></div>
     <div class="dials two opt" id="torpDials"><div class="dial" id="rowDp"><span class="dl">魚雷の深度</span><div class="dgs"><div class="dg"><button type="button" data-n="tdp:10" aria-label="魚雷の深度 10 増やす">▲</button><b id="vTdpT">0</b><button type="button" data-n="tdp:-10" aria-label="魚雷の深度 10 減らす">▼</button></div><div class="dg"><button type="button" data-n="tdp:1" aria-label="魚雷の深度 1 増やす">▲</button><b id="vTdpO">0</b><button type="button" data-n="tdp:-1" aria-label="魚雷の深度 1 減らす">▼</button></div><small>m</small></div></div><div class="dial" id="rowDist"><span class="dl">爆発する距離</span><div class="dgs"><div class="dg"><button type="button" data-n="tdist:100" aria-label="爆発する距離 100 増やす">▲</button><b id="vTdH">0</b><button type="button" data-n="tdist:-100" aria-label="爆発する距離 100 減らす">▼</button></div><div class="dg"><button type="button" data-n="tdist:10" aria-label="爆発する距離 10 増やす">▲</button><b id="vTdT">0</b><button type="button" data-n="tdist:-10" aria-label="爆発する距離 10 減らす">▼</button></div><div class="dg"><button type="button" data-n="tdist:1" aria-label="爆発する距離 1 増やす">▲</button><b id="vTdO">0</b><button type="button" data-n="tdist:-1" aria-label="爆発する距離 1 減らす">▼</button></div><small>m</small></div></div></div>
+    <div class="tubes" id="tubeRow"></div>
     <div class="hq"><button type="button" data-q="opt" class="optbtn">設定</button><button type="button" data-q="load" id="loadBtn">装填</button><button type="button" class="fire" id="fireBtn">発射</button></div>
   </div>
   <div class="hmsg" id="helmMsg"></div>
@@ -633,7 +641,7 @@ function rigBoat(item, root, model, gltf, def) {
     };
     item.guns = { main: gunParts.map(turret), ciws: ciwsParts.map(turret) };
   }
-  const kmh = kind === 'sub' ? 20 * 1.852 : aegis ? 23 * 1.852 : kmhOf(extrasOf(gltf), 35, 10, 60);   // 潜水艦は最高 20 ノット、イージス艦は 23 ノット
+  const kmh = kind === 'sub' ? 30 * 1.852 : aegis ? 23 * 1.852 : kmhOf(extrasOf(gltf), 35, 10, 60);   // 潜水艦は最高 30 ノット、イージス艦は 23 ノット
   item.def.vehicle = {
     type: kind, square, fixedBow: kind === 'sub' || aegis, aegis, halfWidth: size.x / 2, halfLength: size.z / 2, centerZ: 0, height: size.y, draft,
     seats: seats.slice(0, 8), maxSpeed: kmh / 3.6, turn: 0.6,
@@ -4107,14 +4115,35 @@ function onHpSync(p) {
   if (dmg > 0) damageSub(v, dmg, '水圧で圧壊！');
 }
 const subHp = (v) => (v.hp == null ? HP_MAX : v.hp);
-function subMax(v) { const m = v.item.def.vehicle.maxSpeed; return vtype(v) === 'sub' ? m * Math.max(0, subHp(v)) / HP_MAX : m; }   // 潜水艦の最高速度は HP に比例（満タンで 20 ノット）
+function subMax(v) { const m = v.item.def.vehicle.maxSpeed; return vtype(v) === 'sub' ? m * Math.max(0, subHp(v)) / HP_MAX : m; }   // 潜水艦の最高速度は HP に比例（満タンで 30 ノット）
 function maxKt(v) { return Math.round(subMax(v) / KT); }
-// 魚雷発射管：設定して「装填」すると 10 秒で 2 本（HP 5 以下は 1 本）。装填中と発射後 2 秒は音が出る
-const LOAD_TIME = 10;
-// 残弾：潜水艦ごとに 弾頭 10・誘導 5・デコイ 7
+// 魚雷発射管 4 門：「装填」を 1 回押すごとに 1 門。1 番から順に 1 門ずつ、1 門 10 秒。装填中と発射後 2 秒は音が出る
+const LOAD_TIME = 10, TUBES = 4;
+// 残弾：潜水艦ごとに 弾頭 20・誘導 10・デコイ 10
 const TNAME = { war: '弾頭魚雷', guide: '誘導魚雷', decoy: 'デコイ' };
-const ammoOf = (v) => v.ammo || (v.ammo = { war: 10, guide: 5, decoy: 7 });
-const tube = { n: 0, until: 0, firedAt: -99 };   // 装填した本数（種類は撃つときに選ぶ）
+const AMMO = { war: 20, guide: 10, decoy: 10 };
+const ammoOf = (v) => v.ammo || (v.ammo = Object.assign({}, AMMO));
+// 発射管：st は門ごとに ''（空）・'q'（装填待ち）・'l'（装填中）・'r'（装填ずみ）。種類は撃つときに選ぶ
+const newTubes = () => ({ st: Array(TUBES).fill(''), q: [], until: 0, firedAt: -99, done: 0 });
+const tube = newTubes();
+const tubeCount = (tb, k) => tb.st.filter((x) => x === k).length;
+function tubeQueue(tb, total) {   // 空いている門を 1 つ装填待ちにする。門の番号（0 なら無理）
+  const i = tb.st.indexOf('');
+  if (i < 0 || tb.st.filter(Boolean).length >= total) return 0;
+  tb.st[i] = 'q'; tb.q.push(i);
+  return i + 1;
+}
+function tubeStep(tb, t) {   // 装填が終わったら次の門へ。新しく始めた門の番号を返す
+  const li = tb.st.indexOf('l');
+  if (li >= 0 && t >= tb.until) { tb.st[li] = 'r'; tb.done = li + 1; }
+  if (!tb.st.includes('l')) {
+    const qi = tb.q.shift();
+    if (qi !== undefined) { tb.st[qi] = 'l'; tb.until = t + LOAD_TIME; return qi + 1; }
+    tb.until = 0;
+  }
+  return 0;
+}
+function tubeFire(tb) { const i = tb.st.indexOf('r'); if (i >= 0) tb.st[i] = ''; return i + 1; }
 // 魚雷が爆発してから 5 秒間は、だれの音も聞こえない
 let deafUntil = 0;
 const deaf = () => clock.elapsedTime < deafUntil;
@@ -4128,16 +4157,27 @@ function initOrders(v) {
   ord.ang = 0; ord.spd = 0; ord.rev = false; helmTurn = null;
   ord.tdp = Math.max(2, Math.round(subDepth(v)) || 10);
   helmShown = '';
-  tube.n = 0; tube.until = 0; subTarget = null; lastHeard.clear(); ghosts.clear();
+  Object.assign(tube, newTubes()); subTarget = null; lastHeard.clear(); ghosts.clear();
 }
 function loadTubes() {
   const v = helmSub();
-  if (!v || clock.elapsedTime < tube.until) return;
-  const am = ammoOf(v);
-  if (!(am.war + am.guide + am.decoy)) { showMsg('残弾がありません'); return; }
-  Object.assign(tube, { until: clock.elapsedTime + LOAD_TIME, n: 0 });   // 種類は発射するときに選ぶ
-  showMsg('装填をはじめました（10 秒）');
-  if (net.room) net.room.emit('load', {}).catch(() => {});   // 注水音（近くの潜水艦に聞こえる）
+  if (!v) return;
+  const am = ammoOf(v), total = am.war + am.guide + am.decoy;
+  if (!total) { showMsg('残弾がありません'); return; }
+  if (!tube.st.includes('')) { showMsg('発射管 4 門とも、装填ずみか装填待ちです'); return; }
+  const k = tubeQueue(tube, total);
+  if (!k) { showMsg('これ以上装填できる魚雷がありません'); return; }
+  stepTubes();
+  if (tube.st[k - 1] === 'q') showMsg(`${k} 番も装填します（前の門が終わってから 10 秒）`);
+  helmShown = '';
+}
+function stepTubes() {
+  const k = tubeStep(tube, clock.elapsedTime);
+  if (tube.done) { showMsg(`${tube.done} 番発射管の装填が終わりました（装填ずみ ${tubeCount(tube, 'r')} 門）`); tube.done = 0; helmShown = ''; }
+  if (k) {
+    showMsg(`${k} 番発射管の装填をはじめました（10 秒・音が出ます）`); helmShown = '';
+    if (net.room) net.room.emit('load', {}).catch(() => {});   // 注水音（近くの潜水艦に聞こえる）
+  }
 }
 function clampOrders(v) {
   ord.hdg = ((ord.hdg % 360) + 360) % 360;
@@ -4214,20 +4254,18 @@ function updateHelm() {
   Object.assign(dig, { vTdpT: Math.floor(tp / 10), vTdpO: tp % 10, vTdH: Math.floor(td / 100), vTdT: Math.floor(td / 10) % 10, vTdO: td % 10 });
   const vals = {};
   const now = { cHdg: fmtB(b), cKt: String(Math.round(v.vF / KT)), cDp: subDepth(v).toFixed(0) };
-  if (isSub && tube.until && clock.elapsedTime >= tube.until) {
-    const am = ammoOf(v);
-    tube.until = 0; tube.n = Math.min(subHp(v) > 5 ? 2 : 1, am.war + am.guide + am.decoy);
-    showMsg(`${tube.n} 本の装填が終わりました。種類を選んで発射できます`);
-  }
+  if (isSub) stepTubes();
+  const nReady = tubeCount(tube, 'r'), li = tube.st.indexOf('l');
   const left = Math.max(0, tube.until - clock.elapsedTime);
   const what = ord.ttype === 'decoy' ? `デコイ（${Math.round(ord.ttime)} 秒で消える）` : ord.ttype === 'guide' ? '誘導魚雷（音を追う・当たると爆発）' : `弾頭魚雷（${Math.round(ord.tdist)}m で爆発）`;
   const sa = subAim(v);
   const aimTxt = sa ? `${sa.ghost ? 'さっきまで居た点へ' : '目標へ'} 方位 ${fmtB(bearingOf(sa.h))}°・深度 ${sa.dp}m` : `${subTarget ? '目標が聞こえない → ' : ''}艦首の向き・深度 ${Math.round(ord.tdp)}m`;
   const am = ammoOf(v), stock = `残弾 弾頭${am.war}・誘導${am.guide}・デコイ${am.decoy}`;
-  const tst = left > 0 ? `装填中… あと ${Math.ceil(left)} 秒（音が出ています）` : tube.n ? `${tube.n} 本装填ずみ。発射：${what}・${aimTxt}` : `空です。「装填」を押してください${subHp(v) <= 5 ? '（HP 5 以下なので 1 本ずつ）' : ''}`;
+  const tst = nReady ? `${nReady} 門装填ずみ。発射：${what}・${aimTxt}${li >= 0 ? `（${li + 1} 番 装填中 あと ${Math.ceil(left)} 秒）` : ''}` : li >= 0 ? `${li + 1} 番 装填中… あと ${Math.ceil(left)} 秒（音が出ています）` : '空です。「装填」を 1 回押すごとに 1 門ずつ装填します（1 門 10 秒）';
   const cd = isSub ? crushDmg(v) : 0;
   const st = cd && helmTab === 'nav' ? `⚠ 圧壊深度！ 安全な深さは ${safeDepth(v)}m まで。あと ${Math.ceil(CRUSH_EVERY - crushT)} 秒で HP -${cd}` : helmTab === 'torp' ? `${tst}（${stock}）` : tn ? tn : v.dpLimit != null ? `海底が近いので ${v.dpLimit.toFixed(0)}m までしかもぐれません` : `いま ${compassName(b)}へ ${Math.abs(v.vF / KT).toFixed(1)}kt${ord.rev ? '（逆進）' : ''}${!ord.kt && Math.abs(v.vF) > 0.3 ? '（機関停止・惰性で無音）' : ''}`;
-  const key = [helmTab, JSON.stringify(vals), JSON.stringify(dig), JSON.stringify(now), tube.n, ord.ttype, ord.rev, helmTurn && helmTurn.mode, st].join('|');
+  const tubeKey = tube.st.join(',') + Math.ceil(left);
+  const key = [helmTab, JSON.stringify(vals), JSON.stringify(dig), JSON.stringify(now), tubeKey, ord.ttype, ord.rev, helmTurn && helmTurn.mode, st].join('|');
   if (key === helmShown) return;
   helmShown = key;
   el('helmNav').hidden = helmTab !== 'nav'; el('helmTorp').hidden = helmTab !== 'torp';
@@ -4241,10 +4279,11 @@ function updateHelm() {
   for (const id in now) el(id).textContent = now[id];
   el('helmMsg').textContent = st;
   const fire = el('fireBtn');
-  fire.disabled = left > 0 || !tube.n;
-  fire.textContent = `発射（${tube.n}）`;
-  el('loadBtn').disabled = left > 0;
-  el('loadBtn').textContent = left > 0 ? `装填中 ${Math.ceil(left)}` : '装填';
+  fire.disabled = !nReady;
+  fire.textContent = `発射（${nReady}）`;
+  el('tubeRow').innerHTML = tube.st.map((x, i) => `<span class="t${x || 'e'}">${i + 1}<small>${x === 'r' ? '済' : x === 'l' ? Math.ceil(left) + '秒' : x === 'q' ? '待ち' : '空'}</small></span>`).join('');
+  el('loadBtn').disabled = !tube.st.includes('');
+  el('loadBtn').textContent = '装填';
 }
 el('subChat').addEventListener('click', openChat);
 el('subExit').addEventListener('click', () => toggleRide());
@@ -4267,7 +4306,7 @@ helmEl.addEventListener('click', (e) => {
 });
 
 /* ================= 魚雷：艦首の向きへ発射。弾頭は 20 ノット・決めた距離で爆発、誘導は 20 ノットで音を追い当たると爆発、デコイは 15 ノット・決めた秒数で爆発（被害なし） ================= */
-const TORP_SPEED = 30 * KT, GUIDE_SPEED = 25 * KT, DECOY_SPEED = 20 * KT, WAR_RANGE = 1000, GUIDE_RANGE = 500, DECOY_RANGE = 400, DECOY_TIME = 20;   // 弾頭の射程・誘導の燃料・デコイの時間
+const TORP_SPEED = 50 * KT, GUIDE_SPEED = 40 * KT, DECOY_SPEED = 25 * KT, WAR_RANGE = 1000, GUIDE_RANGE = 500, DECOY_RANGE = 400, DECOY_TIME = 20;   // 弾頭の射程・誘導の燃料・デコイの時間
 const SAFE_FIRE = 150;   // これより近い敵には撃てない（爆発に巻き込まれる）。デコイは別
 // 誘導魚雷：前 ±80°・300m 以内の音（動いている潜水艦とデコイ）を追う。音が消えたらまっすぐ。両方聞こえると見失って蛇行
 const SEEK_R = 300, SEEK_CONE = (80 * Math.PI) / 180, SEEK_TURN = (20 * Math.PI) / 180;
@@ -4311,8 +4350,7 @@ function launchTorpedo(d, mine) {
 function fireTorpedo() {
   const v = helmSub();
   if (!v) return;
-  if (clock.elapsedTime < tube.until) { showMsg('装填中です'); return; }
-  if (!tube.n) { showMsg('魚雷が入っていません。「装填」を押してください'); return; }
+  if (!tubeCount(tube, 'r')) { showMsg(tube.st.includes('l') ? '装填中です。終わるまで待ってください' : '魚雷が入っていません。「装填」を押してください'); return; }
   const type = ord.ttype, am = ammoOf(v);
   if (!am[type]) { showMsg(`${TNAME[type]}の残弾がありません。ほかの種類を選んでください`); return; }
   const aim = subAim(v);   // レーダーで選んだ目標が映っていれば、その方位と深度へ。いなければ艦首の向き
@@ -4334,12 +4372,12 @@ function fireTorpedo() {
   const x = v.pos.x + Math.sin(h) * (V.halfLength + 1.8), z = v.pos.y + Math.cos(h) * (V.halfLength + 1.8);
   if (outsideBox(x, z, 1) || heightAt(x, z) > SEA - 1.5) { showMsg('前が浅くて撃てません'); return; }
   const y = Math.max(heightAt(x, z) + 0.6, Math.min(v.y - V.draft * 0.5, SEA - 1));
-  tube.n--; am[type]--; helmShown = '';
+  const tn = tubeFire(tube); am[type]--; helmShown = '';
   if (type !== 'decoy') tube.firedAt = clock.elapsedTime;   // デコイだけは発射音がしない
   const dp = aim ? aim.dp : Math.round(ord.tdp);
   const d = { id: newId().slice(0, 12), k: type, x, y, z, h, dp, dist: Math.round(ord.tdist), time: Math.round(ord.ttime), src: v.id || 'local' };
   launchTorpedo(d, true);
-  showMsg(`${TNAME[type]}発射！ 方位 ${fmtB(bearingOf(h))}°・深度 ${dp}m（装填のこり ${tube.n} 本・${TNAME[type]}の残弾 ${am[type]}）`);
+  showMsg(`${tn} 番 ${TNAME[type]}発射！ 方位 ${fmtB(bearingOf(h))}°・深度 ${dp}m（装填ずみのこり ${tubeCount(tube, 'r')} 門・${TNAME[type]}の残弾 ${am[type]}）`);
   if (net.room) net.room.emit('torp', Object.assign({}, d, { x: +x.toFixed(2), y: +y.toFixed(2), z: +z.toFixed(2), h: +h.toFixed(3) })).catch(() => {});
 }
 function placeTorp(t) {
@@ -4494,7 +4532,7 @@ function damageSub(v, dmg, what) {
   v.hp = Math.max(0, subHp(v) - dmg);
   const mine = isMine(v);
   if (v.hp > 0) {
-    if (mine) showMsg(`${what} HP ${v.hp}／${HP_MAX}（最高 ${v.hp} ノット）`);
+    if (mine) showMsg(`${what} HP ${v.hp}／${HP_MAX}（最高 ${maxKt(v)} ノット）`);
     if (ride === v) { ord.spd = Math.min(ord.spd, maxKt(v)); helmShown = ''; }
     return;
   }
@@ -4788,11 +4826,17 @@ function drawAegisRadar(ag, polar, big) {
 /* ================= コンピュータの潜水艦（自分のブラウザの中だけで動く。サーバーは使わない） =================
    プレイヤーと同じ潜水艦・同じルール。プレイヤーが音を出したとき（またはピンガー）しか居場所はわからず、デコイと潜水艦の区別もつかない。 */
 const AI_LV = {
-  easy: { name: 'やさしい', hear: 0.7, err: 15, react: 4, decoy: false, guide: false, maxKt: 12, ping: false, evade: false, quiet: false },
-  normal: { name: 'ふつう', hear: 1, err: 6, react: 2, decoy: true, guide: true, maxKt: 16, ping: false, evade: true, quiet: true },
-  hard: { name: 'つよい', hear: 1, err: 2, react: 1, decoy: true, guide: true, maxKt: 20, ping: true, evade: true, quiet: true },
+  easy: { name: 'やさしい', hear: 0.7, err: 15, react: 4, decoy: false, guide: false, maxKt: 18, ping: false, evade: false, quiet: false },
+  normal: { name: 'ふつう', hear: 1, err: 6, react: 2, decoy: true, guide: true, maxKt: 24, ping: false, evade: true, quiet: true },
+  hard: { name: 'つよい', hear: 1, err: 2, react: 1, decoy: true, guide: true, maxKt: 30, ping: true, evade: true, quiet: true },
 };
 let aiSub = null;
+let aiRandomStart = false;   // 対戦のスタート：800m 離れて／ランダム（400〜800m）
+el('aiPos').addEventListener('click', () => {
+  aiRandomStart = !aiRandomStart;
+  el('aiPos').setAttribute('aria-pressed', String(aiRandomStart));
+  el('aiPos').textContent = aiRandomStart ? 'スタート：ランダム 400〜800m（押すと 800m）' : 'スタート：800m 離れて（押すとランダム）';
+});
 const now_ = () => clock.elapsedTime;
 // コンピュータの潜水艦の音（スクリューを回して進む・装填中・撃った直後）
 function aiNoisy(v) {
@@ -4811,10 +4855,10 @@ async function startAiBattle(lvKey) {
   const me = helmSub();
   if (!me) { showMsg('潜水艦に乗ってから「コンピュータと対戦」を選んでください'); return; }
   if (aiSub) stopAiBattle(true);
-  // 400m くらい離れた、深い海をさがす
+  // 800m 離れた（ランダムなら 400〜800m の）深い海をさがす
   let spot = null;
-  for (let i = 0; i < 80 && !spot; i++) {
-    const a = Math.random() * Math.PI * 2, r = 340 + Math.random() * 110, x = me.pos.x + Math.sin(a) * r, z = me.pos.y + Math.cos(a) * r;
+  for (let i = 0; i < 200 && !spot; i++) {
+    const a = Math.random() * Math.PI * 2, r = aiRandomStart ? 400 + Math.random() * 400 : 800, x = me.pos.x + Math.sin(a) * r, z = me.pos.y + Math.cos(a) * r;
     if (!outsideBox(x, z, 50) && heightAt(x, z) < -45) spot = [x, z];
   }
   if (!spot) { showMsg('近くに敵を出せる深い海がありません。もっと沖へ出てください'); return; }
@@ -4824,10 +4868,10 @@ async function startAiBattle(lvKey) {
   try { item = await loadItem({ name: '敵潜水艦', kind: 'vehicle', rig: 'sub', source }); } catch (e) { showMsg('敵の潜水艦を作れませんでした'); return; }
   const lv = AI_LV[lvKey] || AI_LV.normal;
   const v = makeVehicle(item, spot[0], spot[1], Math.random() * Math.PI * 2, { name: '敵潜水艦', id: 'ai-' + Math.random().toString(36).slice(2, 10) });
-  v.ai = { lv, lvKey, ord: { hdg: Math.round(Math.random() * 360), kt: 6, dp: 30 }, tube: { n: 0, until: 0, firedAt: -99 }, ammo: { war: 10, guide: 5, decoy: 7 },
+  v.ai = { lv, lvKey, ord: { hdg: Math.round(Math.random() * 360), kt: 6, dp: 30 }, tube: newTubes(), ammo: Object.assign({}, AMMO),
     contact: null, think: 0, wanderAt: 0, listenUntil: 0, lastFire: -99, evadeUntil: -99, pingUntil: -99, nextPing: now_() + 60, over: false };
   aiSub = v; lastSubSunk = false;
-  showMsg(`コンピュータと対戦（${lv.name}）！ 400m ほど先のどこかに敵の潜水艦がいます。音を立てずに探しましょう`);
+  showMsg(`コンピュータと対戦（${lv.name}）！ ${aiRandomStart ? '400〜800m' : '800m'} 先のどこかに敵の潜水艦がいます。音を立てずに探しましょう`);
 }
 function stopAiBattle(quiet) {
   if (!aiSub) return;
@@ -4839,9 +4883,9 @@ function aiFire(v, type, h, dp, dist) {
   const a = v.ai, V = v.item.def.vehicle;
   if (Math.abs(wrapA(h - v.h)) > Math.PI / 2) return false;   // 艦首の前 ±90° だけ
   const x = v.pos.x + Math.sin(h) * (V.halfLength + 1.8), z = v.pos.y + Math.cos(h) * (V.halfLength + 1.8);
-  if (outsideBox(x, z, 1) || heightAt(x, z) > SEA - 1.5 || !a.tube.n || !a.ammo[type]) return false;
+  if (outsideBox(x, z, 1) || heightAt(x, z) > SEA - 1.5 || !tubeCount(a.tube, 'r') || !a.ammo[type]) return false;
   const y = Math.max(heightAt(x, z) + 0.6, Math.min(v.y - V.draft * 0.5, SEA - 1));
-  a.tube.n--; a.ammo[type]--;
+  tubeFire(a.tube); a.ammo[type]--;
   if (type !== 'decoy') a.tube.firedAt = now_();
   const t = launchTorpedo({ id: 'ai' + Math.random().toString(36).slice(2, 10), k: type, x, y, z, h, dp: THREE.MathUtils.clamp(Math.round(dp), 1, 100), dist: THREE.MathUtils.clamp(Math.round(dist), 20, WAR_RANGE), time: DECOY_TIME, src: v.id }, true);
   t.ai = true;
@@ -4857,7 +4901,7 @@ function stepAi(dt) {
   if (!a.over && ((me && me.sunk) || lastSubSunk)) { a.over = true; showMsg('あなたの潜水艦が沈みました。負けです…（☰ メニューからもう一度対戦できます）'); }
   if (a.over) { a.ord.kt = 0; return; }
   // 装填が終わった
-  if (a.tube.until && t >= a.tube.until) { a.tube.until = 0; a.tube.n = Math.min(subHp(v) > 5 ? 2 : 1, a.ammo.war + a.ammo.guide + a.ammo.decoy); }
+  if (tubeStep(a.tube, t)) floodHeard(v.pos.x, v.pos.y);   // 1 門ずつ装填（音が出る）
   a.think -= dt;
   if (a.think > 0) return;
   a.think = 0.5;
@@ -4889,15 +4933,15 @@ function stepAi(dt) {
     const side = Math.random() < 0.5 ? 1 : -1;
     a.ord.hdg = (bearingOf(threat.o.h) + 90 * side + 360) % 360;
     a.ord.kt = topKt; a.ord.dp = THREE.MathUtils.clamp(a.ord.dp + (Math.random() < 0.5 ? 20 : -15), 8, maxDp);
-    if (lv.decoy && a.ammo.decoy && a.tube.n) aiFire(v, 'decoy', v.h, v.y < SEA - 5 ? SEA - v.y : 10, 400);
+    if (lv.decoy && a.ammo.decoy && tubeCount(a.tube, 'r')) aiFire(v, 'decoy', v.h, v.y < SEA - 5 ? SEA - v.y : 10, 400);
     a.evadeUntil = t + 12;
   } else if (t > a.evadeUntil) {
     const c = a.contact && t - a.contact.t < 40 ? a.contact : null;
-    if (a.tube.n === 0 && !a.tube.until && (a.ammo.war + a.ammo.guide + a.ammo.decoy) > 0 && (c || lv.quiet)) { a.tube.until = t + LOAD_TIME; floodHeard(v.pos.x, v.pos.y); }   // 装填（10 秒・音が出る）
+    if (c || lv.quiet) tubeQueue(a.tube, a.ammo.war + a.ammo.guide + a.ammo.decoy);   // 空いた門を順に装填（1 門 10 秒・音が出る）
     if (c) {
       const d = Math.hypot(c.x - v.pos.x, c.z - v.pos.y), fresh = t - c.t < 3;
       // 撃つ：聞こえている目標の方位と深度へ（ずれは難しさしだい）。少し考えてから
-      if (fresh && a.tube.n && d < 420 && d >= SAFE_FIRE + 10 && t - a.lastFire > lv.react * 3 && t - c.first > lv.react) {
+      if (fresh && tubeCount(a.tube, 'r') && d < 420 && d >= SAFE_FIRE + 10 && t - a.lastFire > lv.react * 3 && t - c.first > lv.react) {
         const err = ((Math.random() * 2 - 1) * lv.err * Math.PI) / 180;
         const h = Math.atan2(c.x - v.pos.x, c.z - v.pos.y) + err;
         const type = lv.guide && a.ammo.guide && d > 120 ? 'guide' : a.ammo.war ? 'war' : a.ammo.guide ? 'guide' : null;
