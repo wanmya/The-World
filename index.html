@@ -4109,7 +4109,7 @@ let helmTurn = null;
 const TURN_NAME = { left: '取舵', right: '面舵', course: '針路' };
 let helmTab = 'nav';
 // HP：最大 15。最高速力（ノット）は HP と同じ。直撃で -7、50m 以内の爆発で -2、0 で沈没
-const HP_MAX = 15, HIT_DMG = 7, NEAR_R = 150;
+const HP_MAX = 15, HIT_DMG = 7, NEAR_R = 150, CHAIN_R = 50;   // CHAIN_R：この距離の魚雷は誘爆する
 // 近くの爆発：50m 以内 -5、50〜100m -3、100〜150m -1
 const nearDmg = (d) => (d < 50 ? 5 : d < 100 ? 3 : d < 150 ? 1 : 0);
 /* 圧壊深度：HP が満タンなら 80m まで平気。HP が 1 減るごとに 6m 浅くなる（HP 10 なら 50m）。
@@ -4461,7 +4461,7 @@ function explode(t, hit) {
     const nm = (v) => (isMine(v) ? '自分の艦' : v.name);
     if (hv) parts.push(hv.sunk ? `${nm(hv)} を撃沈！` : isBoat(hv) ? `${nm(hv)} に直撃！（HP ${subHp(hv)}）` : `${nm(hv)} に命中`);
     for (const v of near) parts.push(v.sunk ? `${nm(v)} が沈没！` : `${nm(v)} の近くで爆発（HP ${subHp(v)}）`);
-    showMsg(parts.length ? parts.join('　') : hit ? '魚雷は海底か陸・置物に当たりました' : `魚雷は ${Math.round(t.dist)}m 進んで爆発しました`);
+    showMsg(parts.length ? parts.join('　') : t.chained ? '魚雷がほかの爆発に巻き込まれて誘爆しました' : hit ? '魚雷は海底か陸・置物に当たりました' : `魚雷は ${Math.round(t.dist)}m 進んで爆発しました`);
   }
   if (net.room && !t.ai) net.room.emit('boom', data).catch(() => {});
   removeTorp(t);
@@ -4532,6 +4532,11 @@ function stepTorps(dt) {
     t.wakeT += dt;
     if (t.wakeT > 0.25 && !t.decoy) { t.wakeT = 0; addWake(t.x - Math.sin(t.h) * 2, t.z - Math.cos(t.h) * 2); }   // デコイは水面に泡の筋を残さない
     placeTorp(t);
+    if (t.mine && t.chainAt && clock.elapsedTime >= t.chainAt) {   // 爆発に巻き込まれた
+      if (t.decoy) { if (net.room && !t.ai) net.room.emit('tg', { id: t.id, gone: 1 }).catch(() => {}); removeTorp(t); }
+      else { t.chained = true; explode(t, null); }
+      continue;
+    }
     if (t.mine) {
       const hit = torpHit(t);
       if (hit && hit.kind === 'vehicle' && vtype(hit.v) === 'sub' && glance(t, hit.v)) continue;   // 浅い角度なので跳ね返った
@@ -4572,6 +4577,8 @@ function boom(x, y, z, hitV, near, decoy) {
   if (decoy) return;
   if (mineHit) { hitV.vF *= 0.2; hitV.roll += 0.25; hitV.pitch -= 0.1; }
   if (hitV && isBoat(hitV) && !hitV.sunk) damageSub(hitV, HIT_DMG, '魚雷が直撃！');
+  // 近くの魚雷は巻き込まれて誘爆する（デコイは消える）。自分の画面で動かしている魚雷だけ
+  for (const t of torps) if (t.mine && !t.chainAt && Math.hypot(t.x - x, t.y - y, t.z - z) < CHAIN_R) t.chainAt = clock.elapsedTime + 0.15 + Math.random() * 0.1;
   for (const v of near || []) { const dm = nearDmg(Math.hypot(v.pos.x - x, v.y - y, v.pos.y - z)); if (!v.sunk && dm) damageSub(v, dm, `近くで魚雷が爆発！（${Math.round(Math.hypot(v.pos.x - x, v.y - y, v.pos.y - z))}m）`); }
 }
 const SINK_LIFE = 180;   // 沈んでから 3 分で消える
@@ -4903,7 +4910,7 @@ let aiRandomStart = false;   // 対戦のスタート：800m 離れて／ラン�
 el('aiPos').addEventListener('click', () => {
   aiRandomStart = !aiRandomStart;
   el('aiPos').setAttribute('aria-pressed', String(aiRandomStart));
-  el('aiPos').textContent = aiRandomStart ? 'スタート：ランダム 400〜800m（押すと 800m）' : 'スタート：800m 離れて（押すとランダム）';
+  el('aiPos').textContent = aiRandomStart ? 'スタート：ランダムな海・1000〜1500m（押すと 800m）' : 'スタート：800m 離れて（押すとランダム）';
 });
 const now_ = () => clock.elapsedTime;
 // コンピュータの潜水艦の音（スクリューを回して進む・装填中・撃った直後）
@@ -4923,11 +4930,18 @@ async function startAiBattle(lvKey) {
   const me = helmSub();
   if (!me) { showMsg('潜水艦に乗ってから「コンピュータと対戦」を選んでください'); return; }
   if (aiSub) stopAiBattle(true);
-  // 800m 離れた（ランダムなら 400〜800m の）深い海をさがす
-  let spot = null;
-  for (let i = 0; i < 200 && !spot; i++) {
-    const a = Math.random() * Math.PI * 2, r = aiRandomStart ? 400 + Math.random() * 400 : 800, x = me.pos.x + Math.sin(a) * r, z = me.pos.y + Math.cos(a) * r;
-    if (!outsideBox(x, z, 50) && heightAt(x, z) < -45) spot = [x, z];
+  // 800m 離れた深い海をさがす。ランダムなら、自分も海のどこかへ移り、1000〜1500m 離れる
+  let spot = null, mine = null;
+  const deep = (x, z) => !outsideBox(x, z, 80) && heightAt(x, z) < -45;
+  for (let i = 0; i < 600 && !spot; i++) {
+    let mx = me.pos.x, mz = me.pos.y;
+    if (aiRandomStart) { mx = (Math.random() * 2 - 1) * 4600; mz = (Math.random() * 2 - 1) * 4600; if (!deep(mx, mz)) continue; }
+    const a = Math.random() * Math.PI * 2, r = aiRandomStart ? 1000 + Math.random() * 500 : 800, x = mx + Math.sin(a) * r, z = mz + Math.cos(a) * r;
+    if (deep(x, z)) { spot = [x, z]; mine = [mx, mz]; }
+  }
+  if (spot && aiRandomStart) {   // 自分の潜水艦を移す（向きもランダム）
+    me.pos.set(mine[0], mine[1]); me.h = Math.random() * Math.PI * 2; me.vF = 0;
+    initOrders(me); mapImg = null; mapBuild = null;
   }
   if (!spot) { showMsg('近くに敵を出せる深い海がありません。もっと沖へ出てください'); return; }
   showMsg('コンピュータの潜水艦を準備しています…');
@@ -4939,7 +4953,7 @@ async function startAiBattle(lvKey) {
   v.ai = { lv, lvKey, ord: { hdg: Math.round(Math.random() * 360), kt: 6, dp: 30 }, tube: newTubes(), ammo: Object.assign({}, AMMO),
     contact: null, think: 0, wanderAt: 0, listenUntil: 0, lastFire: -99, evadeUntil: -99, pingUntil: -99, nextPing: now_() + 60, over: false };
   aiSub = v; lastSubSunk = false;
-  showMsg(`コンピュータと対戦（${lv.name}）！ ${aiRandomStart ? '400〜800m' : '800m'} 先のどこかに敵の潜水艦がいます。音を立てずに探しましょう`);
+  showMsg(`コンピュータと対戦（${lv.name}）！ ${aiRandomStart ? 'ランダムな海へ移りました。1000〜1500m' : '800m'} 先のどこかに敵の潜水艦がいます。音を立てずに探しましょう`);
 }
 function stopAiBattle(quiet) {
   if (!aiSub) return;
