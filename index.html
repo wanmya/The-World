@@ -73,6 +73,9 @@ body { margin: 0; background: var(--sky); color: var(--ink); font-family: var(--
 #msg { position: fixed; z-index: 4; left: 50%; transform: translateX(-50%); top: max(110px, 22vh); max-width: min(400px, calc(100vw - 32px)); font-size: 13px; font-weight: 700; color: var(--ink); background: var(--panel); border-radius: 8px; padding: 6px 10px; text-align: center; pointer-events: none; }
 body.mapOn #msg { top: max(145px, 30vh); }
 
+#stopInfo { position: fixed; z-index: 4; left: 50%; transform: translateX(-50%); top: calc(64px + env(safe-area-inset-top, 0px)); max-width: min(92vw, 420px); padding: 8px 12px; border-radius: 12px; background: var(--panel); border: 1px solid var(--line); color: var(--ink); font: 500 12px/1.5 var(--font-ui); pointer-events: none; }
+#stopInfo b { font-weight: 800; }
+#stopInfo .dep { color: #c8402a; font-weight: 800; }
 #routeBtn { position: fixed; z-index: 4; left: 50%; transform: translateX(-50%); top: calc(20px + env(safe-area-inset-top, 0px)); }
 #wmap { position: fixed; z-index: 8; inset: max(12px, env(safe-area-inset-top, 0px)) max(12px, env(safe-area-inset-right, 0px)) max(12px, env(safe-area-inset-bottom, 0px)) max(12px, env(safe-area-inset-left, 0px));
   display: flex; flex-direction: column; gap: 6px; padding: 8px; background: rgba(255,255,255,.94); border: 1px solid var(--line); border-radius: 14px; box-sizing: border-box; }
@@ -262,6 +265,7 @@ body.helmOn .subbtns { flex-wrap: wrap; justify-content: flex-end; max-width: ca
 </div>
 <div id="msg" hidden></div>
 <button class="pill" id="routeBtn" type="button" hidden>🚏 路線図</button>
+<div id="stopInfo" hidden aria-live="polite"></div>
 <div id="wmap" hidden role="dialog" aria-modal="true" aria-label="地図">
   <div class="wbar">
     <button type="button" data-wm="all">全体</button><button type="button" data-wm="near">近く</button><button type="button" data-wm="routes">路線図</button>
@@ -881,6 +885,8 @@ const NODES = {
   K: { x: 1000, z: -2740, name: '港の交差点' }, SW: { x: -300, z: -2930, name: '西の大通り交差点' }, WJ: { x: -1550, z: -3450, name: '西の交差点' },
   CJ: { x: -300, z: -3450, name: '中央交差点' }, RJ: { x: 1000, z: -3450, name: '川向こう交差点' }, EJ: { x: 2200, z: -3450, name: '東の交差点' },
   NJ: { x: -300, z: -4160, name: '北の交差点' }, NR: { x: 1000, z: -4000, name: '北東の交差点' }, J: { x: -300, z: 140, name: '浜の交差点' },
+  // 最初の砂浜から、はじめの浜バス停の西の大通りまで上る道（行き止まり。BT は海の橋の道の上にある）
+  BB: { x: 5, z: 25, name: '砂浜の入口' }, BT: { x: -75, z: 140, name: '浜の上', onEdge: 13 },
 };
 const EDGES = [
   { a: 'K', b: 'SW', w: 14, via: [[300, -2880, 30]] },
@@ -898,6 +904,7 @@ const EDGES = [
   { a: 'RJ', b: 'NR', w: 7, via: [] },
   { a: 'J', b: 'K', w: 14, via: [[1000, 140, 80]], sea: true },
   { a: 'J', b: 'J', w: 7, via: [[-1500, 170, 40], [-1500, 900, 150], [-300, 900, 40]] },
+  { a: 'BB', b: 'BT', w: 7, via: [[60, 70, 30], [-40, 105, 30]] },   // 15：砂浜からバス停の近くへ（片側 1 車線）
 ];
 // バス停：何番の道の、どのあたり（0〜1）か。道の両側にある
 const BUS_STOPS = [
@@ -958,8 +965,14 @@ const roadNet = (() => {
       for (let i = 0; i < N; i++) { let acc = 0, c = 0; for (let k = Math.max(0, i - R); k <= Math.min(N - 1, i + R); k++) { acc += B[k]; c++; } A[i] = acc / c; }
     }
   };
+  const built = [];
   const edges = EDGES.map((E, ei) => {
     const A = nodeOf[E.a], B = nodeOf[E.b];
+    for (const Q of [A, B]) if (Q.onEdge != null && built[Q.onEdge]) {   // ほかの道の上の点：その道の高さに合わせる
+      const o = built[Q.onEdge]; let bi = 0, bd = Infinity;
+      for (let i = 0; i < o.N; i++) { const d = (o.X[i] - Q.x) ** 2 + (o.Z[i] - Q.z) ** 2; if (d < bd) { bd = d; bi = i; } }
+      Q.y = o.Y[bi];
+    }
     const pts = [[A.x, A.z, 0], ...E.via, [B.x, B.z, 0]], n = pts.length, P = [];
     const C = pts.map((p, i) => {
       if (i === 0 || i === n - 1) return { t: 0, th: 0 };
@@ -1004,6 +1017,7 @@ const roadNet = (() => {
     A.deg++; B.deg++;
     const e = { id: ei, a: A, b: B, w: E.w, N, X, Z, Y, W, WB: Float32Array.from(W), S, L: S[N - 1], NX, NZ, BR, base, sea: !!E.sea };
     A.ends.push({ e, end: 0 }); B.ends.push({ e, end: 1 });
+    built[ei] = e;
     return e;
   });
   for (const n of nodes) n.jr = Math.max(...n.ends.map((q) => q.e.w)) / 2 + 3;
@@ -4137,8 +4151,8 @@ function onHpSync(p) {
 const subHp = (v) => (v.hp == null ? HP_MAX : v.hp);
 function subMax(v) { const m = v.item.def.vehicle.maxSpeed; return vtype(v) === 'sub' ? m * Math.max(0, subHp(v)) / HP_MAX : m; }   // 潜水艦の最高速度は HP に比例（満タンで 30 ノット）
 function maxKt(v) { return Math.round(subMax(v) / KT); }
-// 魚雷発射管 4 門：「装填」を 1 回押すごとに 1 門。1 番から順に 1 門ずつ、1 門 10 秒。装填中と発射後 2 秒は音が出る
-const LOAD_TIME = 10, TUBES = 4;
+// 魚雷発射管 4 門：「装填」を 1 回押すごとに 1 門。1 番から順に 1 門ずつ、1 門 25 秒。装填中と発射後 2 秒は音が出る
+const LOAD_TIME = 25, TUBES = 4;
 // 残弾：潜水艦ごとに 弾頭 20・誘導 10・デコイ 10
 const TNAME = { war: '弾頭魚雷', guide: '誘導魚雷', decoy: 'デコイ' };
 const AMMO = { war: 20, guide: 10, decoy: 10 };
@@ -4188,14 +4202,14 @@ function loadTubes() {
   const k = tubeQueue(tube, total);
   if (!k) { showMsg('これ以上装填できる魚雷がありません'); return; }
   stepTubes();
-  if (tube.st[k - 1] === 'q') showMsg(`${k} 番も装填します（前の門が終わってから 10 秒）`);
+  if (tube.st[k - 1] === 'q') showMsg(`${k} 番も装填します（前の門が終わってから 25 秒）`);
   helmShown = '';
 }
 function stepTubes() {
   const k = tubeStep(tube, clock.elapsedTime);
   if (tube.done) { showMsg(`${tube.done} 番発射管の装填が終わりました（装填ずみ ${tubeCount(tube, 'r')} 門）`); tube.done = 0; helmShown = ''; }
   if (k) {
-    showMsg(`${k} 番発射管の装填をはじめました（10 秒・音が出ます）`); helmShown = '';
+    showMsg(`${k} 番発射管の装填をはじめました（25 秒・音が出ます）`); helmShown = '';
     if (net.room) net.room.emit('load', {}).catch(() => {});   // 注水音（近くの潜水艦に聞こえる）
   }
 }
@@ -4281,7 +4295,7 @@ function updateHelm() {
   const sa = subAim(v);
   const aimTxt = ord.ttype === 'decoy' ? `艦首の向き・深度 ${Math.round(ord.tdp)}m` : sa ? `${sa.ghost ? 'さっきまで居た点へ' : '目標へ'} 方位 ${fmtB(bearingOf(sa.h))}°・深度 ${Math.round(ord.tdp)}m` : `${subTarget ? '目標が聞こえない → ' : ''}艦首の向き・深度 ${Math.round(ord.tdp)}m`;
   const am = ammoOf(v), stock = `残弾 弾頭${am.war}・誘導${am.guide}・デコイ${am.decoy}`;
-  const tst = nReady ? `${nReady} 門装填ずみ。発射：${what}・${aimTxt}${li >= 0 ? `（${li + 1} 番 装填中 あと ${Math.ceil(left)} 秒）` : ''}` : li >= 0 ? `${li + 1} 番 装填中… あと ${Math.ceil(left)} 秒（音が出ています）` : '空です。「装填」を 1 回押すごとに 1 門ずつ装填します（1 門 10 秒）';
+  const tst = nReady ? `${nReady} 門装填ずみ。発射：${what}・${aimTxt}${li >= 0 ? `（${li + 1} 番 装填中 あと ${Math.ceil(left)} 秒）` : ''}` : li >= 0 ? `${li + 1} 番 装填中… あと ${Math.ceil(left)} 秒（音が出ています）` : '空です。「装填」を 1 回押すごとに 1 門ずつ装填します（1 門 25 秒）';
   const cd = isSub ? crushDmg(v) : 0;
   const st = cd && helmTab === 'nav' ? `⚠ 圧壊深度！ 安全な深さは ${safeDepth(v)}m まで。あと ${Math.ceil(CRUSH_EVERY - crushT)} 秒で HP -${cd}` : helmTab === 'torp' ? `${tst}（${stock}）` : tn ? tn : v.dpLimit != null ? `海底が近いので ${v.dpLimit.toFixed(0)}m までしかもぐれません` : `いま ${compassName(b)}へ ${Math.abs(v.vF / KT).toFixed(1)}kt${ord.rev ? '（逆進）' : ''}${!ord.kt && Math.abs(v.vF) > 0.3 ? '（機関停止・惰性で無音）' : ''}`;
   const tubeKey = tube.st.join(',') + Math.ceil(left);
@@ -5020,7 +5034,7 @@ function stepAi(dt) {
     a.evadeUntil = t + 12;
   } else if (t > a.evadeUntil) {
     const c = a.contact && t - a.contact.t < 40 ? a.contact : null;
-    if (c || lv.quiet) tubeQueue(a.tube, a.ammo.war + a.ammo.guide + a.ammo.decoy);   // 空いた門を順に装填（1 門 10 秒・音が出る）
+    if (c || lv.quiet) tubeQueue(a.tube, a.ammo.war + a.ammo.guide + a.ammo.decoy);   // 空いた門を順に装填（1 門 25 秒・音が出る）
     if (c) {
       const d = Math.hypot(c.x - v.pos.x, c.z - v.pos.y), fresh = t - c.t < 3;
       // 撃つ：聞こえている目標の方位と深度へ（ずれは難しさしだい）。少し考えてから
@@ -5463,11 +5477,52 @@ function openWmap(routes) {
   drawWmap();
 }
 function closeWmap() { WMAP.open = false; wmapEl.hidden = true; cv.focus(); }
+// バス停の近くでは、止まっているバスの発車時刻と、次に来るバスを出す
+let stopInfoT = 0;
+const hhmmss = (sec) => { const d = new Date(sec * 1000); return [d.getHours(), d.getMinutes(), d.getSeconds()].map((n) => String(n).padStart(2, '0')).join(':'); };
+function busRecIndex(v, now) { return (((now - v.phase - (v.lag || 0)) % T_ALL) + T_ALL) % T_ALL / REC_DT; }
+function stepStopInfo(dt) {
+  stopInfoT -= dt;
+  if (stopInfoT > 0) return;
+  stopInfoT = 0.5;
+  const box = el('stopInfo');
+  let st = null, bd = 40;
+  if (!driving && !busRide && !aboard) for (const q of roadNet.stops) { const d = Math.hypot(q.e.X[q.i] - player.pos.x, q.e.Z[q.i] - player.pos.z); if (d < bd) { bd = d; st = q; } }
+  if (!st) { if (!box.hidden) box.hidden = true; return; }
+  const now = Date.now() / 1000, lines = [];
+  // 止まっているバス：いつ動き出すか
+  for (const v of buses) {
+    if (!(v.fl & 16) || v.stopName !== st.name) continue;
+    const r = busRecIndex(v, now);
+    let i = Math.floor(r);
+    while (i < v.rec.length - 2 && v.rec[i + 1] - v.rec[i] < 0.05) i++;
+    const dep = now + (i - r) * REC_DT;
+    lines.push(`<b>${v.line.no}番 ${v.line.name}</b>　<span class="dep">${hhmmss(dep)} 発車</span>（あと ${Math.max(0, Math.ceil(dep - now))} 秒）`);
+  }
+  // 次に来るバス（止まっていないもの）
+  let next = null;
+  for (const v of buses) {
+    if ((v.fl & 16) && v.stopName === st.name) continue;
+    const m = v.marks.stops.find((q) => q.name === st.name);
+    if (!m) continue;
+    const r = busRecIndex(v, now), L = v.path.L;
+    let target = m.s + Math.ceil((v.s + 3 - m.s) / L) * L;
+    let i = Math.floor(r);
+    while (i < v.rec.length - 1 && v.rec[i] < target - 0.5) i++;
+    if (i >= v.rec.length - 1) continue;
+    const t = now + (i - r) * REC_DT;
+    if (!next || t < next.t) next = { t, v };
+  }
+  if (next) lines.push(`次のバス：${next.v.line.no}番 ${next.v.line.name}　${hhmmss(next.t)} ごろ着（あと ${Math.max(1, Math.round((next.t - now) / 60))} 分）`);
+  box.innerHTML = `🚏 <b>${st.name}</b><br>` + (lines.length ? lines.join('<br>') : 'このあと 1 時間、バスは来ません');
+  if (box.hidden) box.hidden = false;
+}
 let wmapTick = 0;
 function stepWmap(dt) {
   // バス停の近く（待合所から 14m）では「路線図」ボタンを出す
   const nearStop = !driving && !busRide && !aboard && busStopObjs.some((o) => Math.hypot(o.x - player.pos.x, o.z - player.pos.z) < 14);
   if (el('routeBtn').hidden !== !nearStop) el('routeBtn').hidden = !nearStop;
+  stepStopInfo(dt);
   if (!WMAP.open) return;
   wmapTick += dt;
   if (wmapTick < 0.2) return;
