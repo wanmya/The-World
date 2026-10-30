@@ -221,7 +221,7 @@ body.helmOn .subbtns { flex-wrap: wrap; justify-content: flex-end; max-width: ca
 <body>
 <div id="view"></div>
 
-<div id="clock" aria-live="off"><span id="stateLabel">--:--</span></div>
+<div id="clock" aria-live="off"><span id="stateLabel">--:--</span> <span id="placeLabel"></span></div>
 <div class="hud" aria-live="polite">
   <span class="state" id="state">歩いている</span>
   <span class="alt" id="alt">高さ</span>
@@ -912,8 +912,72 @@ const EDGES = [
 const BUS_STOPS = [
   { e: 0, f: 0.15, name: '港' }, { e: 0, f: 0.8, name: '西の大通り' }, { e: 1, f: 0.75, name: '西の丘' }, { e: 2, f: 0.65, name: '北の浜' },
   { e: 3, f: 0.55, name: '北の大通り' }, { e: 4, f: 0.45, name: '東の野原' }, { e: 5, f: 0.5, name: '東の川' }, { e: 7, f: 0.5, name: '山の上' },
-  { e: 9, f: 0.3, name: '中央' }, { e: 11, f: 0.4, name: '港の南' }, { e: 15, f: 0.13, name: 'はじめの浜', terminal: true }, { e: 14, f: 0.5, name: '北の丘' },
+  { e: 9, f: 0.3, name: '中央' }, { e: 11, f: 0.4, name: '港通り' }, { e: 15, f: 0.13, name: 'はじめの浜', terminal: true }, { e: 14, f: 0.5, name: 'みどり台' },
 ];
+/* ================= 地名 =================
+   陸を 2 つの市と 20 の町・地区に分ける（2026-10-30 わんみゃさんと決めた）。区域は x, z の多角形で、陸の上だけに効く
+   （はじめ諸島だけは海ごと）。海は z と x で 4 つに分ける。表と地図の元：README の「地名」 */
+const PLACES = [
+  { city: 'みなと市', name: '港町', poly: [[380,-3150],[1500,-3150],[1500,-2200],[380,-2200]], lx: 937, lz: -2783 },
+  { city: 'みなと市', name: '西大通り', poly: [[-800,-3150],[380,-3150],[380,-2200],[-800,-2200]], lx: -173, lz: -2933 },
+  { city: 'みなと市', name: '中央', poly: [[-800,-3700],[380,-3700],[380,-3150],[-800,-3150]], lx: -219, lz: -3431 },
+  { city: 'みなと市', name: '山の上', poly: [[-800,-3950],[380,-3950],[380,-3700],[-800,-3700]], lx: -217, lz: -3830 },
+  { city: 'みなと市', name: '川向こう', poly: [[380,-3950],[1500,-3950],[1500,-3150],[380,-3150]], lx: 942, lz: -3558 },
+  { city: 'みなと市', name: '西の丘', poly: [[-2600,-3950],[-800,-3950],[-800,-2200],[-2600,-2200]], lx: -1256, lz: -3450 },
+  { city: 'みなと市', name: '北浜', poly: [[-2600,-5000],[-200,-5000],[-200,-3950],[-2600,-3950]], lx: -872, lz: -4122 },
+  { city: 'みなと市', name: '北大通り', poly: [[-200,-5000],[1500,-5000],[1500,-3950],[-200,-3950]], lx: 685, lz: -4157 },
+  { city: 'みなと市', name: '東野原', poly: [[1500,-5000],[2500,-5000],[2500,-3300],[1500,-3300]], lx: 1948, lz: -3741 },
+  { city: 'みなと市', name: '東の川', poly: [[1500,-3300],[2500,-3300],[2500,-2200],[1500,-2200]], lx: 1889, lz: -2951 },
+  { city: 'みなと市', name: 'みさき', poly: [[2500,-5000],[3700,-5000],[3700,-2200],[2500,-2200]], lx: 2874, lz: -3726 },
+  { city: 'はじめ市', name: 'はじめ町', poly: [[-800,-200],[1200,-200],[1200,450],[-800,450]], lx: 209, lz: 163 },
+  { city: 'はじめ市', name: 'はじめ諸島', poly: [[-500,-900],[500,-900],[500,-200],[-500,-200]], lx: 0, lz: -550, sea: true },
+  { city: 'はじめ市', name: 'みどり台', poly: [[-1800,-1200],[-800,-1200],[-800,450],[-200,450],[-200,1200],[-1800,1200]], lx: -1095, lz: 599 },
+  { city: 'はじめ市', name: 'ひろ野', poly: [[-1800,1200],[-200,1200],[-200,450],[400,450],[400,3000],[0,4200],[-1800,4200]], lx: -685, lz: 2522 },
+  { city: 'はじめ市', name: '西山町', poly: [[-5000,-1200],[-1800,-1200],[-1800,5000],[-5000,5000]], lx: -3417, lz: 2308 },
+  { city: 'はじめ市', name: '東山', poly: [[400,450],[1200,450],[1200,300],[2700,300],[2700,1600],[2400,2950],[1000,3000],[400,3000]], lx: 1523, lz: 1621 },
+  { city: 'はじめ市', name: '東浜', poly: [[1200,-1200],[5000,-1200],[5000,1600],[2700,1600],[2700,300],[1200,300]], lx: 3661, lz: 600 },
+  { city: 'はじめ市', name: 'みずうみ町', poly: [[2700,1600],[5000,1600],[5000,5000],[1000,5000],[1000,3000],[2400,2950]], lx: 3214, lz: 3497 },
+  { city: 'はじめ市', name: '輪の里', poly: [[-1800,4200],[0,4200],[400,3000],[1000,3000],[1000,5000],[-1800,5000]], lx: -98, lz: 4300 },
+];
+const LANDMARKS = [
+  { name: 'はじめの浜', kind: '浜', x: 0, z: -95 },
+  { name: 'はじめの浜バスターミナル', kind: '駅', x: 5, z: 45 },
+  { name: '見晴らしの丘', kind: '山', x: 45, z: 70 },
+  { name: 'はじめの入り江', kind: '海', x: 0, z: -60 },
+  { name: 'ヤシの島', kind: '島', x: 0, z: -265 },
+  { name: '岩の島', kind: '島', x: -260, z: -420 },
+  { name: '砂の小島', kind: '島', x: 300, z: -330 },
+  { name: 'トンネル島', kind: '島', x: 180, z: -620 },
+  { name: '丘の島', kind: '島', x: -150, z: -700 },
+  { name: 'ちび島', kind: '島', x: 390, z: -790 },
+  { name: 'なか海大橋', kind: '橋', x: 1000, z: -1300 },
+  { name: 'まんなか山', kind: '山', x: -100, z: -3360, h: 54 },
+  { name: 'みなと川', kind: '川', x: 420, z: -3550 },
+  { name: 'はなれ島', kind: '島', x: 3000, z: -4000 },
+  { name: '西山', kind: '山', x: -3820, z: 1660, h: 123 },
+  { name: '東山', kind: '山', x: 1420, z: 2160, h: 125 },
+  { name: 'みなみ山', kind: '山', x: -740, z: 3980, h: 104 },
+  { name: '西川', kind: '川', x: -2250, z: 1250 },
+  { name: '大川', kind: '川', x: 4560, z: 900 },
+  { name: 'かがみ湖', kind: '湖', x: 3600, z: 3560 },
+  { name: 'わの中島', kind: '島', x: 300, z: 4400 },
+];
+const SEAS = [{ name: 'なか海', x: -2600, z: -1700 }, { name: '西の外海', x: -3700, z: -3600 }, { name: '北の外海', x: 700, z: -4800 }, { name: '東の外海', x: 4300, z: -3300 }];
+function inPoly(x, z, poly) {
+  let ins = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const [xi, zi] = poly[i], [xj, zj] = poly[j];
+    if ((zi > z) !== (zj > z) && x < (xj - xi) * (z - zi) / (zj - zi) + xi) ins = !ins;
+  }
+  return ins;
+}
+const seaNameAt = (x, z) => z > -2500 ? 'なか海' : x < -2000 ? '西の外海' : x > 3700 ? '東の外海' : '北の外海';
+// その場所の地名：{ city, name }（海なら city は ''）
+function placeAt(x, z) {
+  const land = heightAt(x, z) > 0;
+  for (const p of PLACES) if ((land || p.sea) && inPoly(x, z, p.poly)) return p;
+  return { city: '', name: seaNameAt(x, z) };
+}
 // バスの路線（道の番号と向き。+1 は a→b、-1 は b→a）と、ふつうの車の道順
 const LINES = [
   { no: 1, name: '大陸循環 外回り', color: '#e0453a', legs: [[0, 1], [1, 1], [2, 1], [3, 1], [4, 1], [5, 1]], buses: 2 },
@@ -5420,7 +5484,7 @@ window.addEventListener('resize', () => {
    上が北（-z）。「全体」は道路のある所ぜんぶ、「近く」は自分のまわり 1.2km。道路・バス停・路線・走っているバスと車・自分の位置 */
 const wmapEl = el('wmap'), wmapCv = el('wmapCv'), wmapCx = wmapCv.getContext('2d');
 const WMAP = { mode: 'all', routes: false, img: { all: null, near: null }, build: null, open: false };
-const WMAP_ALL = { x0: -2300, x1: 2900, z0: -4700, z1: 1250, m: 20 };   // 全体：20m で 1 ドット
+const WMAP_ALL = { x0: -5000, x1: 5000, z0: -5000, z1: 5000, m: 20 };   // 全体：ワールドぜんぶ、20m で 1 ドット
 function wmapView() {
   if (WMAP.mode === 'all') return WMAP_ALL;
   const cx = Math.round(player.pos.x / 100) * 100, cz = Math.round(player.pos.z / 100) * 100;
@@ -5435,7 +5499,7 @@ function stepWmapImage() {
     c.width = w; c.height = h;
     WMAP.build = { key, V, c, g: c.getContext('2d'), im: c.getContext('2d').createImageData(w, h), row: 0, w, h, mode: WMAP.mode };
   }
-  const B = WMAP.build, end = Math.min(B.h, B.row + 24);
+  const B = WMAP.build, end = Math.min(B.h, B.row + Math.max(4, Math.round(6000 / B.w)));   // 1 コマで約 6000 点
   for (; B.row < end; B.row++) for (let i = 0; i < B.w; i++) {
     const x = B.V.x0 + (i + 0.5) * B.V.m, z = B.V.z0 + (B.row + 0.5) * B.V.m;
     mapColor(outsideBox(x, z) ? -100 : rawHeight0(x, z), x, z, B.im.data, (B.row * B.w + i) * 4);
@@ -5478,6 +5542,18 @@ function drawWmap() {
   }
   // 信号のある交差点
   for (const n of roadNet.nodes) if (n.signal) { const [x, y] = P(n.x, n.z); g.fillStyle = '#333'; g.beginPath(); g.arc(x, y, Math.max(2.5, n.jr * sc), 0, 7); g.fill(); }
+  const NEAR_SKIP = new Set(['はじめの浜', 'はじめの浜バスターミナル', 'はじめの入り江']);   // バス停などと重なるので出さない
+  // 地名（全体：市と町・地区と海、近く：町・地区と目じるし）
+  g.textAlign = 'center'; g.textBaseline = 'middle'; g.lineJoin = 'round';
+  const fam = getComputedStyle(document.body).fontFamily;
+  const nameAt = (txt, x, z, px, fill, stroke) => { const [X, Y] = P(x, z); if (X < -60 || Y < -20 || X > W + 60 || Y > H + 20) return;
+    g.font = `800 ${px}px ` + fam; if (stroke) { g.lineWidth = 3; g.strokeStyle = stroke; g.strokeText(txt, X, Y); } g.fillStyle = fill; g.fillText(txt, X, Y); };
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  for (const s of SEAS) nameAt(s.name, s.x, s.z, 12 * dpr, 'rgba(230,245,255,.85)', null);
+  if (WMAP.mode === 'all') { nameAt('みなと市', -1000, -2250, 17 * dpr, '#fff', 'rgba(15,40,60,.8)'); nameAt('はじめ市', -2300, -450, 17 * dpr, '#fff', 'rgba(15,40,60,.8)'); }
+  if (!WMAP.routes) for (const p of PLACES) nameAt(p.name, p.lx, p.lz, (WMAP.mode === 'all' ? 11 : 15) * dpr, '#1b2a22', 'rgba(255,255,255,.9)');
+  if (WMAP.mode === 'near') for (const m of LANDMARKS) if (!NEAR_SKIP.has(m.name)) nameAt((m.kind === '山' ? '▲' : '') + m.name, m.x, m.z, 11 * dpr, '#3a2a10', 'rgba(255,255,255,.85)');
+  g.textBaseline = 'alphabetic';
   // バス停
   const showNames = WMAP.routes || WMAP.mode === 'near';
   g.font = `800 ${WMAP.mode === 'near' ? 13 : 11}px ` + getComputedStyle(document.body).fontFamily; g.textAlign = 'left';
@@ -5495,7 +5571,7 @@ function drawWmap() {
   }
   // ほかの人と自分
   for (const o of net.others.values()) { const [x, y] = P(o.pos.x, o.pos.z); g.fillStyle = o.col || '#888'; g.strokeStyle = '#fff'; g.lineWidth = 2; g.beginPath(); g.arc(x, y, 5, 0, 7); g.fill(); g.stroke(); }
-  const me = ride ? { x: ride.pos.x, z: ride.pos.y, h: visYaw(ride) } : { x: player.pos.x, z: player.pos.z, h: busRide ? busRide.b.h : player.face };
+  const me = myPose();
   const [mx, my] = P(me.x, me.z), dx = Math.sin(me.h), dy = Math.cos(me.h);
   g.save(); g.translate(mx, my); g.rotate(Math.atan2(dy, dx) - Math.PI / 2);
   g.fillStyle = '#ff3b30'; g.strokeStyle = '#fff'; g.lineWidth = 2.5;
@@ -5514,6 +5590,11 @@ function openWmap(routes) {
   for (const b of wmapEl.querySelectorAll('[data-wm]')) b.setAttribute('aria-pressed', String(b.dataset.wm === WMAP.mode || (b.dataset.wm === 'routes' && WMAP.routes)));
   drawWmap();
 }
+function myPose() { return ride ? { x: ride.pos.x, z: ride.pos.y, h: visYaw(ride) } : { x: player.pos.x, z: player.pos.z, h: busRide ? busRide.b.h : player.face }; }
+// 左上の時計の横に、いまいる地名を出す
+let lastPlace = '';
+setInterval(() => { try { const me = myPose(), p = placeAt(me.x, me.z), t = p.city ? `${p.city} ${p.name}` : p.name;
+  if (t !== lastPlace) { lastPlace = t; el('placeLabel').textContent = '・' + t; } } catch (e) { /* 読みこみ中 */ } }, 600);
 function closeWmap() { WMAP.open = false; wmapEl.hidden = true; cv.focus(); }
 // バス停の近くでは、止まっているバスの発車時刻と、次に来るバスを出す
 let stopInfoT = 0;
