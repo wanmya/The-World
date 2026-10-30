@@ -247,6 +247,7 @@ body.helmOn .subbtns { flex-wrap: wrap; justify-content: flex-end; max-width: ca
   <button class="mi" id="chatBtn" type="button">ひとこと</button>
   <button class="mi" id="seacatBtn" type="button" hidden>シーキャット（潜水艦）を出す</button>
   <button class="mi" id="mapBtn" type="button">地図（M）</button>
+  <button class="mi" id="homeBtn" type="button">砂浜（バスターミナル）に戻る</button>
   <button class="mi" id="busTrip" type="button">大陸のバス停「港」へ行く</button>
   <p class="mh">コンピュータと対戦（潜水艦に乗って）</p>
   <button class="mi" type="button" id="aiPos" aria-pressed="false">スタート：800m 離れて（押すとランダム）</button>
@@ -885,8 +886,8 @@ const NODES = {
   K: { x: 1000, z: -2740, name: '港の交差点' }, SW: { x: -300, z: -2930, name: '西の大通り交差点' }, WJ: { x: -1550, z: -3450, name: '西の交差点' },
   CJ: { x: -300, z: -3450, name: '中央交差点' }, RJ: { x: 1000, z: -3450, name: '川向こう交差点' }, EJ: { x: 2200, z: -3450, name: '東の交差点' },
   NJ: { x: -300, z: -4160, name: '北の交差点' }, NR: { x: 1000, z: -4000, name: '北東の交差点' }, J: { x: -300, z: 140, name: '浜の交差点' },
-  // 最初の砂浜から、はじめの浜バス停の西の大通りまで上る道（行き止まり。BT は海の橋の道の上にある）
-  BB: { x: 5, z: 25, name: '砂浜の入口' }, BT: { x: -75, z: 140, name: '浜の上', onEdge: 13 },
+  // 最初の砂浜のバスターミナル（広場 BB）から、海の橋の道の交差点 BT まで上る道
+  BB: { x: 5, z: 45, name: 'はじめの浜バスターミナル', plaza: 20 }, BT: { x: -75, z: 140, name: '浜の上の交差点' },
 };
 const EDGES = [
   { a: 'K', b: 'SW', w: 14, via: [[300, -2880, 30]] },
@@ -902,21 +903,22 @@ const EDGES = [
   { a: 'RJ', b: 'EJ', w: 14, via: [] },
   { a: 'K', b: 'RJ', w: 7, via: [] },
   { a: 'RJ', b: 'NR', w: 7, via: [] },
-  { a: 'J', b: 'K', w: 14, via: [[1000, 140, 80]], sea: true },
+  { a: 'BT', b: 'K', w: 14, via: [[1000, 140, 80]], sea: true },
   { a: 'J', b: 'J', w: 7, via: [[-1500, 170, 40], [-1500, 900, 150], [-300, 900, 40]] },
-  { a: 'BB', b: 'BT', w: 7, via: [[60, 70, 30], [-40, 105, 30]] },   // 15：砂浜からバス停の近くへ（片側 1 車線）
+  { a: 'BB', b: 'BT', w: 7, via: [[60, 70, 30], [-40, 105, 30]] },   // 15：砂浜のバスターミナルから上る道（片側 1 車線）
+  { a: 'J', b: 'BT', w: 14, via: [] },   // 16：浜の交差点〜浜の上の交差点
 ];
 // バス停：何番の道の、どのあたり（0〜1）か。道の両側にある
 const BUS_STOPS = [
   { e: 0, f: 0.15, name: '港' }, { e: 0, f: 0.8, name: '西の大通り' }, { e: 1, f: 0.75, name: '西の丘' }, { e: 2, f: 0.65, name: '北の浜' },
   { e: 3, f: 0.55, name: '北の大通り' }, { e: 4, f: 0.45, name: '東の野原' }, { e: 5, f: 0.5, name: '東の川' }, { e: 7, f: 0.5, name: '山の上' },
-  { e: 9, f: 0.3, name: '中央' }, { e: 11, f: 0.4, name: '港の南' }, { e: 13, f: 0.07, name: 'はじめの浜' }, { e: 14, f: 0.5, name: '北の丘' },
+  { e: 9, f: 0.3, name: '中央' }, { e: 11, f: 0.4, name: '港の南' }, { e: 15, f: 0.13, name: 'はじめの浜', terminal: true }, { e: 14, f: 0.5, name: '北の丘' },
 ];
 // バスの路線（道の番号と向き。+1 は a→b、-1 は b→a）と、ふつうの車の道順
 const LINES = [
   { no: 1, name: '大陸循環 外回り', color: '#e0453a', legs: [[0, 1], [1, 1], [2, 1], [3, 1], [4, 1], [5, 1]], buses: 2 },
   { no: 1, name: '大陸循環 内回り', color: '#e0453a', legs: [[5, -1], [4, -1], [3, -1], [2, -1], [1, -1], [0, -1]], buses: 2 },
-  { no: 2, name: 'はじめの浜・港・中央', color: '#2f7fd8', legs: [[13, 1], [11, 1], [9, -1], [6, -1], [0, -1], [13, -1], [14, 1]], buses: 3 },
+  { no: 2, name: 'はじめの浜・港・中央', color: '#2f7fd8', legs: [[15, 1], [13, 1], [11, 1], [9, -1], [6, -1], [0, -1], [13, -1], [16, -1], [14, 1], [16, 1], [15, -1]], buses: 3 },   // はじめの浜バスターミナル発着
   { no: 3, name: '中央循環', color: '#2aa35a', legs: [[7, 1], [3, 1], [12, -1], [9, -1]], buses: 2 },
 ];
 const CAR_ROUTES = [
@@ -925,9 +927,9 @@ const CAR_ROUTES = [
   [[8, 1], [6, -1], [1, 1]],
   [[5, -1], [10, -1], [11, -1]],
   [[9, 1], [12, 1], [3, -1], [7, -1]],
-  [[13, 1], [5, -1], [4, -1], [3, -1], [2, -1], [1, -1], [0, -1], [13, -1], [14, 1]],
-  [[14, 1], [13, 1], [0, 1], [6, 1], [9, 1], [11, -1], [13, -1]],
-  [[14, -1], [13, 1], [11, 1], [10, 1], [5, 1], [13, -1]],
+  [[16, 1], [13, 1], [5, -1], [4, -1], [3, -1], [2, -1], [1, -1], [0, -1], [13, -1], [16, -1], [14, 1]],
+  [[14, 1], [16, 1], [13, 1], [0, 1], [6, 1], [9, 1], [11, -1], [13, -1], [16, -1]],
+  [[14, -1], [16, 1], [13, 1], [11, 1], [10, 1], [5, 1], [13, -1], [16, -1]],
 ];
 // ふつうの車：道順の何番の道のどのあたりに、とめておく場所（路肩を広げる）があるか
 const CARS = [
@@ -936,18 +938,18 @@ const CARS = [
   { r: 2, type: 'sedan', color: 0x23272e, park: [0, 0.5] }, { r: 2, type: 'van', color: 0x3b8f5a, park: [2, 0.55] },
   { r: 3, type: 'truck', color: 0xe3a32b, park: [1, 0.5] }, { r: 3, type: 'sedan', color: 0x6d7a88, park: [0, 0.45] },
   { r: 4, type: 'sedan', color: 0x2a4f8f, park: [1, 0.3] }, { r: 4, type: 'van', color: 0xc9c2b0, park: [3, 0.6] },
-  { r: 5, type: 'truck', color: 0xf2f2f2, park: [6, 0.6] }, { r: 5, type: 'sedan', color: 0x8f2a52, park: [4, 0.5] },
-  { r: 6, type: 'sedan', color: 0xe6d34a, park: [0, 0.6] }, { r: 6, type: 'van', color: 0x4a4f57, park: [1, 0.55] },
-  { r: 7, type: 'sedan', color: 0x3c9db8, park: [0, 0.3] }, { r: 7, type: 'truck', color: 0x9a3b2a, park: [3, 0.45] },
+  { r: 5, type: 'truck', color: 0xf2f2f2, park: [7, 0.6] }, { r: 5, type: 'sedan', color: 0x8f2a52, park: [5, 0.5] },
+  { r: 6, type: 'sedan', color: 0xe6d34a, park: [0, 0.6] }, { r: 6, type: 'van', color: 0x4a4f57, park: [2, 0.55] },
+  { r: 7, type: 'sedan', color: 0x3c9db8, park: [0, 0.3] }, { r: 7, type: 'truck', color: 0x9a3b2a, park: [4, 0.45] },
   // ふやした車（2026-10-29）
   { r: 0, type: 'van', color: 0x7a8c99, park: [0, 0.5] }, { r: 0, type: 'sedan', color: 0xc4602d, park: [5, 0.4] },
   { r: 1, type: 'truck', color: 0x3f7f3a, park: [0, 0.6] }, { r: 1, type: 'sedan', color: 0xe8e4d8, park: [5, 0.5] },
   { r: 2, type: 'sedan', color: 0x5b3f8f, park: [1, 0.4] }, { r: 2, type: 'truck', color: 0xd0d4d8, park: [0, 0.2] },
   { r: 3, type: 'van', color: 0x2c6e8a, park: [2, 0.5] }, { r: 3, type: 'sedan', color: 0xa8a8a8, park: [1, 0.2] },
   { r: 4, type: 'truck', color: 0xb04a3a, park: [0, 0.5] }, { r: 4, type: 'sedan', color: 0x1f1f24, park: [2, 0.4] },
-  { r: 5, type: 'sedan', color: 0xf0c75a, park: [1, 0.5] }, { r: 5, type: 'van', color: 0x6a8f4a, park: [2, 0.75] },
-  { r: 6, type: 'truck', color: 0x35507a, park: [3, 0.5] }, { r: 6, type: 'sedan', color: 0xd9d9de, park: [5, 0.4] },
-  { r: 7, type: 'van', color: 0x8b6a4a, park: [2, 0.6] }, { r: 7, type: 'sedan', color: 0x4fa3a0, park: [4, 0.3] },
+  { r: 5, type: 'sedan', color: 0xf0c75a, park: [2, 0.5] }, { r: 5, type: 'van', color: 0x6a8f4a, park: [3, 0.75] },
+  { r: 6, type: 'truck', color: 0x35507a, park: [4, 0.5] }, { r: 6, type: 'sedan', color: 0xd9d9de, park: [6, 0.4] },
+  { r: 7, type: 'van', color: 0x8b6a4a, park: [3, 0.6] }, { r: 7, type: 'sedan', color: 0x4fa3a0, park: [5, 0.3] },
 ];
 const RD_STEP = 2;
 const roadNet = (() => {
@@ -1008,6 +1010,10 @@ const roadNet = (() => {
     smooth(Y, E.sea ? 70 : 40, 4);
     const d0 = A.y - Y[0], d1 = B.y - Y[N - 1];   // はしを交差点の高さに合わせる
     for (let i = 0; i < N; i++) { const t = S[i] / S[N - 1]; Y[i] = Math.max(2.2, Y[i] + d0 * (1 - t) + d1 * t); }
+    for (let i = 0; i < N; i++) {   // 広場の中は平らに（広場の高さ）
+      if (A.plaza) Y[i] = A.y + (Y[i] - A.y) * ss(A.plaza, A.plaza + 20, S[i]);
+      if (B.plaza) Y[i] = B.y + (Y[i] - B.y) * ss(B.plaza, B.plaza + 20, S[N - 1] - S[i]);
+    }
     for (let i = 0; i < N; i++) if (base[i] < 0.8) for (let k = -4; k <= 4; k++) if (i + k >= 0 && i + k < N) BR[i + k] = 1;
     const NX = new Float32Array(N), NZ = new Float32Array(N);
     for (let i = 0; i < N; i++) {
@@ -1020,7 +1026,7 @@ const roadNet = (() => {
     built[ei] = e;
     return e;
   });
-  for (const n of nodes) n.jr = Math.max(...n.ends.map((q) => q.e.w)) / 2 + 3;
+  for (const n of nodes) n.jr = n.plaza || Math.max(...n.ends.map((q) => q.e.w)) / 2 + 3;   // 広場は大きく
   // バス停：道の両側。そのあたり 50m は道を広げて、バスが寄せて止まれる場所（バスベイ）にする
   const stops = BUS_STOPS.map((b, k) => {
     const e = edges[b.e], s = e.L * b.f;
@@ -1052,7 +1058,7 @@ const roadNet = (() => {
       const key = gx * 65536 + gz; let a = grid.get(key); if (!a) grid.set(key, a = []); a.push(e.id * 65536 + i);
     }
   }
-  return { nodes, nodeOf, edges, stops, parks, grid, G, box: [bx0, bx1, bz0, bz1] };
+  return { nodes, nodeOf, edges, stops, parks, grid, G, box: [bx0, bx1, bz0, bz1], plazas: nodes.filter((n) => n.plaza) };
 })();
 // いちばん近い道の中心線：{ d：中心からの距離, y：道の高さ, w：はば, e, i, br：橋か }
 const roadQ = { d: 0, y: 0, w: 0, e: null, i: 0, t: 0, br: 0 };
@@ -1078,6 +1084,13 @@ function roadNear(x, z) {
 }
 // 道の下とまわりの地面を、道の高さにならす（川や海の上はそのまま＝橋の下）
 function roadGround(x, z, h) {
+  for (const n of roadNet.plazas) {   // 広場（バスターミナル）のまわりは平らに
+    const d = Math.hypot(x - n.x, z - n.z);
+    if (d < n.jr + 24 && h > 0.8) { const r0 = roadGround0(x, z, h); return r0 + (n.y - 0.12 - r0) * (1 - ss(n.jr + 1, n.jr + 24, d)); }
+  }
+  return roadGround0(x, z, h);
+}
+function roadGround0(x, z, h) {
   const q = roadNear(x, z);
   if (!q || h < 0.8) return h;
   const hw = q.w / 2, y = q.y - 0.12;
@@ -1679,15 +1692,25 @@ function makeAvatar(color) {
   return g;
 }
 
-// 海を向いて、砂浜と草の境目あたりから始める（人ごとに少しずらして、車が重ならないように）
+// はじめの浜バスターミナルの広場（バスが回る東側をさけて西側）で、海を向いて始める。人ごとに少しずらす
 function spawnPoint() {
-  const x = (Math.random() - 0.5) * 70;
-  const z = BAY.z + Math.sqrt(Math.max(0, 99 * 99 - (x * 0.95) ** 2));
+  const n = roadNet.nodeOf.BB;
+  const x = n.x - 11 + (Math.random() - 0.5) * 3, z = n.z - 3 + (Math.random() - 0.5) * 3;
   const face = Math.atan2(BAY.x - x, BAY.z - z);
   return { x, z, face };
 }
-const SPAWN = spawnPoint();
-const player = { pos: new THREE.Vector3(SPAWN.x, heightAt(SPAWN.x, SPAWN.z), SPAWN.z), vy: 0, face: SPAWN.face, onGround: true, mode: 'walk' };
+const HOME = spawnPoint();   // がっち号はいつもここ
+// 前に遊んでいた場所（閉じる前に覚えておいたところ）から始める
+const SAVED_POS = (() => {
+  try {
+    const p = JSON.parse(localStorage.getItem('world.pos') || 'null');
+    if (p && [p.x, p.z, p.f].every(Number.isFinite) && !outsideBox(p.x, p.z, 5)) return { x: p.x, z: p.z, face: p.f, y: Number.isFinite(p.y) ? p.y : null };
+  } catch (e) { /* 覚えていなければターミナルから */ }
+  return null;
+})();
+const SPAWN = SAVED_POS || HOME;
+const spawnY = (p) => { const g = p.y != null ? groundAt(p.x, p.z, p.y + 0.5) : heightAt(p.x, p.z); return g < SEA - 1.35 ? SEA - 1.35 : g; };   // 海の中なら水面に浮かぶ
+const player = { pos: new THREE.Vector3(SPAWN.x, spawnY(SPAWN), SPAWN.z), vy: 0, face: SPAWN.face, onGround: true, mode: 'walk' };
 const avatar = makeAvatar(myColor);
 scene.add(avatar);
 
@@ -1718,8 +1741,8 @@ function removeVehicle(v) {
   const i = vehicles.indexOf(v); if (i >= 0) vehicles.splice(i, 1);
 }
 function placeCar() {
-  const s = Math.sin(SPAWN.face), c = Math.cos(SPAWN.face);
-  parkAt(myCar, SPAWN.x + c * 4, SPAWN.z - s * 4, SPAWN.face);   // 自分の右どなり
+  const s = Math.sin(HOME.face), c = Math.cos(HOME.face);
+  parkAt(myCar, HOME.x + c * 4, HOME.z - s * 4, HOME.face);   // ターミナルの広場（はじめの場所の右どなり）
 }
 
 /* ================= 持ち込みアイテム =================
@@ -3101,7 +3124,7 @@ function robotRespawnSpot(v) {
   const V = v.item.def.vehicle;
   let x, z, f;
   if (myCar) { x = myCar.pos.x; z = myCar.pos.y; f = myCar.h; }
-  else { f = SPAWN.face; x = SPAWN.x + Math.cos(f) * 4; z = SPAWN.z - Math.sin(f) * 4; }
+  else { f = HOME.face; x = HOME.x + Math.cos(f) * 4; z = HOME.z - Math.sin(f) * 4; }
   const d = 3 + V.halfWidth + 1.5, c = Math.cos(f), sn = Math.sin(f);
   for (const k of [d, -d, d * 1.8, -d * 1.8]) {   // がっち号の横（陸の上）
     const px = clampX(x + c * k, 4), pz = clampZ(z - sn * k, 4);
@@ -5231,7 +5254,7 @@ function hideSubmerged(v) {
 const menuEl = el('menu'), menuBtn = el('menuBtn');
 function setMenu(open) {
   menuEl.hidden = !open; menuBtn.setAttribute('aria-expanded', String(open));
-  if (open) { el('busTrip').textContent = onContinent() ? 'はじめの浜へ戻る' : '大陸のバス停「港」へ行く'; renderMyList(); renderVehMenu(); el('aiStop').hidden = !aiSub; el('seacatBtn').hidden = !(!driving && !aboard && (player.mode === 'swim' || player.mode === 'dive')); }
+  if (open) { renderMyList(); renderVehMenu(); el('aiStop').hidden = !aiSub; el('seacatBtn').hidden = !(!driving && !aboard && (player.mode === 'swim' || player.mode === 'dive')); }
 }
 // 乗っている船・潜水艦のボタン（画面からメニューへ移したもの）
 function renderVehMenu() {
@@ -5277,11 +5300,26 @@ async function summonSeacat() {
 el('seacatBtn').addEventListener('click', () => { setMenu(false); summonSeacat(); });
 // 大陸のバス停「港」と、はじめの浜を行き来する（海を 2.5km わたらなくても路線バスに乗れる）
 const onContinent = () => player.pos.z < -2000;
+function goHome() {
+  setMenu(false);
+  if (driving || aboard || busRide) { showMsg('降りてから使ってください'); return; }
+  const s = spawnPoint();
+  player.pos.set(s.x, heightAt(s.x, s.z), s.z); player.face = s.face; camYaw = s.face + Math.PI;
+  player.vy = 0; camPitch = 0.35;
+  showMsg('はじめの浜バスターミナルに戻りました。2番のバスはここから出ます');
+}
+el('homeBtn').addEventListener('click', goHome);
+// いる場所を覚えておく（次に開いたとき、そこから始める）
+function savePos() {
+  try { localStorage.setItem('world.pos', JSON.stringify({ x: +player.pos.x.toFixed(1), y: +player.pos.y.toFixed(1), z: +player.pos.z.toFixed(1), f: +player.face.toFixed(2) })); } catch (e) { /* 覚えられなくても遊べる */ }
+}
+setInterval(savePos, 3000);
+window.addEventListener('pagehide', savePos);
+document.addEventListener('visibilitychange', () => { if (document.hidden) savePos(); });
 el('busTrip').addEventListener('click', () => {
   setMenu(false);
   if (driving || aboard || busRide) { showMsg('降りてから使ってください'); return; }
-  if (onContinent()) { const s = spawnPoint(); player.pos.set(s.x, heightAt(s.x, s.z), s.z); player.face = s.face; camYaw = s.face + Math.PI; showMsg('はじめの浜へ戻りました'); }
-  else {
+  {
     const st = roadNet.stops[0], e = st.e, i = st.i, off = e.W[i] / 2 + 1.3, x = e.X[i] + e.NX[i] * off - e.NZ[i] * 4, z = e.Z[i] + e.NZ[i] * off + e.NX[i] * 4;   // 待合所のとなり、前ドアのあたり
     player.pos.set(x, heightAt(x, z), z); player.face = Math.atan2(-e.NX[i], -e.NZ[i]); camYaw = player.face + Math.PI;
     showMsg('バス停「港」に来ました。バスが止まってドアがあいたら「乗る」');
