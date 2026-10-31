@@ -943,7 +943,7 @@ const NODES = {
   CJ: { x: -300, z: -3450, name: '中央交差点' }, RJ: { x: 1000, z: -3450, name: '川向こう交差点' }, EJ: { x: 2200, z: -3450, name: '東の交差点' },
   NJ: { x: -300, z: -4160, name: '北の交差点' }, NR: { x: 1000, z: -4000, name: '北東の交差点' }, J: { x: -300, z: 140, name: '浜の交差点' },
   // 最初の砂浜のバスターミナル（広場 BB）から、海の橋の道の交差点 BT まで上る道
-  BB: { x: 5, z: 45, name: 'はじめの浜バスターミナル', plaza: 20 }, BT: { x: -75, z: 140, name: '浜の上の交差点' },
+  BB: { x: 5, z: 45, name: 'はじめの浜バスターミナル', plaza: 24 }, BT: { x: -75, z: 140, name: '浜の上の交差点' },
 };
 const EDGES = [
   { a: 'K', b: 'SW', w: 14, via: [[300, -2880, 30]] },
@@ -963,12 +963,17 @@ const EDGES = [
   { a: 'J', b: 'J', w: 7, via: [[-1500, 170, 40], [-1500, 900, 150], [-300, 900, 40]] },
   { a: 'BB', b: 'BT', w: 7, via: [[60, 70, 30], [-40, 105, 30]] },   // 15：砂浜のバスターミナルから上る道（片側 1 車線）
   { a: 'J', b: 'BT', w: 14, via: [] },   // 16：浜の交差点〜浜の上の交差点
+  // 17：バスターミナルの広場の中を、北の隅へまわる輪（高速バス専用。上のまっすぐな所が高速バスのりば）
+  { a: 'BB', b: 'BB', w: 7, via: [[16, 34, 3], [14, 24, 3], [-4, 24, 3], [-6, 34, 3]], inPlaza: true },
 ];
 // バス停：何番の道の、どのあたり（0〜1）か。道の両側にある
 const BUS_STOPS = [
   { e: 0, f: 0.15, name: '港' }, { e: 0, f: 0.8, name: '西の大通り' }, { e: 1, f: 0.75, name: '西の丘' }, { e: 2, f: 0.65, name: '北の浜' },
   { e: 3, f: 0.55, name: '北の大通り' }, { e: 4, f: 0.45, name: '東の野原' }, { e: 5, f: 0.5, name: '東の川' }, { e: 7, f: 0.5, name: '山の上' },
   { e: 9, f: 0.3, name: '中央' }, { e: 11, f: 0.4, name: '港通り' }, { e: 15, f: 0.13, name: 'はじめの浜', terminal: true }, { e: 14, f: 0.5, name: 'みどり台' },
+  // 高速バス専用（路線バスは止まらない）。片側だけに待合所。at：その場所にいちばん近い所
+  { e: 17, at: [5, 24], name: 'はじめの浜 高速バスのりば', express: true, bay: 0 },
+  { e: 4, f: 0.75, name: '東野原 高速バスのりば', express: true, bay: 6.5 },
 ];
 /* ================= 地名 =================
    陸を 2 つの市と 20 の町・地区に分ける（2026-10-30 わんみゃさんと決めた）。区域は x, z の多角形で、陸の上だけに効く
@@ -1040,7 +1045,15 @@ const LINES = [
   { no: 1, name: '大陸循環 内回り', color: '#e0453a', legs: [[5, -1], [4, -1], [3, -1], [2, -1], [1, -1], [0, -1]], buses: 2 },
   { no: 2, name: 'はじめの浜・港・中央', color: '#2f7fd8', legs: [[15, 1], [13, 1], [11, 1], [9, -1], [6, -1], [0, -1], [13, -1], [16, -1], [14, 1], [16, 1], [15, -1]], buses: 3 },   // はじめの浜バスターミナル発着
   { no: 3, name: '中央循環', color: '#2aa35a', legs: [[7, 1], [3, 1], [12, -1], [9, -1]], buses: 2 },
+  // 高速バス（2026-10-31）：はじめの浜バスターミナル 21:00 発 → なか海大橋 → みなと市を時計回り → 東野原。
+  // 東野原から海ぞいに港へ出て橋をもどり、はじめの浜に 20:00 に着く（時刻はゲームの時刻。ゲームの 1 時間 = 150 秒）
+  { no: 0, express: true, name: 'はじめの浜⇔東野原', color: '#ffffff', legs: [[17, 1], [15, 1], [13, 1], [0, 1], [1, 1], [2, 1], [3, 1], [4, 1], [5, 1], [13, -1], [15, -1]], buses: 1, arrive: 20, depart: 21 },
 ];
+const T_DAY = 3600;   // ゲームの 1 日（実際の秒）。バスと車の予定も 1 時間でひとまわり
+const lineLabel = (ln) => ln.express ? `高速バス ${ln.name}` : `${ln.no}番 ${ln.name}`;
+const lineShort = (ln) => ln.express ? '高速バス' : `${ln.no}番`;
+const gameSec = (h) => h / 24 * T_DAY;   // ゲームの時刻（時）→ 1 時間の中の秒
+const gameHM = (sec) => { const m = Math.floor(((((sec % T_DAY) + T_DAY) % T_DAY) / T_DAY) * 1440); return `${Math.floor(m / 60)}:${String(m % 60).padStart(2, '0')}`; };
 const CAR_ROUTES = [
   [[0, 1], [1, 1], [2, 1], [3, 1], [4, 1], [5, 1]],
   [[5, -1], [4, -1], [3, -1], [2, -1], [1, -1], [0, -1]],
@@ -1152,6 +1165,7 @@ const roadNet = (() => {
     for (let i = 0; i < N; i++) {   // 広場の中は平らに（広場の高さ）
       if (A.plaza) Y[i] = A.y + (Y[i] - A.y) * ss(A.plaza, A.plaza + 20, S[i]);
       if (B.plaza) Y[i] = B.y + (Y[i] - B.y) * ss(B.plaza, B.plaza + 20, S[N - 1] - S[i]);
+      if (E.inPlaza) Y[i] = A.y;   // 広場の中だけの道
     }
     const NX = new Float32Array(N), NZ = new Float32Array(N);
     for (let i = 0; i < N; i++) {
@@ -1164,7 +1178,7 @@ const roadNet = (() => {
       if (low < 0.8) for (let k = -4; k <= 4; k++) if (i + k >= 0 && i + k < N) BR[i + k] = 1;
     }
     A.deg++; B.deg++;
-    const e = { id: ei, a: A, b: B, w: E.w, N, X, Z, Y, W, WB: Float32Array.from(W), S, L: S[N - 1], NX, NZ, BR, base, sea: !!E.sea };
+    const e = { id: ei, a: A, b: B, w: E.w, N, X, Z, Y, W, WB: Float32Array.from(W), S, L: S[N - 1], NX, NZ, BR, base, sea: !!E.sea, inPlaza: !!E.inPlaza };
     A.ends.push({ e, end: 0 }); B.ends.push({ e, end: 1 });
     built[ei] = e;
     return e;
@@ -1172,15 +1186,18 @@ const roadNet = (() => {
   for (const n of nodes) n.jr = n.plaza || Math.max(...n.ends.map((q) => q.e.w)) / 2 + 3;   // 広場は大きく
   // バス停：道の両側。そのあたり 50m は道を広げて、バスが寄せて止まれる場所（バスベイ）にする
   const stops = BUS_STOPS.map((b, k) => {
-    const e = edges[b.e], s = e.L * b.f;
-    let i = 0; while (i < e.N - 1 && e.S[i] < s) i++;
-    return { id: k, e, i, s: e.S[i], name: b.name };
+    const e = edges[b.e];
+    let i = 0;
+    if (b.at) { let bd = Infinity; for (let j = 0; j < e.N; j++) { const d = Math.hypot(e.X[j] - b.at[0], e.Z[j] - b.at[1]); if (d < bd) { bd = d; i = j; } } }
+    else { const s = e.L * b.f; while (i < e.N - 1 && e.S[i] < s) i++; }
+    return { id: k, e, i, s: e.S[i], name: b.name, express: !!b.express, bay: b.bay ?? 5 };
   });
-  for (const st of stops) {
-    const e = st.e;
-    for (let i = 0; i < e.N; i++) { const d = Math.abs(e.S[i] - st.s); if (d < 45) e.W[i] = Math.max(e.W[i], e.WB[i] + 5 * ss(45, 25, d)); }
+  // バスが寄せる位置はバス停だけで決める。路線バスと高速バスは別（ほかのバスのバス停には寄らない）
+  for (const e of edges) { e.WBUS = Float32Array.from(e.WB); e.WEXP = Float32Array.from(e.WB); }
+  for (const st of stops) {   // 高速バスのりばは車体が長いので、広げる所も長く
+    const e = st.e, r0 = st.express ? 60 : 45, r1 = st.express ? 38 : 25, WS = st.express ? e.WEXP : e.WBUS;
+    if (st.bay) for (let i = 0; i < e.N; i++) { const d = Math.abs(e.S[i] - st.s); if (d < r0) { const w = e.WB[i] + st.bay * ss(r0, r1, d); e.W[i] = Math.max(e.W[i], w); WS[i] = Math.max(WS[i], w); } }
   }
-  for (const e of edges) e.WBUS = Float32Array.from(e.W);   // バスが寄せる位置はバス停だけで決める
   // ふつうの車をとめておく場所（バス停や交差点から離す）
   const used = [];
   const parks = CARS.map((c) => {
@@ -1721,7 +1738,7 @@ function signalState(node, grp, t) {
   // 交差点に入ってくる道の向きで、信号の組（A／B）を決める
   for (const n of R.nodes) {
     n.sigOff = hash(Math.round(n.x), Math.round(n.z)) * SIG_CYCLE;
-    n.signal = n.deg >= 3;
+    n.signal = n.deg >= 3 && !n.plaza;   // バスターミナルの広場には信号をつけない
     let a0 = null;
     for (const q of n.ends) {
       const e = q.e, k = q.end ? e.N - 1 : 0, k2 = q.end ? Math.max(0, e.N - 8) : Math.min(e.N - 1, 7);
@@ -1735,7 +1752,7 @@ function signalState(node, grp, t) {
   for (const wide of [false, true]) {
     const pos = [], uv = [];
     for (const e of R.edges) {
-      if ((e.w > 10.5) !== wide) continue;
+      if ((e.w > 10.5) !== wide || e.inPlaza) continue;   // 広場の中の道は、広場の舗装のまま
       for (let i = 0; i < e.N - 1; i++) {
         const j = i + 1;
         if (nearNode(e, i) < -0.5 && nearNode(e, j) < -0.5) continue;   // 交差点の中は、線のない舗装で描く
@@ -1806,17 +1823,19 @@ const busStopObjs = [];
 {
   const poleMat = new THREE.MeshLambertMaterial({ color: 0xd9d9d9 }), roofMat = new THREE.MeshLambertMaterial({ color: 0x2f6f8f });
   const benchMat = new THREE.MeshLambertMaterial({ color: 0x8a5a33 }), glassMat = new THREE.MeshLambertMaterial({ color: 0xbfe3f0, transparent: true, opacity: 0.35, side: THREE.DoubleSide });
-  const signTex = (name) => {
+  const signTex = (name, express) => {
     const c = document.createElement('canvas'); c.width = 256; c.height = 256; const g = c.getContext('2d');
-    g.fillStyle = '#fff'; g.beginPath(); g.arc(128, 128, 124, 0, 7); g.fill();
-    g.fillStyle = '#1f6fb2'; g.beginPath(); g.arc(128, 128, 112, 0, 7); g.fill();
-    g.fillStyle = '#fff'; g.textAlign = 'center'; g.font = 'bold 64px sans-serif'; g.fillText('バス', 128, 120);
+    g.fillStyle = express ? '#111' : '#fff'; g.beginPath(); g.arc(128, 128, 124, 0, 7); g.fill();
+    g.fillStyle = express ? '#fff' : '#1f6fb2'; g.beginPath(); g.arc(128, 128, 112, 0, 7); g.fill();
+    g.fillStyle = express ? '#111' : '#fff'; g.textAlign = 'center';
+    if (express) { name = name.replace(' 高速バスのりば', ''); g.font = 'bold 52px sans-serif'; g.fillText('高速バス', 128, 118); }
+    else { g.font = 'bold 64px sans-serif'; g.fillText('バス', 128, 120); }
     g.font = `bold ${name.length > 4 ? 30 : 38}px sans-serif`; g.fillText(name, 128, 175);
     const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
   };
   for (const st of roadNet.stops) {
-    const e = st.e, i = st.i, signMat = new THREE.MeshLambertMaterial({ map: signTex(st.name) });
-    for (const side of [1, -1]) {
+    const e = st.e, i = st.i, signMat = new THREE.MeshLambertMaterial({ map: signTex(st.name, st.express) });
+    for (const side of st.express ? [1] : [1, -1]) {   // 高速バスは決まった向きにしか来ないので、片側だけ
       const off = e.W[i] / 2 + 1.4, x = e.X[i] + e.NX[i] * off * side, z = e.Z[i] + e.NZ[i] * off * side;
       const grp = new THREE.Group();
       grp.position.set(x, e.Y[i], z);
@@ -2820,8 +2839,18 @@ for (let z = -4.7; z < -0.9; z += 0.85) BUS_SEATS.push({ x: 0.8, z });      // �
 for (let z = 1.05; z < 3.0; z += 0.85) BUS_SEATS.push({ x: 0.8, z });       // 左側、ドアのあいだ
 const BUS_SOLID = [{ x0: -1.3, x1: -0.32, z0: 3.3, z1: 5.5 }];   // 運転席のまわり
 for (const s of BUS_SEATS) BUS_SOLID.push({ x0: s.x - 0.38, x1: s.x + 0.38, z0: s.z - 0.28, z1: s.z + 0.28 });
+// 車体の形の数字：路線バス（ドア 2 つ・1 人がけ）
+Object.assign(BUS_DIM, { doors: BUS_DOORS, seats: BUS_SEATS, solid: BUS_SOLID, seatW: 0.74,
+  yLow: 0.32, yWin: 1.3, yTop: 2.4, yRoof: 2.85, wheelR: 0.5, wheelZ: [3.3, -2.9], poles: true, stripe: true });
+// 高速バス：一回り大きい（はば 2.6m・長さ 12m・高さ 3.5m）。床が高く、ドアは前だけ、2 人がけの座席が左右に並ぶ
+const COACH_DIM = { hw: 1.3, hl: 6.0, floor: 1.0, ceil: 3.15, eye: 1.6, sitEye: 1.2, seatW: 0.94,
+  yLow: 0.35, yWin: 1.75, yTop: 3.0, yRoof: 3.45, wheelR: 0.55, wheelZ: [4.1, -2.9, -4.2], poles: false, stripe: false,
+  doors: [{ z0: 4.0, z1: 5.1 }], seats: [], solid: [{ x0: -1.35, x1: -0.3, z0: 3.9, z1: 6.1 }] };
+for (let z = -5.35; z < 3.2; z += 0.95) for (const x of [-0.76, 0.76]) COACH_DIM.seats.push({ x, z });
+for (const s of COACH_DIM.seats) COACH_DIM.solid.push({ x0: s.x - 0.48, x1: s.x + 0.48, z0: s.z - 0.28, z1: s.z + 0.28 });
 const VTYPE = {
   bus: { hw: BUS_DIM.hw, hl: BUS_DIM.hl, cruise: 11.1, acc: 0.9, dec: 1.2, lat: 1.5 },
+  coach: { hw: COACH_DIM.hw, hl: COACH_DIM.hl, cruise: 13.9, acc: 0.8, dec: 1.2, lat: 1.5 },
   sedan: { hw: 0.9, hl: 2.25, h: 1.45, cruise: 13.9, acc: 1.6, dec: 2.0, lat: 2.2 },
   van: { hw: 0.95, hl: 2.4, h: 2.0, cruise: 12.5, acc: 1.3, dec: 1.8, lat: 2.0 },
   truck: { hw: 1.2, hl: 4.0, h: 3.2, cruise: 11.1, acc: 0.8, dec: 1.3, lat: 1.6 },
@@ -2860,27 +2889,41 @@ const BUS_MATS = {
   inside: new THREE.MeshLambertMaterial({ color: 0xe6e2d6, emissive: 0x8a877e }),
   lamp: new THREE.MeshBasicMaterial({ color: 0xfff6d8 }),
 };
-function makeBus(signText, color) {
-  const parts = {}, D = BUS_DIM, W = D.hw, L = D.hl;
+// 横に大きく書く字（高速バスの「HAKATA」）
+function sideText(text, color) {
+  const c = document.createElement('canvas'); c.width = 1024; c.height = 160; const g = c.getContext('2d');
+  g.fillStyle = color; g.textAlign = 'center'; g.textBaseline = 'middle'; g.font = 'italic 900 132px Arial, Helvetica, sans-serif';
+  g.fillText(text, 512, 84);
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4;
+  return new THREE.MeshBasicMaterial({ map: t, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2 });
+}
+const COACH_MATS = {
+  paint: new THREE.MeshLambertMaterial({ color: 0xf7f7f5 }),
+  glass: new THREE.MeshLambertMaterial({ color: 0x33424c, transparent: true, opacity: 0.5, side: THREE.DoubleSide, depthWrite: false }),
+  seat: new THREE.MeshLambertMaterial({ color: 0x3b3f6e }),
+};
+// D：車体の形の数字（BUS_DIM か COACH_DIM）。opt.text：横に書く字
+function makeBus(signText, color, D = BUS_DIM, opt = {}) {
+  const parts = {}, W = D.hw, L = D.hl, dz = L - 5.4;   // dz：運転席を前へずらす
   const stripe = new THREE.MeshLambertMaterial({ color });
-  const mats = Object.assign({ stripe }, BUS_MATS);
+  const mats = Object.assign({ stripe }, BUS_MATS, D === COACH_DIM ? COACH_MATS : {});
   const add = (mat, w, h, d, x, y, z) => { const g = new THREE.BoxGeometry(w, h, d); g.translate(x, y, z); (parts[mat] = parts[mat] || []).push(g); };
   const cyl = (mat, r, len, x, y, z) => { const g = new THREE.CylinderGeometry(r, r, len, 14); g.rotateZ(Math.PI / 2); g.translate(x, y, z); (parts[mat] = parts[mat] || []).push(g); };
   const pole = (x, z) => { const g = new THREE.CylinderGeometry(0.025, 0.025, D.ceil - D.floor, 6); g.translate(x, (D.ceil + D.floor) / 2, z); (parts.metal = parts.metal || []).push(g); };
-  const T = 0.07, yLow = 0.32, yWin = 1.3, yTop = 2.4, yRoof = 2.85;
+  const T = 0.07, yLow = D.yLow, yWin = D.yWin, yTop = D.yTop, yRoof = D.yRoof, DOORS = D.doors;
   add('floor', 2 * W - 0.05, 0.12, 2 * L - 0.05, 0, D.floor - 0.06, 0);
   add('dark', 2 * W - 0.1, D.floor - 0.16 - yLow, 2 * L - 0.3, 0, (D.floor - 0.16 + yLow) / 2, 0);   // 床下（床とは離して、ちらつかないように）
   add('paint', 2 * W, 0.1, 2 * L, 0, yRoof, 0);
   add('inside', 2 * W - 0.1, 0.03, 2 * L - 0.1, 0, yRoof - 0.07, 0);
   const wall = (side) => {
-    const x = side * (W - T / 2), gaps = side > 0 ? BUS_DOORS : [];
+    const x = side * (W - T / 2), gaps = side > 0 ? DOORS : [];
     const spans = []; let z = -L;
     for (const d of [...gaps].sort((a, b) => a.z0 - b.z0)) { spans.push([z, d.z0]); z = d.z1; }
     spans.push([z, L]);
     for (const [z0, z1] of spans) {
       const zc = (z0 + z1) / 2, len = z1 - z0;
       add('paint', T, yWin - yLow, len, x, (yWin + yLow) / 2, zc);
-      add('stripe', T + 0.01, 0.16, len, x, yWin - 0.25, zc);
+      if (D.stripe) add('stripe', T + 0.01, 0.16, len, x, yWin - 0.25, zc);
       add('glass', T * 0.5, yTop - yWin, len, x, (yTop + yWin) / 2, zc);
       add('paint', T, yRoof - yTop, len, x, (yRoof + yTop) / 2, zc);
     }
@@ -2888,29 +2931,33 @@ function makeBus(signText, color) {
     for (let k = -L + 1.2; k < L - 0.5; k += 1.4) if (!gaps.some((d) => k > d.z0 - 0.1 && k < d.z1 + 0.1)) add('dark', T + 0.01, yTop - yWin, 0.06, x, (yTop + yWin) / 2, k);
   };
   wall(1); wall(-1);
-  add('paint', 2 * W, 1.0 - yLow, T, 0, (1.0 + yLow) / 2, L - T / 2);
-  add('stripe', 2 * W + 0.01, 0.12, T + 0.01, 0, 0.92, L - T / 2);
-  add('glass', 2 * W - 0.1, yTop + 0.1 - 1.0, T * 0.5, 0, (yTop + 0.1 + 1.0) / 2, L - T / 2);
+  const yFront = D.floor + 0.4;   // 前の窓の下のはし
+  add('paint', 2 * W, yFront - yLow, T, 0, (yFront + yLow) / 2, L - T / 2);
+  if (D.stripe) add('stripe', 2 * W + 0.01, 0.12, T + 0.01, 0, yFront - 0.08, L - T / 2);
+  add('glass', 2 * W - 0.1, yTop + 0.1 - yFront, T * 0.5, 0, (yTop + 0.1 + yFront) / 2, L - T / 2);
   add('paint', 2 * W, yRoof - yTop - 0.1, T, 0, (yRoof + yTop + 0.1) / 2, L - T / 2);
   add('paint', 2 * W, yWin + 0.3 - yLow, T, 0, (yWin + 0.3 + yLow) / 2, -L + T / 2);
   add('glass', 2 * W - 0.6, yTop - yWin - 0.3, T * 0.5, 0, (yTop + yWin + 0.3) / 2, -L + T / 2);
   add('paint', 2 * W, yRoof - yTop, T, 0, (yRoof + yTop) / 2, -L + T / 2);
   add('paint', 0.3, yTop - yWin - 0.3, T, W - 0.15, (yTop + yWin + 0.3) / 2, -L + T / 2); add('paint', 0.3, yTop - yWin - 0.3, T, -W + 0.15, (yTop + yWin + 0.3) / 2, -L + T / 2);
   add('lamp', 0.12, 0.04, 2 * L - 1.5, 0, yRoof - 0.1, -0.2);   // 天井の明かり
-  for (const z of [3.3, -2.9]) for (const s of [1, -1]) cyl('dark', 0.5, 0.32, s * (W - 0.12), 0.5, z);
+  for (const z of D.wheelZ) for (const s of [1, -1]) cyl('dark', D.wheelR, 0.32, s * (W - 0.12), D.wheelR, z);
   // 運転席（右前）とハンドル、運賃箱
-  add('dark', 1.0, 0.95, 0.05, -0.8, D.floor + 0.48, 3.3);
-  add('seat', 0.5, 0.12, 0.5, -0.8, D.floor + 0.45, 4.3); add('seat', 0.5, 0.6, 0.1, -0.8, D.floor + 0.8, 4.0);
-  { const g = new THREE.TorusGeometry(0.2, 0.025, 6, 16); g.rotateX(-1.1); g.translate(-0.8, D.floor + 0.95, 4.85); (parts.dark = parts.dark || []).push(g); }
-  add('dark', 0.9, 0.85, 0.5, -0.8, D.floor + 0.42, 5.05);
-  add('metal', 0.26, 0.9, 0.26, -0.48, D.floor + 0.45, 3.45);
-  for (const s of BUS_SEATS) {
-    add('seat', 0.74, 0.14, 0.46, s.x, D.floor + 0.42, s.z);
-    add('seat', 0.74, 0.6, 0.1, s.x, D.floor + 0.78, s.z - 0.24);
-    add('metal', 0.04, 0.42, 0.04, s.x - Math.sign(s.x) * 0.26, D.floor + 0.21, s.z);
+  add('dark', 1.0, 0.95, 0.05, -0.8, D.floor + 0.48, 3.3 + dz);
+  add('seat', 0.5, 0.12, 0.5, -0.8, D.floor + 0.45, 4.3 + dz); add('seat', 0.5, 0.6, 0.1, -0.8, D.floor + 0.8, 4.0 + dz);
+  { const g = new THREE.TorusGeometry(0.2, 0.025, 6, 16); g.rotateX(-1.1); g.translate(-0.8, D.floor + 0.95, 4.85 + dz); (parts.dark = parts.dark || []).push(g); }
+  add('dark', 0.9, 0.85, 0.5, -0.8, D.floor + 0.42, 5.05 + dz);
+  if (D.poles) add('metal', 0.26, 0.9, 0.26, -0.48, D.floor + 0.45, 3.45);
+  const sw = D.seatW, high = D === COACH_DIM;
+  for (const s of D.seats) {
+    add('seat', sw, 0.14, 0.46, s.x, D.floor + 0.42, s.z);
+    add('seat', sw, high ? 0.85 : 0.6, 0.1, s.x, D.floor + (high ? 0.9 : 0.78), s.z - 0.24);   // 高速バスは背もたれが高い
+    add('metal', 0.04, 0.42, 0.04, s.x - Math.sign(s.x) * (sw / 2 - 0.11), D.floor + 0.21, s.z);
   }
-  for (const z of [-3.4, -1.0, 1.0, 3.0]) { pole(0.4, z); pole(-0.4, z); }
-  add('metal', 0.03, 0.03, 2 * L - 1.5, 0.4, D.ceil - 0.25, -0.3); add('metal', 0.03, 0.03, 2 * L - 1.5, -0.4, D.ceil - 0.25, -0.3);
+  if (D.poles) {
+    for (const z of [-3.4, -1.0, 1.0, 3.0]) { pole(0.4, z); pole(-0.4, z); }
+    add('metal', 0.03, 0.03, 2 * L - 1.5, 0.4, D.ceil - 0.25, -0.3); add('metal', 0.03, 0.03, 2 * L - 1.5, -0.4, D.ceil - 0.25, -0.3);
+  } else for (const s of [1, -1]) add('dark', 0.5, 0.22, 2 * L - 2.6, s * (W - 0.32), D.ceil - 0.1, -0.9);   // 荷物だな
   const root = new THREE.Group();
   root.rotation.order = 'YXZ';
   for (const [m, list] of Object.entries(parts)) {
@@ -2920,13 +2967,22 @@ function makeBus(signText, color) {
   }
   const signMat = new THREE.MeshBasicMaterial({ map: signTex(signText) });
   const sf = new THREE.Mesh(new THREE.PlaneGeometry(1.9, 0.24), signMat); sf.position.set(0, yTop + 0.18, L + 0.005); root.add(sf);
-  const sl = new THREE.Mesh(new THREE.PlaneGeometry(1.6, 0.2), signMat); sl.position.set(W + 0.005, yTop + 0.2, 2.2); sl.rotation.y = Math.PI / 2; root.add(sl);
+  const sl = new THREE.Mesh(new THREE.PlaneGeometry(1.6, 0.2), signMat); sl.position.set(W + 0.005, yTop + 0.2, 2.2 + dz); sl.rotation.y = Math.PI / 2; root.add(sl);
   const sr = new THREE.Mesh(new THREE.PlaneGeometry(0.9, 0.2), new THREE.MeshBasicMaterial({ map: signTex(signText.split(' ')[0], 256) })); sr.position.set(0, yTop + 0.18, -L - 0.005); sr.rotation.y = Math.PI; root.add(sr);
-  const doors = BUS_DOORS.map((d) => [-1, 1].map((k) => {
+  if (opt.text) {   // 両側の窓の下に大きな字（左の面も右の面も、前から後ろへ読める）
+    const tm = sideText(opt.text, opt.textColor || '#111'), tw = 6.4, th = 1.0, ty = (yLow + yWin) / 2 + 0.05, tz = -0.9;
+    for (const s of [1, -1]) {
+      const p = new THREE.Mesh(new THREE.PlaneGeometry(tw, th), tm);
+      p.position.set(s * (W + 0.012), ty, tz); p.rotation.y = s * Math.PI / 2; root.add(p);
+    }
+    const back = new THREE.Mesh(new THREE.PlaneGeometry(2.1, 0.33), tm); back.position.set(0, yWin - 0.05, -L - 0.01); back.rotation.y = Math.PI; root.add(back);
+  }
+  const doors = DOORS.map((d) => [-1, 1].map((k) => {
     const g = new THREE.Group(), w = (d.z1 - d.z0) / 2;
     const glass = new THREE.Mesh(new THREE.BoxGeometry(0.04, yTop - D.floor - 0.1, w - 0.04), BUS_MATS.glass); glass.position.y = (yTop + D.floor) / 2;
     const frame = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.08, w), BUS_MATS.dark); frame.position.y = D.floor + 0.05;
     g.add(glass, frame);
+    if (D.floor > 0.8) { const step = new THREE.Mesh(new THREE.BoxGeometry(0.06, D.floor - 0.3, w), mats.paint); step.position.y = (D.floor + 0.3) / 2; g.add(step); }   // 高い床のドアの下の部分
     g.position.set(W - 0.02, 0, (d.z0 + d.z1) / 2 + k * w / 2);
     root.add(g);
     return { g, k, w, z: g.position.z };
@@ -2992,7 +3048,7 @@ function buildPath(legs, isBus, opt = {}) {
       const i = dir > 0 ? k : e.N - 1 - k;
       const es = dir > 0 ? e.S[i] : e.L - e.S[i];
       let o;
-      if (isBus) o = e.WBUS[i] / 2 - 1.75;
+      if (isBus) o = (opt.express ? e.WEXP : e.WBUS)[i] / 2 - 1.75;
       else if (!wide) o = LANE_IN;
       else if (opt.park && opt.park.li === li && Math.abs(es - opt.park.want) < 45) o = LANE_OUT;
       else if (tEnd && e.L - es < LANE_TURN_D) o = tEnd > 0 ? LANE_OUT : LANE_IN;
@@ -3042,7 +3098,7 @@ function rotatePath(P, k0) {
   return Object.assign({}, P, { X, Z, Y, S, L: S[N], legOf, edgeS, nodeAt, Off, RW, Key });
 }
 // 走る線の上の印：交差点（停止線・曲がる向き・信号の組）、バス停
-function pathMarks(P, isBus) {
+function pathMarks(P, isBus, express) {   // express：高速バス（高速バスのりばだけに止まる）
   const R = roadNet, junc = [], stops = [];
   const head = (i) => { const j = (i + 3) % P.N, k = (i - 3 + P.N) % P.N; return Math.atan2(P.X[j] - P.X[k], P.Z[j] - P.Z[k]); };
   for (let i = 0; i < P.N; i++) {
@@ -3055,6 +3111,7 @@ function pathMarks(P, isBus) {
     junc.push({ s: P.S[i], stopS: P.S[i] - (n.jr + 1.6), node: n, grp: endQ ? endQ.grp : 0, turn: Math.abs(turn) > 0.5 ? Math.sign(turn) : 0 });
   }
   if (isBus) for (const st of R.stops) {
+    if (st.express !== !!express) continue;
     for (let i = 0; i < P.N; i++) {
       const e = R.edges[P.legs[P.legOf[i]][0]];
       if (e !== st.e) continue;
@@ -3099,7 +3156,7 @@ function simulate(v, others, cruise, laps) {
   const NR = nRec - 1;   // 記録は 1 時間でひとまわり
   for (const o of others) if (o !== v) {
     const off = ((((v.phase - o.phase) % T_ALL) + T_ALL) % T_ALL) / REC_DT;   // 相手の記録とのずれ（記録の数で）
-    for (const k of o.keySet) if (v.keySet.has(k)) { if (!byKey.has(k)) byKey.set(k, []); byKey.get(k).push({ o, off, keyRec: o.keyRec, esRec: o.esRec, flRec: o.flRec, hl: o.T.hl, bus: o.kind === 'bus' }); }
+    for (const k of o.keySet) if (v.keySet.has(k)) { if (!byKey.has(k)) byKey.set(k, []); byKey.get(k).push({ o, off, keyRec: o.keyRec, esRec: o.esRec, flRec: o.flRec, hl: o.T.hl, bus: o.kind === 'bus' && !o.express }); }
   }
   while (tau < T_ALL - 1e-6) {
     let fl = 0;
@@ -3116,6 +3173,7 @@ function simulate(v, others, cruise, laps) {
       if (ls < P.S[ci]) ci = pathIndex(P, ls); else while (ci < P.N - 1 && P.S[ci + 1] <= ls) ci++;   // いまの区間（前へ進むだけなので順に送る）
       const i = ci;
       let vt = Math.min(cruise, capV[i]);
+      if (v.slowV && s > v.slowFrom) vt = Math.min(vt, v.slowV);   // 高速バス：終点の手前はゆっくり（着く時刻を合わせる）
       const dStop = target - s;
       vt = Math.min(vt, Math.sqrt(2 * T.dec * Math.max(0, dStop - 0.2)));
       // 信号
@@ -3140,7 +3198,7 @@ function simulate(v, others, cruise, laps) {
           const o = list[q];
           let ri2 = Math.round(tauR + o.off); if (ri2 >= NR) ri2 -= NR;   // 相手の時計に合わせる
           const key = o.keyRec[ri2];
-          if (key !== kk || ((o.flRec[ri2] & 32) && !(isBus && o.bus))) continue;
+          if (key !== kk || ((o.flRec[ri2] & 32) && !(isBus && o.bus && !v.express))) continue;   // バス停などに寄せて止まっている車は見ない（路線バスどうしは同じバス停に並ぶので見る）
           const es = o.esRec[ri2];
           let gap = Infinity;
           if ((key >> 1) === myED) { if (es > myES) gap = es - myES; }
@@ -3155,7 +3213,10 @@ function simulate(v, others, cruise, laps) {
       if (dStop - sp * SIM_DT < 0.4 && sp < 1.2 && dStop < 1.5) {   // 止まる場所に着いた
         s = target; sp = 0;
         if (target >= total - 0.01) { done = true; departAt = tau; }
-        else { wait = BUS_DWELL; waitKind = 1; }
+        else {   // 時刻の決まったのりば（高速バス）は、その時刻まで待つ
+          const q = stops.find((q) => Math.abs(((target % L) + L) % L - q.s) < 1);
+          wait = q && q.dep != null ? ((((q.dep - v.phase - tau) % T_ALL) + T_ALL) % T_ALL) : BUS_DWELL; waitKind = 1;
+        }
       }
       if (sp < prevV - 0.15 * SIM_DT || sp < 0.2) fl |= 8;
       if (dStop < 45) fl |= 2;   // バス停・とめる場所へ寄せる左のウインカー
@@ -3175,6 +3236,7 @@ function runTrafficSim(traffic, passes) {
   // 出発の時刻をずらす（同じ路線のバスは等間隔）。1 時間でちょうど同じ所にもどるよう、速さと周回数を合わせる
   const done = [];
   for (const v of traffic) {
+    if (v.express) { fitExpress(v, done); laneRecords(v); done.push(v); continue; }
     const est = v.path.L / (11.1 * 0.72) + v.marks.stops.length * (BUS_DWELL + 8) + v.marks.junc.length * 9;   // 同じ道順の車は同じ周回数（追い越しはしない）
     let laps = Math.max(1, Math.round((T_ALL - 60) / est));
     v.phase = v.kind === 'bus' ? (v.k / v.nBus) * (T_ALL / laps) + v.lineIndex * 37 : v.carPhase;
@@ -3194,6 +3256,7 @@ function runTrafficSim(traffic, passes) {
   // 2 回目：あとから決まった車も見て、もう一度走らせる（先に決めた車が、あとの車をすり抜けないように）
   //   1 時間で回りきれなくなったら、ふつうの速さにもどす → 周回を 1 つ減らす（前の記録のままだと、ほかの車をすり抜けてしまう）
   for (let pass = 0; pass < passes; pass++) for (const v of traffic) {
+    if (v.express) { fitExpress(v, traffic); laneRecords(v); continue; }
     let res = simulate(v, traffic, v.cruise, v.laps);   // 見るのは同じ車線を通る車だけ（simulate の中で選ぶ）
     if (res.finishedAt > T_ALL - 8 && v.cruise < v.T.cruise) { const r2 = simulate(v, traffic, v.T.cruise, v.laps); if (r2.finishedAt <= T_ALL - 8) { res = r2; v.cruise = v.T.cruise; } }
     if (res.finishedAt > T_ALL - 8 && v.laps > 1) {
@@ -3206,6 +3269,31 @@ function runTrafficSim(traffic, passes) {
     laneRecords(v);
   }
 }
+// 高速バス：始発（はじめの浜）を決まった時刻に出て、終点（東野原）を出る時刻は、はじめの浜に決まった時刻の少し前に着くように選ぶ
+function fitExpress(v, others) {
+  v.laps = 1; v.cruise = v.T.cruise; v.phase = v.depart - 12; v.slowV = 0;   // 記録の 0 秒：はじめの浜で、発車 12 秒前（ドアをあけて待っている）
+  const far = v.marks.stops[v.marks.stops.length - 1];
+  const want = ((((v.arrive + 1.5 - v.phase) % T_ALL) + T_ALL) % T_ALL);   // はじめの浜に着きたい時刻（記録の中で。ちょうど〜1.5 秒後＝ゲームの 20:00）
+  let best = null;
+  const tryDep = (dep) => {
+    far.dep = dep;
+    const res = simulate(v, others, v.cruise, 1), late = res.finishedAt - want;   // ＋なら遅れ
+    if (Number.isFinite(late) && (!best || ((late <= 0) !== (best.late <= 0) ? late <= 0 : late <= 0 ? late > best.late : late < best.late))) best = { res, dep, late, slow: v.slowV };   // 間に合う中でいちばん遅い（＝ちょうどよい）もの
+    return Number.isFinite(late) ? late : 1e9;
+  };
+  // 出る時刻を遅らせると着く時刻も遅れる（信号で止まる分だけ、ずれないこともある）。間に合う／間に合わないの境目を半分ずつ探す
+  let lo = v.phase + want - 500, l0 = tryDep(lo), hi;
+  if (l0 > 0) { hi = lo; for (let k = 0; k < 6 && l0 > 0; k++) { lo -= Math.min(l0, 2000) + 30; l0 = tryDep(lo); } }
+  else { hi = lo - l0 + 30; for (let k = 0; k < 6 && tryDep(hi) <= 0; k++) { lo = hi; hi += 60; } }
+  for (let it = 0; it < 9 && best && best.late < -1.5; it++) { const mid = (lo + hi) / 2; if (tryDep(mid) <= 0) lo = mid; else hi = mid; }
+  // 信号で止まる分だけ早く着いてしまうときは、最後の交差点のあと（はじめの浜へ下る道）をゆっくり走って合わせる
+  if (best && best.late < -1.5) {
+    const d0 = best.dep; let a = 2.5, b = v.cruise;
+    for (let it = 0; it < 10 && best.late < -1.5; it++) { v.slowV = (a + b) / 2; if (tryDep(d0) <= 0) b = v.slowV; else a = v.slowV; }
+  }
+  if (!best) return;
+  far.dep = best.dep; v.slowV = best.slow; v.simIt = best.res.finishedAt; v.rec = best.res.rec; v.flags = best.res.flags; v.total = best.res.total; v.farDep = best.dep;
+}
 // 記録から、各時刻にどの道（車線）のどこにいるかを作っておく（あとの車が前の車を見るため）
 function laneRecords(v) {
   const P = v.path, n = v.rec.length, keyRec = new Int16Array(n), esRec = new Float32Array(n);
@@ -3216,12 +3304,12 @@ function laneRecords(v) {
   const R = roadNet, t0 = performance.now();
   const mk = (kind, legs, extra) => {
     const isBus = kind === 'bus';
-    const T = VTYPE[extra.type || 'bus'];
+    const T = VTYPE[extra.type || (extra.line && extra.line.express ? 'coach' : 'bus')];
     const v = Object.assign({ kind, T, legs }, extra);
     let P, k0 = 0;
     if (isBus) {
-      P = buildPath(legs, true);
-      const m = pathMarks(P, true);
+      P = buildPath(legs, true, { express: extra.line.express });
+      const m = pathMarks(P, true, extra.line.express);
       k0 = m.stops.length ? pathIndex(P, m.stops[0].s) : 0;
     } else {
       const pk = R.parks[extra.carIndex], li = CAR_ROUTES[extra.r].findIndex((l) => R.edges[l[0]] === pk.e && l[1] === pk.dir);
@@ -3230,34 +3318,35 @@ function laneRecords(v) {
       for (let i = 0; i < P.N; i++) if (P.legOf[i] === li && P.edgeS[i] >= want) { k0 = i; break; }
     }
     P = rotatePath(P, k0);
-    v.path = P; v.marks = pathMarks(P, isBus);
+    v.path = P; v.marks = pathMarks(P, isBus, isBus && extra.line.express);
+    if (v.express) { let i = 0; while (i < P.N - 1 && P.legOf[i] !== legs.length - 1) i++; v.slowFrom = P.S[i]; }   // 最後の道（はじめの浜へ下る道）の始まり
     // 車線の番号（道・向き・右の車線か）。走る線の点ごとに決まっている。legKey0 は各道に入って少し先の車線
     v.keySet = new Set(P.Key);
     v.keyAhead = new Int16Array(P.N); for (let i = 0; i < P.N; i++) v.keyAhead[i] = P.Key[pathIndex(P, (P.S[i] + 25) % P.L)];   // 25m 先の車線
     v.legKey0 = legs.map((_, li) => { let k = -1; for (let i = 0; i < P.N; i++) if (P.legOf[i] === li) { k = P.Key[i]; if (P.edgeS[i] >= 20) break; } return k; });
     return v;
   };
-  LINES.forEach((ln, li) => { for (let k = 0; k < ln.buses; k++) traffic.push(mk('bus', ln.legs, { line: ln, lineIndex: li, k, phase: 0 })); });
+  LINES.forEach((ln, li) => { for (let k = 0; k < ln.buses; k++) traffic.push(mk('bus', ln.legs, { line: ln, lineIndex: li, k, phase: 0, express: !!ln.express, arrive: gameSec(ln.arrive || 0), depart: gameSec(ln.depart || 0) })); });
   CARS.forEach((c, ci) => traffic.push(mk('car', CAR_ROUTES[c.r], { type: c.type, color: c.color, r: c.r, carIndex: ci, phase: 0 })));
   // 走り方の計算は重いので、別の作業場所（Web Worker）で計算して、画面を止めない。終わるまでバスと車は出ない
   for (const v of traffic) { v.nBus = v.kind === 'bus' ? v.line.buses : 0; v.carPhase = v.kind === 'car' ? hash(v.carIndex, 5) * T_ALL : 0; }
   const finish = (how) => { trafficReady = true; window.__trafficMs = performance.now() - t0; window.__trafficHow = how; window.__traffic = traffic; };
-  const keep = ['laps', 'cruise', 'total', 'simIt', 'phase', 'rec', 'flags'];
+  const keep = ['slowV', 'laps', 'cruise', 'total', 'simIt', 'phase', 'rec', 'flags', 'farDep'];
   try {
     const src = `const T_ALL = ${T_ALL}, REC_DT = ${REC_DT}, SIM_DT = ${SIM_DT}, BUS_DWELL = ${BUS_DWELL}, SIG_CYCLE = ${SIG_CYCLE};
 let roadNet;
-${[wrapA, pathIndex, signalState, simulate, laneRecords, runTrafficSim].map((f) => f.toString()).join('\n')}
+${[wrapA, pathIndex, signalState, simulate, laneRecords, fitExpress, runTrafficSim].map((f) => f.toString()).join('\n')}
 onmessage = (e) => {
   const { vs, edgesL, passes } = e.data;
   roadNet = { edges: edgesL.map((L) => ({ L })) };
   for (const v of vs) v.keySet = new Set(v.keySet);
   runTrafficSim(vs, passes);
-  const out = vs.map((v) => ({ laps: v.laps, cruise: v.cruise, total: v.total, simIt: v.simIt, phase: v.phase, rec: v.rec, flags: v.flags }));
+  const out = vs.map((v) => ({ slowV: v.slowV, laps: v.laps, cruise: v.cruise, total: v.total, simIt: v.simIt, phase: v.phase, rec: v.rec, flags: v.flags, farDep: v.farDep }));
   postMessage(out, out.flatMap((o) => [o.rec.buffer, o.flags.buffer]));
 };`;
     const url = URL.createObjectURL(new Blob([src], { type: 'text/javascript' })), w = new Worker(url);
     const vs = traffic.map((v) => ({
-      kind: v.kind, T: v.T, k: v.k, nBus: v.nBus, lineIndex: v.lineIndex, carPhase: v.carPhase,
+      kind: v.kind, T: v.T, k: v.k, nBus: v.nBus, lineIndex: v.lineIndex, carPhase: v.carPhase, express: v.express, arrive: v.arrive, depart: v.depart, slowFrom: v.slowFrom,
       path: { N: v.path.N, X: v.path.X, Z: v.path.Z, S: v.path.S, L: v.path.L, legs: v.path.legs, legOf: v.path.legOf, edgeS: v.path.edgeS, Key: v.path.Key },
       marks: { junc: v.marks.junc.map((j) => ({ s: j.s, stopS: j.stopS, grp: j.grp, turn: j.turn, node: { jr: j.node.jr, sigOff: j.node.sigOff } })), stops: v.marks.stops.map((q) => ({ s: q.s })) },
       keySet: [...v.keySet], keyAhead: v.keyAhead, legKey0: v.legKey0,
@@ -3270,8 +3359,11 @@ onmessage = (e) => {
 // 見た目を作る
 const buses = traffic.filter((v) => v.kind === 'bus'), cars = traffic.filter((v) => v.kind === 'car');
 for (const v of traffic) {
-  const m = v.kind === 'bus' ? makeBus(`${v.line.no} ${v.line.name}`, new THREE.Color(v.line.color).getHex()) : makeCar(v.type, v.color);
-  Object.assign(v, m, { x: 0, y: 0, z: 0, h: 0, pitch: 0, speed: 0, open: 0, fl: 0, s: 0, name: v.kind === 'bus' ? `${v.line.no}番 路線バス` : '車', stopName: '', nextName: '' });
+  const ex = v.kind === 'bus' && v.line.express;
+  const m = v.kind !== 'bus' ? makeCar(v.type, v.color) : ex ? makeBus('高速 はじめの浜⇔東野原', 0x111111, COACH_DIM, { text: 'HAKATA' })   // 高速バス：白い大きな車体に黒い字
+    : makeBus(`${v.line.no} ${v.line.name}`, new THREE.Color(v.line.color).getHex());
+  Object.assign(v, m, { x: 0, y: 0, z: 0, h: 0, pitch: 0, speed: 0, open: 0, fl: 0, s: 0, name: v.kind === 'bus' ? (ex ? '高速バス' : `${v.line.no}番 路線バス`) : '車', stopName: '', nextName: '' });
+  if (v.kind === 'bus') v.D = ex ? COACH_DIM : BUS_DIM;
   v.id = v.kind === 'bus' ? buses.indexOf(v) : -1;
   v.root.visible = false;
   scene.add(v.root);
@@ -3437,7 +3529,7 @@ function stepTraffic(dt) {
     v.root.rotation.set(-v.pitch, h, 0);
     v.root.updateMatrixWorld(true);
     if (!near) continue;
-    if (v.doors) for (const leaves of v.doors) for (const d of leaves) { d.g.position.x = BUS_DIM.hw - 0.02 + v.open * 0.08; d.g.position.z = d.z + d.k * v.open * (d.w - 0.05); }
+    if (v.doors) for (const leaves of v.doors) for (const d of leaves) { d.g.position.x = v.D.hw - 0.02 + v.open * 0.08; d.g.position.z = d.z + d.k * v.open * (d.w - 0.05); }
     const L = v.lights, haz = v.fl & 1;
     L.bl.color.setHex(blink && (haz || v.fl & 2) ? LAMP.blinkOn : LAMP.blinkOff);
     L.br.color.setHex(blink && (haz || v.fl & 4) ? LAMP.blinkOn : LAMP.blinkOff);
@@ -3459,7 +3551,7 @@ function nearBusDoor() {
     const s = Math.sin(b.h), c = Math.cos(b.h), dx = player.pos.x - b.x, dz = player.pos.z - b.z;
     const lx = dx * c - dz * s, lz = dx * s + dz * c;
     if (Math.abs(player.pos.y - b.y) > 2.5) continue;
-    for (const d of BUS_DOORS) if (lx > BUS_DIM.hw - 0.3 && lx < BUS_DIM.hw + 2.5 && lz > d.z0 - 0.8 && lz < d.z1 + 0.8) return { b, d };
+    for (const d of b.D.doors) if (lx > b.D.hw - 0.3 && lx < b.D.hw + 2.5 && lz > d.z0 - 0.8 && lz < d.z1 + 0.8) return { b, d };
   }
   return null;
 }
@@ -3837,18 +3929,18 @@ showPoints();
 function boardBus(n) {
   if (wallet.p < BUS_FARE) { showMsg(`P が足りないので乗れません（運賃 ${BUS_FARE}P・いま ${fmtP(wallet.p)}）`); return; }
   addPoints(-BUS_FARE);
-  busRide = { b: n.b, lx: BUS_DIM.hw - 0.5, lz: (n.d.z0 + n.d.z1) / 2, seat: null };
+  busRide = { b: n.b, lx: n.b.D.hw - 0.5, lz: (n.d.z0 + n.d.z1) / 2, seat: null };
   camYaw = n.b.h + Math.PI / 2;   // 車内のほう（右）を向く
   camPitch = 0.05; busYawPrev = n.b.h;
   avatar.visible = false;
-  showMsg(`${n.b.line.no}番（${n.b.line.name}）に乗りました。運賃 ${BUS_FARE}P（のこり ${fmtP(wallet.p)}）。座席の近くで「座る」（Space）。止まってドアがあいたら「降りる」`);
+  showMsg(`${lineShort(n.b.line)}（${n.b.line.name}）に乗りました。運賃 ${BUS_FARE}P（のこり ${fmtP(wallet.p)}）。座席の近くで「座る」（Space）。止まってドアがあいたら「降りる」`);
 }
 function leaveBus(force) {
   const r = busRide; if (!r) return;
   const b = r.b;
   if (!force && b.open < 0.8) { showMsg(b.speed < 0.1 ? 'ドアがあくまで待ってください' : 'バスが止まってから降りてください'); return; }
-  const d = BUS_DOORS.reduce((a, x) => Math.abs((x.z0 + x.z1) / 2 - r.lz) < Math.abs((a.z0 + a.z1) / 2 - r.lz) ? x : a);
-  const p = busLocalToWorld(b, BUS_DIM.hw + 0.9, 0, (d.z0 + d.z1) / 2);
+  const d = b.D.doors.reduce((a, x) => Math.abs((x.z0 + x.z1) / 2 - r.lz) < Math.abs((a.z0 + a.z1) / 2 - r.lz) ? x : a);
+  const p = busLocalToWorld(b, b.D.hw + 0.9, 0, (d.z0 + d.z1) / 2);
   busRide = null;
   player.pos.set(p.x, Math.max(groundAt(p.x, p.z, b.y + 1), b.y - 0.5), p.z);
   player.vy = 0; player.face = b.h + Math.PI / 2;
@@ -3857,7 +3949,7 @@ function leaveBus(force) {
 // 座る・立つ（近くの空いている座席）
 function nearSeat(r) {
   let best = null, bd = 1.1;
-  for (const s of BUS_SEATS) { const d = Math.hypot(s.x - r.lx, s.z - r.lz); if (d < bd) { bd = d; best = s; } }
+  for (const s of r.b.D.seats) { const d = Math.hypot(s.x - r.lx, s.z - r.lz); if (d < bd) { bd = d; best = s; } }
   return best;
 }
 function toggleSeat() {
@@ -3883,18 +3975,18 @@ function stepBusRider(dt) {
     const mx = -touch.x, mz = -touch.y, mag = Math.min(1, Math.hypot(mx, mz));
     if (mag > 0.05) { const lx = fz, lz = -fx, n = Math.hypot(mx, mz); dx = (fx * mz + lx * mx) / n * mag; dz = (fz * mz + lz * mx) / n * mag; }
   } else if (fwd) { dx = fx * fwd; dz = fz * fwd; }
-  const D = BUS_DIM;
+  const D = b.D;
   if (r.seat && (dx || dz)) toggleSeat();   // 歩こうとしたら立つ
   if (!r.seat) {
     const sp = (keys.ShiftLeft || keys.ShiftRight ? 3.2 : 2.2) * dt;
     const s = Math.sin(b.h), c = Math.cos(b.h);
     r.lx += (dx * c - dz * s) * sp; r.lz += (dx * s + dz * c) * sp;
     // ドアがあいていれば、ドアから外へ出られる
-    const inDoor = b.open > 0.8 && BUS_DOORS.find((d) => r.lz > d.z0 + 0.1 && r.lz < d.z1 - 0.1);
+    const inDoor = b.open > 0.8 && D.doors.find((d) => r.lz > d.z0 + 0.1 && r.lz < d.z1 - 0.1);
     r.lx = Math.min(inDoor ? D.hw + 0.3 : D.hw - 0.12 - RIDER_R, Math.max(-D.hw + 0.12 + RIDER_R, r.lx));
     if (inDoor && r.lx > D.hw - 0.3) { leaveBus(false); return; }
     r.lz = Math.min(D.hl - 0.15 - RIDER_R, Math.max(-D.hl + 0.15 + RIDER_R, r.lz));
-    for (const q of BUS_SOLID) {   // 座席と運転席には入れない
+    for (const q of D.solid) {   // 座席と運転席には入れない
       const ox1 = r.lx + RIDER_R - q.x0, ox2 = q.x1 - (r.lx - RIDER_R), oz1 = r.lz + RIDER_R - q.z0, oz2 = q.z1 - (r.lz - RIDER_R);
       if (ox1 > 0 && ox2 > 0 && oz1 > 0 && oz2 > 0) {
         const m = Math.min(ox1, ox2, oz1, oz2);
@@ -4682,7 +4774,7 @@ function stepOthers(dt) {
       const bb = buses[t.bb];
       if (!o.bl) o.bl = t.bl.slice();
       o.bl[0] += (t.bl[0] - o.bl[0]) * k; o.bl[1] += (t.bl[1] - o.bl[1]) * k;
-      o.pos.copy(busLocalToWorld(bb, o.bl[0], BUS_DIM.floor - (t.bl[2] ? 0.45 : 0), o.bl[1]));
+      o.pos.copy(busLocalToWorld(bb, o.bl[0], bb.D.floor - (t.bl[2] ? 0.45 : 0), o.bl[1]));
       if (t.bl[2]) o.face = bb.h;   // 座っている人は前を向く
     } else o.bl = null;
     o.avatar.visible = t.m !== 'drive' && !(pv && vtype(pv) === 'sub');
@@ -4943,7 +5035,7 @@ function updateCamera(dt) {
     return;
   }
   if (busRide) {   // バスの中は一人称：目の高さから、見ている向きへ
-    const b = busRide.b, e = busLocalToWorld(b, busRide.lx, BUS_DIM.floor + (busRide.seat ? BUS_DIM.sitEye : BUS_DIM.eye), busRide.lz);
+    const b = busRide.b, e = busLocalToWorld(b, busRide.lx, b.D.floor + (busRide.seat ? b.D.sitEye : b.D.eye), busRide.lz);
     camera.position.copy(e);
     camera.near = 0.05; camera.far = VIEW_R + 200; camera.updateProjectionMatrix();
     const cp = Math.cos(camPitch);
@@ -5095,13 +5187,13 @@ function busUi() {
   const key = ['bus', !!r, kmh, next, b.open > 0.8, sit, b.id].join('|');
   if (key === lastUi) return;
   lastUi = key;
-  el('state').textContent = r ? `${b.line.no}番 ${b.line.name}${sit ? '（座席）' : ''}` : `${b.line.no}番 ${b.line.name} が来ています`;
+  el('state').textContent = r ? `${lineLabel(b.line)}${sit ? '（座席）' : ''}` : `${lineLabel(b.line)} が来ています`;
   el('alt').textContent = `高さ +${player.pos.y.toFixed(1)}m`;
   el('navLine').hidden = false; el('navLine').textContent = next;
   el('hpLine').hidden = true;
   el('speedBox').hidden = !r; el('speed').textContent = kmh; el('speedUnit').textContent = 'km/h';
   el('prompt').hidden = false;
-  el('promptText').textContent = r ? 'バスから' : `${b.line.no}番のバスに`;
+  el('promptText').textContent = r ? 'バスから' : `${lineShort(b.line)}${b.line.express ? '' : 'のバス'}に`;
   el('promptBtn').textContent = r ? '降りる' : '乗る';
   tAct.hidden = false; tAct.textContent = r ? (sit ? '立つ' : '座る') : 'ジャンプ'; tDive.hidden = true;
   el('hint').textContent = r ? HINT.bus : HINT.walk;
@@ -6866,13 +6958,14 @@ function drawWmap() {
     const seen = new Set();
     LINES.forEach((ln) => {
       if (seen.has(ln.no)) return; seen.add(ln.no);
-      const bus = buses.find((b) => b.line === ln), Pth = bus.path, off = (ln.no - 2) * Math.max(2.5, 5 * sc);
+      const bus = buses.find((b) => b.line === ln), Pth = bus.path, off = (ln.express ? 2.5 : ln.no - 2) * Math.max(2.5, 5 * sc);
       g.beginPath();
       for (let i = 0; i <= Pth.N; i += 2) {
         const k = i % Pth.N, j = (k + 2) % Pth.N, dx = Pth.X[j] - Pth.X[k], dz = Pth.Z[j] - Pth.Z[k], l = Math.hypot(dx, dz) || 1;
         const [x, y] = P(Pth.X[k], Pth.Z[k]), nx = -dz / l, ny = dx / l;
         const X = x + nx * off, Y = y + ny * off; i ? g.lineTo(X, Y) : g.moveTo(X, Y);
       }
+      if (ln.express) { g.strokeStyle = '#222'; g.lineWidth = Math.max(5, 6 * sc * 4); g.globalAlpha = 0.85; g.stroke(); }   // 高速バスは白い線を黒でふちどる
       g.strokeStyle = ln.color; g.lineWidth = Math.max(3, 4 * sc * 4); g.globalAlpha = 0.85; g.stroke(); g.globalAlpha = 1;
     });
   }
@@ -6916,7 +7009,7 @@ function drawWmap() {
   // 走っているバスと車
   for (const v of traffic) {
     const [x, y] = P(v.x, v.z);
-    if (v.kind === 'bus') { g.fillStyle = v.line.color; g.strokeStyle = '#fff'; g.lineWidth = 1.5; g.fillRect(x - 4, y - 4, 8, 8); g.strokeRect(x - 4, y - 4, 8, 8); }
+    if (v.kind === 'bus') { g.fillStyle = v.line.color; g.strokeStyle = v.line.express ? '#111' : '#fff'; g.lineWidth = 1.5; g.fillRect(x - 4, y - 4, 8, 8); g.strokeRect(x - 4, y - 4, 8, 8); }
     else if (WMAP.mode === 'near') { g.fillStyle = '#555'; g.beginPath(); g.arc(x, y, 2.5, 0, 7); g.fill(); }
   }
   // ほかの人と自分
@@ -6964,9 +7057,10 @@ function stepStopInfo(dt) {
     if (!(v.fl & 16) || v.stopName !== st.name) continue;
     const r = busRecIndex(v, now);
     let i = Math.floor(r);
-    while (i < v.rec.length - 2 && v.rec[i + 1] - v.rec[i] < 0.05) i++;
+    const n = v.rec.length - 1;   // 1 時間の終わりで止まっていたら、次の 1 時間の初めへ続けて見る（高速バスは終点で時間をまたいで待つ）
+    while (i < 2 * n && (i % n === n - 1 || v.rec[(i % n) + 1] - v.rec[i % n] < 0.05)) i++;
     const dep = now + (i - r) * REC_DT;
-    lines.push(`<b>${v.line.no}番 ${v.line.name}</b>　<span class="dep">${hhmmss(dep)} 発車</span>（あと ${Math.max(0, Math.ceil(dep - now))} 秒）`);
+    lines.push(`<b>${lineLabel(v.line)}</b>　<span class="dep">${v.line.express ? gameHM(dep) : hhmmss(dep)} 発車</span>（あと ${Math.max(0, Math.ceil(dep - now))} 秒）`);
   }
   // 次に来るバス（止まっていないもの）
   let next = null;
@@ -6974,6 +7068,13 @@ function stepStopInfo(dt) {
     if ((v.fl & 16) && v.stopName === st.name) continue;
     const m = v.marks.stops.find((q) => q.name === st.name);
     if (!m) continue;
+    if (v.line.express) {   // 高速バス：1 日 1 往復。着く時刻と出る時刻（ゲームの時刻）
+      const tgt = m.s < 0.5 ? v.total : m.s;
+      let i = 0; while (i < v.rec.length - 1 && v.rec[i] < tgt - 0.5) i++;
+      const arr = v.phase + i * REC_DT, dep = m.s < 0.5 ? v.depart : v.farDep, wait = ((((arr - now) % T_ALL) + T_ALL) % T_ALL);
+      lines.push(`<b>${lineLabel(v.line)}</b>　${gameHM(arr)} ごろ着・<span class="dep">${gameHM(dep)} 発</span>（着くまで あと ${Math.max(1, Math.round(wait / 60))} 分）`);
+      continue;
+    }
     const r = busRecIndex(v, now), L = v.path.L;
     let target = m.s + Math.ceil((v.s + 3 - m.s) / L) * L;
     let i = Math.floor(r);
@@ -6982,7 +7083,7 @@ function stepStopInfo(dt) {
     const t = now + (i - r) * REC_DT;
     if (!next || t < next.t) next = { t, v };
   }
-  if (next) lines.push(`次のバス：${next.v.line.no}番 ${next.v.line.name}　${hhmmss(next.t)} ごろ着（あと ${Math.max(1, Math.round((next.t - now) / 60))} 分）`);
+  if (next) lines.push(`次のバス：${lineLabel(next.v.line)}　${hhmmss(next.t)} ごろ着（あと ${Math.max(1, Math.round((next.t - now) / 60))} 分）`);
   box.innerHTML = `🚏 <b>${st.name}</b><br>` + (lines.length ? lines.join('<br>') : 'このあと 1 時間、バスは来ません');
   if (box.hidden) box.hidden = false;
 }
@@ -7035,7 +7136,7 @@ document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && WMAP.ope
   const lg = el('wmapLegend'), seen = new Set();
   for (const ln of LINES) {
     if (seen.has(ln.no)) continue; seen.add(ln.no);
-    const row = document.createElement('div'); row.innerHTML = `<i style="background:${ln.color}"></i>${ln.no}番 ${ln.no === 1 ? '大陸循環（外回り・内回り）' : ln.name}`;
+    const row = document.createElement('div'); row.innerHTML = `<i style="background:${ln.color}${ln.express ? ';outline:2px solid #222' : ''}"></i>${ln.express ? `高速バス ${ln.name}（はじめの浜 ${ln.depart}:00 発・${ln.arrive}:00 着）` : `${ln.no}番 ${ln.no === 1 ? '大陸循環（外回り・内回り）' : ln.name}`}`;
     lg.appendChild(row);
   }
 }
