@@ -1212,7 +1212,8 @@ function makePad(root, x, z, rot) {
   root.rotation.y = 0; root.position.set(0, 0, 0); root.updateMatrixWorld(true);
   const lb = new THREE.Box3().setFromObject(root);
   root.rotation.y = r0; root.position.copy(p0); root.updateMatrixWorld(true);
-  const hw = (lb.max.x - lb.min.x) / 2 + 1, hd = (lb.max.z - lb.min.z) / 2 + 1, lu = (lb.min.x + lb.max.x) / 2, lv = (lb.min.z + lb.max.z) / 2;
+  const hw = (lb.max.x - lb.min.x) / 2 + 2.5, hd = (lb.max.z - lb.min.z) / 2 + 2.5,   // 地面は 2m 格子なので、まわり 2.5m まで平らにして床の中に地面が出ないように
+   lu = (lb.min.x + lb.max.x) / 2, lv = (lb.min.z + lb.max.z) / 2;
   const c = Math.cos(rot), s = Math.sin(rot);
   const p = { x, z, c, s, lu, lv, hw, hd, y: 0, base: lb.min.y };
   let sum = 0, n = 0;
