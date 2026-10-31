@@ -1212,15 +1212,24 @@ function makePad(root, x, z, rot) {
   root.rotation.y = 0; root.position.set(0, 0, 0); root.updateMatrixWorld(true);
   const lb = new THREE.Box3().setFromObject(root);
   root.rotation.y = r0; root.position.copy(p0); root.updateMatrixWorld(true);
-  const hw = (lb.max.x - lb.min.x) / 2 + 0.3, hd = (lb.max.z - lb.min.z) / 2 + 0.3, lu = (lb.min.x + lb.max.x) / 2, lv = (lb.min.z + lb.max.z) / 2;
+  const hw = (lb.max.x - lb.min.x) / 2 + 1, hd = (lb.max.z - lb.min.z) / 2 + 1, lu = (lb.min.x + lb.max.x) / 2, lv = (lb.min.z + lb.max.z) / 2;
   const c = Math.cos(rot), s = Math.sin(rot);
-  const p = { x, z, c, s, lu, lv, hw, hd, y: 0 };
+  const p = { x, z, c, s, lu, lv, hw, hd, y: 0, base: lb.min.y };
   let sum = 0, n = 0;
   for (let i = 0; i <= 8; i++) for (let j = 0; j <= 8; j++) {
     const u = lu + (i / 8 - 0.5) * 2 * hw, v = lv + (j / 8 - 0.5) * 2 * hd;
     sum += baseHeight(x + u * c + v * s, z - u * s + v * c); n++;
   }
   p.y = Math.max(sum / n, SEA + 0.3);
+  // 近く（敷地から 15m 以内）に道路があれば、いちばん近い道路の高さにそろえる（道路に面した建物は道路と同じ高さ）
+  let best = 15;
+  for (let i = 0; i <= 10; i++) for (let j = 0; j <= 10; j++) {
+    const u = lu + (i / 10 - 0.5) * 2 * (hw + 15), v = lv + (j / 10 - 0.5) * 2 * (hd + 15);
+    const q = roadNear(x + u * c + v * s, z - u * s + v * c);
+    if (!q || q.br) continue;
+    const ou = Math.max(0, Math.abs(u - lu) - hw), ov = Math.max(0, Math.abs(v - lv) - hd), gap = Math.hypot(ou, ov) + Math.max(0, q.d - q.w / 2);
+    if (gap < best) { best = gap; p.y = Math.max(q.y - 0.12, SEA + 0.3); }
+  }
   const R = Math.hypot(hw, hd) + Math.hypot(lu, lv) + PAD_M;
   Object.assign(p, { x0: x - R, x1: x + R, z0: z - R, z1: z + R });
   return p;
@@ -1894,7 +1903,7 @@ function placeProp(item, name, cat, x, z, rot, id) {
   let pad = null;
   if (cat === 'building') {   // 建物は、ならした敷地の上にのせる
     pad = makePad(item.root, x, z, rot); PADS.push(pad); refreshPadArea(pad);
-    item.root.position.y = pad.y + 0.08; item.root.updateMatrixWorld(true);   // 地面と床が重なってちらつかないよう、少し上に
+    item.root.position.y = pad.y + 0.02 - pad.base; item.root.updateMatrixWorld(true);   // 建物のいちばん下を地面に（重なってちらつかないよう 2cm 上）
     box = new THREE.Box3().setFromObject(item.root);
   }
   const pr = { item, box, id, name, cat, pad };
@@ -2206,7 +2215,7 @@ function chooseBuildingSpot(item) {
     const place = () => {
       const x = clampX(player.pos.x + Math.sin(player.face) * reach, 4), z = clampZ(player.pos.z + Math.cos(player.face) * reach, 4);
       const pad = makePad(root, x, z, rot);
-      root.position.set(x, pad.y + 0.08, z); root.rotation.y = rot;
+      root.position.set(x, pad.y + 0.02 - pad.base, z); root.rotation.y = rot;
       guide.position.set(x, pad.y + 0.05, z); guide.rotation.y = rot;
       spot = { x, z, rot };
       const b = bearingOf(wrapA(rot));
