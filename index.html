@@ -2251,10 +2251,22 @@ function standUp() {
   player.pos.y = Math.max(bldFloor(player.pos.x, player.pos.z, ch.seatY - 0.3), groundAt(player.pos.x, player.pos.z, ch.seatY));
 }
 // いま中にいる建物（屋根の下にいる）
+// 屋根があって、まわり 4 方向のうち 3 方向以上に壁がある（入口のひさしの下は外あつかい）。少し動くまでは前の答えを使う
+const IN_MEMO = { x: NaN, z: NaN, y: NaN, n: -1, b: null };
 function insideBld() {
   const q = player.pos;
-  for (const b of blds) if (nearBld(b, q.x, q.z, -0.5) && q.y < b.pr.box.max.y - 1 && bldFloor(q.x, q.z, q.y) > -Infinity && hasRoof(b, q)) return b;
-  return null;
+  if (Math.abs(q.x - IN_MEMO.x) < 0.15 && Math.abs(q.z - IN_MEMO.z) < 0.15 && Math.abs(q.y - IN_MEMO.y) < 0.15 && IN_MEMO.n === blds.length) return IN_MEMO.b;
+  let res = null;
+  for (const b of blds) if (nearBld(b, q.x, q.z, -0.5) && q.y < b.pr.box.max.y - 1 && bldFloor(q.x, q.z, q.y) > -Infinity && hasRoof(b, q) && wallsAround(b, q) >= 3) { res = b; break; }
+  Object.assign(IN_MEMO, { x: q.x, z: q.z, y: q.y, n: blds.length, b: res });
+  return res;
+}
+const SIDE_DIRS = [new THREE.Vector3(1, 0, 0), new THREE.Vector3(-1, 0, 0), new THREE.Vector3(0, 0, 1), new THREE.Vector3(0, 0, -1)];
+function wallsAround(b, q) {
+  let n = 0;
+  ROOF_O.set(q.x, q.y + 1.2, q.z); ROOF_RAY.far = 40;
+  for (const d of SIDE_DIRS) { ROOF_RAY.set(ROOF_O, d); if (b.rayMeshes.some((rm) => ROOF_RAY.intersectObject(rm, false).length > 0)) n++; }
+  return n;
 }
 const ROOF_RAY = new THREE.Raycaster(), UPV = new THREE.Vector3(0, 1, 0), ROOF_O = new THREE.Vector3();
 function hasRoof(b, q) {
@@ -2292,7 +2304,11 @@ function stepBuildings(dt) {
   stepBgm(dt);
   for (const b of blds) for (const d of b.doors) if (d.t !== d.want) { d.t += Math.sign(d.want - d.t) * Math.min(Math.abs(d.want - d.t), dt * 1.8); poseDoor(d); }
   for (const b of blds) b.doors.forEach((d, k) => {   // ひとりでに閉まるドア
-    if (!d.auto || !d.want) return;
+    if (!d.auto) return;
+    if (!d.want) {   // 自動ドア：自分が近づくと開く（となりのドアもいっしょに）
+      if (Math.hypot(player.pos.x - d.c0.x, player.pos.z - d.c0.z) < 1.6 && Math.abs(player.pos.y - d.c0.y) < 2.5 && !driving) doBldAction({ kind: 'door', b, k });
+      return;
+    }
     let near = Math.hypot(player.pos.x - d.c0.x, player.pos.z - d.c0.z) < 1.8 && Math.abs(player.pos.y - d.c0.y) < 3;
     if (!near) for (const o of net.others.values()) if (o.avatar && o.avatar.visible && Math.hypot(o.pos.x - d.c0.x, o.pos.z - d.c0.z) < 1.8) { near = true; break; }
     const t = performance.now() / 1000;   // 画面が重くても本当の秒数で数える
@@ -6684,7 +6700,7 @@ window.__world = {
   get driving() { return driving; },
   set camYaw(v) { camYaw = v; }, set camPitch(v) { camPitch = v; }, set camDist(v) { camDist = v; }, get camDist() { return camDist; },
   keys, touch, toggleRide, loadItem, ITEM_DEFS, heightAt, player, net, syncPeers,
-  addPropFromBuffer, wallet, addPoints, PG, touch, bgmState: () => ({ name: bgm.name, vol: +bgm.vol.toFixed(2), playing: !!(bgm.el && !bgm.el.paused), t: bgm.el ? +bgm.el.currentTime.toFixed(1) : 0 }), blds, bldFloor, bldPush, roadNear, nearBldAction, placeAt, get bldSeat() { return bldSeat; }, get dayLight() { return dayLight; },
+  addPropFromBuffer, wallet, addPoints, PG, touch, insideB: () => insideBld(), setCamYaw: (v) => { camYaw = v; }, bgmState: () => ({ name: bgm.name, vol: +bgm.vol.toFixed(2), playing: !!(bgm.el && !bgm.el.paused), t: bgm.el ? +bgm.el.currentTime.toFixed(1) : 0 }), blds, bldFloor, bldPush, roadNear, nearBldAction, placeAt, get bldSeat() { return bldSeat; }, get dayLight() { return dayLight; },
   get aboard() { return aboard; }, get ride() { return ride; }, buses, get busRide() { return busRide; }, nearBusDoor, traffic, roadNet, worldHour, setHourOffset(h) { hourOffset = h; },
   hullGround, findWaterSpot, rescueBoat, get periscope() { return periscope; }, toggleLight, setPeriscope,
   teleport(x, z, y) { player.pos.set(x, y ?? heightAt(x, z), z); player.vy = 0; },
