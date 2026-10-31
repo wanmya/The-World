@@ -3705,7 +3705,12 @@ function stepPlayer(dt) {
   let turnIn = (keys.KeyA || keys.ArrowLeft ? 1 : 0) - (keys.KeyD || keys.ArrowRight ? 1 : 0);
   const run = keys.ShiftLeft || keys.ShiftRight;
   let speed = run ? RUN : WALK, stick = false;
-  if (touch.stickId !== null) { speed = RUN * 0.8; stick = true; }
+  if (touch.stickId !== null) {
+    if (fpView) {   // 建物の中（一人称）：スティックの上下で前後、左右でゆっくり向きを変える。カメラが体についてくるので、カメラ基準だとくるくる回ってしまう
+      const sy = Math.abs(touch.y) > 0.2 ? -touch.y : 0, sx = Math.abs(touch.x) > 0.25 ? -touch.x : 0;
+      fwdIn = Math.max(-1, Math.min(1, sy * 1.2)); turnIn = Math.max(-1, Math.min(1, sx)) * 0.6; speed = WALK;
+    } else { speed = RUN * 0.8; stick = true; }
+  }
   const ground = groundAt(player.pos.x, player.pos.z, player.pos.y);
   const inWater = ground < FLOAT_Y && player.pos.y < FLOAT_Y + 0.3;
   if (inWater) speed = stick ? SWIM * 1.3 : (run ? SWIM * 1.6 : SWIM);
@@ -6522,7 +6527,7 @@ window.__world = {
   get driving() { return driving; },
   set camYaw(v) { camYaw = v; }, set camPitch(v) { camPitch = v; }, set camDist(v) { camDist = v; }, get camDist() { return camDist; },
   keys, touch, toggleRide, loadItem, ITEM_DEFS, heightAt, player, net, syncPeers,
-  addPropFromBuffer, wallet, addPoints, PG, bgmState: () => ({ name: bgm.name, vol: +bgm.vol.toFixed(2), playing: !!(bgm.el && !bgm.el.paused), t: bgm.el ? +bgm.el.currentTime.toFixed(1) : 0 }), blds, bldFloor, bldPush, roadNear, nearBldAction, placeAt, get bldSeat() { return bldSeat; }, get dayLight() { return dayLight; },
+  addPropFromBuffer, wallet, addPoints, PG, touch, bgmState: () => ({ name: bgm.name, vol: +bgm.vol.toFixed(2), playing: !!(bgm.el && !bgm.el.paused), t: bgm.el ? +bgm.el.currentTime.toFixed(1) : 0 }), blds, bldFloor, bldPush, roadNear, nearBldAction, placeAt, get bldSeat() { return bldSeat; }, get dayLight() { return dayLight; },
   get aboard() { return aboard; }, get ride() { return ride; }, buses, get busRide() { return busRide; }, nearBusDoor, traffic, roadNet, worldHour, setHourOffset(h) { hourOffset = h; },
   hullGround, findWaterSpot, rescueBoat, get periscope() { return periscope; }, toggleLight, setPeriscope,
   teleport(x, z, y) { player.pos.set(x, y ?? heightAt(x, z), z); player.vy = 0; },
