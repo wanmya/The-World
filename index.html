@@ -2053,6 +2053,12 @@ function setupBuilding(pr) {
     if (/^(閉まる|自動|autoclose)$/i.test(k) && Number(v) > 0) shut = Number(v);
   } });
   if (shop) b.always = true;
+  // BGM：建物のカスタムプロパティ BGM（または 音楽）に、ワールドにある曲の名前。パチンコ店は何もなくてもパチンコの曲
+  b.bgm = null;
+  root.traverse((o) => { for (const [k, v] of Object.entries(o.userData || {})) {
+    if (/^(BGM|音楽|music)$/i.test(k) && BGM_FILES[String(v).trim()]) b.bgm = String(v).trim();
+    if (!b.bgm && /^(用途|use)$/i.test(k) && /パチンコ|pachinko/i.test(String(v))) b.bgm = 'パチンコ';
+  } });
   // ドアがひとりでに閉まる：ドアか建物に 閉まる = 秒数。お店は 3 秒。だれもドアのそばにいなくなってから数える
   for (const d of b.doors) { const v = Number(propOf(d.o, ['閉まる', '自動', 'autoclose'])); d.auto = v > 0 ? v : (shut || (shop ? 3 : 0)); d.hold = 0; }
   pr.bld = b;
@@ -2218,7 +2224,29 @@ const LAMP_POOL = [];
 for (let i = 0; i < (coarse ? 2 : 4); i++) { const L = new THREE.PointLight(0xfff1d6, 0, 14, 1.6); scene.add(L); LAMP_POOL.push(L); }
 let lampT = 0;
 const VLAMP = { at: new THREE.Vector3(), col: new THREE.Color(0xfff1d6), pow: 0.8 };
+// 建物の中で流れる曲（ワールドに入っている曲だけ。.glb からは名前でえらぶ）
+const BGM_FILES = { 'パチンコ': 'sounds/pachinko.mp3' };
+const bgm = { el: null, name: null, vol: 0, want: null, t: 0, wait: 0 };
+function stepBgm(dt) {
+  bgm.t -= dt;
+  if (bgm.t <= 0) { bgm.t = 0.3; const b = blds.length ? insideBld() : null; bgm.want = b && b.bgm ? b.bgm : null; }
+  const want = bgm.want;
+  if (want && want !== bgm.name && performance.now() > bgm.wait) {
+    if (!bgm.el || bgm.vol <= 0.01) {   // 前の曲が消えてから切りかえる
+      if (bgm.el) bgm.el.pause();
+      bgm.el = new Audio(BGM_FILES[want]); bgm.el.loop = true; bgm.el.volume = 0; bgm.name = want; bgm.vol = 0;
+      const el = bgm.el;
+      el.play().catch(() => { if (bgm.el === el) { bgm.el = null; bgm.name = null; bgm.wait = performance.now() + 1500; } });   // まだ画面にさわっていないと鳴らせない。つぎのフレームでまたためす
+    }
+  }
+  if (!bgm.el) return;
+  const target = want && want === bgm.name ? 0.55 : 0;
+  bgm.vol += Math.sign(target - bgm.vol) * Math.min(Math.abs(target - bgm.vol), dt * 0.8);
+  bgm.el.volume = Math.max(0, Math.min(1, bgm.vol));
+  if (bgm.vol <= 0.001 && target === 0) { bgm.el.pause(); bgm.el = null; bgm.name = null; }
+}
 function stepBuildings(dt) {
+  stepBgm(dt);
   for (const b of blds) for (const d of b.doors) if (d.t !== d.want) { d.t += Math.sign(d.want - d.t) * Math.min(Math.abs(d.want - d.t), dt * 1.8); poseDoor(d); }
   for (const b of blds) b.doors.forEach((d, k) => {   // ひとりでに閉まるドア
     if (!d.auto || !d.want) return;
@@ -6494,7 +6522,7 @@ window.__world = {
   get driving() { return driving; },
   set camYaw(v) { camYaw = v; }, set camPitch(v) { camPitch = v; }, set camDist(v) { camDist = v; }, get camDist() { return camDist; },
   keys, touch, toggleRide, loadItem, ITEM_DEFS, heightAt, player, net, syncPeers,
-  addPropFromBuffer, wallet, addPoints, PG, blds, bldFloor, bldPush, roadNear, nearBldAction, placeAt, get bldSeat() { return bldSeat; }, get dayLight() { return dayLight; },
+  addPropFromBuffer, wallet, addPoints, PG, bgmState: () => ({ name: bgm.name, vol: +bgm.vol.toFixed(2), playing: !!(bgm.el && !bgm.el.paused), t: bgm.el ? +bgm.el.currentTime.toFixed(1) : 0 }), blds, bldFloor, bldPush, roadNear, nearBldAction, placeAt, get bldSeat() { return bldSeat; }, get dayLight() { return dayLight; },
   get aboard() { return aboard; }, get ride() { return ride; }, buses, get busRide() { return busRide; }, nearBusDoor, traffic, roadNet, worldHour, setHourOffset(h) { hourOffset = h; },
   hullGround, findWaterSpot, rescueBoat, get periscope() { return periscope; }, toggleLight, setPeriscope,
   teleport(x, z, y) { player.pos.set(x, y ?? heightAt(x, z), z); player.vy = 0; },
