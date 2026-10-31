@@ -1928,7 +1928,7 @@ const BLD_STEP = 0.45, BLD_CELL = 2;
 const blds = [];
 function bldRole(name) {
   const s = String(name || '').toLowerCase();
-  if (/^(ドア|とびら|扉|door)/.test(s)) return 'door';
+  if (/^(ドア|とびら|扉|door|引き戸|引戸|ひきど|sliding)/.test(s)) return 'door';
   if (/^(ライト|照明|電気|light|lamp)/.test(s)) return 'light';
   if (/^(ガラス|窓ガラス|glass)/.test(s)) return 'glass';
   if (/^(スイッチ|switch)/.test(s)) return 'switch';
@@ -1985,7 +1985,9 @@ function setupBuilding(pr) {
     d.traverse((m) => { if (!m.isMesh) return; const p = m.geometry.attributes.position; for (let i = 0; i < p.count; i++) lb.expandByPoint(v.fromBufferAttribute(p, i).applyMatrix4(m.matrixWorld).applyMatrix4(inv)); });
     if (lb.isEmpty()) continue;
     const alongX = lb.max.x - lb.min.x >= lb.max.z - lb.min.z;
-    const slide = /横|スライド|slide|引/.test(String(propOf(d, ['開き方', 'open', 'type']) || ''));
+    // 引き戸：名前が「引き戸…」か、カスタムプロパティ（ドア本体でも中の形でもよい）の値が 横・スライド・引き戸
+    let slide = /^(引き戸|引戸|ひきど|sliding)/i.test(d.name) || /横|スライド|slide|引/.test(String(propOf(d, ['開き方', 'open', 'type']) || ''));
+    d.traverse((o) => { for (const [k, v] of Object.entries(o.userData || {})) if (/開|open|type|種類/i.test(k) && /横|スライド|slide|引/i.test(String(v))) slide = true; });
     b.doors.push({ o: d, lb, alongX, slide, rot0: d.rotation.y, pos0: d.position.clone(), t: 0, want: 0, sign: 1, c0: lb.getCenter(new THREE.Vector3()).applyMatrix4(d.matrixWorld) });
   }
   for (const l of parts.light) {
@@ -2125,7 +2127,7 @@ function nearBldAction() {
   const c = new THREE.Vector3(), pp = new THREE.Vector3(player.pos.x, player.pos.y + 1, player.pos.z);
   for (const b of blds) {
     if (!nearBld(b, player.pos.x, player.pos.z, 2)) continue;
-    b.doors.forEach((d, k) => { const dist = doorCenter(d, c).distanceTo(pp); if (dist < bd + 0.3) { bd = dist - 0.3; best = { kind: 'door', b, k, text: 'ドアを', btn: d.want ? '閉める' : '開ける' }; } });
+    b.doors.forEach((d, k) => { const dist = Math.min(doorCenter(d, c).distanceTo(pp), d.c0.distanceTo(pp)); if (dist < bd + 0.3) { bd = dist - 0.3; best = { kind: 'door', b, k, text: 'ドアを', btn: d.want ? '閉める' : '開ける' }; } });
     b.switches.forEach((s) => { const dist = s.at.distanceTo(pp); if (dist < bd) { bd = dist; best = { kind: 'switch', b, text: 'ライトを', btn: bldLightsOn(b) ? '消す' : '点ける' }; } });
     b.chairs.forEach((ch, k) => { const dist = Math.hypot(ch.at.x - pp.x, ch.at.z - pp.z); if (dist < bd && Math.abs(ch.seatY - player.pos.y) < 1.2) { bd = dist; best = { kind: 'chair', b, k, text: 'イスに', btn: '座る' }; } });
   }
