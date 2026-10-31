@@ -143,6 +143,19 @@ body.mapOn #msg { top: max(145px, 30vh); }
 #bplace small { display: block; font-weight: 500; font-size: 12px; color: var(--ink-dim); }
 #bplace button { font: 800 14px var(--font-ui); border-radius: 999px; padding: 8px 14px; cursor: pointer; border: 1px solid var(--line); background: #f3f6f9; color: var(--ink); }
 #bplace button.go { background: var(--go); color: #fff; border: 0; }
+#pachi { position: fixed; inset: 0; z-index: 8; background: rgba(10,12,20,0.72); display: flex; align-items: center; justify-content: center; padding: env(safe-area-inset-top, 0px) 8px env(safe-area-inset-bottom, 0px); }
+#pachi[hidden] { display: none; }
+#pachi .pgbox { width: min(440px, 100%); max-height: 100%; display: flex; flex-direction: column; gap: 8px; padding: 10px; box-sizing: border-box; background: #2a1d2b; border-radius: 16px; color: #fff; font: 800 14px var(--font-ui); }
+#pachi .pgtop { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; }
+#pachi .pgtop b { font-size: 18px; color: #ffd23f; }
+#pgBoard { width: 100%; aspect-ratio: 360 / 440; max-height: calc(100vh - 190px); min-height: 0; border-radius: 10px; touch-action: none; display: block; }
+#pachi .pgrow { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+#pachi button { font: 800 15px var(--font-ui); border-radius: 999px; padding: 10px 16px; cursor: pointer; border: 0; background: #f3f6f9; color: #222; }
+#pachi button:disabled { opacity: 0.45; cursor: default; }
+#pgFire { background: #e8304a !important; color: #fff !important; min-width: 88px; }
+#pgFire[aria-pressed="true"] { background: #555 !important; }
+#pachi label { flex: 1; display: flex; gap: 8px; align-items: center; min-width: 140px; }
+#pachi input[type=range] { flex: 1; accent-color: #ffd23f; }
 #map { position: fixed; z-index: 3; right: max(16px, env(safe-area-inset-right, 0px)); top: calc(52px + env(safe-area-inset-top, 0px));
   width: 160px; padding: 6px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; cursor: pointer; }
 #map canvas { display: block; width: 100%; aspect-ratio: 1; border-radius: 50%; }
@@ -317,6 +330,14 @@ body.helmOn .subbtns { flex-wrap: wrap; justify-content: flex-end; max-width: ca
   <div class="row"><span class="dir"><span id="bpDir">正面：南</span><small>歩くと置き場所が動きます。黄色の枠の地面を平らにならします</small></span>
     <button type="button" id="bpL" aria-label="左へ回す">⟲</button><button type="button" id="bpR" aria-label="右へ回す">⟳</button></div>
   <div class="row"><button type="button" class="go" id="bpOk">ここに置く</button><button type="button" id="bpNo">やめる</button></div>
+</div>
+<div id="pachi" hidden role="dialog" aria-label="パチンコ">
+  <div class="pgbox">
+    <div class="pgtop"><b id="pgNum">1番台</b><span>持ち玉 <b id="pgBalls">0玉</b></span><span id="pgP">0P</span></div>
+    <canvas id="pgBoard" width="360" height="440"></canvas>
+    <div class="pgrow"><button type="button" id="pgFire" aria-pressed="false">打つ</button><label>弱<input type="range" id="pgPow" min="0" max="100" value="35" aria-label="打つ強さ">強</label></div>
+    <div class="pgrow"><button type="button" id="pgLend">玉を借りる（500P＝125玉）</button><button type="button" id="pgQuit">精算して立つ</button></div>
+  </div>
 </div>
 <div id="prompt" hidden><span><kbd>E</kbd> <span id="promptText">がっち号に</span></span><button id="promptBtn" type="button">乗る</button></div>
 
@@ -2002,7 +2023,8 @@ function setupBuilding(pr) {
   for (const c of parts.chair) {
     const bb = new THREE.Box3().setFromObject(c), at = bb.getCenter(new THREE.Vector3());
     const fw = new THREE.Vector3(0, 0, 1).transformDirection(c.matrixWorld); fw.y = 0; fw.normalize();
-    b.chairs.push({ o: c, at, seatY: bb.min.y + Math.min(0.45, (bb.max.y - bb.min.y) * 0.55), face: Math.atan2(fw.x, fw.z) });
+    const nm = propOf(c, ['台番号', 'machine']), num = nm != null && String(nm).trim() !== '' ? parseInt(String(nm).replace(/[０-９]/g, (d) => String.fromCharCode(d.charCodeAt(0) - 0xFEE0)), 10) : null;
+    b.chairs.push({ o: c, at, seatY: bb.min.y + Math.min(0.45, (bb.max.y - bb.min.y) * 0.55), face: Math.atan2(fw.x, fw.z), num: Number.isFinite(num) ? num : null });
   }
   // 看板（名前が 看板… / sign…）や、カスタムプロパティ 点滅 がある部品はチカチカ光らせる。点滅 に数字を入れると、その秒数で 1 回点滅
   b.blinks = [];
@@ -2158,7 +2180,7 @@ function nearBldAction() {
     if (!nearBld(b, player.pos.x, player.pos.z, 2)) continue;
     b.doors.forEach((d, k) => { const dist = Math.min(doorCenter(d, c).distanceTo(pp), d.c0.distanceTo(pp)); if (dist < bd + 0.3) { bd = dist - 0.3; best = { kind: 'door', b, k, text: 'ドアを', btn: d.want ? '閉める' : '開ける' }; } });
     if (!b.always) b.switches.forEach((s) => { const dist = s.at.distanceTo(pp); if (dist < bd) { bd = dist; best = { kind: 'switch', b, text: 'ライトを', btn: bldLightsOn(b) ? '消す' : '点ける' }; } });
-    b.chairs.forEach((ch, k) => { const dist = Math.hypot(ch.at.x - pp.x, ch.at.z - pp.z); if (dist < bd && Math.abs(ch.seatY - player.pos.y) < 1.2) { bd = dist; best = { kind: 'chair', b, k, text: 'イスに', btn: '座る' }; } });
+    b.chairs.forEach((ch, k) => { const dist = Math.hypot(ch.at.x - pp.x, ch.at.z - pp.z); if (dist < bd && Math.abs(ch.seatY - player.pos.y) < 1.2) { bd = dist; best = { kind: 'chair', b, k, text: ch.num != null ? `${ch.num}番台で` : 'イスに', btn: ch.num != null ? '遊ぶ' : '座る' }; } });
   }
   if (!best) { const b = insideBld(); if (b && !b.always) best = { kind: 'switch', b, text: 'へやのライトを', btn: bldLightsOn(b) ? '消す' : '点ける' }; }   // 建物の中ならどこでも
   return best;
@@ -2169,12 +2191,13 @@ function doBldAction(a) {
     a.b.doors.forEach((d, k) => { if (k === a.k || (d.slide === d0.slide && d.c0.distanceTo(d0.c0) < 2.4 && !!d.want !== open)) setDoor(a.b, k, open, null, true); });
   }
   else if (a.kind === 'switch') setBldLights(a.b, !bldLightsOn(a.b), true);
-  else if (a.kind === 'chair') { const ch = a.b.chairs[a.k]; bldSeat = { b: a.b, ch }; player.face = ch.face; player.vy = 0; }
+  else if (a.kind === 'chair') { const ch = a.b.chairs[a.k]; bldSeat = { b: a.b, ch }; player.face = ch.face; player.vy = 0; if (ch.num != null) openPachi(a.b, ch); }
   else if (a.kind === 'stand') standUp();
 }
 function standUp() {
   if (!bldSeat) return;
   const ch = bldSeat.ch; bldSeat = null;
+  closePachi();
   player.pos.x = ch.at.x + Math.sin(ch.face) * 0.7; player.pos.z = ch.at.z + Math.cos(ch.face) * 0.7;
   player.pos.y = Math.max(bldFloor(player.pos.x, player.pos.z, ch.seatY - 0.3), groundAt(player.pos.x, player.pos.z, ch.seatY));
 }
@@ -2442,6 +2465,11 @@ placeEl.addEventListener('keydown', (e) => { if (e.key !== 'Escape') return; if 
 const keys = {};
 let driving = false;
 document.addEventListener('keydown', (e) => {
+  if (PG.open) {   // パチンコの画面：Space で打つ・止める、Esc で精算して立つ
+    if (e.code === 'Space' && !e.repeat) { e.preventDefault(); document.getElementById('pgFire').click(); }
+    if (e.code === 'Escape') standUp();
+    return;
+  }
   if (e.target.tagName === 'INPUT' || !placeEl.hidden) return;
   keys[e.code] = true;
   if (e.code === 'KeyE' || e.code === 'KeyF') toggleRide();
@@ -3244,6 +3272,308 @@ function addPoints(d) {
   showPoints();
   return wallet.p;
 }
+// ===== パチンコ（羽根もの）の盤面と玉の動き。画面とは別で、node でも動く =====
+function makePachi(pV, rnd, lay) {
+  rnd = rnd || Math.random; lay = lay || rnd;
+  const W = 360, H = 440, CX = 180, CY = 220, R = 168, BR = 4, NR = 1.8, G = 700;
+  const YAKU = { x0: 146, x1: 214, y0: 138, y1: 204 };
+  const WINGS = [{ x0: 126, x1: 146, y0: 160, y1: 204, s: -1 }, { x0: 214, x1: 234, y0: 160, y1: 204, s: 1 }];
+  const CHUCK = [{ x: 180, y: 272, w: 4, opens: 2, pay: 3, kind: 'start' }, { x: 108, y: 290, w: 4, opens: 1, pay: 3, kind: 'start' }, { x: 252, y: 290, w: 4, opens: 1, pay: 3, kind: 'start' }];
+  const TULIPS = [{ x: 98, y: 232, pay: 6, open: false }, { x: 262, y: 232, pay: 6, open: false }, { x: 180, y: 346, pay: 6, open: false }];
+  const POCKETS = [{ x: 124, y: 330, w: 4, pay: 8 }, { x: 236, y: 330, w: 4, pay: 8 }];
+  const MILLS = [{ x: 90, y: 142, r: 9, a: 0 }, { x: 270, y: 142, r: 9, a: 0 }];
+  const OUT = { x: CX, y: CY + R - 6, r: 20 };
+  const RUBBER = { x: CX + (R - 7) * Math.cos(-0.45), y: CY + (R - 7) * Math.sin(-0.45), r: 7 };
+  const cups = [];   // 入賞口（ふち の釘つき）
+  for (const c of CHUCK) cups.push(Object.assign({ type: 'chuck' }, c));
+  for (const t of TULIPS) cups.push(Object.assign(t, { type: 'tulip', w: 4 }));
+  for (const p of POCKETS) cups.push(Object.assign({ type: 'pocket' }, p));
+  // 釘
+  const nails = [];
+  const keep = (x, y) => {
+    if (Math.hypot(x - CX, y - CY) > R - 22) return false;
+    if (x > YAKU.x0 - 22 && x < YAKU.x1 + 22 && y > YAKU.y0 - 12 && y < YAKU.y1 + 10) return false;
+    for (const c of cups) if (Math.hypot(x - c.x, y - c.y) < 17) return false;
+    for (const m of MILLS) if (Math.hypot(x - m.x, y - m.y) < m.r + 12) return false;
+    if (Math.hypot(x - OUT.x, y - OUT.y) < 34) return false;
+    return y > 54 && y < 392;
+  };
+  for (let row = 0, y = 58; y < 392; row++, y += 17) for (let x = 20 + (row % 2) * 11; x < W; x += 22) if (keep(x, y)) nails.push({ x: x + (lay() - 0.5) * 2.4, y: y + (lay() - 0.5) * 2, r: NR });
+  // 入賞口の両わきの釘（チューリップは開くと外へ広がる）
+  for (const c of cups) { c.nl = { x: c.x - 6.3, y: c.y - 2, r: NR }; c.nr = { x: c.x + 6.3, y: c.y - 2, r: NR }; nails.push(c.nl, c.nr, { x: c.x, y: c.y - 15, r: NR }); }
+  // 役物のまわりの道釘
+  for (let i = 0; i < 4; i++) { nails.push({ x: YAKU.x0 - 26 - i * 9, y: YAKU.y0 - 14 + i * 7, r: NR }); nails.push({ x: YAKU.x1 + 26 + i * 9, y: YAKU.y0 - 14 + i * 7, r: NR }); }
+  const CELL = 16, grid = new Map();
+  const gk = (i, j) => i * 1000 + j;
+  for (const n of nails) { const k = gk(Math.floor(n.x / CELL), Math.floor(n.y / CELL)); let a = grid.get(k); if (!a) grid.set(k, (a = [])); a.push(n); }
+  const S = {
+    W, H, CX, CY, R, BR, YAKU, WINGS, CHUCK, TULIPS, POCKETS, MILLS, OUT, RUBBER, nails, cups,
+    pV, balls: [], fireT: 0, wing: 0, wingQ: [], stage: [], stageT: 0, stageBall: null,
+    bonus: null, events: [], stats: { shot: 0, won: 0, foul: 0, hits: 0 },
+  };
+  const ev = (e) => S.events.push(e);
+  function collide(b, cx, cy, r, e, jit) {
+    const dx = b.x - cx, dy = b.y - cy, d = Math.hypot(dx, dy), m = r + BR;
+    if (d >= m || d < 1e-6) return false;
+    const nx = dx / d, ny = dy / d;
+    b.x = cx + nx * m; b.y = cy + ny * m;
+    const vn = b.vx * nx + b.vy * ny;
+    if (vn < 0) { b.vx -= (1 + e) * vn * nx; b.vy -= (1 + e) * vn * ny; if (jit) { const j = (rnd() - 0.5) * jit; b.vx += -ny * j; b.vy += nx * j; } }
+    return true;
+  }
+  function openWing(n, dur, gap) { for (let i = 0; i < n; i++) S.wingQ.push({ open: dur, gap }); }
+  function capture(b) {
+    if (S.bonus) { S.bonus.got++; ev({ t: 'pay', n: 12, why: 'v' }); S.stats.won += 12; S.stage.push({ bonus: true }); return; }
+    if (S.stage.length >= 3) return;   // いっぱいのときはそのまま流れる
+    S.stage.push({ v: rnd() < S.pV });
+    ev({ t: 'catch' });
+  }
+  function startBonus() {
+    S.bonus = { round: 1, opens: 0, got: 0, t: 0 }; S.wingQ = []; S.stats.hits++;
+    ev({ t: 'bonus' });
+  }
+  function stepBonus(dt) {
+    const B = S.bonus;
+    if (S.wing > 0 || S.wingQ.length) return;
+    if (B.opens >= 18 || B.got >= 8) {
+      if (B.round >= 5) { S.bonus = null; ev({ t: 'bonusEnd' }); return; }
+      B.round++; B.opens = 0; B.got = 0; ev({ t: 'round', n: B.round });
+      S.wingQ.push({ open: 0, gap: 1.2 });
+      return;
+    }
+    B.opens++; S.wingQ.push({ open: 1.6, gap: 0.35 });
+  }
+  function step(dt, ctl) {
+    // 発射（1 分に 100 発くらい）
+    S.fireT -= dt;
+    if (ctl.fire && S.fireT <= 0 && S.balls.length < 12 && ctl.take()) {
+      S.fireT = 0.6;
+      const th = Math.PI * 150 / 180, v = (540 + 220 * ctl.power) * (1 + (rnd() - 0.5) * 0.08);
+      S.balls.push({ x: CX + (R - BR - 1) * Math.cos(th), y: CY + (R - BR - 1) * Math.sin(th), vx: -Math.sin(th) * v, vy: Math.cos(th) * v, age: 0, slow: 0 });
+      S.stats.shot++; ev({ t: 'shot' });
+    }
+    // 羽根
+    if (S.wing > 0) { S.wing -= dt; if (S.wing <= 0) { S.wing = 0; S.wingGap = S.curGap; } }
+    else if (S.wingGap > 0) S.wingGap -= dt;
+    else if (S.wingQ.length) { const q = S.wingQ.shift(); S.wing = q.open; S.curGap = q.gap; if (q.open > 0) ev({ t: 'wing' }); else S.wingGap = q.gap; }
+    if (S.bonus) stepBonus(dt);
+    // 役物の中（V に入るか）
+    if (!S.stageBall && S.stage.length) { S.stageBall = S.stage.shift(); S.stageT = 0; S.stageBall.dur = S.stageBall.bonus ? 0.7 : 2.2; S.stageBall.side = rnd() < 0.5 ? -1 : 1; }
+    if (S.stageBall) {
+      S.stageT += dt;
+      if (S.stageT >= S.stageBall.dur) {
+        const sb = S.stageBall; S.stageBall = null;
+        if (!sb.bonus) { if (sb.v) startBonus(); else ev({ t: 'miss' }); }
+      }
+    }
+    for (const m of MILLS) m.a += dt * 5;
+    const h = 1 / 240;
+    for (let t = 0; t < dt - 1e-9; t += h) {
+      const hh = Math.min(h, dt - t);
+      for (let i = S.balls.length - 1; i >= 0; i--) {
+        const b = S.balls[i];
+        b.vy += G * hh; b.x += b.vx * hh; b.y += b.vy * hh; b.age += hh;
+        // 外わく
+        const dx = b.x - CX, dy = b.y - CY, d = Math.hypot(dx, dy);
+        if (d > R - BR) { const nx = dx / d, ny = dy / d; b.x = CX + nx * (R - BR); b.y = CY + ny * (R - BR); const vn = b.vx * nx + b.vy * ny; if (vn > 0) { b.vx -= 1.3 * vn * nx; b.vy -= 1.3 * vn * ny; } b.vx *= 0.9995; b.vy *= 0.9995; }
+        collide(b, RUBBER.x, RUBBER.y, RUBBER.r, 0.55, 30);
+        // 釘
+        const gi = Math.floor(b.x / CELL), gj = Math.floor(b.y / CELL);
+        for (let a = gi - 1; a <= gi + 1; a++) for (let c = gj - 1; c <= gj + 1; c++) { const L = grid.get(gk(a, c)); if (L) for (const n of L) collide(b, n.x, n.y, n.r, 0.45, 45); }
+        for (const m of MILLS) if (collide(b, m.x, m.y, m.r, 0.3, 10)) { const nx = (b.x - m.x), ny = (b.y - m.y), d2 = Math.hypot(nx, ny); b.vx += (-ny / d2) * 60 * hh * 60; b.vy += (nx / d2) * 60 * hh * 60; }
+        // 役物の箱
+        const qx = Math.max(YAKU.x0, Math.min(YAKU.x1, b.x)), qy = Math.max(YAKU.y0, Math.min(YAKU.y1, b.y));
+        collide(b, qx, qy, 0, 0.35, 10);
+        let gone = null;
+        // 羽根がひらいていれば、つかまえる
+        if (S.wing > 0) for (const w of WINGS) if (b.x > w.x0 && b.x < w.x1 && b.y > w.y0 && b.y < w.y1) { gone = 'wing'; capture(b); break; }
+        // 入賞口
+        if (!gone) for (const c of cups) {
+          const ww = c.type === 'tulip' ? (c.open ? 5 : 1.5) : 2.5;
+          if (Math.abs(b.x - c.x) < ww && b.y > c.y - 3 && b.y < c.y + 5 && b.vy > 0) {
+            if (rnd() > (c.type === 'chuck' ? 0.6 : 0.45)) { const sd = rnd() < 0.5 ? -1 : 1; b.x = c.x + sd * 13; b.y = c.y - 4; b.vy = -40; b.vx = sd * 60; continue; }   // ふちに当たってはじかれた
+            gone = c.type; c.n = (c.n || 0) + 1; ev({ t: 'pay', n: c.pay, why: c.type, x: c.x, y: c.y }); S.stats.won += c.pay;
+            if (c.type === 'chuck' && !S.bonus) openWing(c.opens, 0.45, 0.3);
+            if (c.type === 'tulip') { c.open = !c.open; const o = c.open ? 10 : 6.3; c.nl.x = c.x - o; c.nr.x = c.x + o; }
+            break;
+          }
+        }
+        if (!gone && (b.y > 384 || Math.hypot(b.x - OUT.x, b.y - OUT.y) < OUT.r)) gone = 'out';
+        if (!gone && b.vy > 0 && b.x < 70 && b.y > 285 && Math.hypot(dx, dy) > R - 14) { gone = 'foul'; ctl.give(1); S.stats.foul++; }
+        if (!gone) { if (Math.hypot(b.vx, b.vy) < 8) b.slow += hh; else b.slow = 0; if (b.slow > 2 || b.age > 30) gone = 'out'; }
+        if (gone) { S.balls.splice(i, 1); if (gone === 'out') ev({ t: 'out' }); }
+      }
+    }
+  }
+  S.step = step;
+  return S;
+}
+/* ================= パチンコ（座ると遊べる） =================
+   パチンコ台_NN の前のイス（カスタムプロパティ 台番号）に座ると開く。玉は 500P で 125 玉（1 玉 4P）。精算すると玉を P にもどして立つ
+   当たりやすさ（V に入る確率）は台ごとにちがい、日本時間の日付が変わると入れかわる。同じ店・同じ台・同じ日なら、みんな同じ */
+const PACHI_LEND = 500, PACHI_BALLS = 125, PACHI_BALL_P = 4;
+const PACHI_CLASS = [1 / 120, 1 / 75, 1 / 50, 1 / 36, 1 / 26], PACHI_W = [0.3, 0.3, 0.2, 0.12, 0.08];
+function hash32(str) { let h = 2166136261 >>> 0; for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619) >>> 0; } return h; }
+function seededRnd(seed) { let a = seed >>> 0; return () => { a = (a + 0x6D2B79F5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
+const jstDay = () => new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 10);
+function pachiPV(b, num) {
+  const r = seededRnd(hash32(`${b.pr.id || b.pr.name}|${num}|${jstDay()}`))();
+  let k = 0, acc = 0; for (; k < PACHI_W.length - 1; k++) { acc += PACHI_W[k]; if (r < acc) break; }
+  return PACHI_CLASS[k];
+}
+const PG = { open: false, S: null, num: 0, balls: 0, fire: false, power: 0.35, msg: '', msgT: 0, flash: 0, pops: [], last: 0 };
+// 開いたまま閉じてしまったときの玉は、つぎに開いたとき P にもどす
+try { const v = Number(localStorage.getItem('world.pachiBalls')); if (v > 0) { addPoints(v * PACHI_BALL_P); localStorage.removeItem('world.pachiBalls'); } } catch (e) { /* そのまま */ }
+const pgEl = document.getElementById('pachi'), pgCv = document.getElementById('pgBoard'), pgCx = pgCv.getContext('2d');
+function pgSaveBalls() { try { if (PG.balls > 0) localStorage.setItem('world.pachiBalls', String(PG.balls)); else localStorage.removeItem('world.pachiBalls'); } catch (e) { /* そのまま */ } }
+function pgUi() {
+  document.getElementById('pgNum').textContent = `${PG.num}番台`;
+  document.getElementById('pgBalls').textContent = `${PG.balls.toLocaleString('ja-JP')}玉`;
+  document.getElementById('pgP').textContent = fmtP(wallet.p);
+  const f = document.getElementById('pgFire'); f.textContent = PG.fire ? '止める' : '打つ'; f.setAttribute('aria-pressed', PG.fire ? 'true' : 'false');
+  document.getElementById('pgLend').disabled = wallet.p < PACHI_LEND;
+}
+function pgTone(f, len, vol, type) {
+  const c = actx; if (!c || c.state !== 'running') return;
+  const t = c.currentTime, o = c.createOscillator(), g = c.createGain();
+  o.type = type || 'square'; o.frequency.setValueAtTime(f, t);
+  g.gain.setValueAtTime(vol || 0.05, t); g.gain.exponentialRampToValueAtTime(0.0001, t + len);
+  o.connect(g); g.connect(c.destination); o.start(t); o.stop(t + len + 0.02);
+}
+function openPachi(b, ch) {
+  const pV = pachiPV(b, ch.num);
+  const lay = seededRnd(hash32(`${b.pr.id || b.pr.name}|${ch.num}|${jstDay()}|釘`));
+  PG.S = makePachi(pV, Math.random, lay); PG.num = ch.num; PG.balls = 0; PG.fire = false; PG.msg = '玉を借りて、打つを押してください'; PG.msgT = 4; PG.pops = [];
+  PG.open = true; pgEl.hidden = false; PG.last = performance.now();
+  for (const k in keys) keys[k] = false;
+  audioCtx(); pgUi(); requestAnimationFrame(pgFrame);
+}
+function closePachi() {
+  if (!PG.open) return;
+  if (PG.balls > 0) { addPoints(PG.balls * PACHI_BALL_P); showMsg(`${PG.balls.toLocaleString('ja-JP')}玉を精算して ${fmtP(PG.balls * PACHI_BALL_P)} になりました`); }
+  PG.balls = 0; pgSaveBalls(); PG.open = false; PG.fire = false; pgEl.hidden = true; PG.S = null;
+}
+document.getElementById('pgLend').addEventListener('click', () => {
+  if (wallet.p < PACHI_LEND) { PG.msg = 'P が足りません'; PG.msgT = 2; return; }
+  addPoints(-PACHI_LEND); PG.balls += PACHI_BALLS; pgSaveBalls(); pgUi();
+});
+document.getElementById('pgFire').addEventListener('click', () => { PG.fire = !PG.fire; if (PG.fire && PG.balls <= 0) { PG.fire = false; PG.msg = '玉がありません。玉を借りてください'; PG.msgT = 2.5; } pgUi(); });
+document.getElementById('pgPow').addEventListener('input', (e) => { PG.power = Number(e.target.value) / 100; });
+document.getElementById('pgQuit').addEventListener('click', () => standUp());
+function pgFrame(now) {
+  if (!PG.open) return;
+  const dt = Math.min(0.1, (now - PG.last) / 1000); PG.last = now;
+  const S = PG.S;
+  S.step(dt, { fire: PG.fire, power: PG.power, take: () => { if (PG.balls <= 0) return false; PG.balls--; return true; }, give: (n) => { PG.balls += n; } });
+  let changed = false;
+  for (const e of S.events) {
+    if (e.t === 'pay') { PG.balls += e.n; changed = true; if (e.x != null) PG.pops.push({ x: e.x, y: e.y - 10, n: e.n, t: 1 }); pgTone(e.why === 'v' ? 1320 : 990, 0.12, 0.04); }
+    else if (e.t === 'shot') changed = true;
+    else if (e.t === 'wing') pgTone(660, 0.08, 0.03);
+    else if (e.t === 'catch') pgTone(520, 0.15, 0.04, 'triangle');
+    else if (e.t === 'bonus') { PG.msg = '大当たり！ ラウンド 1/5'; PG.msgT = 99; PG.flash = 3; [784, 988, 1175, 1568].forEach((f, i) => setTimeout(() => pgTone(f, 0.25, 0.06), i * 140)); }
+    else if (e.t === 'round') { PG.msg = `大当たり！ ラウンド ${e.n}/5`; PG.msgT = 99; pgTone(880, 0.2, 0.05); }
+    else if (e.t === 'bonusEnd') { PG.msg = '大当たり おわり'; PG.msgT = 2.5; }
+    else if (e.t === 'miss') { PG.msg = 'おしい！'; PG.msgT = 1; }
+  }
+  S.events.length = 0;
+  if (PG.fire && PG.balls <= 0 && !S.balls.length) { PG.fire = false; PG.msg = '玉がなくなりました'; PG.msgT = 2.5; changed = true; }
+  if (changed) { pgUi(); if ((pgFrame.save = (pgFrame.save || 0) + 1) % 10 === 0) pgSaveBalls(); }
+  PG.msgT -= dt; PG.flash = Math.max(0, PG.flash - dt);
+  pgDraw(now / 1000, dt);
+  requestAnimationFrame(pgFrame);
+}
+function pgDraw(t, dt) {
+  const S = PG.S, c = pgCx, cv = pgCv;
+  const dpr = Math.min(2, window.devicePixelRatio || 1), cw = cv.clientWidth || 360, chh = cv.clientHeight || 440;
+  if (cv.width !== Math.round(cw * dpr) || cv.height !== Math.round(chh * dpr)) { cv.width = Math.round(cw * dpr); cv.height = Math.round(chh * dpr); }
+  const k = Math.min(cv.width / S.W, cv.height / S.H);
+  c.setTransform(k, 0, 0, k, (cv.width - S.W * k) / 2, (cv.height - S.H * k) / 2);
+  // 台のわく
+  c.fillStyle = '#5a1f2b'; c.fillRect(0, 0, S.W, S.H);
+  const bonus = !!S.bonus, fl = bonus ? (Math.floor(t * 6) % 2) : 0;
+  c.fillStyle = bonus ? (fl ? '#ffd23f' : '#ff5a8a') : '#c9a227'; c.beginPath(); c.arc(S.CX, S.CY, S.R + 9, 0, Math.PI * 2); c.fill();
+  const gr = c.createRadialGradient(S.CX, S.CY - 40, 20, S.CX, S.CY, S.R);
+  gr.addColorStop(0, '#fffaf0'); gr.addColorStop(1, '#e6eef8');
+  c.fillStyle = gr; c.beginPath(); c.arc(S.CX, S.CY, S.R, 0, Math.PI * 2); c.fill();
+  // 飾りの絵
+  c.fillStyle = 'rgba(255,120,160,0.14)'; c.beginPath(); c.arc(S.CX - 70, S.CY + 60, 46, 0, Math.PI * 2); c.fill();
+  c.fillStyle = 'rgba(80,170,255,0.14)'; c.beginPath(); c.arc(S.CX + 70, S.CY + 60, 46, 0, Math.PI * 2); c.fill();
+  // 発射レール
+  c.strokeStyle = '#9aa4ae'; c.lineWidth = 2; c.beginPath(); c.arc(S.CX, S.CY, S.R - 13, Math.PI * 0.84, Math.PI * 1.62); c.stroke();
+  c.fillStyle = '#e45'; c.beginPath(); c.arc(S.RUBBER.x, S.RUBBER.y, S.RUBBER.r, 0, Math.PI * 2); c.fill();
+  // アウト口
+  c.fillStyle = '#2b2b2b'; c.beginPath(); c.ellipse(S.OUT.x, S.OUT.y + 2, 18, 9, 0, 0, Math.PI * 2); c.fill();
+  c.fillStyle = '#fff'; c.font = '700 8px sans-serif'; c.textAlign = 'center'; c.fillText('OUT', S.OUT.x, S.OUT.y + 5);
+  // 釘
+  c.fillStyle = '#8b939c';
+  for (const n of S.nails) { c.beginPath(); c.arc(n.x, n.y, 2, 0, Math.PI * 2); c.fill(); }
+  c.fillStyle = '#e8edf2'; for (const n of S.nails) c.fillRect(n.x - 0.9, n.y - 0.9, 0.9, 0.9);
+  // 風車
+  for (const m of S.MILLS) {
+    c.save(); c.translate(m.x, m.y); c.rotate(m.a);
+    for (let i = 0; i < 4; i++) { c.rotate(Math.PI / 2); c.fillStyle = i % 2 ? '#ff7a00' : '#2f9be0'; c.beginPath(); c.moveTo(0, 0); c.lineTo(m.r + 2, -3); c.lineTo(m.r + 2, 3); c.fill(); }
+    c.fillStyle = '#ddd'; c.beginPath(); c.arc(0, 0, 2.5, 0, Math.PI * 2); c.fill(); c.restore();
+  }
+  // 入賞口
+  for (const cp of S.cups) {
+    if (cp.type === 'tulip') {
+      const o = cp.open ? 0.9 : 0.15;
+      c.fillStyle = '#e8304a';
+      for (const sd of [-1, 1]) { c.save(); c.translate(cp.x + sd * 4, cp.y); c.rotate(sd * o); c.beginPath(); c.ellipse(sd * 3, -4, 4, 8, 0, 0, Math.PI * 2); c.fill(); c.restore(); }
+      c.fillStyle = '#ff9fb0'; c.beginPath(); c.ellipse(cp.x, cp.y + 2, 6, 5, 0, 0, Math.PI * 2); c.fill();
+      c.fillStyle = '#3a8f3a'; c.fillRect(cp.x - 1, cp.y + 6, 2, 8);
+    } else {
+      c.fillStyle = cp.type === 'chuck' ? '#ffcc33' : '#3fbf7f';
+      c.beginPath(); c.moveTo(cp.x - 8, cp.y - 2); c.lineTo(cp.x + 8, cp.y - 2); c.lineTo(cp.x + 5, cp.y + 8); c.lineTo(cp.x - 5, cp.y + 8); c.closePath(); c.fill();
+      c.fillStyle = '#333'; c.font = '700 6px sans-serif'; c.fillText(cp.type === 'chuck' ? 'START' : String(cp.pay), cp.x, cp.y + 6);
+    }
+  }
+  // 役物（羽根と V）
+  const Y = S.YAKU;
+  c.fillStyle = bonus ? (fl ? '#ffe680' : '#ffb3c7') : '#cfe8ff'; c.strokeStyle = '#47607a'; c.lineWidth = 2;
+  c.beginPath(); c.roundRect(Y.x0, Y.y0, Y.x1 - Y.x0, Y.y1 - Y.y0, 8); c.fill(); c.stroke();
+  const sy = Y.y1 - 18;   // ステージ
+  c.fillStyle = '#334'; c.fillRect(Y.x0 + 6, sy, Y.x1 - Y.x0 - 12, 3);
+  const holes = [Y.x0 + 16, (Y.x0 + Y.x1) / 2, Y.x1 - 16];
+  holes.forEach((hx, i) => { c.fillStyle = i === 1 ? '#e21' : '#222'; c.beginPath(); c.arc(hx, sy + 9, 5, 0, Math.PI * 2); c.fill(); });
+  c.fillStyle = '#fff'; c.font = '800 8px sans-serif'; c.fillText('V', holes[1], sy + 12);
+  c.fillStyle = '#c33'; c.font = '800 10px sans-serif'; c.fillText(bonus ? `R${S.bonus.round}` : 'LUCKY', (Y.x0 + Y.x1) / 2, Y.y0 + 16);
+  if (S.stageBall) {   // 役物の中をころがる玉
+    const sb = S.stageBall, f = S.stageT / sb.dur, mid = (Y.x0 + Y.x1) / 2, span = (Y.x1 - Y.x0) / 2 - 12;
+    let bx, by = sy - 4;
+    if (sb.bonus) bx = mid + Math.sin(f * 6) * span * 0.6;
+    else if (f < 0.8) bx = mid + Math.sin(f * 14) * span * (1 - f);
+    else { const tx = sb.v ? holes[1] : (sb.side < 0 ? holes[0] : holes[2]); bx = mid + (tx - mid) * ((f - 0.8) / 0.2); by = sy - 4 + ((f - 0.8) / 0.2) * 12; }
+    pgBall(c, bx, by);
+  }
+  // 羽根
+  const wo = S.wing > 0 ? 1 : 0;
+  for (const w of S.WINGS) {
+    const px = w.s < 0 ? w.x1 : w.x0, py = w.y1 - 2;
+    c.save(); c.translate(px, py); c.rotate(w.s * (wo ? 1.05 : 0));
+    c.fillStyle = '#ffcc33'; c.strokeStyle = '#a07a10'; c.lineWidth = 1;
+    c.beginPath(); c.roundRect(-3, -34, 6, 34, 3); c.fill(); c.stroke(); c.restore();
+  }
+  // 玉
+  for (const b of S.balls) pgBall(c, b.x, b.y);
+  // 入賞の数字
+  c.font = '800 11px sans-serif';
+  for (const p of PG.pops) { p.t -= dt; p.y -= dt * 18; c.fillStyle = `rgba(230,40,60,${Math.max(0, p.t)})`; c.fillText(`+${p.n}`, p.x, p.y); }
+  PG.pops = PG.pops.filter((p) => p.t > 0);
+  // お知らせ
+  if (PG.msgT > 0 && PG.msg) {
+    c.font = '800 15px sans-serif'; const w = c.measureText(PG.msg).width + 24;
+    c.fillStyle = bonus ? 'rgba(200,0,60,0.85)' : 'rgba(20,30,50,0.8)'; c.beginPath(); c.roundRect(S.CX - w / 2, 18, w, 26, 13); c.fill();
+    c.fillStyle = '#fff'; c.fillText(PG.msg, S.CX, 36);
+  }
+  if (PG.flash > 0) { c.fillStyle = `rgba(255,230,80,${0.35 * (Math.floor(t * 10) % 2)})`; c.fillRect(0, 0, S.W, S.H); }
+}
+function pgBall(c, x, y) {
+  const g = c.createRadialGradient(x - 1.3, y - 1.5, 0.5, x, y, 4.2);
+  g.addColorStop(0, '#ffffff'); g.addColorStop(0.5, '#c4ccd4'); g.addColorStop(1, '#6b737c');
+  c.fillStyle = g; c.beginPath(); c.arc(x, y, 4, 0, Math.PI * 2); c.fill();
+}
 window.addEventListener('storage', (e) => { if (e.key === 'world.points' && e.newValue != null) { const v = Number(e.newValue); if (Number.isFinite(v) && v >= 0) { wallet.p = Math.floor(v); showPoints(); } } });   // ほかのタブで増減したとき
 showPoints();
 function boardBus(n) {
@@ -3337,7 +3667,7 @@ function pushFromCar(V, cx, cz, cy, h) {
 }
 function stepPlayer(dt) {
   if (bldSeat) {   // イスに座っている：動こうとしたら立つ
-    const mv = keys.KeyW || keys.ArrowUp || keys.KeyS || keys.ArrowDown || keys.Space || touch.act || (touch.stickId !== null && Math.hypot(touch.x, touch.y) > 0.3);
+    const mv = !PG.open && (keys.KeyW || keys.ArrowUp || keys.KeyS || keys.ArrowDown || keys.Space || touch.act || (touch.stickId !== null && Math.hypot(touch.x, touch.y) > 0.3));
     if (mv) standUp();
     else { const ch = bldSeat.ch; player.pos.set(ch.at.x, ch.seatY - 0.4, ch.at.z); player.vy = 0; player.onGround = true; player.moving = false; player.mode = 'walk';
       player.face += ((keys.KeyA || keys.ArrowLeft ? 1 : 0) - (keys.KeyD || keys.ArrowRight ? 1 : 0)) * 2 * dt; return; }
@@ -6164,7 +6494,7 @@ window.__world = {
   get driving() { return driving; },
   set camYaw(v) { camYaw = v; }, set camPitch(v) { camPitch = v; }, set camDist(v) { camDist = v; }, get camDist() { return camDist; },
   keys, touch, toggleRide, loadItem, ITEM_DEFS, heightAt, player, net, syncPeers,
-  addPropFromBuffer, wallet, addPoints, blds, bldFloor, bldPush, roadNear, nearBldAction, placeAt, get bldSeat() { return bldSeat; }, get dayLight() { return dayLight; },
+  addPropFromBuffer, wallet, addPoints, PG, blds, bldFloor, bldPush, roadNear, nearBldAction, placeAt, get bldSeat() { return bldSeat; }, get dayLight() { return dayLight; },
   get aboard() { return aboard; }, get ride() { return ride; }, buses, get busRide() { return busRide; }, nearBusDoor, traffic, roadNet, worldHour, setHourOffset(h) { hourOffset = h; },
   hullGround, findWaterSpot, rescueBoat, get periscope() { return periscope; }, toggleLight, setPeriscope,
   teleport(x, z, y) { player.pos.set(x, y ?? heightAt(x, z), z); player.vy = 0; },
