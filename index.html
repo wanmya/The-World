@@ -2275,7 +2275,11 @@ async function addPropFromBuffer(buf, name, cat, wheels) {
       return;
     } catch (err) {
       net.loading.delete(id);
-      showMsg(/full/i.test(String(err && err.message)) ? '置ける数がいっぱいです（200 個まで）。メニューの「自分が出した物」から消してから置いてください' : 'みんなの世界に置けなかったので、自分の画面だけに置きます');
+      const em = String((err && (err.message || err.error)) || err || '');
+      console.warn('props add', err);
+      showMsg(/full/i.test(em) ? '置ける数がいっぱいです（200 個まで）。メニューの「自分が出した物」から消してから置いてください'
+        : /props_[xz]_check/.test(em) ? 'この場所はまだ保存できません（Supabase で supabase-update-6.sql を実行すると置けます）。自分の画面だけに置きます'
+        : `みんなの世界に置けなかったので、自分の画面だけに置きます（${em.slice(0, 60) || '理由不明'}）`);
     }
   } else if (net.db) {
     showMsg(buf.byteLength > SHARE_MAX ? `${name} は大きすぎるので（1.5MB まで）自分の画面だけに置きます` : `${name} は細かすぎるので（3 万三角形まで）自分の画面だけに置きます`);
