@@ -4253,6 +4253,7 @@ function toggleLight() {
 const eyeW = new THREE.Vector3(), lookW = new THREE.Vector3();
 let underwater = false;
 let camBoatYaw = null;
+let fpView = false, fpYaw = 0;   // 建物の中の一人称
 function updateCamera(dt) {
   if (!(driving && ride && isBoat(ride))) camBoatYaw = null;
   if (periscope && !subRide()) setPeriscope(false);
@@ -4288,6 +4289,20 @@ function updateCamera(dt) {
     sun.position.set(b.x + SUN_DIR.x, b.y + SUN_DIR.y, b.z + SUN_DIR.z);
     return;
   }
+  const inB = !driving && !aboard && !(pod && pod.mine && !pod.landed) && blds.length ? insideBld() : null;
+  if (inB) {   // 建物の中は一人称：目の高さから。見回すと体もそちらを向き、A・D で向きを変えると視線もついてくる
+    if (!fpView) { fpView = true; camPitch = 0.05; camera.near = 0.05; camera.updateProjectionMatrix(); }
+    else if (Math.abs(wrapA(camYaw - fpYaw)) > 1e-6) player.face = camYaw - Math.PI;
+    camYaw = player.face + Math.PI; fpYaw = camYaw;
+    camPitch = THREE.MathUtils.clamp(camPitch, -1.2, 1.2);
+    const e = new THREE.Vector3(player.pos.x, player.pos.y + 1.55, player.pos.z), cp = Math.cos(camPitch);
+    camera.position.copy(e); camTarget.copy(e);
+    camera.lookAt(e.x - Math.sin(camYaw) * cp, e.y - Math.sin(camPitch), e.z - Math.cos(camYaw) * cp);
+    underwater = false;
+    sun.target.position.set(e.x, e.y, e.z); sun.position.set(e.x + SUN_DIR.x, e.y + SUN_DIR.y, e.z + SUN_DIR.z);
+    return;
+  }
+  if (fpView) { fpView = false; camPitch = 0.35; }
   if (camera.near !== 0.1) { camera.near = 0.1; camera.updateProjectionMatrix(); }
   if (driving) {
     const car = ride;
