@@ -54,9 +54,21 @@ body { margin: 0; background: var(--sky); color: var(--ink); font-family: var(--
 #menu[hidden] { display: none; }
 #menu .who { margin: 0 0 2px; align-self: flex-start; }
 #menu .mi { text-align: left; font: 800 14px var(--font-ui); color: var(--ink); background: #f3f6f9; border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; cursor: pointer; }
+#menu .mgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+#menu .mgrid .mi { padding: 9px 8px; font-size: 13px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#menu .mgrid .mi[hidden] { display: none; }
+#menu .mi small { margin-left: 6px; font: 700 10px var(--font-mono); color: var(--ink-dim); }
+#menu .mine { display: flex; align-items: center; gap: 6px; }
+#menu .mine span { font: 700 12px var(--font-ui); color: var(--ink-dim); }
+#menu .mine i { margin-left: auto; font-style: normal; transition: transform .15s; }
+#menu .mine[aria-expanded="true"] i { transform: rotate(90deg); }
+#myList { display: flex; flex-direction: column; gap: 6px; max-height: 40vh; overflow-y: auto; padding: 2px 2px 2px 6px; }
+#myList[hidden] { display: none; }
+#aiMenu, #aiStart { display: flex; flex-direction: column; gap: 6px; }
+#aiMenu[hidden], #aiStart[hidden] { display: none; }
 #menu .aibtns { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; }
 #menu .aibtns .mi { text-align: center; padding: 10px 4px; }
-#vehMenu { display: flex; flex-direction: column; gap: 8px; }
+#vehMenu { display: flex; flex-direction: column; gap: 6px; }
 #vehMenu[hidden] { display: none; }
 /* 船・潜水艦のボタンは、ピンガー（とイージス艦の主砲・CIWS）以外は ☰ メニューの中 */
 #subBtns #rescueBtn, #subBtns #lightBtn, #subBtns #scopeBtn, #subBtns #subChat, #subBtns #subExit { display: none !important; }
@@ -79,7 +91,8 @@ body.mapOn #msg { top: max(145px, 30vh); }
 #routeBtn { position: fixed; z-index: 4; left: 50%; transform: translateX(-50%); top: calc(20px + env(safe-area-inset-top, 0px)); }
 #wmap { position: fixed; z-index: 8; inset: max(12px, env(safe-area-inset-top, 0px)) max(12px, env(safe-area-inset-right, 0px)) max(12px, env(safe-area-inset-bottom, 0px)) max(12px, env(safe-area-inset-left, 0px));
   display: flex; flex-direction: column; gap: 6px; padding: 8px; background: rgba(255,255,255,.94); border: 1px solid var(--line); border-radius: 14px; box-sizing: border-box; }
-#wmap .wbar { display: flex; gap: 6px; }
+#wmap .wbar { display: flex; flex-wrap: wrap; gap: 6px; }
+#wmap #homeBtn { background: #fff4dc; border-color: #e8c98a; }
 #wmap .wbar button { font: 800 13px var(--font-ui); color: var(--ink); background: #f3f6f9; border: 1px solid var(--line); border-radius: 999px; padding: 7px 12px; cursor: pointer; }
 #wmap .wbar button[aria-pressed="true"] { background: var(--ink); color: #fff; }
 #wmap #wmapClose { margin-left: auto; }
@@ -262,27 +275,33 @@ body.helmOn .subbtns { flex-wrap: wrap; justify-content: flex-end; max-width: ca
 </div>
 <div id="menu" hidden>
   <p class="who" id="who" aria-live="polite">ひとりで遊んでいます</p>
-  <button class="mi" id="renameBtn" type="button" hidden>なまえ</button>
-  <button class="mi" id="addItem" type="button">glTF を置く</button>
-  <button class="mi" id="chatBtn" type="button">ひとこと</button>
+  <div class="mgrid">
+    <button class="mi" id="mapBtn" type="button">🗺️ 地図<small>M</small></button>
+    <button class="mi" id="chatBtn" type="button">💬 ひとこと</button>
+    <button class="mi" id="addItem" type="button">📦 glTF を置く</button>
+    <button class="mi" id="renameBtn" type="button" hidden>なまえ</button>
+  </div>
   <button class="mi" id="seacatBtn" type="button" hidden>シーキャット（潜水艦）を出す</button>
-  <button class="mi" id="mapBtn" type="button">地図（M）</button>
-  <button class="mi" id="homeBtn" type="button">砂浜（バスターミナル）に戻る</button>
-  <button class="mi" id="busTrip" type="button">大陸のバス停「港」へ行く</button>
-  <p class="mh">コンピュータと対戦（潜水艦に乗って）</p>
-  <button class="mi" type="button" id="aiPos" aria-pressed="false">スタート：800m 離れて（押すとランダム）</button>
-  <div class="aibtns"><button class="mi" type="button" data-ai="easy">やさしい</button><button class="mi" type="button" data-ai="normal">ふつう</button><button class="mi" type="button" data-ai="hard">つよい</button></div>
-  <button class="mi" type="button" data-ai="stop" id="aiStop" hidden>対戦をやめる</button>
   <div id="vehMenu" hidden>
     <p class="mh">船・潜水艦</p>
-    <button class="mi" type="button" data-proxy="scopeBtn" id="mScope">潜望鏡</button>
-    <button class="mi" type="button" data-proxy="lightBtn" id="mLight">ライト</button>
-    <button class="mi" type="button" id="mVoice">音声の報告：オン</button>
-    <button class="mi" type="button" data-proxy="rescueBtn">救出（浅瀬から出す）</button>
-    <button class="mi" type="button" data-proxy="subExit">降りる</button>
+    <div class="mgrid">
+      <button class="mi" type="button" data-proxy="scopeBtn" id="mScope">潜望鏡</button>
+      <button class="mi" type="button" data-proxy="lightBtn" id="mLight">ライト</button>
+      <button class="mi" type="button" id="mVoice">音声の報告：オン</button>
+      <button class="mi" type="button" data-proxy="rescueBtn">救出（浅瀬から出す）</button>
+      <button class="mi" type="button" data-proxy="subExit">降りる</button>
+    </div>
   </div>
-  <p class="mh">自分が出した物</p>
-  <div id="myList"></div>
+  <div id="aiMenu" hidden>
+    <p class="mh">コンピュータと対戦</p>
+    <div id="aiStart">
+      <button class="mi" type="button" id="aiPos" aria-pressed="false">スタート：800m 離れて（押すとランダム）</button>
+      <div class="aibtns"><button class="mi" type="button" data-ai="easy">やさしい</button><button class="mi" type="button" data-ai="normal">ふつう</button><button class="mi" type="button" data-ai="hard">つよい</button></div>
+    </div>
+    <button class="mi" type="button" data-ai="stop" id="aiStop" hidden>対戦をやめる</button>
+  </div>
+  <button class="mi mine" id="myBtn" type="button" aria-expanded="false" aria-controls="myList">自分が出した物<span id="myCount"></span><i aria-hidden="true">▸</i></button>
+  <div id="myList" hidden></div>
 </div>
 <div id="msg" hidden></div>
 <button class="pill" id="routeBtn" type="button" hidden>🚏 路線図</button>
@@ -290,6 +309,7 @@ body.helmOn .subbtns { flex-wrap: wrap; justify-content: flex-end; max-width: ca
 <div id="wmap" hidden role="dialog" aria-modal="true" aria-label="地図">
   <div class="wbar">
     <button type="button" data-wm="all">全体</button><button type="button" data-wm="near">近く</button><button type="button" data-wm="routes">路線図</button>
+    <button type="button" id="homeBtn">🏖️ 砂浜に戻る</button>
     <button type="button" id="wmapClose" aria-label="閉じる">✕</button>
   </div>
   <div class="wbody"><canvas id="wmapCv"></canvas><div id="wmapLegend" hidden></div></div>
@@ -1027,6 +1047,15 @@ const CAR_ROUTES = [
   [[16, 1], [13, 1], [5, -1], [4, -1], [3, -1], [2, -1], [1, -1], [0, -1], [13, -1], [16, -1], [14, 1]],
   [[14, 1], [16, 1], [13, 1], [0, 1], [6, 1], [9, 1], [11, -1], [13, -1], [16, -1]],
   [[14, -1], [16, 1], [13, 1], [11, 1], [10, 1], [5, 1], [13, -1], [16, -1]],
+  // ふやした道順（2026-10-31）
+  [[8, 1], [9, 1], [10, 1], [5, 1], [0, 1], [1, 1]],
+  [[1, -1], [0, -1], [5, -1], [10, -1], [9, -1], [8, -1]],
+  [[3, 1], [12, -1], [9, -1], [7, 1]],
+  [[7, -1], [9, 1], [12, 1], [3, -1]],
+  [[11, 1], [9, -1], [6, -1], [0, -1]],
+  [[0, 1], [6, 1], [9, 1], [11, -1]],
+  [[14, 1]],
+  [[14, -1]],
 ];
 // ふつうの車：道順の何番の道のどのあたりに、とめておく場所（路肩を広げる）があるか
 const CARS = [
@@ -1048,6 +1077,16 @@ const CARS = [
   { r: 6, type: 'truck', color: 0x35507a, park: [4, 0.5] }, { r: 6, type: 'sedan', color: 0xd9d9de, park: [6, 0.4] },
   { r: 7, type: 'van', color: 0x8b6a4a, park: [3, 0.6] }, { r: 7, type: 'sedan', color: 0x4fa3a0, park: [5, 0.3] },
 ];
+// さらにふやして 100 台に（2026-10-31）。道順・形・色・とめる場所は決まった乱数で、どの端末でも同じ
+{
+  const COLORS = [0xd8dde3, 0x23272e, 0xb8312f, 0xf2f2f2, 0x2a4f8f, 0x6d7a88, 0x3b8f5a, 0xe3a32b, 0x8f2a52, 0x3c9db8, 0xc9c2b0, 0x5b3f8f, 0xa8a8a8, 0x1f1f24, 0xc4602d, 0x4fa3a0];
+  const ROUTE_W = [3, 3, 2, 2, 2, 4, 4, 4, 5, 5, 3, 3, 3, 3, 3, 3];   // 長い道順ほど多く
+  const pool = []; ROUTE_W.forEach((w, r) => { for (let k = 0; k < w; k++) pool.push(r); });
+  for (let i = CARS.length; i < 100; i++) {
+    const r = pool[(i * 7) % pool.length], u = hash(i, 91), t = hash(i, 92);
+    CARS.push({ r, type: t < 0.55 ? 'sedan' : t < 0.8 ? 'van' : 'truck', color: COLORS[Math.floor(hash(i, 93) * COLORS.length)], park: [Math.floor(u * CAR_ROUTES[r].length), 0.15 + 0.7 * hash(i, 94)] });
+  }
+}
 const RD_STEP = 2;
 const roadNet = (() => {
   const nodes = Object.entries(NODES).map(([id, n]) => Object.assign({ id, deg: 0, y: 0, jr: 0, ends: [] }, n));
@@ -1136,12 +1175,16 @@ const roadNet = (() => {
   }
   for (const e of edges) e.WBUS = Float32Array.from(e.W);   // バスが寄せる位置はバス停だけで決める
   // ふつうの車をとめておく場所（バス停や交差点から離す）
+  const used = [];
   const parks = CARS.map((c) => {
     const [ei, dir] = CAR_ROUTES[c.r][c.park[0]], e = edges[ei];
     let f = c.park[1];
-    const bad = (f) => { const s = e.L * f, i = Math.min(e.N - 1, Math.round(s / RD_STEP)); return s < 80 || s > e.L - 80 || e.base[i] < 1.5 || e.Y[i] - e.base[i] > 3 || stops.some((st) => st.e === e && Math.abs(st.s - s) < 80); };
-    for (let k = 0; k < 20 && bad(f); k++) f = (f + 0.07) % 1;
-    const s = dir > 0 ? e.L * f : e.L * (1 - f);
+    const sOf = (f) => dir > 0 ? e.L * f : e.L * (1 - f);
+    const bad = (f) => { const s = e.L * f, i = Math.min(e.N - 1, Math.round(s / RD_STEP)); return s < 80 || s > e.L - 80 || e.base[i] < 1.5 || e.Y[i] - e.base[i] > 3 || stops.some((st) => st.e === e && Math.abs(st.s - s) < 80)
+      || used.some((q) => q.e === e && q.dir === dir && Math.abs(q.s - sOf(f)) < 24); };   // ほかの車のとめる場所と重ならない
+    for (let k = 0; k < 40 && bad(f); k++) f = (f + 0.037) % 1;
+    const s = sOf(f);
+    used.push({ e, s, dir });
     for (let i = 0; i < e.N; i++) { const d = Math.abs(e.S[i] - s); if (d < 35) e.W[i] = Math.max(e.W[i], e.WB[i] + 6 * ss(35, 18, d)); }
     return { e, s, dir };
   });
@@ -2897,20 +2940,53 @@ function makeCar(type, color) {
 }
 
 /* ---- 道順から、走る線（車線の中心）を作る ---- */
-function buildPath(legs, isBus) {
-  const R = roadNet, px = [], pz = [], py = [], off = [], rw = [], legOf = [], edgeS = [], nodeAt = [];
+// 車（バスでない）は片側 2 車線の道で車線を選ぶ：ふだんは pref（0 左の車線・1 右の追い越し車線）。
+// 交差点で左に曲がる前は左の車線、右に曲がる前は右の車線へ移ってから曲がる。とめる場所の前後も左の車線
+const LANE_OUT = 5.25, LANE_IN = 1.75, LANE_TURN_D = 100, LANE_AFTER_D = 40;
+function legTurns(legs) {   // 各道の終わりの交差点で、左（+1）・右（-1）・まっすぐ（0）
+  const R = roadNet, hd = (e, dir, atEnd) => {
+    const N = e.N, a = atEnd ? (dir > 0 ? N - 1 : 0) : (dir > 0 ? 0 : N - 1), b = Math.max(0, Math.min(N - 1, a + (atEnd ? -12 : 12) * dir));
+    return atEnd ? Math.atan2(e.X[a] - e.X[b], e.Z[a] - e.Z[b]) : Math.atan2(e.X[b] - e.X[a], e.Z[b] - e.Z[a]);
+  };
+  return legs.map(([ei, dir], li) => {
+    const e = R.edges[ei], endNode = dir > 0 ? e.b : e.a;
+    if (endNode.deg < 3) return 0;
+    const [nei, ndir] = legs[(li + 1) % legs.length], t = wrapA(hd(R.edges[nei], ndir, false) - hd(e, dir, true));
+    return Math.abs(t) > 0.5 ? Math.sign(t) : 0;
+  });
+}
+function buildPath(legs, isBus, opt = {}) {
+  const R = roadNet, px = [], pz = [], py = [], off = [], rw = [], legOf = [], edgeS = [], nodeAt = [], src = [];
+  const turns = isBus ? null : legTurns(legs), pref = opt.pref ? LANE_IN : LANE_OUT;
   for (let li = 0; li < legs.length; li++) {
     const [ei, dir] = legs[li], e = R.edges[ei];
     const next = legs[(li + 1) % legs.length], startNode = dir > 0 ? e.a : e.b, endNode = dir > 0 ? e.b : e.a;
     const ne = R.edges[next[0]], nStart = next[1] > 0 ? ne.a : ne.b;
     if (endNode !== nStart) throw new Error('道順がつながっていません: ' + ei);
+    const wide = e.w > 10.5, tEnd = turns ? turns[li] : 0, tPrev = turns ? turns[(li - 1 + legs.length) % legs.length] : 0;
     for (let k = 0; k < e.N - 1; k++) {
       const i = dir > 0 ? k : e.N - 1 - k;
-      const ww = isBus ? e.WBUS[i] : e.WB[i];
-      const o = isBus ? ww / 2 - 1.75 : 1.75;
-      px.push(e.X[i] + e.NX[i] * o * dir); pz.push(e.Z[i] + e.NZ[i] * o * dir); py.push(k === 0 ? startNode.y : e.Y[i]);
-      off.push(o); rw.push(e.W[i] / 2); legOf.push(li); edgeS.push(dir > 0 ? e.S[i] : e.L - e.S[i]); nodeAt.push(k === 0 ? startNode : null);
+      const es = dir > 0 ? e.S[i] : e.L - e.S[i];
+      let o;
+      if (isBus) o = e.WBUS[i] / 2 - 1.75;
+      else if (!wide) o = LANE_IN;
+      else if (opt.park && opt.park.li === li && Math.abs(es - opt.park.want) < 45) o = LANE_OUT;
+      else if (tEnd && e.L - es < LANE_TURN_D) o = tEnd > 0 ? LANE_OUT : LANE_IN;
+      else if (tPrev && es < LANE_AFTER_D) o = tPrev > 0 ? LANE_OUT : LANE_IN;
+      else o = pref;
+      src.push([e, i, dir, k === 0 ? startNode.y : e.Y[i], wide]);
+      off.push(o); rw.push(e.W[i] / 2); legOf.push(li); edgeS.push(es); nodeAt.push(k === 0 ? startNode : null);
     }
+  }
+  if (!isBus) {   // 車線を変えるときは 40m くらいかけて、なめらかに
+    const M = off.length, B = Float32Array.from(off), r = 10;
+    for (let i = 0; i < M; i++) { let a = 0; for (let k = -r; k <= r; k++) a += B[(i + k + M) % M]; off[i] = a / (2 * r + 1); }
+  }
+  const key = [];
+  for (let q = 0; q < src.length; q++) {
+    const [e, i, dir, y, wide] = src[q], o = off[q];
+    px.push(e.X[i] + e.NX[i] * o * dir); pz.push(e.Z[i] + e.NZ[i] * o * dir); py.push(y);
+    key.push(e.id * 4 + (dir > 0 ? 0 : 2) + (!isBus && wide && o < 3.5 ? 1 : 0));   // 車線の番号：道・向き・右の車線か
   }
   const N = px.length;
   // 交差点の角をまるめる（前後 8m をならす）
@@ -2919,7 +2995,7 @@ function buildPath(legs, isBus) {
   sm(X, 4, 2); sm(Z, 4, 2); sm(Y, 3, 1);
   const S = new Float32Array(N + 1);
   for (let i = 0; i < N; i++) { const j = (i + 1) % N; S[i + 1] = S[i] + Math.hypot(X[j] - X[i], Z[j] - Z[i]); }
-  return { N, X, Z, Y, S, L: S[N], legs, legOf: Int16Array.from(legOf), edgeS: Float32Array.from(edgeS), nodeAt, Off: Float32Array.from(off), RW: Float32Array.from(rw) };
+  return { N, X, Z, Y, S, L: S[N], legs, legOf: Int16Array.from(legOf), edgeS: Float32Array.from(edgeS), nodeAt, Off: Float32Array.from(off), RW: Float32Array.from(rw), Key: Int16Array.from(key) };
 }
 function pathIndex(P, s) {   // s（0〜L）がどの区間か
   let lo = 0, hi = P.N - 1;
@@ -2935,11 +3011,11 @@ function pathPoint(P, s, out) {
 // 道順を、出発点（バスは最初のバス停、車はとめておく場所）から始まるように回す
 function rotatePath(P, k0) {
   const N = P.N, r = (A, T) => { const B = new T(N); for (let i = 0; i < N; i++) B[i] = A[(i + k0) % N]; return B; };
-  const X = r(P.X, Float32Array), Z = r(P.Z, Float32Array), Y = r(P.Y, Float32Array), legOf = r(P.legOf, Int16Array), edgeS = r(P.edgeS, Float32Array), Off = r(P.Off, Float32Array), RW = r(P.RW, Float32Array);
+  const X = r(P.X, Float32Array), Z = r(P.Z, Float32Array), Y = r(P.Y, Float32Array), legOf = r(P.legOf, Int16Array), edgeS = r(P.edgeS, Float32Array), Off = r(P.Off, Float32Array), RW = r(P.RW, Float32Array), Key = r(P.Key, Int16Array);
   const nodeAt = []; for (let i = 0; i < N; i++) nodeAt.push(P.nodeAt[(i + k0) % N]);
   const S = new Float32Array(N + 1);
   for (let i = 0; i < N; i++) { const j = (i + 1) % N; S[i + 1] = S[i] + Math.hypot(X[j] - X[i], Z[j] - Z[i]); }
-  return Object.assign({}, P, { X, Z, Y, S, L: S[N], legOf, edgeS, nodeAt, Off, RW });
+  return Object.assign({}, P, { X, Z, Y, S, L: S[N], legOf, edgeS, nodeAt, Off, RW, Key });
 }
 // 走る線の上の印：交差点（停止線・曲がる向き・信号の組）、バス停
 function pathMarks(P, isBus) {
@@ -2967,7 +3043,8 @@ function pathMarks(P, isBus) {
 }
 // 走り方の計算：信号・バス停・前の車を見ながら、T_ALL 秒ぶん。結果は 0.5 秒ごとの「進んだ距離」と「ライトの状態」
 const traffic = [];
-let TRAFFIC_PASSES = 2;
+let trafficReady = false;   // 走り方の計算が終わったか
+let TRAFFIC_PASSES = 1;
 function simulate(v, others, cruise, laps) {
   const P = v.path, T = v.T, L = P.L, total = laps * L, nRec = Math.round(T_ALL / REC_DT) + 1;
   const rec = new Float32Array(nRec), flags = new Uint8Array(nRec);
@@ -2990,11 +3067,16 @@ function simulate(v, others, cruise, laps) {
     if (isBus) for (let lap = Math.floor(s / L); lap < laps; lap++) for (const st of stops) { const ss2 = lap * L + st.s; if (ss2 > s + 0.5 && ss2 < best && ss2 > 0.5) { best = ss2; break; } }
     return best;
   };
-  let target = nextStopAfter(0.1), jp = 0;
+  let target = nextStopAfter(0.1), jp = 0, ci = 0;
   const jAll = [];
   for (let lap = 0; lap < laps; lap++) for (const j of junc) jAll.push({ j, pos: lap * L + j.stopS });
   jAll.sort((a, b) => a.pos - b.pos);
-  const lanePos = (sv) => { const i = pathIndex(P, ((sv % L) + L) % L); return [P.legOf[i], P.edgeS[i]]; };
+  const byKey = new Map();   // 車線の番号 → その車線を通るほかの車
+  const NR = nRec - 1;   // 記録は 1 時間でひとまわり
+  for (const o of others) if (o !== v) {
+    const off = ((((v.phase - o.phase) % T_ALL) + T_ALL) % T_ALL) / REC_DT;   // 相手の記録とのずれ（記録の数で）
+    for (const k of o.keySet) if (v.keySet.has(k)) { if (!byKey.has(k)) byKey.set(k, []); byKey.get(k).push({ o, off, keyRec: o.keyRec, esRec: o.esRec, flRec: o.flRec, hl: o.T.hl, bus: o.kind === 'bus' }); }
+  }
   while (tau < T_ALL - 1e-6) {
     let fl = 0;
     const sPrev = s;
@@ -3006,7 +3088,9 @@ function simulate(v, others, cruise, laps) {
       if (wait <= 0) { lastDepartS = s; target = nextStopAfter(s); }
     } else if (done) { sp = 0; fl |= 1 | 8; if (isBus) fl |= 16; }
     else {
-      const ls = ((s % L) + L) % L, i = pathIndex(P, ls);
+      const ls = ((s % L) + L) % L;
+      if (ls < P.S[ci]) ci = pathIndex(P, ls); else while (ci < P.N - 1 && P.S[ci + 1] <= ls) ci++;   // いまの区間（前へ進むだけなので順に送る）
+      const i = ci;
       let vt = Math.min(cruise, capV[i]);
       const dStop = target - s;
       vt = Math.min(vt, Math.sqrt(2 * T.dec * Math.max(0, dStop - 0.2)));
@@ -3020,19 +3104,27 @@ function simulate(v, others, cruise, laps) {
         if (j.turn && d < 40 && d > -(j.node.jr + 14)) fl |= j.turn > 0 ? 2 : 4;   // 曲がるときのウインカー
       }
       // 前の車
-      const [myLeg, myES] = lanePos(s), myKey = v.laneKey[myLeg], nextKey = v.laneKey[(myLeg + 1) % P.legs.length];
-      const legLen = roadNet.edges[P.legs[myLeg][0]].L;
-      for (const o of others) {
-        if (!o.keySet.has(myKey) && !o.keySet.has(nextKey)) continue;   // 同じ車線を通らない車は見なくてよい
-        const ri2 = Math.min(nRec - 1, Math.round(((((v.phase + tau - o.phase) % T_ALL) + T_ALL) % T_ALL) / REC_DT));   // 相手の時計に合わせる
-        const key = o.keyRec[ri2], es = o.esRec[ri2];
-        if (key < 0 || ((o.flRec[ri2] & 32) && !(isBus && o.kind === 'bus'))) continue;
-        let gap = Infinity;
-        if (key === myKey && es > myES) gap = es - myES;
-        else if (key === nextKey && nextKey !== myKey) gap = legLen - myES + es;
-        if (gap === Infinity || gap > 80) continue;
-        gap -= o.T.hl + T.hl + 2.5;
-        vt = Math.min(vt, Math.sqrt(2 * T.dec * Math.max(0, gap)));
+      const myLeg = P.legOf[i], myES = P.edgeS[i];
+      const myKey = P.Key[i], aheadKey = v.keyAhead[i], nextKey = v.legKey0[(myLeg + 1) % P.legs.length];
+      const legLen = roadNet.edges[P.legs[myLeg][0]].L, myED = myKey >> 1, nextED = nextKey >> 1;
+      const tauR = tau / REC_DT;
+      for (let kq = 0; kq < 3; kq++) {
+        const kk = kq === 0 ? myKey : kq === 1 ? aheadKey : nextKey;
+        if ((kq === 1 && kk === myKey) || (kq === 2 && (kk === myKey || kk === aheadKey))) continue;
+        const list = byKey.get(kk); if (!list) continue;   // 同じ車線を通る車だけ見る
+        for (let q = 0; q < list.length; q++) {
+          const o = list[q];
+          let ri2 = Math.round(tauR + o.off); if (ri2 >= NR) ri2 -= NR;   // 相手の時計に合わせる
+          const key = o.keyRec[ri2];
+          if (key !== kk || ((o.flRec[ri2] & 32) && !(isBus && o.bus))) continue;
+          const es = o.esRec[ri2];
+          let gap = Infinity;
+          if ((key >> 1) === myED) { if (es > myES) gap = es - myES; }
+          else if ((key >> 1) === nextED) gap = legLen - myES + es;
+          if (gap === Infinity || gap > 80) continue;
+          gap -= o.hl + T.hl + 2.5;
+          vt = Math.min(vt, Math.sqrt(2 * T.dec * Math.max(0, gap)));
+        }
       }
       if (sp < vt) sp = Math.min(vt, sp + T.acc * SIM_DT); else sp = Math.max(vt, sp - Math.max(T.dec * 1.6, (sp - vt) / SIM_DT * 0.5) * SIM_DT);
       s += sp * SIM_DT;
@@ -3054,43 +3146,15 @@ function simulate(v, others, cruise, laps) {
   while (ri < nRec) { rec[ri] = s; flags[ri] = 1 | 8 | 32 | (isBus ? 16 : 0); ri++; }
   return { rec, flags, endS: s, finishedAt: done ? departAt : Infinity, total };
 }
-// 記録から、各時刻にどの道（車線）のどこにいるかを作っておく（あとの車が前の車を見るため）
-function laneRecords(v) {
-  const P = v.path, n = v.rec.length, keyRec = new Int16Array(n), esRec = new Float32Array(n);
-  for (let r = 0; r < n; r++) { const s = ((v.rec[r] % P.L) + P.L) % P.L, i = pathIndex(P, s); keyRec[r] = v.laneKey[P.legOf[i]]; esRec[r] = P.edgeS[i]; }
-  v.keyRec = keyRec; v.esRec = esRec; v.flRec = v.flags;
-}
-{
-  const R = roadNet, t0 = performance.now();
-  const mk = (kind, legs, extra) => {
-    const isBus = kind === 'bus';
-    let P = buildPath(legs, isBus), k0 = 0;
-    const T = VTYPE[extra.type || 'bus'];
-    const v = Object.assign({ kind, T, legs }, extra);
-    if (isBus) {
-      const m = pathMarks(P, true);
-      k0 = m.stops.length ? pathIndex(P, m.stops[0].s) : 0;
-    } else {
-      const pk = R.parks[extra.carIndex], li = CAR_ROUTES[extra.r].findIndex((l) => R.edges[l[0]] === pk.e && l[1] === pk.dir);
-      const want = pk.dir > 0 ? pk.s : pk.e.L - pk.s;
-      for (let i = 0; i < P.N; i++) if (P.legOf[i] === li && P.edgeS[i] >= want) { k0 = i; break; }
-    }
-    P = rotatePath(P, k0);
-    v.path = P; v.marks = pathMarks(P, isBus);
-    // 車線の番号：道ごと・向きごと。2 車線の道では、バスは外側、車は内側
-    v.laneKey = legs.map(([ei, dir]) => ei * 4 + (dir > 0 ? 0 : 2) + (!isBus && R.edges[ei].w > 10.5 ? 1 : 0));
-    v.keySet = new Set(v.laneKey);
-    return v;
-  };
-  LINES.forEach((ln, li) => { for (let k = 0; k < ln.buses; k++) traffic.push(mk('bus', ln.legs, { line: ln, lineIndex: li, k, phase: 0 })); });
-  CARS.forEach((c, ci) => traffic.push(mk('car', CAR_ROUTES[c.r], { type: c.type, color: c.color, r: c.r, carIndex: ci, phase: 0 })));
+// 全部のバスと車の走り方を決める（Worker の中でも動くよう、ここに出てくる名前だけを使う）
+function runTrafficSim(traffic, passes) {
   // 出発の時刻をずらす（同じ路線のバスは等間隔）。1 時間でちょうど同じ所にもどるよう、速さと周回数を合わせる
   const done = [];
   for (const v of traffic) {
     const est = v.path.L / (11.1 * 0.72) + v.marks.stops.length * (BUS_DWELL + 8) + v.marks.junc.length * 9;   // 同じ道順の車は同じ周回数（追い越しはしない）
     let laps = Math.max(1, Math.round((T_ALL - 60) / est));
-    v.phase = v.kind === 'bus' ? (v.k / v.line.buses) * (T_ALL / laps) + v.lineIndex * 37 : hash(v.carIndex, 5) * T_ALL;
-      // ふつうの速さで 1 回。終点に早く着きすぎたら少しゆっくり、間に合わなければ周回を減らす（余りは終点で待つ）
+    v.phase = v.kind === 'bus' ? (v.k / v.nBus) * (T_ALL / laps) + v.lineIndex * 37 : v.carPhase;
+    // ふつうの速さで 1 回。終点に早く着きすぎたら少しゆっくり、間に合わなければ周回を減らす（余りは終点で待つ）
     let cruise = v.T.cruise, res = simulate(v, done, cruise, laps);
     for (let it = 0; it < 4 && res.finishedAt > T_ALL - 8; it++) { laps = Math.max(1, laps - 1); res = simulate(v, done, cruise, laps); }
     const ratio = res.finishedAt / (T_ALL - 40);
@@ -3104,14 +3168,80 @@ function laneRecords(v) {
     done.push(v);
   }
   // 2 回目：あとから決まった車も見て、もう一度走らせる（先に決めた車が、あとの車をすり抜けないように）
-  for (let pass = 0; pass < TRAFFIC_PASSES; pass++) for (const v of traffic) {
-    const mine = new Set(v.laneKey);
-    const res = simulate(v, traffic.filter((o) => o !== v && o.laneKey.some((k) => mine.has(k))), v.cruise, v.laps);   // 同じ車線を通る車だけ
-    if (res.finishedAt > T_ALL - 8) continue;
-    v.simIt = res.finishedAt; v.rec = res.rec; v.flags = res.flags;
+  //   1 時間で回りきれなくなったら、ふつうの速さにもどす → 周回を 1 つ減らす（前の記録のままだと、ほかの車をすり抜けてしまう）
+  for (let pass = 0; pass < passes; pass++) for (const v of traffic) {
+    let res = simulate(v, traffic, v.cruise, v.laps);   // 見るのは同じ車線を通る車だけ（simulate の中で選ぶ）
+    if (res.finishedAt > T_ALL - 8 && v.cruise < v.T.cruise) { const r2 = simulate(v, traffic, v.T.cruise, v.laps); if (r2.finishedAt <= T_ALL - 8) { res = r2; v.cruise = v.T.cruise; } }
+    if (res.finishedAt > T_ALL - 8 && v.laps > 1) {
+      const ph = v.phase;
+      v.laps--; if (v.kind === 'bus') v.phase = (v.k / v.nBus) * (T_ALL / v.laps) + v.lineIndex * 37;
+      res = simulate(v, traffic, v.cruise, v.laps);
+      if (res.finishedAt > T_ALL - 8) { v.laps++; v.phase = ph; continue; }
+    } else if (res.finishedAt > T_ALL - 8) continue;
+    v.simIt = res.finishedAt; v.rec = res.rec; v.flags = res.flags; v.total = res.total;
     laneRecords(v);
   }
-  window.__trafficMs = performance.now() - t0;
+}
+// 記録から、各時刻にどの道（車線）のどこにいるかを作っておく（あとの車が前の車を見るため）
+function laneRecords(v) {
+  const P = v.path, n = v.rec.length, keyRec = new Int16Array(n), esRec = new Float32Array(n);
+  for (let r = 0; r < n; r++) { const s = ((v.rec[r] % P.L) + P.L) % P.L, i = pathIndex(P, s); keyRec[r] = P.Key[i]; esRec[r] = P.edgeS[i]; }
+  v.keyRec = keyRec; v.esRec = esRec; v.flRec = v.flags;
+}
+{
+  const R = roadNet, t0 = performance.now();
+  const mk = (kind, legs, extra) => {
+    const isBus = kind === 'bus';
+    const T = VTYPE[extra.type || 'bus'];
+    const v = Object.assign({ kind, T, legs }, extra);
+    let P, k0 = 0;
+    if (isBus) {
+      P = buildPath(legs, true);
+      const m = pathMarks(P, true);
+      k0 = m.stops.length ? pathIndex(P, m.stops[0].s) : 0;
+    } else {
+      const pk = R.parks[extra.carIndex], li = CAR_ROUTES[extra.r].findIndex((l) => R.edges[l[0]] === pk.e && l[1] === pk.dir);
+      const want = pk.dir > 0 ? pk.s : pk.e.L - pk.s;
+      P = buildPath(legs, false, { park: { li, want }, pref: hash(extra.carIndex, 95) < 0.35 ? 1 : 0 });   // 3 台に 1 台くらいは右の車線を走る
+      for (let i = 0; i < P.N; i++) if (P.legOf[i] === li && P.edgeS[i] >= want) { k0 = i; break; }
+    }
+    P = rotatePath(P, k0);
+    v.path = P; v.marks = pathMarks(P, isBus);
+    // 車線の番号（道・向き・右の車線か）。走る線の点ごとに決まっている。legKey0 は各道に入って少し先の車線
+    v.keySet = new Set(P.Key);
+    v.keyAhead = new Int16Array(P.N); for (let i = 0; i < P.N; i++) v.keyAhead[i] = P.Key[pathIndex(P, (P.S[i] + 25) % P.L)];   // 25m 先の車線
+    v.legKey0 = legs.map((_, li) => { let k = -1; for (let i = 0; i < P.N; i++) if (P.legOf[i] === li) { k = P.Key[i]; if (P.edgeS[i] >= 20) break; } return k; });
+    return v;
+  };
+  LINES.forEach((ln, li) => { for (let k = 0; k < ln.buses; k++) traffic.push(mk('bus', ln.legs, { line: ln, lineIndex: li, k, phase: 0 })); });
+  CARS.forEach((c, ci) => traffic.push(mk('car', CAR_ROUTES[c.r], { type: c.type, color: c.color, r: c.r, carIndex: ci, phase: 0 })));
+  // 走り方の計算は重いので、別の作業場所（Web Worker）で計算して、画面を止めない。終わるまでバスと車は出ない
+  for (const v of traffic) { v.nBus = v.kind === 'bus' ? v.line.buses : 0; v.carPhase = v.kind === 'car' ? hash(v.carIndex, 5) * T_ALL : 0; }
+  const finish = (how) => { trafficReady = true; window.__trafficMs = performance.now() - t0; window.__trafficHow = how; window.__traffic = traffic; };
+  const keep = ['laps', 'cruise', 'total', 'simIt', 'phase', 'rec', 'flags'];
+  try {
+    const src = `const T_ALL = ${T_ALL}, REC_DT = ${REC_DT}, SIM_DT = ${SIM_DT}, BUS_DWELL = ${BUS_DWELL}, SIG_CYCLE = ${SIG_CYCLE};
+let roadNet;
+${[wrapA, pathIndex, signalState, simulate, laneRecords, runTrafficSim].map((f) => f.toString()).join('\n')}
+onmessage = (e) => {
+  const { vs, edgesL, passes } = e.data;
+  roadNet = { edges: edgesL.map((L) => ({ L })) };
+  for (const v of vs) v.keySet = new Set(v.keySet);
+  runTrafficSim(vs, passes);
+  const out = vs.map((v) => ({ laps: v.laps, cruise: v.cruise, total: v.total, simIt: v.simIt, phase: v.phase, rec: v.rec, flags: v.flags }));
+  postMessage(out, out.flatMap((o) => [o.rec.buffer, o.flags.buffer]));
+};`;
+    const url = URL.createObjectURL(new Blob([src], { type: 'text/javascript' })), w = new Worker(url);
+    const vs = traffic.map((v) => ({
+      kind: v.kind, T: v.T, k: v.k, nBus: v.nBus, lineIndex: v.lineIndex, carPhase: v.carPhase,
+      path: { N: v.path.N, X: v.path.X, Z: v.path.Z, S: v.path.S, L: v.path.L, legs: v.path.legs, legOf: v.path.legOf, edgeS: v.path.edgeS, Key: v.path.Key },
+      marks: { junc: v.marks.junc.map((j) => ({ s: j.s, stopS: j.stopS, grp: j.grp, turn: j.turn, node: { jr: j.node.jr, sigOff: j.node.sigOff } })), stops: v.marks.stops.map((q) => ({ s: q.s })) },
+      keySet: [...v.keySet], keyAhead: v.keyAhead, legKey0: v.legKey0,
+    }));
+    w.onmessage = (e) => { e.data.forEach((o, i) => { for (const k of keep) traffic[i][k] = o[k]; }); w.terminate(); URL.revokeObjectURL(url); finish('worker'); };
+    w.onerror = (e) => { e.preventDefault(); w.terminate(); runTrafficSim(traffic, TRAFFIC_PASSES); finish('main'); };
+    w.postMessage({ vs, edgesL: R.edges.map((e) => e.L), passes: TRAFFIC_PASSES });
+  } catch (e) { runTrafficSim(traffic, TRAFFIC_PASSES); finish('main'); }   // Worker が使えないときは、ここで計算する（少し止まる）
 }
 // 見た目を作る
 const buses = traffic.filter((v) => v.kind === 'bus'), cars = traffic.filter((v) => v.kind === 'car');
@@ -3201,6 +3331,7 @@ function avoidObstacles(v, obs, dt, near, schedV) {
     const a = obstacleAhead(v, obs, look, v.sideT), b = obstacleAhead(v, obs, 10, v.side);
     ob = a && b ? (a.gap < b.gap ? a : b) : a || b;
   }
+  if (v.leadGap < look && v.leadGap > 0.3 && !(v.noTraffic > 0) && (!ob || v.leadGap < ob.gap + 3)) ob = { o: { kind: 'lead' }, gap: Math.min(v.leadGap, ob ? ob.gap : Infinity) };   // 同じ車線の前の車
   // 横へ寄せる（ゆっくり）。寄せているあいだはウインカー
   const ds = v.sideT - v.side;
   if (Math.abs(ds) > 0.05) { v.side += Math.sign(ds) * Math.min(Math.abs(ds), dt * Math.max(0.6, Math.min(1.6, schedV * 0.25))); v.xfl |= ds < 0 ? 4 : 2; }
@@ -3208,7 +3339,7 @@ function avoidObstacles(v, obs, dt, near, schedV) {
   // 止まる：じゃまな物までに止まれる速さにおさえる。どいたら少し速く走って予定に追いつく
   let target = v.lag > 0.05 ? 1.3 : 1;
   if (ob) {
-    const stopAt = ob.gap - (ob.o.kind === 'traffic' ? 1.5 : 3);
+    const stopAt = ob.gap - (ob.o.kind === 'traffic' || ob.o.kind === 'lead' ? 1.5 : 3);
     const vAllow = Math.sqrt(2 * dec * Math.max(0, stopAt));
     if (schedV * target > vAllow) target = schedV > 0.05 ? vAllow / schedV : target;
     if (stopAt < 0.3) target = 0;
@@ -3225,13 +3356,20 @@ function avoidObstacles(v, obs, dt, near, schedV) {
   if ((v.brakeT = Math.max(0, (v.brakeT || 0) - dt)) > 0) v.xfl |= 8;   // ブレーキ（少しのあいだ点けたまま）
   if (v.lag > 6 && v.rate < 0.05) v.xfl |= 1;   // 長く止まったらハザード
 }
+// 車を描く距離。スマホは近くだけ・台数も決めておく（100 台あっても重くならないように）
+const CAR_VIEW = coarse ? 420 : 800, CAR_MAX_PHONE = 22, nearCars = [], laneNow = new Map();
 function stepTraffic(dt) {
   const now = Date.now() / 1000, cx = camera.position.x, cz = camera.position.z;
   const blink = Math.floor(now * 3) % 2 === 0, night = dayLight < 0.35;
   const obs = trafficObstacles();
   const rdt = THREE.MathUtils.clamp(now - (stepTraffic.last || now), 0, 1); stepTraffic.last = now;   // 時計の進み（遅い端末でも予定とずれない）
+  if (!trafficReady) { for (const v of traffic) v.root.visible = false; return; }
+  nearCars.length = 0;
+  // 近くの車の車線と位置（前のフレーム）。同じ車線のすぐ前の車には、ぶつからないよう止まる（計算ずみの予定がずれたときの安全のため）
+  laneNow.clear();
+  for (const u of traffic) if (u.laneK >= 0 && !(u.fl & 32)) { let l = laneNow.get(u.laneK); if (!l) laneNow.set(u.laneK, l = []); l.push(u); }
   for (const v of traffic) {
-    if (v.lag === undefined) Object.assign(v, { lag: 0, rate: 1, side: 0, sideT: 0, avoid: null, xfl: 0 });
+    if (v.lag === undefined) Object.assign(v, { lag: 0, rate: 1, side: 0, sideT: 0, avoid: null, xfl: 0, laneK: -1 });
     const tau = (((now - v.phase - v.lag) % T_ALL) + T_ALL) % T_ALL, r = tau / REC_DT, i0 = Math.min(v.rec.length - 2, Math.floor(r)), f = r - i0;
     const s = v.rec[i0] + (v.rec[i0 + 1] - v.rec[i0]) * f, P = v.path;
     v.s = s; v.speed = (v.rec[i0 + 1] - v.rec[i0]) / REC_DT * v.rate; v.fl = v.flags[i0] | v.xfl;
@@ -3252,9 +3390,25 @@ function stepTraffic(dt) {
       v.nextName = nx ? nx.name : '';
       v.open += ((v.fl & 16 ? 1 : 0) - v.open) * Math.min(1, dt * 2.5);
     }
-    const near = Math.hypot(x - cx, z - cz) < VIEW_R || (!!busRide && busRide.b === v);
+    const dCam = Math.hypot(x - cx, z - cz);
+    let near = v.kind === 'bus' ? dCam < VIEW_R || (!!busRide && busRide.b === v) : dCam < CAR_VIEW;
+    if (near && v.kind === 'car' && coarse) { nearCars.push(v); v.dCam = dCam; }
+    v.leadGap = Infinity;
+    if (dCam < OBS_NEAR) {
+      const i = pathIndex(P, ((s % P.L) + P.L) % P.L), k0 = P.Key[i], k1 = v.keyAhead[i], k2 = v.legKey0[(P.legOf[i] + 1) % P.legs.length], es = P.edgeS[i];
+      const legLen = roadNet.edges[P.legs[P.legOf[i]][0]].L;
+      for (const kk of k0 === k1 ? [k0, k2] : [k0, k1, k2]) for (const u of laneNow.get(kk) || []) {
+        if (u === v || ((u.fl & 32) && v.kind === 'bus')) continue;
+        let g = Infinity;
+        if ((kk >> 1) === (k0 >> 1)) { if (u.laneEs > es) g = u.laneEs - es; } else if (kk === k2) g = legLen - es + u.laneEs;
+        g -= u.T.hl + v.T.hl;
+        if (g < v.leadGap) v.leadGap = g;
+      }
+      v.laneK = k0; v.laneEs = es;
+    } else v.laneK = -1;
     avoidObstacles(v, obs, rdt, near, (v.rec[i0 + 1] - v.rec[i0]) / REC_DT);
     v.root.visible = near;
+    if (!near && v.kind === 'car') continue;   // 見えない車は形を動かさない（軽くするため）
     v.root.position.set(x, v.y, z);
     v.root.rotation.set(-v.pitch, h, 0);
     v.root.updateMatrixWorld(true);
@@ -3265,6 +3419,10 @@ function stepTraffic(dt) {
     L.br.color.setHex(blink && (haz || v.fl & 4) ? LAMP.blinkOn : LAMP.blinkOff);
     L.tail.color.setHex(v.fl & 8 ? LAMP.tailBrake : night ? LAMP.tailDim : LAMP.tailOff);
     L.head.color.setHex(night ? LAMP.headOn : LAMP.headOff);
+  }
+  if (nearCars.length > CAR_MAX_PHONE) {   // スマホ：描く車は近いほうから決まった台数まで
+    nearCars.sort((a, b) => a.dCam - b.dCam);
+    for (let k = CAR_MAX_PHONE; k < nearCars.length; k++) nearCars[k].root.visible = false;
   }
 }
 // バスの中の点（車体の座標）を世界の座標に
@@ -4435,7 +4593,7 @@ function stepOthers(dt) {
     o.face = lerpAngle(o.face, t.f, k);
     const pv = t.pv ? vehicles.find((v) => v.id === t.pv) : null;
     if (pv) { o.pos.copy(seatWorld(pv, t.ps)); o.face = visYaw(pv); }   // 相乗りの人は、こちらの画面の船の上に立たせる
-    if (t.bl) {   // バスの中の人は、こちらの画面のバスの中に立たせる（バスはどの画面でも同じ位置）
+    if (t.bl && trafficReady) {   // バスの中の人は、こちらの画面のバスの中に立たせる（バスはどの画面でも同じ位置）
       const bb = buses[t.bb];
       if (!o.bl) o.bl = t.bl.slice();
       o.bl[0] += (t.bl[0] - o.bl[0]) * k; o.bl[1] += (t.bl[1] - o.bl[1]) * k;
@@ -6163,8 +6321,17 @@ function hideSubmerged(v) {
 const menuEl = el('menu'), menuBtn = el('menuBtn');
 function setMenu(open) {
   menuEl.hidden = !open; menuBtn.setAttribute('aria-expanded', String(open));
-  if (open) { renderMyList(); renderVehMenu(); el('aiStop').hidden = !aiSub; el('seacatBtn').hidden = !(!driving && !aboard && (player.mode === 'swim' || player.mode === 'dive')); }
+  if (open) {
+    renderMyList(); renderVehMenu();
+    // コンピュータ対戦は潜水艦を操縦しているときだけ（対戦中は「やめる」も）
+    const inSub = driving && ride && vtype(ride) === 'sub' && !ride.ai;
+    el('aiMenu').hidden = !(inSub || aiSub); el('aiStart').hidden = !inSub || !!aiSub; el('aiStop').hidden = !aiSub;
+    el('seacatBtn').hidden = !(!driving && !aboard && (player.mode === 'swim' || player.mode === 'dive'));
+  } else setMyList(false);
 }
+// 自分が出した物：押すと一覧がひらく（たくさん出してもメニューが長くならないように）
+function setMyList(open) { el('myList').hidden = !open; el('myBtn').setAttribute('aria-expanded', String(open)); }
+el('myBtn').addEventListener('click', () => { setMyList(el('myList').hidden); renderMyList(); });
 // 乗っている船・潜水艦のボタン（画面からメニューへ移したもの）
 function renderVehMenu() {
   const vt = ride ? vtype(ride) : null, boat = driving && (vt === 'ship' || vt === 'sub');
@@ -6207,10 +6374,9 @@ async function summonSeacat() {
   } finally { seacatBusy = false; }
 }
 el('seacatBtn').addEventListener('click', () => { setMenu(false); summonSeacat(); });
-// 大陸のバス停「港」と、はじめの浜を行き来する（海を 2.5km わたらなくても路線バスに乗れる）
-const onContinent = () => player.pos.z < -2000;
+// はじめの浜バスターミナルへ戻る（地図の「砂浜に戻る」）
 function goHome() {
-  setMenu(false);
+  setMenu(false); closeWmap();
   if (driving || aboard || busRide) { showMsg('降りてから使ってください'); return; }
   const s = spawnPoint();
   player.pos.set(s.x, heightAt(s.x, s.z), s.z); player.face = s.face; camYaw = s.face + Math.PI;
@@ -6225,17 +6391,6 @@ function savePos() {
 setInterval(savePos, 3000);
 window.addEventListener('pagehide', savePos);
 document.addEventListener('visibilitychange', () => { if (document.hidden) savePos(); });
-el('busTrip').addEventListener('click', () => {
-  setMenu(false);
-  if (driving || aboard || busRide) { showMsg('降りてから使ってください'); return; }
-  {
-    const st = roadNet.stops[0], e = st.e, i = st.i, off = e.W[i] / 2 + 1.3, x = e.X[i] + e.NX[i] * off - e.NZ[i] * 4, z = e.Z[i] + e.NZ[i] * off + e.NX[i] * 4;   // 待合所のとなり、前ドアのあたり
-    player.pos.set(x, heightAt(x, z), z); player.face = Math.atan2(-e.NX[i], -e.NZ[i]); camYaw = player.face + Math.PI;
-    showMsg('バス停「港」に来ました。バスが止まってドアがあいたら「乗る」');
-  }
-  player.vy = 0; camPitch = 0.35;
-});
-
 function myThings() {
   const list = [];
   for (const v of vehicles) if (v.mine && v !== myCar) list.push({ name: v.name, kind: 'v', o: v });
@@ -6252,8 +6407,10 @@ function renderMyList() {
     b.addEventListener('click', fn); r.appendChild(b);
     box.appendChild(r);
   };
-  if (gacchiItem) row('がっち号', myCar ? 'しまう' : '出す', '', () => { toggleGacchi(); renderMyList(); });
   const list = myThings();
+  el('myCount').textContent = `（${list.length + (gacchiItem ? 1 : 0)}）`;
+  if (box.hidden) return;
+  if (gacchiItem) row('がっち号', myCar ? 'しまう' : '出す', '', () => { toggleGacchi(); renderMyList(); });
   for (const t of list) row(t.name, '消す', 'del', async () => { await removeMine(t); renderMyList(); });
   if (!list.length) { const p = document.createElement('p'); p.className = 'none'; p.textContent = 'glTF で置いた物はまだありません'; box.appendChild(p); }
 }
@@ -6448,7 +6605,7 @@ const hhmmss = (sec) => { const d = new Date(sec * 1000); return [d.getHours(), 
 function busRecIndex(v, now) { return (((now - v.phase - (v.lag || 0)) % T_ALL) + T_ALL) % T_ALL / REC_DT; }
 function stepStopInfo(dt) {
   stopInfoT -= dt;
-  if (stopInfoT > 0) return;
+  if (stopInfoT > 0 || !trafficReady) return;
   stopInfoT = 0.5;
   const box = el('stopInfo');
   let st = null, bd = 40;
