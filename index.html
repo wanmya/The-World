@@ -3475,8 +3475,8 @@ function addPoints(d) {
   return wallet.p;
 }
 // ===== パチンコ（羽根もの）の盤面と玉の動き。画面とは別で、node でも動く =====
-function makePachi(pV, rnd, lay) {
-  rnd = rnd || Math.random; lay = lay || rnd;
+function makePachi(pV, rnd, lay, pS) {
+  rnd = rnd || Math.random; lay = lay || rnd; pS = pS == null ? 0.1 : pS;
   const W = 360, H = 440, CX = 180, CY = 220, R = 168, BR = 4, NR = 1.8, G = 700;
   const YAKU = { x0: 146, x1: 214, y0: 138, y1: 204 };
   const WINGS = [{ x0: 126, x1: 146, y0: 160, y1: 204, s: -1 }, { x0: 214, x1: 234, y0: 160, y1: 204, s: 1 }];
@@ -3511,7 +3511,9 @@ function makePachi(pV, rnd, lay) {
   const S = {
     W, H, CX, CY, R, BR, YAKU, WINGS, CHUCK, TULIPS, POCKETS, MILLS, OUT, RUBBER, nails, cups,
     pV, balls: [], fireT: 0, wing: 0, wingQ: [], stage: [], stageT: 0, stageBall: null,
-    bonus: null, events: [], stats: { shot: 0, won: 0, foul: 0, hits: 0 },
+    bonus: null, events: [], stats: { shot: 0, won: 0, foul: 0, hits: 0, slotHits: 0 },
+    // スロット：START に入るとポイントが 1 たまり、10 たまると 5 回まわる。1 回 5 秒で自動で止まり、そろえば当たり（80 玉）
+    slot: { pts: 0, need: 10, left: 0, n: 0, t: 0, phase: 'idle', fin: [0, 0, 0], hit: false, pS, pay: 80, boost: 0, decided: false },
   };
   const ev = (e) => S.events.push(e);
   function collide(b, cx, cy, r, e, jit) {
@@ -3559,6 +3561,7 @@ function makePachi(pV, rnd, lay) {
     else if (S.wingGap > 0) S.wingGap -= dt;
     else if (S.wingQ.length) { const q = S.wingQ.shift(); S.wing = q.open; S.curGap = q.gap; if (q.open > 0) ev({ t: 'wing' }); else S.wingGap = q.gap; }
     if (S.bonus) stepBonus(dt);
+    stepSlot(dt);
     // 役物の中（V に入るか）
     if (!S.stageBall && S.stage.length) { S.stageBall = S.stage.shift(); S.stageT = 0; S.stageBall.dur = S.stageBall.bonus ? 0.7 : 2.2; S.stageBall.side = rnd() < 0.5 ? -1 : 1; }
     if (S.stageBall) {
@@ -3595,7 +3598,7 @@ function makePachi(pV, rnd, lay) {
           if (Math.abs(b.x - c.x) < ww && b.y > c.y - 3 && b.y < c.y + 5 && b.vy > 0) {
             if (rnd() > (c.type === 'chuck' ? 0.6 : 0.45)) { const sd = rnd() < 0.5 ? -1 : 1; b.x = c.x + sd * 13; b.y = c.y - 4; b.vy = -40; b.vx = sd * 60; continue; }   // ふちに当たってはじかれた
             gone = c.type; c.n = (c.n || 0) + 1; ev({ t: 'pay', n: c.pay, why: c.type, x: c.x, y: c.y }); S.stats.won += c.pay;
-            if (c.type === 'chuck' && !S.bonus) openWing(c.opens, 0.45, 0.3);
+            if (c.type === 'chuck' && !S.bonus) { openWing(c.opens, 0.45, 0.3); const L = S.slot; if (L.phase === 'spin' && !L.decided) { L.boost += 0.05; ev({ t: 'slotUp', p: Math.min(0.6, L.pS + L.boost) }); } else L.pts = Math.min(L.pts + 1, 99); }
             if (c.type === 'tulip') { c.open = !c.open; const o = c.open ? 10 : 6.3; c.nl.x = c.x - o; c.nr.x = c.x + o; }
             break;
           }
@@ -3605,6 +3608,32 @@ function makePachi(pV, rnd, lay) {
         if (!gone) { if (Math.hypot(b.vx, b.vy) < 8) b.slow += hh; else b.slow = 0; if (b.slow > 2 || b.age > 30) gone = 'out'; }
         if (gone) { S.balls.splice(i, 1); if (gone === 'out') ev({ t: 'out' }); }
       }
+    }
+  }
+  function spinSlot() {
+    const L = S.slot; L.phase = 'spin'; L.t = 0; L.n++; L.boost = 0; L.decided = false;
+    ev({ t: 'slotSpin', n: L.n });
+  }
+  // 1 つめのリールが止まるとき（4 秒）に当たりを決める。それまでに START に入った数だけ確率が上がる
+  function decideSlot() {
+    const L = S.slot; L.decided = true; L.hit = rnd() < Math.min(0.6, L.pS + L.boost);
+    if (L.hit) { const k = Math.floor(rnd() * 5); L.fin = [k, k, k]; }
+    else {   // はずれ。3 回に 1 回は 2 つだけそろう（リーチ）
+      const a = Math.floor(rnd() * 5); let c = Math.floor(rnd() * 5); if (c === a) c = (c + 1 + Math.floor(rnd() * 4)) % 5;
+      L.fin = rnd() < 0.33 ? [a, a, c] : [a, Math.floor(rnd() * 5), c];
+    }
+  }
+  function stepSlot(dt) {
+    const L = S.slot;
+    if (L.phase === 'idle') { if (L.pts >= L.need && !S.bonus) { L.pts -= L.need; L.left = 5; L.n = 0; ev({ t: 'slotStart' }); spinSlot(); } return; }
+    L.t += dt;
+    if (L.phase === 'spin' && !L.decided && L.t >= 4) decideSlot();
+    if (L.phase === 'spin' && L.t >= 5) {
+      L.phase = 'show'; L.t = 0;
+      if (L.hit) { S.stats.won += L.pay; S.stats.slotHits++; ev({ t: 'pay', n: L.pay, why: 'slot' }); ev({ t: 'slotHit' }); } else ev({ t: 'slotMiss' });
+    } else if (L.phase === 'show' && L.t >= 1.3) {
+      L.left--;
+      if (L.left > 0) spinSlot(); else { L.phase = 'idle'; ev({ t: 'slotEnd' }); }
     }
   }
   S.step = step;
@@ -3645,7 +3674,8 @@ function pgTone(f, len, vol, type) {
 function openPachi(b, ch) {
   const pV = pachiPV(b, ch.num);
   const lay = seededRnd(hash32(`${b.pr.id || b.pr.name}|${ch.num}|${jstDay()}|釘`));
-  PG.S = makePachi(pV, Math.random, lay); PG.num = ch.num; PG.balls = 0; PG.fire = false; PG.msg = '玉を借りて、打つを押してください'; PG.msgT = 4; PG.pops = [];
+  const pS = 0.06 + 0.08 * seededRnd(hash32(`${b.pr.id || b.pr.name}|${ch.num}|${jstDay()}|スロット`))();   // スロットはだいたい 10%（6〜14%）
+  PG.S = makePachi(pV, Math.random, lay, pS); PG.num = ch.num; PG.balls = 0; PG.fire = false; PG.msg = '玉を借りて、打つを押してください'; PG.msgT = 4; PG.pops = [];
   PG.open = true; pgEl.hidden = false; PG.last = performance.now();
   for (const k in keys) keys[k] = false;
   audioCtx(); pgUi(); requestAnimationFrame(pgFrame);
@@ -3677,6 +3707,11 @@ function pgFrame(now) {
     else if (e.t === 'round') { PG.msg = `大当たり！ ラウンド ${e.n}/5`; PG.msgT = 99; pgTone(880, 0.2, 0.05); }
     else if (e.t === 'bonusEnd') { PG.msg = '大当たり おわり'; PG.msgT = 2.5; }
     else if (e.t === 'miss') { PG.msg = 'おしい！'; PG.msgT = 1; }
+    else if (e.t === 'slotStart') { PG.msg = 'スロット スタート！'; PG.msgT = 1.5; [660, 880, 1100].forEach((f, i) => setTimeout(() => pgTone(f, 0.12, 0.04), i * 100)); }
+    else if (e.t === 'slotSpin') { if (PG.msgT < 0.5 || /スロット/.test(PG.msg)) { PG.msg = `スロット ${e.n}/5`; PG.msgT = 4; } }
+    else if (e.t === 'slotUp') { PG.pops.push({ x: S.CX, y: S.YAKU.y0 + 4, n: 0, txt: `確率アップ ${Math.round(e.p * 100)}%`, t: 1.4 }); pgTone(1500, 0.06, 0.03); }
+    else if (e.t === 'slotHit') { PG.msg = `スロット当たり！ +${S.slot.pay}玉`; PG.msgT = 2.5; PG.flash = 1.2; [988, 1319, 1568, 1976].forEach((f, i) => setTimeout(() => pgTone(f, 0.18, 0.05), i * 110)); }
+    else if (e.t === 'slotEnd') { if (/スロット \d/.test(PG.msg)) PG.msgT = 0; }
   }
   S.events.length = 0;
   if (PG.fire && PG.balls <= 0 && !S.balls.length) { PG.fire = false; PG.msg = '玉がなくなりました'; PG.msgT = 2.5; changed = true; }
@@ -3740,7 +3775,20 @@ function pgDraw(t, dt) {
   const holes = [Y.x0 + 16, (Y.x0 + Y.x1) / 2, Y.x1 - 16];
   holes.forEach((hx, i) => { c.fillStyle = i === 1 ? '#e21' : '#222'; c.beginPath(); c.arc(hx, sy + 9, 5, 0, Math.PI * 2); c.fill(); });
   c.fillStyle = '#fff'; c.font = '800 8px sans-serif'; c.fillText('V', holes[1], sy + 12);
-  c.fillStyle = '#c33'; c.font = '800 10px sans-serif'; c.fillText(bonus ? `R${S.bonus.round}` : 'LUCKY', (Y.x0 + Y.x1) / 2, Y.y0 + 16);
+  // スロットのリール（3 つ）と、たまったポイント
+  const L = S.slot, SYM = ['7', '★', '◆', '♥', 'BAR'], SCOL = ['#e21', '#e6a100', '#1a7fd6', '#e0408a', '#333'];
+  const lit = L.phase === 'show' && L.hit && Math.floor(t * 8) % 2;
+  for (let i = 0; i < 3; i++) {
+    const rx = Y.x0 + 6 + i * 20, ry = Y.y0 + 5;
+    c.fillStyle = lit ? '#fff3a0' : '#fff'; c.strokeStyle = '#47607a'; c.lineWidth = 1; c.fillRect(rx, ry, 17, 21); c.strokeRect(rx, ry, 17, 21);
+    const stopped = L.phase !== 'spin' || L.t >= 4 + i * 0.5, k = stopped ? L.fin[i] : (Math.floor(t * 14) + i * 2) % 5;
+    c.fillStyle = L.phase === 'idle' ? '#99a' : SCOL[k]; c.font = k === 4 ? '900 7px sans-serif' : '900 13px sans-serif';
+    c.fillText(SYM[k], rx + 8.5, ry + (k === 4 ? 13 : 15) + (stopped ? 0 : (t * 300) % 6 - 3));
+  }
+  c.fillStyle = '#334'; c.fillRect(Y.x0 + 6, Y.y0 + 29, Y.x1 - Y.x0 - 12, 5);
+  c.fillStyle = '#ffb000'; c.fillRect(Y.x0 + 6, Y.y0 + 29, (Y.x1 - Y.x0 - 12) * Math.min(1, L.pts / L.need), 5);
+  c.font = '800 7px sans-serif'; c.fillStyle = '#c33';
+  c.fillText(bonus ? `大当たり R${S.bonus.round}` : L.phase !== 'idle' ? `SLOT ${L.n}/5  ${Math.round(Math.min(0.6, L.pS + (L.boost || 0)) * 100)}%` : `SLOT ${Math.min(L.pts, L.need)}/${L.need}`, (Y.x0 + Y.x1) / 2, Y.y0 + 42);
   if (S.stageBall) {   // 役物の中をころがる玉
     const sb = S.stageBall, f = S.stageT / sb.dur, mid = (Y.x0 + Y.x1) / 2, span = (Y.x1 - Y.x0) / 2 - 12;
     let bx, by = sy - 4;
@@ -3761,7 +3809,7 @@ function pgDraw(t, dt) {
   for (const b of S.balls) pgBall(c, b.x, b.y);
   // 入賞の数字
   c.font = '800 11px sans-serif';
-  for (const p of PG.pops) { p.t -= dt; p.y -= dt * 18; c.fillStyle = `rgba(230,40,60,${Math.max(0, p.t)})`; c.fillText(`+${p.n}`, p.x, p.y); }
+  for (const p of PG.pops) { p.t -= dt; p.y -= dt * 18; c.fillStyle = `rgba(230,40,60,${Math.max(0, Math.min(1, p.t))})`; c.fillText(p.txt || `+${p.n}`, p.x, p.y); }
   PG.pops = PG.pops.filter((p) => p.t > 0);
   // お知らせ
   if (PG.msgT > 0 && PG.msg) {
