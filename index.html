@@ -3853,6 +3853,7 @@ function stepBusRider(dt) {
 }
 
 /* ================= 歩く・泳ぐ ================= */
+const IN_WALK = 4 / 3.6, IN_TURN = Math.PI * 2 / 3;
 const GRAVITY = 24, JUMP = 8.5, WALK = 4.5, RUN = 8, SWIM = 3, FLOAT_Y = SEA - 1.35;   // 浮いているときは頭だけ水の上
 function pushFromCar(V, cx, cz, cy, h) {
   if (player.pos.y >= cy + 1.1 || player.pos.y <= cy - 1.5) return;
@@ -3882,7 +3883,7 @@ function stepPlayer(dt) {
   if (touch.stickId !== null) {
     if (fpView) {   // 建物の中（一人称）：スティックの上下で前後、左右でゆっくり向きを変える。カメラが体についてくるので、カメラ基準だとくるくる回ってしまう
       const sy = Math.abs(touch.y) > 0.2 ? -touch.y : 0, sx = Math.abs(touch.x) > 0.25 ? -touch.x : 0;
-      fwdIn = Math.max(-1, Math.min(1, sy * 1.2)); turnIn = Math.max(-1, Math.min(1, sx)) * 0.6; speed = WALK;
+      fwdIn = Math.max(-1, Math.min(1, sy * 1.2)); turnIn = Math.max(-1, Math.min(1, sx));
     } else { speed = RUN * 0.8; stick = true; }
   }
   const ground = groundAt(player.pos.x, player.pos.z, player.pos.y);
@@ -3903,7 +3904,9 @@ function stepPlayer(dt) {
       player.face += d * Math.min(1, dt * 12);
     }
   }
-  if (!stick) player.face += turnIn * 2.6 * dt;
+  // 建物の中：歩きは時速 4km（走らない）、向きは 3 秒で 1 回転（ユーザーの希望）
+  if (fpView) { speed = IN_WALK; if (!stick) player.face += turnIn * IN_TURN * dt; }
+  else if (!stick) player.face += turnIn * 2.6 * dt;
   const mag = stick ? 0 : Math.min(1, Math.abs(fwdIn)) * (fwdIn < 0 ? 0.55 : 1);   // 後ろ歩きはゆっくり
   if (!stick) player.moving = mag > 0.05 || Math.abs(turnIn) > 0.05;
   if (mag > 0.05) {
