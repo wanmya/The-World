@@ -54,9 +54,21 @@ body { margin: 0; background: var(--sky); color: var(--ink); font-family: var(--
 #menu[hidden] { display: none; }
 #menu .who { margin: 0 0 2px; align-self: flex-start; }
 #menu .mi { text-align: left; font: 800 14px var(--font-ui); color: var(--ink); background: #f3f6f9; border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; cursor: pointer; }
+#menu .mgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+#menu .mgrid .mi { padding: 9px 8px; font-size: 13px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#menu .mgrid .mi[hidden] { display: none; }
+#menu .mi small { margin-left: 6px; font: 700 10px var(--font-mono); color: var(--ink-dim); }
+#menu .mine { display: flex; align-items: center; gap: 6px; }
+#menu .mine span { font: 700 12px var(--font-ui); color: var(--ink-dim); }
+#menu .mine i { margin-left: auto; font-style: normal; transition: transform .15s; }
+#menu .mine[aria-expanded="true"] i { transform: rotate(90deg); }
+#myList { display: flex; flex-direction: column; gap: 6px; max-height: 40vh; overflow-y: auto; padding: 2px 2px 2px 6px; }
+#myList[hidden] { display: none; }
+#aiMenu, #aiStart { display: flex; flex-direction: column; gap: 6px; }
+#aiMenu[hidden], #aiStart[hidden] { display: none; }
 #menu .aibtns { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; }
 #menu .aibtns .mi { text-align: center; padding: 10px 4px; }
-#vehMenu { display: flex; flex-direction: column; gap: 8px; }
+#vehMenu { display: flex; flex-direction: column; gap: 6px; }
 #vehMenu[hidden] { display: none; }
 /* 船・潜水艦のボタンは、ピンガー（とイージス艦の主砲・CIWS）以外は ☰ メニューの中 */
 #subBtns #rescueBtn, #subBtns #lightBtn, #subBtns #scopeBtn, #subBtns #subChat, #subBtns #subExit { display: none !important; }
@@ -79,7 +91,8 @@ body.mapOn #msg { top: max(145px, 30vh); }
 #routeBtn { position: fixed; z-index: 4; left: 50%; transform: translateX(-50%); top: calc(20px + env(safe-area-inset-top, 0px)); }
 #wmap { position: fixed; z-index: 8; inset: max(12px, env(safe-area-inset-top, 0px)) max(12px, env(safe-area-inset-right, 0px)) max(12px, env(safe-area-inset-bottom, 0px)) max(12px, env(safe-area-inset-left, 0px));
   display: flex; flex-direction: column; gap: 6px; padding: 8px; background: rgba(255,255,255,.94); border: 1px solid var(--line); border-radius: 14px; box-sizing: border-box; }
-#wmap .wbar { display: flex; gap: 6px; }
+#wmap .wbar { display: flex; flex-wrap: wrap; gap: 6px; }
+#wmap #homeBtn { background: #fff4dc; border-color: #e8c98a; }
 #wmap .wbar button { font: 800 13px var(--font-ui); color: var(--ink); background: #f3f6f9; border: 1px solid var(--line); border-radius: 999px; padding: 7px 12px; cursor: pointer; }
 #wmap .wbar button[aria-pressed="true"] { background: var(--ink); color: #fff; }
 #wmap #wmapClose { margin-left: auto; }
@@ -138,6 +151,26 @@ body.mapOn #msg { top: max(145px, 30vh); }
 .subbtns button[aria-pressed="true"] { background: var(--accent); color: #fff; border-color: transparent; }
 #scope { position: fixed; inset: 0; pointer-events: none; z-index: 1; }
 #prompt, .hud, .side, .keys, .touch { z-index: 3; }
+#bplace { position: fixed; z-index: 6; left: 50%; bottom: calc(96px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); width: min(420px, calc(100vw - 24px)); box-sizing: border-box;
+  display: grid; gap: 8px; padding: 10px 12px; background: var(--panel); border: 1px solid var(--line); border-radius: 14px; font: 800 14px var(--font-ui); }
+#bplace .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+#bplace .dir { flex: 1; min-width: 0; }
+#bplace small { display: block; font-weight: 500; font-size: 12px; color: var(--ink-dim); }
+#bplace button { font: 800 14px var(--font-ui); border-radius: 999px; padding: 8px 14px; cursor: pointer; border: 1px solid var(--line); background: #f3f6f9; color: var(--ink); }
+#bplace button.go { background: var(--go); color: #fff; border: 0; }
+#pachi { position: fixed; inset: 0; z-index: 8; background: rgba(10,12,20,0.72); display: flex; align-items: center; justify-content: center; padding: env(safe-area-inset-top, 0px) 8px env(safe-area-inset-bottom, 0px); }
+#pachi[hidden] { display: none; }
+#pachi .pgbox { width: min(440px, 100%); max-height: 100%; display: flex; flex-direction: column; gap: 8px; padding: 10px; box-sizing: border-box; background: #2a1d2b; border-radius: 16px; color: #fff; font: 800 14px var(--font-ui); }
+#pachi .pgtop { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; }
+#pachi .pgtop b { font-size: 18px; color: #ffd23f; }
+#pgBoard { width: 100%; aspect-ratio: 360 / 440; max-height: calc(100vh - 190px); min-height: 0; border-radius: 10px; touch-action: none; display: block; }
+#pachi .pgrow { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+#pachi button { font: 800 15px var(--font-ui); border-radius: 999px; padding: 10px 16px; cursor: pointer; border: 0; background: #f3f6f9; color: #222; }
+#pachi button:disabled { opacity: 0.45; cursor: default; }
+#pgFire { background: #e8304a !important; color: #fff !important; min-width: 88px; }
+#pgFire[aria-pressed="true"] { background: #555 !important; }
+#pachi label { flex: 1; display: flex; gap: 8px; align-items: center; min-width: 140px; }
+#pachi input[type=range] { flex: 1; accent-color: #ffd23f; }
 #map { position: fixed; z-index: 3; right: max(16px, env(safe-area-inset-right, 0px)); top: calc(52px + env(safe-area-inset-top, 0px));
   width: 160px; padding: 6px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; cursor: pointer; }
 #map canvas { display: block; width: 100%; aspect-ratio: 1; border-radius: 50%; }
@@ -223,7 +256,7 @@ body.helmOn .subbtns { flex-wrap: wrap; justify-content: flex-end; max-width: ca
 <body>
 <div id="view"></div>
 
-<div id="clock" aria-live="off"><span id="stateLabel">--:--</span> <span id="placeLabel"></span></div>
+<div id="clock" aria-live="off"><span id="stateLabel">--:--</span> <span id="placeLabel"></span> <span id="pointLabel"></span></div>
 <div class="hud" aria-live="polite">
   <span class="state" id="state">歩いている</span>
   <span class="alt" id="alt">高さ</span>
@@ -244,28 +277,34 @@ body.helmOn .subbtns { flex-wrap: wrap; justify-content: flex-end; max-width: ca
 </div>
 <div id="menu" hidden>
   <p class="who" id="who" aria-live="polite">ひとりで遊んでいます</p>
-  <button class="mi" id="renameBtn" type="button" hidden>なまえ</button>
-  <button class="mi" id="addItem" type="button">glTF を置く</button>
-  <button class="mi" id="chatBtn" type="button">ひとこと</button>
+  <div class="mgrid">
+    <button class="mi" id="mapBtn" type="button">🗺️ 地図<small>M</small></button>
+    <button class="mi" id="chatBtn" type="button">💬 ひとこと</button>
+    <button class="mi" id="addItem" type="button">📦 glTF を置く</button>
+    <button class="mi" id="renameBtn" type="button" hidden>なまえ</button>
+  </div>
   <button class="mi" id="seacatBtn" type="button" hidden>シーキャット（潜水艦）を出す</button>
-  <button class="mi" id="mapBtn" type="button">地図（M）</button>
-  <button class="mi" id="autoBtn" type="button" hidden>自動運転（地図で行き先をえらぶ）</button>
-  <button class="mi" id="homeBtn" type="button">砂浜（バスターミナル）に戻る</button>
-  <button class="mi" id="busTrip" type="button">大陸のバス停「港」へ行く</button>
-  <p class="mh">コンピュータと対戦（潜水艦に乗って）</p>
-  <button class="mi" type="button" id="aiPos" aria-pressed="false">スタート：800m 離れて（押すとランダム）</button>
-  <div class="aibtns"><button class="mi" type="button" data-ai="easy">やさしい</button><button class="mi" type="button" data-ai="normal">ふつう</button><button class="mi" type="button" data-ai="hard">つよい</button></div>
-  <button class="mi" type="button" data-ai="stop" id="aiStop" hidden>対戦をやめる</button>
+  <button class="mi" id="autoBtn" type="button" hidden>🚗 自動運転（地図で行き先をえらぶ）</button>
   <div id="vehMenu" hidden>
     <p class="mh">船・潜水艦</p>
-    <button class="mi" type="button" data-proxy="scopeBtn" id="mScope">潜望鏡</button>
-    <button class="mi" type="button" data-proxy="lightBtn" id="mLight">ライト</button>
-    <button class="mi" type="button" id="mVoice">音声の報告：オン</button>
-    <button class="mi" type="button" data-proxy="rescueBtn">救出（浅瀬から出す）</button>
-    <button class="mi" type="button" data-proxy="subExit">降りる</button>
+    <div class="mgrid">
+      <button class="mi" type="button" data-proxy="scopeBtn" id="mScope">潜望鏡</button>
+      <button class="mi" type="button" data-proxy="lightBtn" id="mLight">ライト</button>
+      <button class="mi" type="button" id="mVoice">音声の報告：オン</button>
+      <button class="mi" type="button" data-proxy="rescueBtn">救出（浅瀬から出す）</button>
+      <button class="mi" type="button" data-proxy="subExit">降りる</button>
+    </div>
   </div>
-  <p class="mh">自分が出した物</p>
-  <div id="myList"></div>
+  <div id="aiMenu" hidden>
+    <p class="mh">コンピュータと対戦</p>
+    <div id="aiStart">
+      <button class="mi" type="button" id="aiPos" aria-pressed="false">スタート：800m 離れて（押すとランダム）</button>
+      <div class="aibtns"><button class="mi" type="button" data-ai="easy">やさしい</button><button class="mi" type="button" data-ai="normal">ふつう</button><button class="mi" type="button" data-ai="hard">つよい</button></div>
+    </div>
+    <button class="mi" type="button" data-ai="stop" id="aiStop" hidden>対戦をやめる</button>
+  </div>
+  <button class="mi mine" id="myBtn" type="button" aria-expanded="false" aria-controls="myList">自分が出した物<span id="myCount"></span><i aria-hidden="true">▸</i></button>
+  <div id="myList" hidden></div>
 </div>
 <div id="msg" hidden></div>
 <button class="pill" id="routeBtn" type="button" hidden>🚏 路線図</button>
@@ -273,6 +312,7 @@ body.helmOn .subbtns { flex-wrap: wrap; justify-content: flex-end; max-width: ca
 <div id="wmap" hidden role="dialog" aria-modal="true" aria-label="地図">
   <div class="wbar">
     <button type="button" data-wm="all">全体</button><button type="button" data-wm="near">近く</button><button type="button" data-wm="routes">路線図</button>
+    <button type="button" id="homeBtn">🏖️ 砂浜に戻る</button>
     <button type="button" id="wmapClose" aria-label="閉じる">✕</button>
   </div>
   <div class="wbody"><canvas id="wmapCv"></canvas><div id="wmapLegend" hidden></div><button type="button" id="wmapGo" hidden>自動運転で行く</button></div>
@@ -309,6 +349,19 @@ body.helmOn .subbtns { flex-wrap: wrap; justify-content: flex-end; max-width: ca
   <div class="pfoot"><button type="button" class="pcancel" id="placeBack" hidden>もどる</button><button type="button" class="pcancel" id="placeCancel">やめる</button></div>
 </div>
 <form id="chat" hidden autocomplete="off"><input id="chatText" type="text" maxlength="40" placeholder="ひとこと（40文字まで）" aria-label="ひとこと"><button type="submit">送る</button></form>
+<div id="bplace" hidden role="dialog" aria-label="建物の置き場所">
+  <div class="row"><span class="dir"><span id="bpDir">正面：南</span><small>歩くと置き場所が動きます。黄色の枠の地面を平らにならします</small></span>
+    <button type="button" id="bpL" aria-label="左へ回す">⟲</button><button type="button" id="bpR" aria-label="右へ回す">⟳</button></div>
+  <div class="row"><button type="button" class="go" id="bpOk">ここに置く</button><button type="button" id="bpNo">やめる</button></div>
+</div>
+<div id="pachi" hidden role="dialog" aria-label="パチンコ">
+  <div class="pgbox">
+    <div class="pgtop"><b id="pgNum">1番台</b><span>持ち玉 <b id="pgBalls">0玉</b></span><span id="pgP">0P</span></div>
+    <canvas id="pgBoard" width="360" height="440"></canvas>
+    <div class="pgrow"><button type="button" id="pgFire" aria-pressed="false">打つ</button><label>弱<input type="range" id="pgPow" min="0" max="100" value="35" aria-label="打つ強さ">強</label></div>
+    <div class="pgrow"><button type="button" id="pgLend">玉を借りる（500P＝125玉）</button><button type="button" id="pgQuit">精算して立つ</button></div>
+  </div>
+</div>
 <div id="prompt" hidden><span><kbd>E</kbd> <span id="promptText">がっち号に</span></span><button id="promptBtn" type="button">乗る</button></div>
 
 <div class="keys" id="keys">
@@ -997,6 +1050,15 @@ const CAR_ROUTES = [
   [[16, 1], [13, 1], [5, -1], [4, -1], [3, -1], [2, -1], [1, -1], [0, -1], [13, -1], [16, -1], [14, 1]],
   [[14, 1], [16, 1], [13, 1], [0, 1], [6, 1], [9, 1], [11, -1], [13, -1], [16, -1]],
   [[14, -1], [16, 1], [13, 1], [11, 1], [10, 1], [5, 1], [13, -1], [16, -1]],
+  // ふやした道順（2026-10-31）
+  [[8, 1], [9, 1], [10, 1], [5, 1], [0, 1], [1, 1]],
+  [[1, -1], [0, -1], [5, -1], [10, -1], [9, -1], [8, -1]],
+  [[3, 1], [12, -1], [9, -1], [7, 1]],
+  [[7, -1], [9, 1], [12, 1], [3, -1]],
+  [[11, 1], [9, -1], [6, -1], [0, -1]],
+  [[0, 1], [6, 1], [9, 1], [11, -1]],
+  [[14, 1]],
+  [[14, -1]],
 ];
 // ふつうの車：道順の何番の道のどのあたりに、とめておく場所（路肩を広げる）があるか
 const CARS = [
@@ -1018,6 +1080,16 @@ const CARS = [
   { r: 6, type: 'truck', color: 0x35507a, park: [4, 0.5] }, { r: 6, type: 'sedan', color: 0xd9d9de, park: [6, 0.4] },
   { r: 7, type: 'van', color: 0x8b6a4a, park: [3, 0.6] }, { r: 7, type: 'sedan', color: 0x4fa3a0, park: [5, 0.3] },
 ];
+// さらにふやして 100 台に（2026-10-31）。道順・形・色・とめる場所は決まった乱数で、どの端末でも同じ
+{
+  const COLORS = [0xd8dde3, 0x23272e, 0xb8312f, 0xf2f2f2, 0x2a4f8f, 0x6d7a88, 0x3b8f5a, 0xe3a32b, 0x8f2a52, 0x3c9db8, 0xc9c2b0, 0x5b3f8f, 0xa8a8a8, 0x1f1f24, 0xc4602d, 0x4fa3a0];
+  const ROUTE_W = [3, 3, 2, 2, 2, 4, 4, 4, 5, 5, 3, 3, 3, 3, 3, 3];   // 長い道順ほど多く
+  const pool = []; ROUTE_W.forEach((w, r) => { for (let k = 0; k < w; k++) pool.push(r); });
+  for (let i = CARS.length; i < 100; i++) {
+    const r = pool[(i * 7) % pool.length], u = hash(i, 91), t = hash(i, 92);
+    CARS.push({ r, type: t < 0.55 ? 'sedan' : t < 0.8 ? 'van' : 'truck', color: COLORS[Math.floor(hash(i, 93) * COLORS.length)], park: [Math.floor(u * CAR_ROUTES[r].length), 0.15 + 0.7 * hash(i, 94)] });
+  }
+}
 const RD_STEP = 2;
 const roadNet = (() => {
   const nodes = Object.entries(NODES).map(([id, n]) => Object.assign({ id, deg: 0, y: 0, jr: 0, ends: [] }, n));
@@ -1081,11 +1153,15 @@ const roadNet = (() => {
       if (A.plaza) Y[i] = A.y + (Y[i] - A.y) * ss(A.plaza, A.plaza + 20, S[i]);
       if (B.plaza) Y[i] = B.y + (Y[i] - B.y) * ss(B.plaza, B.plaza + 20, S[N - 1] - S[i]);
     }
-    for (let i = 0; i < N; i++) if (base[i] < 0.8) for (let k = -4; k <= 4; k++) if (i + k >= 0 && i + k < N) BR[i + k] = 1;
     const NX = new Float32Array(N), NZ = new Float32Array(N);
     for (let i = 0; i < N; i++) {
       const a = Math.max(0, i - 1), b = Math.min(N - 1, i + 1), dx = X[b] - X[a], dz = Z[b] - Z[a], l = Math.hypot(dx, dz) || 1;
       NX[i] = dz / l; NZ[i] = -dx / l;   // 進む向きの左
+    }
+    // 橋：まん中か道のはしの下が水なら橋（川をななめにわたる所で、はしの車線が川岸に落ちないように）
+    for (let i = 0; i < N; i++) {
+      const hw = E.w / 2 + 1, low = Math.min(base[i], rawHeight0(X[i] + NX[i] * hw, Z[i] + NZ[i] * hw), rawHeight0(X[i] - NX[i] * hw, Z[i] - NZ[i] * hw));
+      if (low < 0.8) for (let k = -4; k <= 4; k++) if (i + k >= 0 && i + k < N) BR[i + k] = 1;
     }
     A.deg++; B.deg++;
     const e = { id: ei, a: A, b: B, w: E.w, N, X, Z, Y, W, WB: Float32Array.from(W), S, L: S[N - 1], NX, NZ, BR, base, sea: !!E.sea };
@@ -1106,12 +1182,16 @@ const roadNet = (() => {
   }
   for (const e of edges) e.WBUS = Float32Array.from(e.W);   // バスが寄せる位置はバス停だけで決める
   // ふつうの車をとめておく場所（バス停や交差点から離す）
+  const used = [];
   const parks = CARS.map((c) => {
     const [ei, dir] = CAR_ROUTES[c.r][c.park[0]], e = edges[ei];
     let f = c.park[1];
-    const bad = (f) => { const s = e.L * f, i = Math.min(e.N - 1, Math.round(s / RD_STEP)); return s < 80 || s > e.L - 80 || e.base[i] < 1.5 || e.Y[i] - e.base[i] > 3 || stops.some((st) => st.e === e && Math.abs(st.s - s) < 80); };
-    for (let k = 0; k < 20 && bad(f); k++) f = (f + 0.07) % 1;
-    const s = dir > 0 ? e.L * f : e.L * (1 - f);
+    const sOf = (f) => dir > 0 ? e.L * f : e.L * (1 - f);
+    const bad = (f) => { const s = e.L * f, i = Math.min(e.N - 1, Math.round(s / RD_STEP)); return s < 80 || s > e.L - 80 || e.base[i] < 1.5 || e.Y[i] - e.base[i] > 3 || stops.some((st) => st.e === e && Math.abs(st.s - s) < 80)
+      || used.some((q) => q.e === e && q.dir === dir && Math.abs(q.s - sOf(f)) < 24); };   // ほかの車のとめる場所と重ならない
+    for (let k = 0; k < 40 && bad(f); k++) f = (f + 0.037) % 1;
+    const s = sOf(f);
+    used.push({ e, s, dir });
     for (let i = 0; i < e.N; i++) { const d = Math.abs(e.S[i] - s); if (d < 35) e.W[i] = Math.max(e.W[i], e.WB[i] + 6 * ss(35, 18, d)); }
     return { e, s, dir };
   });
@@ -1175,7 +1255,63 @@ function groundAt(x, z, y) {
   const h = heightAt(x, z), d = deckAt(x, z);
   return d > h && y > d - 1.3 ? d : h;
 }
-const rawHeight = (x, z) => roadGround(x, z, rawHeight0(x, z));
+/* 建物の敷地：足もとの地面を平らにならす（まわり 5m でなだらかにつなぐ）。だれの画面でも、置いてある建物から同じ形になる */
+const PADS = [], PAD_M = 5;
+function padGround(x, z, h) {
+  for (const p of PADS) {
+    if (x < p.x0 || x > p.x1 || z < p.z0 || z > p.z1) continue;
+    const dx = x - p.x, dz = z - p.z, u = dx * p.c - dz * p.s - p.lu, v = dx * p.s + dz * p.c - p.lv;
+    const d = Math.hypot(Math.max(0, Math.abs(u) - p.hw), Math.max(0, Math.abs(v) - p.hd));
+    if (d < PAD_M) h += (p.y - h) * (1 - ss(0, PAD_M, d));
+  }
+  return h;
+}
+const baseHeight = (x, z) => roadGround(x, z, rawHeight0(x, z));
+// ならした敷地は道路の下に入れる（道路はそのまま）。敷地の中で道路でない所は、敷地の高さにそろえる
+function padInside(x, z, h) {
+  for (const p of PADS) {
+    if (x < p.x0 || x > p.x1 || z < p.z0 || z > p.z1) continue;
+    const dx = x - p.x, dz = z - p.z, u = dx * p.c - dz * p.s - p.lu, v = dx * p.s + dz * p.c - p.lv;
+    if (Math.abs(u) <= p.hw && Math.abs(v) <= p.hd) { const q = roadNear(x, z); if (!q || q.d > q.w / 2 + 1.5) return p.y; }
+  }
+  return h;
+}
+const rawHeight = (x, z) => (PADS.length ? padInside(x, z, roadGround(x, z, padGround(x, z, rawHeight0(x, z)))) : baseHeight(x, z));
+// 建物の形（回す前）から敷地を作る。高さは敷地の地面の平均（海より下にはしない）
+function makePad(root, x, z, rot) {
+  const r0 = root.rotation.y, p0 = root.position.clone();
+  root.rotation.y = 0; root.position.set(0, 0, 0); root.updateMatrixWorld(true);
+  const lb = new THREE.Box3().setFromObject(root);
+  root.rotation.y = r0; root.position.copy(p0); root.updateMatrixWorld(true);
+  const hw = (lb.max.x - lb.min.x) / 2 + 2.5, hd = (lb.max.z - lb.min.z) / 2 + 2.5,   // 地面は 2m 格子なので、まわり 2.5m まで平らにして床の中に地面が出ないように
+   lu = (lb.min.x + lb.max.x) / 2, lv = (lb.min.z + lb.max.z) / 2;
+  const c = Math.cos(rot), s = Math.sin(rot);
+  const p = { x, z, c, s, lu, lv, hw, hd, y: 0, base: lb.min.y };
+  let sum = 0, n = 0;
+  for (let i = 0; i <= 8; i++) for (let j = 0; j <= 8; j++) {
+    const u = lu + (i / 8 - 0.5) * 2 * hw, v = lv + (j / 8 - 0.5) * 2 * hd;
+    sum += baseHeight(x + u * c + v * s, z - u * s + v * c); n++;
+  }
+  p.y = Math.max(sum / n, SEA + 0.3);
+  // 近く（敷地から 15m 以内）に道路があれば、いちばん近い道路の高さにそろえる（道路に面した建物は道路と同じ高さ）
+  let best = 15;
+  for (let i = 0; i <= 10; i++) for (let j = 0; j <= 10; j++) {
+    const u = lu + (i / 10 - 0.5) * 2 * (hw + 15), v = lv + (j / 10 - 0.5) * 2 * (hd + 15);
+    const q = roadNear(x + u * c + v * s, z - u * s + v * c);
+    if (!q || q.br) continue;
+    const ou = Math.max(0, Math.abs(u - lu) - hw), ov = Math.max(0, Math.abs(v - lv) - hd), gap = Math.hypot(ou, ov) + Math.max(0, q.d - q.w / 2);
+    if (gap < best) { best = gap; p.y = Math.max(q.y - 0.12, SEA + 0.3); }
+  }
+  const R = Math.hypot(hw, hd) + Math.hypot(lu, lv) + PAD_M;
+  Object.assign(p, { x0: x - R, x1: x + R, z0: z - R, z1: z + R });
+  return p;
+}
+function refreshPadArea(p) {   // その場所の地形を作り直す
+  for (let ci = Math.floor((p.x0 - X0) / CHM); ci <= Math.floor((p.x1 - X0) / CHM); ci++) for (let cj = Math.floor((p.z0 - Z0) / CHM); cj <= Math.floor((p.z1 - Z0) / CHM); cj++) {
+    const key = ci * 4096 + cj; chunkCache.delete(key); const t = tiles.get(key); if (t) t.lod = -1;
+  }
+  lastCK = null; lastCD = null;
+}
 /* 高さは 128m 四方の区画ごとに、使うときに作って覚えておく（2m 格子）。古い区画から忘れる */
 const CH = 64, CHM = CH * CELL, CHN = CH + 1;   // 区画 = 64 マス = 128m
 const chunkCache = new Map();
@@ -1836,19 +1972,20 @@ function placeProp(item, name, cat, x, z, rot, id) {
   scene.add(item.root);
   item.root.updateMatrixWorld(true);
   let box = new THREE.Box3().setFromObject(item.root);
-  if (cat === 'building') {   // 建物は、敷地のいちばん高い地面にのせる（床の中から地面が出ないように）
-    let top = -Infinity;
-    for (let gx = box.min.x; gx <= box.max.x + 0.01; gx += Math.max(0.5, (box.max.x - box.min.x) / 12)) for (let gz = box.min.z; gz <= box.max.z + 0.01; gz += Math.max(0.5, (box.max.z - box.min.z) / 12)) top = Math.max(top, heightAt(gx, gz));
-    item.root.position.y = Math.max(top, SEA + 0.05); item.root.updateMatrixWorld(true);
+  let pad = null;
+  if (cat === 'building') {   // 建物は、ならした敷地の上にのせる
+    pad = makePad(item.root, x, z, rot); PADS.push(pad); refreshPadArea(pad);
+    item.root.position.y = pad.y + 0.02 - pad.base; item.root.updateMatrixWorld(true);   // 建物のいちばん下を地面に（重なってちらつかないよう 2cm 上）
     box = new THREE.Box3().setFromObject(item.root);
   }
-  const pr = { item, box, id, name, cat };
+  const pr = { item, box, id, name, cat, pad };
   props.push(pr);
   if (cat === 'building') setupBuilding(pr);
   return pr;
 }
 function removeProp(pr) {
   if (pr.bld) removeBuilding(pr);
+  if (pr.pad) { const i = PADS.indexOf(pr.pad); if (i >= 0) PADS.splice(i, 1); refreshPadArea(pr.pad); pr.pad = null; }
   scene.remove(pr.item.root);
   const i = props.indexOf(pr); if (i >= 0) props.splice(i, 1);
 }
@@ -1862,7 +1999,7 @@ const BLD_STEP = 0.45, BLD_CELL = 2;
 const blds = [];
 function bldRole(name) {
   const s = String(name || '').toLowerCase();
-  if (/^(ドア|とびら|扉|door)/.test(s)) return 'door';
+  if (/^(ドア|とびら|扉|door|引き戸|引戸|ひきど|sliding)/.test(s)) return 'door';
   if (/^(ライト|照明|電気|light|lamp)/.test(s)) return 'light';
   if (/^(ガラス|窓ガラス|glass)/.test(s)) return 'glass';
   if (/^(スイッチ|switch)/.test(s)) return 'switch';
@@ -1919,7 +2056,9 @@ function setupBuilding(pr) {
     d.traverse((m) => { if (!m.isMesh) return; const p = m.geometry.attributes.position; for (let i = 0; i < p.count; i++) lb.expandByPoint(v.fromBufferAttribute(p, i).applyMatrix4(m.matrixWorld).applyMatrix4(inv)); });
     if (lb.isEmpty()) continue;
     const alongX = lb.max.x - lb.min.x >= lb.max.z - lb.min.z;
-    const slide = /横|スライド|slide|引/.test(String(propOf(d, ['開き方', 'open', 'type']) || ''));
+    // 引き戸：名前が「引き戸…」か、カスタムプロパティ（ドア本体でも中の形でもよい）の値が 横・スライド・引き戸
+    let slide = /^(引き戸|引戸|ひきど|sliding)/i.test(d.name) || /横|スライド|slide|引/.test(String(propOf(d, ['開き方', 'open', 'type']) || ''));
+    d.traverse((o) => { for (const [k, v] of Object.entries(o.userData || {})) if (/開|open|type|種類/i.test(k) && /横|スライド|slide|引/i.test(String(v))) slide = true; });
     b.doors.push({ o: d, lb, alongX, slide, rot0: d.rotation.y, pos0: d.position.clone(), t: 0, want: 0, sign: 1, c0: lb.getCenter(new THREE.Vector3()).applyMatrix4(d.matrixWorld) });
   }
   for (const l of parts.light) {
@@ -1934,8 +2073,44 @@ function setupBuilding(pr) {
   for (const c of parts.chair) {
     const bb = new THREE.Box3().setFromObject(c), at = bb.getCenter(new THREE.Vector3());
     const fw = new THREE.Vector3(0, 0, 1).transformDirection(c.matrixWorld); fw.y = 0; fw.normalize();
-    b.chairs.push({ o: c, at, seatY: bb.min.y + Math.min(0.45, (bb.max.y - bb.min.y) * 0.55), face: Math.atan2(fw.x, fw.z) });
+    const nm = propOf(c, ['台番号', 'machine']), num = nm != null && String(nm).trim() !== '' ? parseInt(String(nm).replace(/[０-９]/g, (d) => String.fromCharCode(d.charCodeAt(0) - 0xFEE0)), 10) : null;
+    b.chairs.push({ o: c, at, seatY: bb.min.y + Math.min(0.45, (bb.max.y - bb.min.y) * 0.55), face: Math.atan2(fw.x, fw.z), num: Number.isFinite(num) ? num : null });
   }
+  // 看板（名前が 看板… / sign…）や、カスタムプロパティ 点滅 がある部品はチカチカ光らせる。点滅 に数字を入れると、その秒数で 1 回点滅
+  b.blinks = [];
+  (function walkBlink(o, hit) {
+    let me = hit;
+    if (!me) {
+      const u = o.userData || {}, bk = Object.keys(u).find((k) => /^(点滅|blink)$/i.test(k));
+      if (bk && !/^(いいえ|なし|no|false|0)$/i.test(String(u[bk]))) me = { per: Number(u[bk]) > 0.1 ? Number(u[bk]) : 1, ph: b.blinks.length * 0.37 };
+      else if (/^(看板|sign|ネオン|neon)/i.test(o.name)) me = { per: 1, ph: b.blinks.length * 0.37 };
+    }
+    if (me && o.isMesh) {
+      o.material = o.material.clone();
+      if ('emissive' in o.material) {
+        if (o.material.emissive.getHex() === 0) o.material.emissive.copy(o.material.color);
+        b.blinks.push({ m: o.material, base: Math.max(0.5, o.material.emissiveIntensity || 0), per: me.per, ph: me.ph });
+      }
+    }
+    for (const c of o.children) walkBlink(c, me);
+  })(root, null);
+  // 建物か、どれかのライトのカスタムプロパティ ライト / 点灯 = いつも なら、昼でもライトを点けておく
+  // お店（用途 に 店）も、ライトはいつも点いていて、お客はさわれない
+  b.always = false; let shop = false, shut = 0;
+  root.traverse((o) => { for (const [k, v] of Object.entries(o.userData || {})) {
+    if (/^(ライト|点灯|照明|lights?)$/i.test(k) && /いつも|常時|always/i.test(String(v))) b.always = true;
+    if (/^(用途|use)$/i.test(k) && /店|ショップ|shop|store/i.test(String(v))) shop = true;
+    if (/^(閉まる|自動|autoclose)$/i.test(k) && Number(v) > 0) shut = Number(v);
+  } });
+  if (shop) b.always = true;
+  // BGM：建物のカスタムプロパティ BGM（または 音楽）に、ワールドにある曲の名前。パチンコ店は何もなくてもパチンコの曲
+  b.bgm = null;
+  root.traverse((o) => { for (const [k, v] of Object.entries(o.userData || {})) {
+    if (/^(BGM|音楽|music)$/i.test(k) && BGM_FILES[String(v).trim()]) b.bgm = String(v).trim();
+    if (!b.bgm && /^(用途|use)$/i.test(k) && /パチンコ|pachinko/i.test(String(v))) b.bgm = 'パチンコ';
+  } });
+  // ドアがひとりでに閉まる：ドアか建物に 閉まる = 秒数。お店は 3 秒。だれもドアのそばにいなくなってから数える
+  for (const d of b.doors) { const v = Number(propOf(d.o, ['閉まる', '自動', 'autoclose'])); d.auto = v > 0 ? v : (shut || (shop ? 3 : 0)); d.hold = 0; }
   pr.bld = b;
   blds.push(b);
   return b;
@@ -2059,11 +2234,11 @@ function nearBldAction() {
   const c = new THREE.Vector3(), pp = new THREE.Vector3(player.pos.x, player.pos.y + 1, player.pos.z);
   for (const b of blds) {
     if (!nearBld(b, player.pos.x, player.pos.z, 2)) continue;
-    b.doors.forEach((d, k) => { const dist = doorCenter(d, c).distanceTo(pp); if (dist < bd + 0.3) { bd = dist - 0.3; best = { kind: 'door', b, k, text: 'ドアを', btn: d.want ? '閉める' : '開ける' }; } });
-    b.switches.forEach((s) => { const dist = s.at.distanceTo(pp); if (dist < bd) { bd = dist; best = { kind: 'switch', b, text: 'ライトを', btn: bldLightsOn(b) ? '消す' : '点ける' }; } });
-    b.chairs.forEach((ch, k) => { const dist = Math.hypot(ch.at.x - pp.x, ch.at.z - pp.z); if (dist < bd && Math.abs(ch.seatY - player.pos.y) < 1.2) { bd = dist; best = { kind: 'chair', b, k, text: 'イスに', btn: '座る' }; } });
+    b.doors.forEach((d, k) => { const dist = Math.min(doorCenter(d, c).distanceTo(pp), d.c0.distanceTo(pp)); if (dist < bd + 0.3) { bd = dist - 0.3; best = { kind: 'door', b, k, text: 'ドアを', btn: d.want ? '閉める' : '開ける' }; } });
+    if (!b.always) b.switches.forEach((s) => { const dist = s.at.distanceTo(pp); if (dist < bd) { bd = dist; best = { kind: 'switch', b, text: 'ライトを', btn: bldLightsOn(b) ? '消す' : '点ける' }; } });
+    b.chairs.forEach((ch, k) => { const dist = Math.hypot(ch.at.x - pp.x, ch.at.z - pp.z); if (dist < bd && Math.abs(ch.seatY - player.pos.y) < 1.2) { bd = dist; best = { kind: 'chair', b, k, text: ch.num != null ? `${ch.num}番台で` : 'イスに', btn: ch.num != null ? '遊ぶ' : '座る' }; } });
   }
-  if (!best) { const b = insideBld(); if (b) best = { kind: 'switch', b, text: 'へやのライトを', btn: bldLightsOn(b) ? '消す' : '点ける' }; }   // 建物の中ならどこでも
+  if (!best) { const b = insideBld(); if (b && !b.always) best = { kind: 'switch', b, text: 'へやのライトを', btn: bldLightsOn(b) ? '消す' : '点ける' }; }   // 建物の中ならどこでも
   return best;
 }
 function doBldAction(a) {
@@ -2072,12 +2247,13 @@ function doBldAction(a) {
     a.b.doors.forEach((d, k) => { if (k === a.k || (d.slide === d0.slide && d.c0.distanceTo(d0.c0) < 2.4 && !!d.want !== open)) setDoor(a.b, k, open, null, true); });
   }
   else if (a.kind === 'switch') setBldLights(a.b, !bldLightsOn(a.b), true);
-  else if (a.kind === 'chair') { const ch = a.b.chairs[a.k]; bldSeat = { b: a.b, ch }; player.face = ch.face; player.vy = 0; }
+  else if (a.kind === 'chair') { const ch = a.b.chairs[a.k]; bldSeat = { b: a.b, ch }; player.face = ch.face; player.vy = 0; if (ch.num != null) openPachi(a.b, ch); }
   else if (a.kind === 'stand') standUp();
 }
 function standUp() {
   if (!bldSeat) return;
   const ch = bldSeat.ch; bldSeat = null;
+  closePachi();
   player.pos.x = ch.at.x + Math.sin(ch.face) * 0.7; player.pos.z = ch.at.z + Math.cos(ch.face) * 0.7;
   player.pos.y = Math.max(bldFloor(player.pos.x, player.pos.z, ch.seatY - 0.3), groundAt(player.pos.x, player.pos.z, ch.seatY));
 }
@@ -2092,14 +2268,46 @@ function hasRoof(b, q) {
   ROOF_O.set(q.x, q.y + 1.2, q.z); ROOF_RAY.set(ROOF_O, UPV); ROOF_RAY.far = 30;
   return b.rayMeshes.some((rm) => ROOF_RAY.intersectObject(rm, false).length > 0);
 }
-const bldLightsOn = (b) => (b.manual != null ? b.manual : dayLight < 0.35);
+const bldLightsOn = (b) => (b.always || (b.manual != null ? b.manual : dayLight < 0.35));
 // ライトの光り方と、近くのライトだけ本当に照らす（数を決めておくので、点け消しで重くならない）
 const LAMP_POOL = [];
 for (let i = 0; i < (coarse ? 2 : 4); i++) { const L = new THREE.PointLight(0xfff1d6, 0, 14, 1.6); scene.add(L); LAMP_POOL.push(L); }
 let lampT = 0;
 const VLAMP = { at: new THREE.Vector3(), col: new THREE.Color(0xfff1d6), pow: 0.8 };
+// 建物の中で流れる曲（ワールドに入っている曲だけ。.glb からは名前でえらぶ）
+const BGM_FILES = { 'パチンコ': 'sounds/pachinko.mp3' };
+const bgm = { el: null, name: null, vol: 0, want: null, t: 0, wait: 0 };
+function stepBgm(dt) {
+  bgm.t -= dt;
+  if (bgm.t <= 0) { bgm.t = 0.3; const b = blds.length ? insideBld() : null; bgm.want = b && b.bgm ? b.bgm : null; }
+  const want = bgm.want;
+  if (want && want !== bgm.name && performance.now() > bgm.wait) {
+    if (!bgm.el || bgm.vol <= 0.01) {   // 前の曲が消えてから切りかえる
+      if (bgm.el) bgm.el.pause();
+      bgm.el = new Audio(BGM_FILES[want]); bgm.el.loop = true; bgm.el.volume = 0; bgm.name = want; bgm.vol = 0;
+      const el = bgm.el;
+      el.play().catch(() => { if (bgm.el === el) { bgm.el = null; bgm.name = null; bgm.wait = performance.now() + 1500; } });   // まだ画面にさわっていないと鳴らせない。つぎのフレームでまたためす
+    }
+  }
+  if (!bgm.el) return;
+  const target = want && want === bgm.name ? 0.55 : 0;
+  bgm.vol += Math.sign(target - bgm.vol) * Math.min(Math.abs(target - bgm.vol), dt * 0.8);
+  bgm.el.volume = Math.max(0, Math.min(1, bgm.vol));
+  if (bgm.vol <= 0.001 && target === 0) { bgm.el.pause(); bgm.el = null; bgm.name = null; }
+}
 function stepBuildings(dt) {
+  stepBgm(dt);
   for (const b of blds) for (const d of b.doors) if (d.t !== d.want) { d.t += Math.sign(d.want - d.t) * Math.min(Math.abs(d.want - d.t), dt * 1.8); poseDoor(d); }
+  for (const b of blds) b.doors.forEach((d, k) => {   // ひとりでに閉まるドア
+    if (!d.auto || !d.want) return;
+    let near = Math.hypot(player.pos.x - d.c0.x, player.pos.z - d.c0.z) < 1.8 && Math.abs(player.pos.y - d.c0.y) < 3;
+    if (!near) for (const o of net.others.values()) if (o.avatar && o.avatar.visible && Math.hypot(o.pos.x - d.c0.x, o.pos.z - d.c0.z) < 1.8) { near = true; break; }
+    const t = performance.now() / 1000;   // 画面が重くても本当の秒数で数える
+    if (near || !d.hold) d.hold = t;
+    else if (t - d.hold >= d.auto) { d.hold = 0; setDoor(b, k, false, null, true); }
+  });
+  const now = performance.now() / 1000, glow = dayLight < 0.35 ? 1.5 : 1.15;   // 夜はもっと明るく
+  for (const b of blds) for (const k of b.blinks) { const f = ((now + k.ph) / k.per) % 1; k.m.emissiveIntensity = (f < 0.55 ? k.base * glow : k.base * 0.08); }
   lampT -= dt; if (lampT > 0) return; lampT = 0.25;
   const cand = [], cx = camera.position.x, cz = camera.position.z;
   for (const b of blds) {
@@ -2134,15 +2342,56 @@ async function buildThing(buf, name, cat, wheels) {
   const veh = VEHICLE_CATS.has(cat);
   return loadItem({ name, kind: veh ? 'vehicle' : 'prop', rig: veh ? cat : null, wheels, source: { buffer: buf.slice(0) } });
 }
+// 建物の置き場所えらび：自分の前に建物を出して、歩くとついてくる。⟲⟳ で正面（入口 +Z）の向きを 15° ずつ回す
+function chooseBuildingSpot(item) {
+  return new Promise((resolve) => {
+    const root = item.root, panel = el('bplace');
+    root.rotation.y = 0; root.position.set(0, 0, 0); root.updateMatrixWorld(true);
+    const lb = new THREE.Box3().setFromObject(root), reach = 2 + Math.hypot(lb.max.x - lb.min.x, lb.max.z - lb.min.z) / 2;
+    let rot = Math.round(wrapA(player.face + Math.PI) / (Math.PI / 12)) * (Math.PI / 12);
+    const frame = new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(lb.min.x, 0, lb.min.z), new THREE.Vector3(lb.max.x, 0, lb.min.z), new THREE.Vector3(lb.max.x, 0, lb.max.z), new THREE.Vector3(lb.min.x, 0, lb.max.z)]), new THREE.LineBasicMaterial({ color: 0xffd400 }));
+    const arrow = new THREE.Mesh(new THREE.ConeGeometry(0.6, 1.4, 12), new THREE.MeshBasicMaterial({ color: 0xffd400 }));
+    arrow.rotation.x = Math.PI / 2; arrow.position.set((lb.min.x + lb.max.x) / 2, 0.3, lb.max.z + 1.2);
+    const guide = new THREE.Group(); guide.add(frame, arrow);
+    scene.add(root, guide);
+    let spot = null;
+    const place = () => {
+      const x = clampX(player.pos.x + Math.sin(player.face) * reach, 4), z = clampZ(player.pos.z + Math.cos(player.face) * reach, 4);
+      const pad = makePad(root, x, z, rot);
+      root.position.set(x, pad.y + 0.02 - pad.base, z); root.rotation.y = rot;
+      guide.position.set(x, pad.y + 0.05, z); guide.rotation.y = rot;
+      spot = { x, z, rot };
+      const b = bearingOf(wrapA(rot));
+      el('bpDir').textContent = `正面：${compassName(b)}（${fmtB(b)}°）`;
+    };
+    place();
+    const timer = setInterval(place, 120);
+    panel.hidden = false;
+    const done = (ok) => {
+      clearInterval(timer); panel.hidden = true; scene.remove(root, guide);
+      for (const [id, f] of handlers) el(id).removeEventListener('click', f);
+      resolve(ok ? spot : null);
+    };
+    const handlers = [['bpL', () => { rot = wrapA(rot + Math.PI / 12); place(); }], ['bpR', () => { rot = wrapA(rot - Math.PI / 12); place(); }], ['bpOk', () => done(true)], ['bpNo', () => done(false)]];
+    for (const [id, f] of handlers) el(id).addEventListener('click', f);
+  });
+}
 async function addPropFromBuffer(buf, name, cat, wheels) {
   const item = await buildThing(buf, name, cat, wheels);   // 乗り物のルール違反はここで投げる
   const veh = VEHICLE_CATS.has(cat), V = veh ? item.def.vehicle : null;
+  let chosen = null;
+  if (cat === 'building') {   // 建物は、置く前に場所と正面の向きを決める
+    placeEl.hidden = true;
+    chosen = await chooseBuildingSpot(item);
+    if (!chosen) { showMsg(`${name} を置くのをやめました`); return; }
+  }
   const f = new THREE.Vector3(Math.sin(player.face), 0, Math.cos(player.face));
   let ahead = veh ? 3 + Math.max(V.halfLength, V.halfWidth) : 4;
   if (cat === 'building') { const sz = new THREE.Box3().setFromObject(item.root).getSize(new THREE.Vector3()); ahead = 2 + Math.max(sz.x, sz.z) / 2; }   // 建物は自分にかぶらない所に、入口（+Z）をこちらに向けて
   const at = player.pos.clone().addScaledVector(f, ahead);
   let x = clampX(at.x, 4), z = clampZ(at.z, 4);
-  const rot = wrapA(veh ? player.face : player.face + Math.PI);
+  let rot = wrapA(veh ? player.face : player.face + Math.PI);
+  if (chosen) ({ x, z, rot } = chosen);
   if (cat === 'ship' || cat === 'sub') {   // 船は浮かべられる深さの海をさがして置く
     const spot = findWaterSpot(x, z, V, rot);
     if (!spot) throw new RuleError(cat, ['近くに、この大きさの船を浮かべられる深さの海がありません。海の近くで置いてください']);
@@ -2168,7 +2417,11 @@ async function addPropFromBuffer(buf, name, cat, wheels) {
       return;
     } catch (err) {
       net.loading.delete(id);
-      showMsg(/full/i.test(String(err && err.message)) ? '置ける数がいっぱいです（200 個まで）。メニューの「自分が出した物」から消してから置いてください' : 'みんなの世界に置けなかったので、自分の画面だけに置きます');
+      const em = String((err && (err.message || err.error)) || err || '');
+      console.warn('props add', err);
+      showMsg(/full/i.test(em) ? '置ける数がいっぱいです（200 個まで）。メニューの「自分が出した物」から消してから置いてください'
+        : /props_[xz]_check/.test(em) ? 'この場所はまだ保存できません（Supabase で supabase-update-6.sql を実行すると置けます）。自分の画面だけに置きます'
+        : `みんなの世界に置けなかったので、自分の画面だけに置きます（${em.slice(0, 60) || '理由不明'}）`);
     }
   } else if (net.db) {
     showMsg(buf.byteLength > SHARE_MAX ? `${name} は大きすぎるので（1.5MB まで）自分の画面だけに置きます` : `${name} は細かすぎるので（3 万三角形まで）自分の画面だけに置きます`);
@@ -2290,6 +2543,11 @@ placeEl.addEventListener('keydown', (e) => { if (e.key !== 'Escape') return; if 
 const keys = {};
 let driving = false;
 document.addEventListener('keydown', (e) => {
+  if (PG.open) {   // パチンコの画面：Space で打つ・止める、Esc で精算して立つ
+    if (e.code === 'Space' && !e.repeat) { e.preventDefault(); document.getElementById('pgFire').click(); }
+    if (e.code === 'Escape') standUp();
+    return;
+  }
   if (e.target.tagName === 'INPUT' || !placeEl.hidden) return;
   keys[e.code] = true;
   if (e.code === 'KeyE' || e.code === 'KeyF') toggleRide();
@@ -2690,20 +2948,53 @@ function makeCar(type, color) {
 }
 
 /* ---- 道順から、走る線（車線の中心）を作る ---- */
-function buildPath(legs, isBus) {
-  const R = roadNet, px = [], pz = [], py = [], off = [], rw = [], legOf = [], edgeS = [], nodeAt = [];
+// 車（バスでない）は片側 2 車線の道で車線を選ぶ：ふだんは pref（0 左の車線・1 右の追い越し車線）。
+// 交差点で左に曲がる前は左の車線、右に曲がる前は右の車線へ移ってから曲がる。とめる場所の前後も左の車線
+const LANE_OUT = 5.25, LANE_IN = 1.75, LANE_TURN_D = 100, LANE_AFTER_D = 40;
+function legTurns(legs) {   // 各道の終わりの交差点で、左（+1）・右（-1）・まっすぐ（0）
+  const R = roadNet, hd = (e, dir, atEnd) => {
+    const N = e.N, a = atEnd ? (dir > 0 ? N - 1 : 0) : (dir > 0 ? 0 : N - 1), b = Math.max(0, Math.min(N - 1, a + (atEnd ? -12 : 12) * dir));
+    return atEnd ? Math.atan2(e.X[a] - e.X[b], e.Z[a] - e.Z[b]) : Math.atan2(e.X[b] - e.X[a], e.Z[b] - e.Z[a]);
+  };
+  return legs.map(([ei, dir], li) => {
+    const e = R.edges[ei], endNode = dir > 0 ? e.b : e.a;
+    if (endNode.deg < 3) return 0;
+    const [nei, ndir] = legs[(li + 1) % legs.length], t = wrapA(hd(R.edges[nei], ndir, false) - hd(e, dir, true));
+    return Math.abs(t) > 0.5 ? Math.sign(t) : 0;
+  });
+}
+function buildPath(legs, isBus, opt = {}) {
+  const R = roadNet, px = [], pz = [], py = [], off = [], rw = [], legOf = [], edgeS = [], nodeAt = [], src = [];
+  const turns = isBus ? null : legTurns(legs), pref = opt.pref ? LANE_IN : LANE_OUT;
   for (let li = 0; li < legs.length; li++) {
     const [ei, dir] = legs[li], e = R.edges[ei];
     const next = legs[(li + 1) % legs.length], startNode = dir > 0 ? e.a : e.b, endNode = dir > 0 ? e.b : e.a;
     const ne = R.edges[next[0]], nStart = next[1] > 0 ? ne.a : ne.b;
     if (endNode !== nStart) throw new Error('道順がつながっていません: ' + ei);
+    const wide = e.w > 10.5, tEnd = turns ? turns[li] : 0, tPrev = turns ? turns[(li - 1 + legs.length) % legs.length] : 0;
     for (let k = 0; k < e.N - 1; k++) {
       const i = dir > 0 ? k : e.N - 1 - k;
-      const ww = isBus ? e.WBUS[i] : e.WB[i];
-      const o = isBus ? ww / 2 - 1.75 : 1.75;
-      px.push(e.X[i] + e.NX[i] * o * dir); pz.push(e.Z[i] + e.NZ[i] * o * dir); py.push(k === 0 ? startNode.y : e.Y[i]);
-      off.push(o); rw.push(e.W[i] / 2); legOf.push(li); edgeS.push(dir > 0 ? e.S[i] : e.L - e.S[i]); nodeAt.push(k === 0 ? startNode : null);
+      const es = dir > 0 ? e.S[i] : e.L - e.S[i];
+      let o;
+      if (isBus) o = e.WBUS[i] / 2 - 1.75;
+      else if (!wide) o = LANE_IN;
+      else if (opt.park && opt.park.li === li && Math.abs(es - opt.park.want) < 45) o = LANE_OUT;
+      else if (tEnd && e.L - es < LANE_TURN_D) o = tEnd > 0 ? LANE_OUT : LANE_IN;
+      else if (tPrev && es < LANE_AFTER_D) o = tPrev > 0 ? LANE_OUT : LANE_IN;
+      else o = pref;
+      src.push([e, i, dir, k === 0 ? startNode.y : e.Y[i], wide]);
+      off.push(o); rw.push(e.W[i] / 2); legOf.push(li); edgeS.push(es); nodeAt.push(k === 0 ? startNode : null);
     }
+  }
+  if (!isBus) {   // 車線を変えるときは 40m くらいかけて、なめらかに
+    const M = off.length, B = Float32Array.from(off), r = 10;
+    for (let i = 0; i < M; i++) { let a = 0; for (let k = -r; k <= r; k++) a += B[(i + k + M) % M]; off[i] = a / (2 * r + 1); }
+  }
+  const key = [];
+  for (let q = 0; q < src.length; q++) {
+    const [e, i, dir, y, wide] = src[q], o = off[q];
+    px.push(e.X[i] + e.NX[i] * o * dir); pz.push(e.Z[i] + e.NZ[i] * o * dir); py.push(y);
+    key.push(e.id * 4 + (dir > 0 ? 0 : 2) + (!isBus && wide && o < 3.5 ? 1 : 0));   // 車線の番号：道・向き・右の車線か
   }
   const N = px.length;
   // 交差点の角をまるめる（前後 8m をならす）
@@ -2712,7 +3003,7 @@ function buildPath(legs, isBus) {
   sm(X, 4, 2); sm(Z, 4, 2); sm(Y, 3, 1);
   const S = new Float32Array(N + 1);
   for (let i = 0; i < N; i++) { const j = (i + 1) % N; S[i + 1] = S[i] + Math.hypot(X[j] - X[i], Z[j] - Z[i]); }
-  return { N, X, Z, Y, S, L: S[N], legs, legOf: Int16Array.from(legOf), edgeS: Float32Array.from(edgeS), nodeAt, Off: Float32Array.from(off), RW: Float32Array.from(rw) };
+  return { N, X, Z, Y, S, L: S[N], legs, legOf: Int16Array.from(legOf), edgeS: Float32Array.from(edgeS), nodeAt, Off: Float32Array.from(off), RW: Float32Array.from(rw), Key: Int16Array.from(key) };
 }
 function pathIndex(P, s) {   // s（0〜L）がどの区間か
   let lo = 0, hi = P.N - 1;
@@ -2728,11 +3019,11 @@ function pathPoint(P, s, out) {
 // 道順を、出発点（バスは最初のバス停、車はとめておく場所）から始まるように回す
 function rotatePath(P, k0) {
   const N = P.N, r = (A, T) => { const B = new T(N); for (let i = 0; i < N; i++) B[i] = A[(i + k0) % N]; return B; };
-  const X = r(P.X, Float32Array), Z = r(P.Z, Float32Array), Y = r(P.Y, Float32Array), legOf = r(P.legOf, Int16Array), edgeS = r(P.edgeS, Float32Array), Off = r(P.Off, Float32Array), RW = r(P.RW, Float32Array);
+  const X = r(P.X, Float32Array), Z = r(P.Z, Float32Array), Y = r(P.Y, Float32Array), legOf = r(P.legOf, Int16Array), edgeS = r(P.edgeS, Float32Array), Off = r(P.Off, Float32Array), RW = r(P.RW, Float32Array), Key = r(P.Key, Int16Array);
   const nodeAt = []; for (let i = 0; i < N; i++) nodeAt.push(P.nodeAt[(i + k0) % N]);
   const S = new Float32Array(N + 1);
   for (let i = 0; i < N; i++) { const j = (i + 1) % N; S[i + 1] = S[i] + Math.hypot(X[j] - X[i], Z[j] - Z[i]); }
-  return Object.assign({}, P, { X, Z, Y, S, L: S[N], legOf, edgeS, nodeAt, Off, RW });
+  return Object.assign({}, P, { X, Z, Y, S, L: S[N], legOf, edgeS, nodeAt, Off, RW, Key });
 }
 // 走る線の上の印：交差点（停止線・曲がる向き・信号の組）、バス停
 function pathMarks(P, isBus) {
@@ -2760,7 +3051,8 @@ function pathMarks(P, isBus) {
 }
 // 走り方の計算：信号・バス停・前の車を見ながら、T_ALL 秒ぶん。結果は 0.5 秒ごとの「進んだ距離」と「ライトの状態」
 const traffic = [];
-let TRAFFIC_PASSES = 2;
+let trafficReady = false;   // 走り方の計算が終わったか
+let TRAFFIC_PASSES = 1;
 function simulate(v, others, cruise, laps) {
   const P = v.path, T = v.T, L = P.L, total = laps * L, nRec = Math.round(T_ALL / REC_DT) + 1;
   const rec = new Float32Array(nRec), flags = new Uint8Array(nRec);
@@ -2783,11 +3075,16 @@ function simulate(v, others, cruise, laps) {
     if (isBus) for (let lap = Math.floor(s / L); lap < laps; lap++) for (const st of stops) { const ss2 = lap * L + st.s; if (ss2 > s + 0.5 && ss2 < best && ss2 > 0.5) { best = ss2; break; } }
     return best;
   };
-  let target = nextStopAfter(0.1), jp = 0;
+  let target = nextStopAfter(0.1), jp = 0, ci = 0;
   const jAll = [];
   for (let lap = 0; lap < laps; lap++) for (const j of junc) jAll.push({ j, pos: lap * L + j.stopS });
   jAll.sort((a, b) => a.pos - b.pos);
-  const lanePos = (sv) => { const i = pathIndex(P, ((sv % L) + L) % L); return [P.legOf[i], P.edgeS[i]]; };
+  const byKey = new Map();   // 車線の番号 → その車線を通るほかの車
+  const NR = nRec - 1;   // 記録は 1 時間でひとまわり
+  for (const o of others) if (o !== v) {
+    const off = ((((v.phase - o.phase) % T_ALL) + T_ALL) % T_ALL) / REC_DT;   // 相手の記録とのずれ（記録の数で）
+    for (const k of o.keySet) if (v.keySet.has(k)) { if (!byKey.has(k)) byKey.set(k, []); byKey.get(k).push({ o, off, keyRec: o.keyRec, esRec: o.esRec, flRec: o.flRec, hl: o.T.hl, bus: o.kind === 'bus' }); }
+  }
   while (tau < T_ALL - 1e-6) {
     let fl = 0;
     const sPrev = s;
@@ -2799,7 +3096,9 @@ function simulate(v, others, cruise, laps) {
       if (wait <= 0) { lastDepartS = s; target = nextStopAfter(s); }
     } else if (done) { sp = 0; fl |= 1 | 8; if (isBus) fl |= 16; }
     else {
-      const ls = ((s % L) + L) % L, i = pathIndex(P, ls);
+      const ls = ((s % L) + L) % L;
+      if (ls < P.S[ci]) ci = pathIndex(P, ls); else while (ci < P.N - 1 && P.S[ci + 1] <= ls) ci++;   // いまの区間（前へ進むだけなので順に送る）
+      const i = ci;
       let vt = Math.min(cruise, capV[i]);
       const dStop = target - s;
       vt = Math.min(vt, Math.sqrt(2 * T.dec * Math.max(0, dStop - 0.2)));
@@ -2813,19 +3112,27 @@ function simulate(v, others, cruise, laps) {
         if (j.turn && d < 40 && d > -(j.node.jr + 14)) fl |= j.turn > 0 ? 2 : 4;   // 曲がるときのウインカー
       }
       // 前の車
-      const [myLeg, myES] = lanePos(s), myKey = v.laneKey[myLeg], nextKey = v.laneKey[(myLeg + 1) % P.legs.length];
-      const legLen = roadNet.edges[P.legs[myLeg][0]].L;
-      for (const o of others) {
-        if (!o.keySet.has(myKey) && !o.keySet.has(nextKey)) continue;   // 同じ車線を通らない車は見なくてよい
-        const ri2 = Math.min(nRec - 1, Math.round(((((v.phase + tau - o.phase) % T_ALL) + T_ALL) % T_ALL) / REC_DT));   // 相手の時計に合わせる
-        const key = o.keyRec[ri2], es = o.esRec[ri2];
-        if (key < 0 || ((o.flRec[ri2] & 32) && !(isBus && o.kind === 'bus'))) continue;
-        let gap = Infinity;
-        if (key === myKey && es > myES) gap = es - myES;
-        else if (key === nextKey && nextKey !== myKey) gap = legLen - myES + es;
-        if (gap === Infinity || gap > 80) continue;
-        gap -= o.T.hl + T.hl + 2.5;
-        vt = Math.min(vt, Math.sqrt(2 * T.dec * Math.max(0, gap)));
+      const myLeg = P.legOf[i], myES = P.edgeS[i];
+      const myKey = P.Key[i], aheadKey = v.keyAhead[i], nextKey = v.legKey0[(myLeg + 1) % P.legs.length];
+      const legLen = roadNet.edges[P.legs[myLeg][0]].L, myED = myKey >> 1, nextED = nextKey >> 1;
+      const tauR = tau / REC_DT;
+      for (let kq = 0; kq < 3; kq++) {
+        const kk = kq === 0 ? myKey : kq === 1 ? aheadKey : nextKey;
+        if ((kq === 1 && kk === myKey) || (kq === 2 && (kk === myKey || kk === aheadKey))) continue;
+        const list = byKey.get(kk); if (!list) continue;   // 同じ車線を通る車だけ見る
+        for (let q = 0; q < list.length; q++) {
+          const o = list[q];
+          let ri2 = Math.round(tauR + o.off); if (ri2 >= NR) ri2 -= NR;   // 相手の時計に合わせる
+          const key = o.keyRec[ri2];
+          if (key !== kk || ((o.flRec[ri2] & 32) && !(isBus && o.bus))) continue;
+          const es = o.esRec[ri2];
+          let gap = Infinity;
+          if ((key >> 1) === myED) { if (es > myES) gap = es - myES; }
+          else if ((key >> 1) === nextED) gap = legLen - myES + es;
+          if (gap === Infinity || gap > 80) continue;
+          gap -= o.hl + T.hl + 2.5;
+          vt = Math.min(vt, Math.sqrt(2 * T.dec * Math.max(0, gap)));
+        }
       }
       if (sp < vt) sp = Math.min(vt, sp + T.acc * SIM_DT); else sp = Math.max(vt, sp - Math.max(T.dec * 1.6, (sp - vt) / SIM_DT * 0.5) * SIM_DT);
       s += sp * SIM_DT;
@@ -2847,43 +3154,15 @@ function simulate(v, others, cruise, laps) {
   while (ri < nRec) { rec[ri] = s; flags[ri] = 1 | 8 | 32 | (isBus ? 16 : 0); ri++; }
   return { rec, flags, endS: s, finishedAt: done ? departAt : Infinity, total };
 }
-// 記録から、各時刻にどの道（車線）のどこにいるかを作っておく（あとの車が前の車を見るため）
-function laneRecords(v) {
-  const P = v.path, n = v.rec.length, keyRec = new Int16Array(n), esRec = new Float32Array(n);
-  for (let r = 0; r < n; r++) { const s = ((v.rec[r] % P.L) + P.L) % P.L, i = pathIndex(P, s); keyRec[r] = v.laneKey[P.legOf[i]]; esRec[r] = P.edgeS[i]; }
-  v.keyRec = keyRec; v.esRec = esRec; v.flRec = v.flags;
-}
-{
-  const R = roadNet, t0 = performance.now();
-  const mk = (kind, legs, extra) => {
-    const isBus = kind === 'bus';
-    let P = buildPath(legs, isBus), k0 = 0;
-    const T = VTYPE[extra.type || 'bus'];
-    const v = Object.assign({ kind, T, legs }, extra);
-    if (isBus) {
-      const m = pathMarks(P, true);
-      k0 = m.stops.length ? pathIndex(P, m.stops[0].s) : 0;
-    } else {
-      const pk = R.parks[extra.carIndex], li = CAR_ROUTES[extra.r].findIndex((l) => R.edges[l[0]] === pk.e && l[1] === pk.dir);
-      const want = pk.dir > 0 ? pk.s : pk.e.L - pk.s;
-      for (let i = 0; i < P.N; i++) if (P.legOf[i] === li && P.edgeS[i] >= want) { k0 = i; break; }
-    }
-    P = rotatePath(P, k0);
-    v.path = P; v.marks = pathMarks(P, isBus);
-    // 車線の番号：道ごと・向きごと。2 車線の道では、バスは外側、車は内側
-    v.laneKey = legs.map(([ei, dir]) => ei * 4 + (dir > 0 ? 0 : 2) + (!isBus && R.edges[ei].w > 10.5 ? 1 : 0));
-    v.keySet = new Set(v.laneKey);
-    return v;
-  };
-  LINES.forEach((ln, li) => { for (let k = 0; k < ln.buses; k++) traffic.push(mk('bus', ln.legs, { line: ln, lineIndex: li, k, phase: 0 })); });
-  CARS.forEach((c, ci) => traffic.push(mk('car', CAR_ROUTES[c.r], { type: c.type, color: c.color, r: c.r, carIndex: ci, phase: 0 })));
+// 全部のバスと車の走り方を決める（Worker の中でも動くよう、ここに出てくる名前だけを使う）
+function runTrafficSim(traffic, passes) {
   // 出発の時刻をずらす（同じ路線のバスは等間隔）。1 時間でちょうど同じ所にもどるよう、速さと周回数を合わせる
   const done = [];
   for (const v of traffic) {
     const est = v.path.L / (11.1 * 0.72) + v.marks.stops.length * (BUS_DWELL + 8) + v.marks.junc.length * 9;   // 同じ道順の車は同じ周回数（追い越しはしない）
     let laps = Math.max(1, Math.round((T_ALL - 60) / est));
-    v.phase = v.kind === 'bus' ? (v.k / v.line.buses) * (T_ALL / laps) + v.lineIndex * 37 : hash(v.carIndex, 5) * T_ALL;
-      // ふつうの速さで 1 回。終点に早く着きすぎたら少しゆっくり、間に合わなければ周回を減らす（余りは終点で待つ）
+    v.phase = v.kind === 'bus' ? (v.k / v.nBus) * (T_ALL / laps) + v.lineIndex * 37 : v.carPhase;
+    // ふつうの速さで 1 回。終点に早く着きすぎたら少しゆっくり、間に合わなければ周回を減らす（余りは終点で待つ）
     let cruise = v.T.cruise, res = simulate(v, done, cruise, laps);
     for (let it = 0; it < 4 && res.finishedAt > T_ALL - 8; it++) { laps = Math.max(1, laps - 1); res = simulate(v, done, cruise, laps); }
     const ratio = res.finishedAt / (T_ALL - 40);
@@ -2897,14 +3176,80 @@ function laneRecords(v) {
     done.push(v);
   }
   // 2 回目：あとから決まった車も見て、もう一度走らせる（先に決めた車が、あとの車をすり抜けないように）
-  for (let pass = 0; pass < TRAFFIC_PASSES; pass++) for (const v of traffic) {
-    const mine = new Set(v.laneKey);
-    const res = simulate(v, traffic.filter((o) => o !== v && o.laneKey.some((k) => mine.has(k))), v.cruise, v.laps);   // 同じ車線を通る車だけ
-    if (res.finishedAt > T_ALL - 8) continue;
-    v.simIt = res.finishedAt; v.rec = res.rec; v.flags = res.flags;
+  //   1 時間で回りきれなくなったら、ふつうの速さにもどす → 周回を 1 つ減らす（前の記録のままだと、ほかの車をすり抜けてしまう）
+  for (let pass = 0; pass < passes; pass++) for (const v of traffic) {
+    let res = simulate(v, traffic, v.cruise, v.laps);   // 見るのは同じ車線を通る車だけ（simulate の中で選ぶ）
+    if (res.finishedAt > T_ALL - 8 && v.cruise < v.T.cruise) { const r2 = simulate(v, traffic, v.T.cruise, v.laps); if (r2.finishedAt <= T_ALL - 8) { res = r2; v.cruise = v.T.cruise; } }
+    if (res.finishedAt > T_ALL - 8 && v.laps > 1) {
+      const ph = v.phase;
+      v.laps--; if (v.kind === 'bus') v.phase = (v.k / v.nBus) * (T_ALL / v.laps) + v.lineIndex * 37;
+      res = simulate(v, traffic, v.cruise, v.laps);
+      if (res.finishedAt > T_ALL - 8) { v.laps++; v.phase = ph; continue; }
+    } else if (res.finishedAt > T_ALL - 8) continue;
+    v.simIt = res.finishedAt; v.rec = res.rec; v.flags = res.flags; v.total = res.total;
     laneRecords(v);
   }
-  window.__trafficMs = performance.now() - t0;
+}
+// 記録から、各時刻にどの道（車線）のどこにいるかを作っておく（あとの車が前の車を見るため）
+function laneRecords(v) {
+  const P = v.path, n = v.rec.length, keyRec = new Int16Array(n), esRec = new Float32Array(n);
+  for (let r = 0; r < n; r++) { const s = ((v.rec[r] % P.L) + P.L) % P.L, i = pathIndex(P, s); keyRec[r] = P.Key[i]; esRec[r] = P.edgeS[i]; }
+  v.keyRec = keyRec; v.esRec = esRec; v.flRec = v.flags;
+}
+{
+  const R = roadNet, t0 = performance.now();
+  const mk = (kind, legs, extra) => {
+    const isBus = kind === 'bus';
+    const T = VTYPE[extra.type || 'bus'];
+    const v = Object.assign({ kind, T, legs }, extra);
+    let P, k0 = 0;
+    if (isBus) {
+      P = buildPath(legs, true);
+      const m = pathMarks(P, true);
+      k0 = m.stops.length ? pathIndex(P, m.stops[0].s) : 0;
+    } else {
+      const pk = R.parks[extra.carIndex], li = CAR_ROUTES[extra.r].findIndex((l) => R.edges[l[0]] === pk.e && l[1] === pk.dir);
+      const want = pk.dir > 0 ? pk.s : pk.e.L - pk.s;
+      P = buildPath(legs, false, { park: { li, want }, pref: hash(extra.carIndex, 95) < 0.35 ? 1 : 0 });   // 3 台に 1 台くらいは右の車線を走る
+      for (let i = 0; i < P.N; i++) if (P.legOf[i] === li && P.edgeS[i] >= want) { k0 = i; break; }
+    }
+    P = rotatePath(P, k0);
+    v.path = P; v.marks = pathMarks(P, isBus);
+    // 車線の番号（道・向き・右の車線か）。走る線の点ごとに決まっている。legKey0 は各道に入って少し先の車線
+    v.keySet = new Set(P.Key);
+    v.keyAhead = new Int16Array(P.N); for (let i = 0; i < P.N; i++) v.keyAhead[i] = P.Key[pathIndex(P, (P.S[i] + 25) % P.L)];   // 25m 先の車線
+    v.legKey0 = legs.map((_, li) => { let k = -1; for (let i = 0; i < P.N; i++) if (P.legOf[i] === li) { k = P.Key[i]; if (P.edgeS[i] >= 20) break; } return k; });
+    return v;
+  };
+  LINES.forEach((ln, li) => { for (let k = 0; k < ln.buses; k++) traffic.push(mk('bus', ln.legs, { line: ln, lineIndex: li, k, phase: 0 })); });
+  CARS.forEach((c, ci) => traffic.push(mk('car', CAR_ROUTES[c.r], { type: c.type, color: c.color, r: c.r, carIndex: ci, phase: 0 })));
+  // 走り方の計算は重いので、別の作業場所（Web Worker）で計算して、画面を止めない。終わるまでバスと車は出ない
+  for (const v of traffic) { v.nBus = v.kind === 'bus' ? v.line.buses : 0; v.carPhase = v.kind === 'car' ? hash(v.carIndex, 5) * T_ALL : 0; }
+  const finish = (how) => { trafficReady = true; window.__trafficMs = performance.now() - t0; window.__trafficHow = how; window.__traffic = traffic; };
+  const keep = ['laps', 'cruise', 'total', 'simIt', 'phase', 'rec', 'flags'];
+  try {
+    const src = `const T_ALL = ${T_ALL}, REC_DT = ${REC_DT}, SIM_DT = ${SIM_DT}, BUS_DWELL = ${BUS_DWELL}, SIG_CYCLE = ${SIG_CYCLE};
+let roadNet;
+${[wrapA, pathIndex, signalState, simulate, laneRecords, runTrafficSim].map((f) => f.toString()).join('\n')}
+onmessage = (e) => {
+  const { vs, edgesL, passes } = e.data;
+  roadNet = { edges: edgesL.map((L) => ({ L })) };
+  for (const v of vs) v.keySet = new Set(v.keySet);
+  runTrafficSim(vs, passes);
+  const out = vs.map((v) => ({ laps: v.laps, cruise: v.cruise, total: v.total, simIt: v.simIt, phase: v.phase, rec: v.rec, flags: v.flags }));
+  postMessage(out, out.flatMap((o) => [o.rec.buffer, o.flags.buffer]));
+};`;
+    const url = URL.createObjectURL(new Blob([src], { type: 'text/javascript' })), w = new Worker(url);
+    const vs = traffic.map((v) => ({
+      kind: v.kind, T: v.T, k: v.k, nBus: v.nBus, lineIndex: v.lineIndex, carPhase: v.carPhase,
+      path: { N: v.path.N, X: v.path.X, Z: v.path.Z, S: v.path.S, L: v.path.L, legs: v.path.legs, legOf: v.path.legOf, edgeS: v.path.edgeS, Key: v.path.Key },
+      marks: { junc: v.marks.junc.map((j) => ({ s: j.s, stopS: j.stopS, grp: j.grp, turn: j.turn, node: { jr: j.node.jr, sigOff: j.node.sigOff } })), stops: v.marks.stops.map((q) => ({ s: q.s })) },
+      keySet: [...v.keySet], keyAhead: v.keyAhead, legKey0: v.legKey0,
+    }));
+    w.onmessage = (e) => { e.data.forEach((o, i) => { for (const k of keep) traffic[i][k] = o[k]; }); w.terminate(); URL.revokeObjectURL(url); finish('worker'); };
+    w.onerror = (e) => { e.preventDefault(); w.terminate(); runTrafficSim(traffic, TRAFFIC_PASSES); finish('main'); };
+    w.postMessage({ vs, edgesL: R.edges.map((e) => e.L), passes: TRAFFIC_PASSES });
+  } catch (e) { runTrafficSim(traffic, TRAFFIC_PASSES); finish('main'); }   // Worker が使えないときは、ここで計算する（少し止まる）
 }
 // 見た目を作る
 const buses = traffic.filter((v) => v.kind === 'bus'), cars = traffic.filter((v) => v.kind === 'car');
@@ -2994,6 +3339,7 @@ function avoidObstacles(v, obs, dt, near, schedV) {
     const a = obstacleAhead(v, obs, look, v.sideT), b = obstacleAhead(v, obs, 10, v.side);
     ob = a && b ? (a.gap < b.gap ? a : b) : a || b;
   }
+  if (v.leadGap < look && v.leadGap > 0.3 && !(v.noTraffic > 0) && (!ob || v.leadGap < ob.gap + 3)) ob = { o: { kind: 'lead' }, gap: Math.min(v.leadGap, ob ? ob.gap : Infinity) };   // 同じ車線の前の車
   // 横へ寄せる（ゆっくり）。寄せているあいだはウインカー
   const ds = v.sideT - v.side;
   if (Math.abs(ds) > 0.05) { v.side += Math.sign(ds) * Math.min(Math.abs(ds), dt * Math.max(0.6, Math.min(1.6, schedV * 0.25))); v.xfl |= ds < 0 ? 4 : 2; }
@@ -3001,7 +3347,7 @@ function avoidObstacles(v, obs, dt, near, schedV) {
   // 止まる：じゃまな物までに止まれる速さにおさえる。どいたら少し速く走って予定に追いつく
   let target = v.lag > 0.05 ? 1.3 : 1;
   if (ob) {
-    const stopAt = ob.gap - (ob.o.kind === 'traffic' ? 1.5 : 3);
+    const stopAt = ob.gap - (ob.o.kind === 'traffic' || ob.o.kind === 'lead' ? 1.5 : 3);
     const vAllow = Math.sqrt(2 * dec * Math.max(0, stopAt));
     if (schedV * target > vAllow) target = schedV > 0.05 ? vAllow / schedV : target;
     if (stopAt < 0.3) target = 0;
@@ -3018,13 +3364,20 @@ function avoidObstacles(v, obs, dt, near, schedV) {
   if ((v.brakeT = Math.max(0, (v.brakeT || 0) - dt)) > 0) v.xfl |= 8;   // ブレーキ（少しのあいだ点けたまま）
   if (v.lag > 6 && v.rate < 0.05) v.xfl |= 1;   // 長く止まったらハザード
 }
+// 車を描く距離。スマホは近くだけ・台数も決めておく（100 台あっても重くならないように）
+const CAR_VIEW = coarse ? 420 : 800, CAR_MAX_PHONE = 22, nearCars = [], laneNow = new Map();
 function stepTraffic(dt) {
   const now = Date.now() / 1000, cx = camera.position.x, cz = camera.position.z;
   const blink = Math.floor(now * 3) % 2 === 0, night = dayLight < 0.35;
   const obs = trafficObstacles();
   const rdt = THREE.MathUtils.clamp(now - (stepTraffic.last || now), 0, 1); stepTraffic.last = now;   // 時計の進み（遅い端末でも予定とずれない）
+  if (!trafficReady) { for (const v of traffic) v.root.visible = false; return; }
+  nearCars.length = 0;
+  // 近くの車の車線と位置（前のフレーム）。同じ車線のすぐ前の車には、ぶつからないよう止まる（計算ずみの予定がずれたときの安全のため）
+  laneNow.clear();
+  for (const u of traffic) if (u.laneK >= 0 && !(u.fl & 32)) { let l = laneNow.get(u.laneK); if (!l) laneNow.set(u.laneK, l = []); l.push(u); }
   for (const v of traffic) {
-    if (v.lag === undefined) Object.assign(v, { lag: 0, rate: 1, side: 0, sideT: 0, avoid: null, xfl: 0 });
+    if (v.lag === undefined) Object.assign(v, { lag: 0, rate: 1, side: 0, sideT: 0, avoid: null, xfl: 0, laneK: -1 });
     const tau = (((now - v.phase - v.lag) % T_ALL) + T_ALL) % T_ALL, r = tau / REC_DT, i0 = Math.min(v.rec.length - 2, Math.floor(r)), f = r - i0;
     const s = v.rec[i0] + (v.rec[i0 + 1] - v.rec[i0]) * f, P = v.path;
     v.s = s; v.speed = (v.rec[i0 + 1] - v.rec[i0]) / REC_DT * v.rate; v.fl = v.flags[i0] | v.xfl;
@@ -3045,9 +3398,25 @@ function stepTraffic(dt) {
       v.nextName = nx ? nx.name : '';
       v.open += ((v.fl & 16 ? 1 : 0) - v.open) * Math.min(1, dt * 2.5);
     }
-    const near = Math.hypot(x - cx, z - cz) < VIEW_R || (!!busRide && busRide.b === v);
+    const dCam = Math.hypot(x - cx, z - cz);
+    let near = v.kind === 'bus' ? dCam < VIEW_R || (!!busRide && busRide.b === v) : dCam < CAR_VIEW;
+    if (near && v.kind === 'car' && coarse) { nearCars.push(v); v.dCam = dCam; }
+    v.leadGap = Infinity;
+    if (dCam < OBS_NEAR) {
+      const i = pathIndex(P, ((s % P.L) + P.L) % P.L), k0 = P.Key[i], k1 = v.keyAhead[i], k2 = v.legKey0[(P.legOf[i] + 1) % P.legs.length], es = P.edgeS[i];
+      const legLen = roadNet.edges[P.legs[P.legOf[i]][0]].L;
+      for (const kk of k0 === k1 ? [k0, k2] : [k0, k1, k2]) for (const u of laneNow.get(kk) || []) {
+        if (u === v || ((u.fl & 32) && v.kind === 'bus')) continue;
+        let g = Infinity;
+        if ((kk >> 1) === (k0 >> 1)) { if (u.laneEs > es) g = u.laneEs - es; } else if (kk === k2) g = legLen - es + u.laneEs;
+        g -= u.T.hl + v.T.hl;
+        if (g < v.leadGap) v.leadGap = g;
+      }
+      v.laneK = k0; v.laneEs = es;
+    } else v.laneK = -1;
     avoidObstacles(v, obs, rdt, near, (v.rec[i0 + 1] - v.rec[i0]) / REC_DT);
     v.root.visible = near;
+    if (!near && v.kind === 'car') continue;   // 見えない車は形を動かさない（軽くするため）
     v.root.position.set(x, v.y, z);
     v.root.rotation.set(-v.pitch, h, 0);
     v.root.updateMatrixWorld(true);
@@ -3058,6 +3427,10 @@ function stepTraffic(dt) {
     L.br.color.setHex(blink && (haz || v.fl & 4) ? LAMP.blinkOn : LAMP.blinkOff);
     L.tail.color.setHex(v.fl & 8 ? LAMP.tailBrake : night ? LAMP.tailDim : LAMP.tailOff);
     L.head.color.setHex(night ? LAMP.headOn : LAMP.headOff);
+  }
+  if (nearCars.length > CAR_MAX_PHONE) {   // スマホ：描く車は近いほうから決まった台数まで
+    nearCars.sort((a, b) => a.dCam - b.dCam);
+    for (let k = CAR_MAX_PHONE; k < nearCars.length; k++) nearCars[k].root.visible = false;
   }
 }
 // バスの中の点（車体の座標）を世界の座標に
@@ -3080,12 +3453,331 @@ function pushFromTraffic() {
 }
 let busRide = null;   // { b, lx, lz, seat }
 let busYawPrev = 0;
+/* ================= ポイント（P） =================
+   はじめは全員 10 万 P。バスの運賃は 1 回 100 P。パチンコで増やせる（予定）。この端末（ブラウザ）に覚えておくので、閉じて開きなおしても残る */
+const P_START = 100000, BUS_FARE = 100;
+const wallet = { p: P_START };
+try { const v = Number(localStorage.getItem('world.points')); if (localStorage.getItem('world.points') != null && Number.isFinite(v) && v >= 0) wallet.p = Math.floor(v); else localStorage.setItem('world.points', String(P_START)); } catch (e) { /* 覚えられなくても遊べる */ }
+const fmtP = (v) => `${v.toLocaleString('ja-JP')}P`;
+function showPoints() { const e = document.getElementById('pointLabel'); if (e) e.textContent = '・' + fmtP(wallet.p); }
+function addPoints(d) {
+  wallet.p = Math.max(0, Math.floor(wallet.p + d));
+  try { localStorage.setItem('world.points', String(wallet.p)); } catch (e) { /* そのまま */ }
+  showPoints();
+  return wallet.p;
+}
+// ===== パチンコ（羽根もの）の盤面と玉の動き。画面とは別で、node でも動く =====
+function makePachi(pV, rnd, lay) {
+  rnd = rnd || Math.random; lay = lay || rnd;
+  const W = 360, H = 440, CX = 180, CY = 220, R = 168, BR = 4, NR = 1.8, G = 700;
+  const YAKU = { x0: 146, x1: 214, y0: 138, y1: 204 };
+  const WINGS = [{ x0: 126, x1: 146, y0: 160, y1: 204, s: -1 }, { x0: 214, x1: 234, y0: 160, y1: 204, s: 1 }];
+  const CHUCK = [{ x: 180, y: 272, w: 4, opens: 2, pay: 3, kind: 'start' }, { x: 108, y: 290, w: 4, opens: 1, pay: 3, kind: 'start' }, { x: 252, y: 290, w: 4, opens: 1, pay: 3, kind: 'start' }];
+  const TULIPS = [{ x: 98, y: 232, pay: 6, open: false }, { x: 262, y: 232, pay: 6, open: false }, { x: 180, y: 346, pay: 6, open: false }];
+  const POCKETS = [{ x: 124, y: 330, w: 4, pay: 8 }, { x: 236, y: 330, w: 4, pay: 8 }];
+  const MILLS = [{ x: 90, y: 142, r: 9, a: 0 }, { x: 270, y: 142, r: 9, a: 0 }];
+  const OUT = { x: CX, y: CY + R - 6, r: 20 };
+  const RUBBER = { x: CX + (R - 7) * Math.cos(-0.45), y: CY + (R - 7) * Math.sin(-0.45), r: 7 };
+  const cups = [];   // 入賞口（ふち の釘つき）
+  for (const c of CHUCK) cups.push(Object.assign({ type: 'chuck' }, c));
+  for (const t of TULIPS) cups.push(Object.assign(t, { type: 'tulip', w: 4 }));
+  for (const p of POCKETS) cups.push(Object.assign({ type: 'pocket' }, p));
+  // 釘
+  const nails = [];
+  const keep = (x, y) => {
+    if (Math.hypot(x - CX, y - CY) > R - 22) return false;
+    if (x > YAKU.x0 - 22 && x < YAKU.x1 + 22 && y > YAKU.y0 - 12 && y < YAKU.y1 + 10) return false;
+    for (const c of cups) if (Math.hypot(x - c.x, y - c.y) < 17) return false;
+    for (const m of MILLS) if (Math.hypot(x - m.x, y - m.y) < m.r + 12) return false;
+    if (Math.hypot(x - OUT.x, y - OUT.y) < 34) return false;
+    return y > 54 && y < 392;
+  };
+  for (let row = 0, y = 58; y < 392; row++, y += 17) for (let x = 20 + (row % 2) * 11; x < W; x += 22) if (keep(x, y)) nails.push({ x: x + (lay() - 0.5) * 2.4, y: y + (lay() - 0.5) * 2, r: NR });
+  // 入賞口の両わきの釘（チューリップは開くと外へ広がる）
+  for (const c of cups) { c.nl = { x: c.x - 6.3, y: c.y - 2, r: NR }; c.nr = { x: c.x + 6.3, y: c.y - 2, r: NR }; nails.push(c.nl, c.nr, { x: c.x, y: c.y - 15, r: NR }); }
+  // 役物のまわりの道釘
+  for (let i = 0; i < 4; i++) { nails.push({ x: YAKU.x0 - 26 - i * 9, y: YAKU.y0 - 14 + i * 7, r: NR }); nails.push({ x: YAKU.x1 + 26 + i * 9, y: YAKU.y0 - 14 + i * 7, r: NR }); }
+  const CELL = 16, grid = new Map();
+  const gk = (i, j) => i * 1000 + j;
+  for (const n of nails) { const k = gk(Math.floor(n.x / CELL), Math.floor(n.y / CELL)); let a = grid.get(k); if (!a) grid.set(k, (a = [])); a.push(n); }
+  const S = {
+    W, H, CX, CY, R, BR, YAKU, WINGS, CHUCK, TULIPS, POCKETS, MILLS, OUT, RUBBER, nails, cups,
+    pV, balls: [], fireT: 0, wing: 0, wingQ: [], stage: [], stageT: 0, stageBall: null,
+    bonus: null, events: [], stats: { shot: 0, won: 0, foul: 0, hits: 0 },
+  };
+  const ev = (e) => S.events.push(e);
+  function collide(b, cx, cy, r, e, jit) {
+    const dx = b.x - cx, dy = b.y - cy, d = Math.hypot(dx, dy), m = r + BR;
+    if (d >= m || d < 1e-6) return false;
+    const nx = dx / d, ny = dy / d;
+    b.x = cx + nx * m; b.y = cy + ny * m;
+    const vn = b.vx * nx + b.vy * ny;
+    if (vn < 0) { b.vx -= (1 + e) * vn * nx; b.vy -= (1 + e) * vn * ny; if (jit) { const j = (rnd() - 0.5) * jit; b.vx += -ny * j; b.vy += nx * j; } }
+    return true;
+  }
+  function openWing(n, dur, gap) { for (let i = 0; i < n; i++) S.wingQ.push({ open: dur, gap }); }
+  function capture(b) {
+    if (S.bonus) { S.bonus.got++; ev({ t: 'pay', n: 12, why: 'v' }); S.stats.won += 12; S.stage.push({ bonus: true }); return; }
+    if (S.stage.length >= 3) return;   // いっぱいのときはそのまま流れる
+    S.stage.push({ v: rnd() < S.pV });
+    ev({ t: 'catch' });
+  }
+  function startBonus() {
+    S.bonus = { round: 1, opens: 0, got: 0, t: 0 }; S.wingQ = []; S.stats.hits++;
+    ev({ t: 'bonus' });
+  }
+  function stepBonus(dt) {
+    const B = S.bonus;
+    if (S.wing > 0 || S.wingQ.length) return;
+    if (B.opens >= 18 || B.got >= 8) {
+      if (B.round >= 5) { S.bonus = null; ev({ t: 'bonusEnd' }); return; }
+      B.round++; B.opens = 0; B.got = 0; ev({ t: 'round', n: B.round });
+      S.wingQ.push({ open: 0, gap: 1.2 });
+      return;
+    }
+    B.opens++; S.wingQ.push({ open: 1.6, gap: 0.35 });
+  }
+  function step(dt, ctl) {
+    // 発射（1 分に 100 発くらい）
+    S.fireT -= dt;
+    if (ctl.fire && S.fireT <= 0 && S.balls.length < 12 && ctl.take()) {
+      S.fireT = 0.6;
+      const th = Math.PI * 150 / 180, v = (540 + 220 * ctl.power) * (1 + (rnd() - 0.5) * 0.08);
+      S.balls.push({ x: CX + (R - BR - 1) * Math.cos(th), y: CY + (R - BR - 1) * Math.sin(th), vx: -Math.sin(th) * v, vy: Math.cos(th) * v, age: 0, slow: 0 });
+      S.stats.shot++; ev({ t: 'shot' });
+    }
+    // 羽根
+    if (S.wing > 0) { S.wing -= dt; if (S.wing <= 0) { S.wing = 0; S.wingGap = S.curGap; } }
+    else if (S.wingGap > 0) S.wingGap -= dt;
+    else if (S.wingQ.length) { const q = S.wingQ.shift(); S.wing = q.open; S.curGap = q.gap; if (q.open > 0) ev({ t: 'wing' }); else S.wingGap = q.gap; }
+    if (S.bonus) stepBonus(dt);
+    // 役物の中（V に入るか）
+    if (!S.stageBall && S.stage.length) { S.stageBall = S.stage.shift(); S.stageT = 0; S.stageBall.dur = S.stageBall.bonus ? 0.7 : 2.2; S.stageBall.side = rnd() < 0.5 ? -1 : 1; }
+    if (S.stageBall) {
+      S.stageT += dt;
+      if (S.stageT >= S.stageBall.dur) {
+        const sb = S.stageBall; S.stageBall = null;
+        if (!sb.bonus) { if (sb.v) startBonus(); else ev({ t: 'miss' }); }
+      }
+    }
+    for (const m of MILLS) m.a += dt * 5;
+    const h = 1 / 240;
+    for (let t = 0; t < dt - 1e-9; t += h) {
+      const hh = Math.min(h, dt - t);
+      for (let i = S.balls.length - 1; i >= 0; i--) {
+        const b = S.balls[i];
+        b.vy += G * hh; b.x += b.vx * hh; b.y += b.vy * hh; b.age += hh;
+        // 外わく
+        const dx = b.x - CX, dy = b.y - CY, d = Math.hypot(dx, dy);
+        if (d > R - BR) { const nx = dx / d, ny = dy / d; b.x = CX + nx * (R - BR); b.y = CY + ny * (R - BR); const vn = b.vx * nx + b.vy * ny; if (vn > 0) { b.vx -= 1.3 * vn * nx; b.vy -= 1.3 * vn * ny; } b.vx *= 0.9995; b.vy *= 0.9995; }
+        collide(b, RUBBER.x, RUBBER.y, RUBBER.r, 0.55, 30);
+        // 釘
+        const gi = Math.floor(b.x / CELL), gj = Math.floor(b.y / CELL);
+        for (let a = gi - 1; a <= gi + 1; a++) for (let c = gj - 1; c <= gj + 1; c++) { const L = grid.get(gk(a, c)); if (L) for (const n of L) collide(b, n.x, n.y, n.r, 0.45, 45); }
+        for (const m of MILLS) if (collide(b, m.x, m.y, m.r, 0.3, 10)) { const nx = (b.x - m.x), ny = (b.y - m.y), d2 = Math.hypot(nx, ny); b.vx += (-ny / d2) * 60 * hh * 60; b.vy += (nx / d2) * 60 * hh * 60; }
+        // 役物の箱
+        const qx = Math.max(YAKU.x0, Math.min(YAKU.x1, b.x)), qy = Math.max(YAKU.y0, Math.min(YAKU.y1, b.y));
+        collide(b, qx, qy, 0, 0.35, 10);
+        let gone = null;
+        // 羽根がひらいていれば、つかまえる
+        if (S.wing > 0) for (const w of WINGS) if (b.x > w.x0 && b.x < w.x1 && b.y > w.y0 && b.y < w.y1) { gone = 'wing'; capture(b); break; }
+        // 入賞口
+        if (!gone) for (const c of cups) {
+          const ww = c.type === 'tulip' ? (c.open ? 5 : 1.5) : 2.5;
+          if (Math.abs(b.x - c.x) < ww && b.y > c.y - 3 && b.y < c.y + 5 && b.vy > 0) {
+            if (rnd() > (c.type === 'chuck' ? 0.6 : 0.45)) { const sd = rnd() < 0.5 ? -1 : 1; b.x = c.x + sd * 13; b.y = c.y - 4; b.vy = -40; b.vx = sd * 60; continue; }   // ふちに当たってはじかれた
+            gone = c.type; c.n = (c.n || 0) + 1; ev({ t: 'pay', n: c.pay, why: c.type, x: c.x, y: c.y }); S.stats.won += c.pay;
+            if (c.type === 'chuck' && !S.bonus) openWing(c.opens, 0.45, 0.3);
+            if (c.type === 'tulip') { c.open = !c.open; const o = c.open ? 10 : 6.3; c.nl.x = c.x - o; c.nr.x = c.x + o; }
+            break;
+          }
+        }
+        if (!gone && (b.y > 384 || Math.hypot(b.x - OUT.x, b.y - OUT.y) < OUT.r)) gone = 'out';
+        if (!gone && b.vy > 0 && b.x < 70 && b.y > 285 && Math.hypot(dx, dy) > R - 14) { gone = 'foul'; ctl.give(1); S.stats.foul++; }
+        if (!gone) { if (Math.hypot(b.vx, b.vy) < 8) b.slow += hh; else b.slow = 0; if (b.slow > 2 || b.age > 30) gone = 'out'; }
+        if (gone) { S.balls.splice(i, 1); if (gone === 'out') ev({ t: 'out' }); }
+      }
+    }
+  }
+  S.step = step;
+  return S;
+}
+/* ================= パチンコ（座ると遊べる） =================
+   パチンコ台_NN の前のイス（カスタムプロパティ 台番号）に座ると開く。玉は 500P で 125 玉（1 玉 4P）。精算すると玉を P にもどして立つ
+   当たりやすさ（V に入る確率）は台ごとにちがい、日本時間の日付が変わると入れかわる。同じ店・同じ台・同じ日なら、みんな同じ */
+const PACHI_LEND = 500, PACHI_BALLS = 125, PACHI_BALL_P = 4;
+const PACHI_CLASS = [1 / 120, 1 / 75, 1 / 50, 1 / 36, 1 / 26], PACHI_W = [0.3, 0.3, 0.2, 0.12, 0.08];
+function hash32(str) { let h = 2166136261 >>> 0; for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619) >>> 0; } return h; }
+function seededRnd(seed) { let a = seed >>> 0; return () => { a = (a + 0x6D2B79F5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
+const jstDay = () => new Date(Date.now() + 9 * 3600e3).toISOString().slice(0, 10);
+function pachiPV(b, num) {
+  const r = seededRnd(hash32(`${b.pr.id || b.pr.name}|${num}|${jstDay()}`))();
+  let k = 0, acc = 0; for (; k < PACHI_W.length - 1; k++) { acc += PACHI_W[k]; if (r < acc) break; }
+  return PACHI_CLASS[k];
+}
+const PG = { open: false, S: null, num: 0, balls: 0, fire: false, power: 0.35, msg: '', msgT: 0, flash: 0, pops: [], last: 0 };
+// 開いたまま閉じてしまったときの玉は、つぎに開いたとき P にもどす
+try { const v = Number(localStorage.getItem('world.pachiBalls')); if (v > 0) { addPoints(v * PACHI_BALL_P); localStorage.removeItem('world.pachiBalls'); } } catch (e) { /* そのまま */ }
+const pgEl = document.getElementById('pachi'), pgCv = document.getElementById('pgBoard'), pgCx = pgCv.getContext('2d');
+function pgSaveBalls() { try { if (PG.balls > 0) localStorage.setItem('world.pachiBalls', String(PG.balls)); else localStorage.removeItem('world.pachiBalls'); } catch (e) { /* そのまま */ } }
+function pgUi() {
+  document.getElementById('pgNum').textContent = `${PG.num}番台`;
+  document.getElementById('pgBalls').textContent = `${PG.balls.toLocaleString('ja-JP')}玉`;
+  document.getElementById('pgP').textContent = fmtP(wallet.p);
+  const f = document.getElementById('pgFire'); f.textContent = PG.fire ? '止める' : '打つ'; f.setAttribute('aria-pressed', PG.fire ? 'true' : 'false');
+  document.getElementById('pgLend').disabled = wallet.p < PACHI_LEND;
+}
+function pgTone(f, len, vol, type) {
+  const c = actx; if (!c || c.state !== 'running') return;
+  const t = c.currentTime, o = c.createOscillator(), g = c.createGain();
+  o.type = type || 'square'; o.frequency.setValueAtTime(f, t);
+  g.gain.setValueAtTime(vol || 0.05, t); g.gain.exponentialRampToValueAtTime(0.0001, t + len);
+  o.connect(g); g.connect(c.destination); o.start(t); o.stop(t + len + 0.02);
+}
+function openPachi(b, ch) {
+  const pV = pachiPV(b, ch.num);
+  const lay = seededRnd(hash32(`${b.pr.id || b.pr.name}|${ch.num}|${jstDay()}|釘`));
+  PG.S = makePachi(pV, Math.random, lay); PG.num = ch.num; PG.balls = 0; PG.fire = false; PG.msg = '玉を借りて、打つを押してください'; PG.msgT = 4; PG.pops = [];
+  PG.open = true; pgEl.hidden = false; PG.last = performance.now();
+  for (const k in keys) keys[k] = false;
+  audioCtx(); pgUi(); requestAnimationFrame(pgFrame);
+}
+function closePachi() {
+  if (!PG.open) return;
+  if (PG.balls > 0) { addPoints(PG.balls * PACHI_BALL_P); showMsg(`${PG.balls.toLocaleString('ja-JP')}玉を精算して ${fmtP(PG.balls * PACHI_BALL_P)} になりました`); }
+  PG.balls = 0; pgSaveBalls(); PG.open = false; PG.fire = false; pgEl.hidden = true; PG.S = null;
+}
+document.getElementById('pgLend').addEventListener('click', () => {
+  if (wallet.p < PACHI_LEND) { PG.msg = 'P が足りません'; PG.msgT = 2; return; }
+  addPoints(-PACHI_LEND); PG.balls += PACHI_BALLS; pgSaveBalls(); pgUi();
+});
+document.getElementById('pgFire').addEventListener('click', () => { PG.fire = !PG.fire; if (PG.fire && PG.balls <= 0) { PG.fire = false; PG.msg = '玉がありません。玉を借りてください'; PG.msgT = 2.5; } pgUi(); });
+document.getElementById('pgPow').addEventListener('input', (e) => { PG.power = Number(e.target.value) / 100; });
+document.getElementById('pgQuit').addEventListener('click', () => standUp());
+function pgFrame(now) {
+  if (!PG.open) return;
+  const dt = Math.min(0.1, (now - PG.last) / 1000); PG.last = now;
+  const S = PG.S;
+  S.step(dt, { fire: PG.fire, power: PG.power, take: () => { if (PG.balls <= 0) return false; PG.balls--; return true; }, give: (n) => { PG.balls += n; } });
+  let changed = false;
+  for (const e of S.events) {
+    if (e.t === 'pay') { PG.balls += e.n; changed = true; if (e.x != null) PG.pops.push({ x: e.x, y: e.y - 10, n: e.n, t: 1 }); pgTone(e.why === 'v' ? 1320 : 990, 0.12, 0.04); }
+    else if (e.t === 'shot') changed = true;
+    else if (e.t === 'wing') pgTone(660, 0.08, 0.03);
+    else if (e.t === 'catch') pgTone(520, 0.15, 0.04, 'triangle');
+    else if (e.t === 'bonus') { PG.msg = '大当たり！ ラウンド 1/5'; PG.msgT = 99; PG.flash = 3; [784, 988, 1175, 1568].forEach((f, i) => setTimeout(() => pgTone(f, 0.25, 0.06), i * 140)); }
+    else if (e.t === 'round') { PG.msg = `大当たり！ ラウンド ${e.n}/5`; PG.msgT = 99; pgTone(880, 0.2, 0.05); }
+    else if (e.t === 'bonusEnd') { PG.msg = '大当たり おわり'; PG.msgT = 2.5; }
+    else if (e.t === 'miss') { PG.msg = 'おしい！'; PG.msgT = 1; }
+  }
+  S.events.length = 0;
+  if (PG.fire && PG.balls <= 0 && !S.balls.length) { PG.fire = false; PG.msg = '玉がなくなりました'; PG.msgT = 2.5; changed = true; }
+  if (changed) { pgUi(); if ((pgFrame.save = (pgFrame.save || 0) + 1) % 10 === 0) pgSaveBalls(); }
+  PG.msgT -= dt; PG.flash = Math.max(0, PG.flash - dt);
+  pgDraw(now / 1000, dt);
+  requestAnimationFrame(pgFrame);
+}
+function pgDraw(t, dt) {
+  const S = PG.S, c = pgCx, cv = pgCv;
+  const dpr = Math.min(2, window.devicePixelRatio || 1), cw = cv.clientWidth || 360, chh = cv.clientHeight || 440;
+  if (cv.width !== Math.round(cw * dpr) || cv.height !== Math.round(chh * dpr)) { cv.width = Math.round(cw * dpr); cv.height = Math.round(chh * dpr); }
+  const k = Math.min(cv.width / S.W, cv.height / S.H);
+  c.setTransform(k, 0, 0, k, (cv.width - S.W * k) / 2, (cv.height - S.H * k) / 2);
+  // 台のわく
+  c.fillStyle = '#5a1f2b'; c.fillRect(0, 0, S.W, S.H);
+  const bonus = !!S.bonus, fl = bonus ? (Math.floor(t * 6) % 2) : 0;
+  c.fillStyle = bonus ? (fl ? '#ffd23f' : '#ff5a8a') : '#c9a227'; c.beginPath(); c.arc(S.CX, S.CY, S.R + 9, 0, Math.PI * 2); c.fill();
+  const gr = c.createRadialGradient(S.CX, S.CY - 40, 20, S.CX, S.CY, S.R);
+  gr.addColorStop(0, '#fffaf0'); gr.addColorStop(1, '#e6eef8');
+  c.fillStyle = gr; c.beginPath(); c.arc(S.CX, S.CY, S.R, 0, Math.PI * 2); c.fill();
+  // 飾りの絵
+  c.fillStyle = 'rgba(255,120,160,0.14)'; c.beginPath(); c.arc(S.CX - 70, S.CY + 60, 46, 0, Math.PI * 2); c.fill();
+  c.fillStyle = 'rgba(80,170,255,0.14)'; c.beginPath(); c.arc(S.CX + 70, S.CY + 60, 46, 0, Math.PI * 2); c.fill();
+  // 発射レール
+  c.strokeStyle = '#9aa4ae'; c.lineWidth = 2; c.beginPath(); c.arc(S.CX, S.CY, S.R - 13, Math.PI * 0.84, Math.PI * 1.62); c.stroke();
+  c.fillStyle = '#e45'; c.beginPath(); c.arc(S.RUBBER.x, S.RUBBER.y, S.RUBBER.r, 0, Math.PI * 2); c.fill();
+  // アウト口
+  c.fillStyle = '#2b2b2b'; c.beginPath(); c.ellipse(S.OUT.x, S.OUT.y + 2, 18, 9, 0, 0, Math.PI * 2); c.fill();
+  c.fillStyle = '#fff'; c.font = '700 8px sans-serif'; c.textAlign = 'center'; c.fillText('OUT', S.OUT.x, S.OUT.y + 5);
+  // 釘
+  c.fillStyle = '#8b939c';
+  for (const n of S.nails) { c.beginPath(); c.arc(n.x, n.y, 2, 0, Math.PI * 2); c.fill(); }
+  c.fillStyle = '#e8edf2'; for (const n of S.nails) c.fillRect(n.x - 0.9, n.y - 0.9, 0.9, 0.9);
+  // 風車
+  for (const m of S.MILLS) {
+    c.save(); c.translate(m.x, m.y); c.rotate(m.a);
+    for (let i = 0; i < 4; i++) { c.rotate(Math.PI / 2); c.fillStyle = i % 2 ? '#ff7a00' : '#2f9be0'; c.beginPath(); c.moveTo(0, 0); c.lineTo(m.r + 2, -3); c.lineTo(m.r + 2, 3); c.fill(); }
+    c.fillStyle = '#ddd'; c.beginPath(); c.arc(0, 0, 2.5, 0, Math.PI * 2); c.fill(); c.restore();
+  }
+  // 入賞口
+  for (const cp of S.cups) {
+    if (cp.type === 'tulip') {
+      const o = cp.open ? 0.9 : 0.15;
+      c.fillStyle = '#e8304a';
+      for (const sd of [-1, 1]) { c.save(); c.translate(cp.x + sd * 4, cp.y); c.rotate(sd * o); c.beginPath(); c.ellipse(sd * 3, -4, 4, 8, 0, 0, Math.PI * 2); c.fill(); c.restore(); }
+      c.fillStyle = '#ff9fb0'; c.beginPath(); c.ellipse(cp.x, cp.y + 2, 6, 5, 0, 0, Math.PI * 2); c.fill();
+      c.fillStyle = '#3a8f3a'; c.fillRect(cp.x - 1, cp.y + 6, 2, 8);
+    } else {
+      c.fillStyle = cp.type === 'chuck' ? '#ffcc33' : '#3fbf7f';
+      c.beginPath(); c.moveTo(cp.x - 8, cp.y - 2); c.lineTo(cp.x + 8, cp.y - 2); c.lineTo(cp.x + 5, cp.y + 8); c.lineTo(cp.x - 5, cp.y + 8); c.closePath(); c.fill();
+      c.fillStyle = '#333'; c.font = '700 6px sans-serif'; c.fillText(cp.type === 'chuck' ? 'START' : String(cp.pay), cp.x, cp.y + 6);
+    }
+  }
+  // 役物（羽根と V）
+  const Y = S.YAKU;
+  c.fillStyle = bonus ? (fl ? '#ffe680' : '#ffb3c7') : '#cfe8ff'; c.strokeStyle = '#47607a'; c.lineWidth = 2;
+  c.beginPath(); c.roundRect(Y.x0, Y.y0, Y.x1 - Y.x0, Y.y1 - Y.y0, 8); c.fill(); c.stroke();
+  const sy = Y.y1 - 18;   // ステージ
+  c.fillStyle = '#334'; c.fillRect(Y.x0 + 6, sy, Y.x1 - Y.x0 - 12, 3);
+  const holes = [Y.x0 + 16, (Y.x0 + Y.x1) / 2, Y.x1 - 16];
+  holes.forEach((hx, i) => { c.fillStyle = i === 1 ? '#e21' : '#222'; c.beginPath(); c.arc(hx, sy + 9, 5, 0, Math.PI * 2); c.fill(); });
+  c.fillStyle = '#fff'; c.font = '800 8px sans-serif'; c.fillText('V', holes[1], sy + 12);
+  c.fillStyle = '#c33'; c.font = '800 10px sans-serif'; c.fillText(bonus ? `R${S.bonus.round}` : 'LUCKY', (Y.x0 + Y.x1) / 2, Y.y0 + 16);
+  if (S.stageBall) {   // 役物の中をころがる玉
+    const sb = S.stageBall, f = S.stageT / sb.dur, mid = (Y.x0 + Y.x1) / 2, span = (Y.x1 - Y.x0) / 2 - 12;
+    let bx, by = sy - 4;
+    if (sb.bonus) bx = mid + Math.sin(f * 6) * span * 0.6;
+    else if (f < 0.8) bx = mid + Math.sin(f * 14) * span * (1 - f);
+    else { const tx = sb.v ? holes[1] : (sb.side < 0 ? holes[0] : holes[2]); bx = mid + (tx - mid) * ((f - 0.8) / 0.2); by = sy - 4 + ((f - 0.8) / 0.2) * 12; }
+    pgBall(c, bx, by);
+  }
+  // 羽根
+  const wo = S.wing > 0 ? 1 : 0;
+  for (const w of S.WINGS) {
+    const px = w.s < 0 ? w.x1 : w.x0, py = w.y1 - 2;
+    c.save(); c.translate(px, py); c.rotate(w.s * (wo ? 1.05 : 0));
+    c.fillStyle = '#ffcc33'; c.strokeStyle = '#a07a10'; c.lineWidth = 1;
+    c.beginPath(); c.roundRect(-3, -34, 6, 34, 3); c.fill(); c.stroke(); c.restore();
+  }
+  // 玉
+  for (const b of S.balls) pgBall(c, b.x, b.y);
+  // 入賞の数字
+  c.font = '800 11px sans-serif';
+  for (const p of PG.pops) { p.t -= dt; p.y -= dt * 18; c.fillStyle = `rgba(230,40,60,${Math.max(0, p.t)})`; c.fillText(`+${p.n}`, p.x, p.y); }
+  PG.pops = PG.pops.filter((p) => p.t > 0);
+  // お知らせ
+  if (PG.msgT > 0 && PG.msg) {
+    c.font = '800 15px sans-serif'; const w = c.measureText(PG.msg).width + 24;
+    c.fillStyle = bonus ? 'rgba(200,0,60,0.85)' : 'rgba(20,30,50,0.8)'; c.beginPath(); c.roundRect(S.CX - w / 2, 18, w, 26, 13); c.fill();
+    c.fillStyle = '#fff'; c.fillText(PG.msg, S.CX, 36);
+  }
+  if (PG.flash > 0) { c.fillStyle = `rgba(255,230,80,${0.35 * (Math.floor(t * 10) % 2)})`; c.fillRect(0, 0, S.W, S.H); }
+}
+function pgBall(c, x, y) {
+  const g = c.createRadialGradient(x - 1.3, y - 1.5, 0.5, x, y, 4.2);
+  g.addColorStop(0, '#ffffff'); g.addColorStop(0.5, '#c4ccd4'); g.addColorStop(1, '#6b737c');
+  c.fillStyle = g; c.beginPath(); c.arc(x, y, 4, 0, Math.PI * 2); c.fill();
+}
+window.addEventListener('storage', (e) => { if (e.key === 'world.points' && e.newValue != null) { const v = Number(e.newValue); if (Number.isFinite(v) && v >= 0) { wallet.p = Math.floor(v); showPoints(); } } });   // ほかのタブで増減したとき
+showPoints();
 function boardBus(n) {
+  if (wallet.p < BUS_FARE) { showMsg(`P が足りないので乗れません（運賃 ${BUS_FARE}P・いま ${fmtP(wallet.p)}）`); return; }
+  addPoints(-BUS_FARE);
   busRide = { b: n.b, lx: BUS_DIM.hw - 0.5, lz: (n.d.z0 + n.d.z1) / 2, seat: null };
   camYaw = n.b.h + Math.PI / 2;   // 車内のほう（右）を向く
   camPitch = 0.05; busYawPrev = n.b.h;
   avatar.visible = false;
-  showMsg(`${n.b.line.no}番（${n.b.line.name}）に乗りました。座席の近くで「座る」（Space）。止まってドアがあいたら「降りる」`);
+  showMsg(`${n.b.line.no}番（${n.b.line.name}）に乗りました。運賃 ${BUS_FARE}P（のこり ${fmtP(wallet.p)}）。座席の近くで「座る」（Space）。止まってドアがあいたら「降りる」`);
 }
 function leaveBus(force) {
   const r = busRide; if (!r) return;
@@ -3169,7 +3861,7 @@ function pushFromCar(V, cx, cz, cy, h) {
 }
 function stepPlayer(dt) {
   if (bldSeat) {   // イスに座っている：動こうとしたら立つ
-    const mv = keys.KeyW || keys.ArrowUp || keys.KeyS || keys.ArrowDown || keys.Space || touch.act || (touch.stickId !== null && Math.hypot(touch.x, touch.y) > 0.3);
+    const mv = !PG.open && (keys.KeyW || keys.ArrowUp || keys.KeyS || keys.ArrowDown || keys.Space || touch.act || (touch.stickId !== null && Math.hypot(touch.x, touch.y) > 0.3));
     if (mv) standUp();
     else { const ch = bldSeat.ch; player.pos.set(ch.at.x, ch.seatY - 0.4, ch.at.z); player.vy = 0; player.onGround = true; player.moving = false; player.mode = 'walk';
       player.face += ((keys.KeyA || keys.ArrowLeft ? 1 : 0) - (keys.KeyD || keys.ArrowRight ? 1 : 0)) * 2 * dt; return; }
@@ -3179,7 +3871,12 @@ function stepPlayer(dt) {
   let turnIn = (keys.KeyA || keys.ArrowLeft ? 1 : 0) - (keys.KeyD || keys.ArrowRight ? 1 : 0);
   const run = keys.ShiftLeft || keys.ShiftRight;
   let speed = run ? RUN : WALK, stick = false;
-  if (touch.stickId !== null) { speed = RUN * 0.8; stick = true; }
+  if (touch.stickId !== null) {
+    if (fpView) {   // 建物の中（一人称）：スティックの上下で前後、左右でゆっくり向きを変える。カメラが体についてくるので、カメラ基準だとくるくる回ってしまう
+      const sy = Math.abs(touch.y) > 0.2 ? -touch.y : 0, sx = Math.abs(touch.x) > 0.25 ? -touch.x : 0;
+      fwdIn = Math.max(-1, Math.min(1, sy * 1.2)); turnIn = Math.max(-1, Math.min(1, sx)) * 0.6; speed = WALK;
+    } else { speed = RUN * 0.8; stick = true; }
+  }
   const ground = groundAt(player.pos.x, player.pos.z, player.pos.y);
   const inWater = ground < FLOAT_Y && player.pos.y < FLOAT_Y + 0.3;
   if (inWater) speed = stick ? SWIM * 1.3 : (run ? SWIM * 1.6 : SWIM);
@@ -3914,7 +4611,7 @@ function stepOthers(dt) {
     o.face = lerpAngle(o.face, t.f, k);
     const pv = t.pv ? vehicles.find((v) => v.id === t.pv) : null;
     if (pv) { o.pos.copy(seatWorld(pv, t.ps)); o.face = visYaw(pv); }   // 相乗りの人は、こちらの画面の船の上に立たせる
-    if (t.bl) {   // バスの中の人は、こちらの画面のバスの中に立たせる（バスはどの画面でも同じ位置）
+    if (t.bl && trafficReady) {   // バスの中の人は、こちらの画面のバスの中に立たせる（バスはどの画面でも同じ位置）
       const bb = buses[t.bb];
       if (!o.bl) o.bl = t.bl.slice();
       o.bl[0] += (t.bl[0] - o.bl[0]) * k; o.bl[1] += (t.bl[1] - o.bl[1]) * k;
@@ -4153,6 +4850,7 @@ function toggleLight() {
 const eyeW = new THREE.Vector3(), lookW = new THREE.Vector3();
 let underwater = false;
 let camBoatYaw = null;
+let fpView = false, fpYaw = 0;   // 建物の中の一人称
 function updateCamera(dt) {
   if (!(driving && ride && isBoat(ride))) camBoatYaw = null;
   if (periscope && !subRide()) setPeriscope(false);
@@ -4188,6 +4886,20 @@ function updateCamera(dt) {
     sun.position.set(b.x + SUN_DIR.x, b.y + SUN_DIR.y, b.z + SUN_DIR.z);
     return;
   }
+  const inB = !driving && !aboard && !(pod && pod.mine && !pod.landed) && blds.length ? insideBld() : null;
+  if (inB) {   // 建物の中は一人称：目の高さから。見回すと体もそちらを向き、A・D で向きを変えると視線もついてくる
+    if (!fpView) { fpView = true; camPitch = 0.05; camera.near = 0.05; camera.updateProjectionMatrix(); }
+    else if (Math.abs(wrapA(camYaw - fpYaw)) > 1e-6) player.face = camYaw - Math.PI;
+    camYaw = player.face + Math.PI; fpYaw = camYaw;
+    camPitch = THREE.MathUtils.clamp(camPitch, -1.2, 1.2);
+    const e = new THREE.Vector3(player.pos.x, player.pos.y + 1.55, player.pos.z), cp = Math.cos(camPitch);
+    camera.position.copy(e); camTarget.copy(e);
+    camera.lookAt(e.x - Math.sin(camYaw) * cp, e.y - Math.sin(camPitch), e.z - Math.cos(camYaw) * cp);
+    underwater = false;
+    sun.target.position.set(e.x, e.y, e.z); sun.position.set(e.x + SUN_DIR.x, e.y + SUN_DIR.y, e.z + SUN_DIR.z);
+    return;
+  }
+  if (fpView) { fpView = false; camPitch = 0.35; }
   if (camera.near !== 0.1) { camera.near = 0.1; camera.updateProjectionMatrix(); }
   if (driving) {
     const car = ride;
@@ -5629,8 +6341,18 @@ function hideSubmerged(v) {
 const menuEl = el('menu'), menuBtn = el('menuBtn');
 function setMenu(open) {
   menuEl.hidden = !open; menuBtn.setAttribute('aria-expanded', String(open));
-  if (open) { renderMyList(); renderVehMenu(); el('autoBtn').hidden = !canAuto(); el('autoBtn').textContent = AUTO.on ? '自動運転をやめる' : '自動運転（地図で行き先をえらぶ）'; el('aiStop').hidden = !aiSub; el('seacatBtn').hidden = !(!driving && !aboard && (player.mode === 'swim' || player.mode === 'dive')); }
+  if (open) {
+    renderMyList(); renderVehMenu();
+    el('autoBtn').hidden = !canAuto(); el('autoBtn').textContent = AUTO.on ? '🚗 自動運転をやめる' : '🚗 自動運転（地図で行き先をえらぶ）';
+    // コンピュータ対戦は潜水艦を操縦しているときだけ（対戦中は「やめる」も）
+    const inSub = driving && ride && vtype(ride) === 'sub' && !ride.ai;
+    el('aiMenu').hidden = !(inSub || aiSub); el('aiStart').hidden = !inSub || !!aiSub; el('aiStop').hidden = !aiSub;
+    el('seacatBtn').hidden = !(!driving && !aboard && (player.mode === 'swim' || player.mode === 'dive'));
+  } else setMyList(false);
 }
+// 自分が出した物：押すと一覧がひらく（たくさん出してもメニューが長くならないように）
+function setMyList(open) { el('myList').hidden = !open; el('myBtn').setAttribute('aria-expanded', String(open)); }
+el('myBtn').addEventListener('click', () => { setMyList(el('myList').hidden); renderMyList(); });
 // 乗っている船・潜水艦のボタン（画面からメニューへ移したもの）
 function renderVehMenu() {
   const vt = ride ? vtype(ride) : null, boat = driving && (vt === 'ship' || vt === 'sub');
@@ -5673,10 +6395,9 @@ async function summonSeacat() {
   } finally { seacatBusy = false; }
 }
 el('seacatBtn').addEventListener('click', () => { setMenu(false); summonSeacat(); });
-// 大陸のバス停「港」と、はじめの浜を行き来する（海を 2.5km わたらなくても路線バスに乗れる）
-const onContinent = () => player.pos.z < -2000;
+// はじめの浜バスターミナルへ戻る（地図の「砂浜に戻る」）
 function goHome() {
-  setMenu(false);
+  setMenu(false); closeWmap();
   if (driving || aboard || busRide) { showMsg('降りてから使ってください'); return; }
   const s = spawnPoint();
   player.pos.set(s.x, heightAt(s.x, s.z), s.z); player.face = s.face; camYaw = s.face + Math.PI;
@@ -5691,17 +6412,6 @@ function savePos() {
 setInterval(savePos, 3000);
 window.addEventListener('pagehide', savePos);
 document.addEventListener('visibilitychange', () => { if (document.hidden) savePos(); });
-el('busTrip').addEventListener('click', () => {
-  setMenu(false);
-  if (driving || aboard || busRide) { showMsg('降りてから使ってください'); return; }
-  {
-    const st = roadNet.stops[0], e = st.e, i = st.i, off = e.W[i] / 2 + 1.3, x = e.X[i] + e.NX[i] * off - e.NZ[i] * 4, z = e.Z[i] + e.NZ[i] * off + e.NX[i] * 4;   // 待合所のとなり、前ドアのあたり
-    player.pos.set(x, heightAt(x, z), z); player.face = Math.atan2(-e.NX[i], -e.NZ[i]); camYaw = player.face + Math.PI;
-    showMsg('バス停「港」に来ました。バスが止まってドアがあいたら「乗る」');
-  }
-  player.vy = 0; camPitch = 0.35;
-});
-
 function myThings() {
   const list = [];
   for (const v of vehicles) if (v.mine && v !== myCar) list.push({ name: v.name, kind: 'v', o: v });
@@ -5718,8 +6428,10 @@ function renderMyList() {
     b.addEventListener('click', fn); r.appendChild(b);
     box.appendChild(r);
   };
-  if (gacchiItem) row('がっち号', myCar ? 'しまう' : '出す', '', () => { toggleGacchi(); renderMyList(); });
   const list = myThings();
+  el('myCount').textContent = `（${list.length + (gacchiItem ? 1 : 0)}）`;
+  if (box.hidden) return;
+  if (gacchiItem) row('がっち号', myCar ? 'しまう' : '出す', '', () => { toggleGacchi(); renderMyList(); });
   for (const t of list) row(t.name, '消す', 'del', async () => { await removeMine(t); renderMyList(); });
   if (!list.length) { const p = document.createElement('p'); p.className = 'none'; p.textContent = 'glTF で置いた物はまだありません'; box.appendChild(p); }
 }
@@ -5868,17 +6580,38 @@ function planAuto(car, tx, tz) {
 }
 // 走る線（左の車線の中心）。交差点の角はまるめる。行き先の手前で路肩へ寄せる
 function buildAutoPath(pieces) {
-  const px = [], pz = [], py = [], joins = [], o = {};
+  const cx = [], cz = [], cnx = [], cnz = [], py = [], offs = [], joins = [], o = {};
+  // 交差点で曲がる向き（左 +1・右 -1・まっすぐ 0）。片側 2 車線の道では、ふつうの車と同じ車線をえらぶ
+  //（ふだんは左の車線、右折の手前 100m は右の車線、曲がったあと 40m はそのまま）
+  const hdAt = (p, s) => { const a = edgeAt(p.e, s, {}), b = edgeAt(p.e, s + 6 * Math.sign(p.s1 - p.s0 || 1), {}); return Math.atan2(b.x - a.x, b.z - a.z); };
+  const turnOf = (k) => {
+    if (k >= pieces.length - 1) return 0;
+    const p = pieces[k], q = pieces[k + 1], h0 = hdAt(p, p.s1 - 12 * Math.sign(p.s1 - p.s0 || 1)), h1 = hdAt(q, q.s0);
+    const t = wrapA(h1 - h0);
+    return Math.abs(t) > 0.5 ? Math.sign(t) : 0;
+  };
   pieces.forEach((p, k) => {
-    const n = Math.max(1, Math.ceil(Math.abs(p.s1 - p.s0) / RD_STEP));
-    if (k) joins.push({ at: px.length, node: p.dir > 0 ? p.e.a : p.e.b, prev: pieces[k - 1] });
+    const n = Math.max(1, Math.ceil(Math.abs(p.s1 - p.s0) / RD_STEP)), wide = p.e.w > 10.5, tEnd = turnOf(k), tPrev = k ? turnOf(k - 1) : 0;
+    const sEnd = p.dir > 0 ? p.e.L : 0, sStart = p.dir > 0 ? 0 : p.e.L;
+    if (k) joins.push({ at: cx.length, node: p.dir > 0 ? p.e.a : p.e.b, prev: pieces[k - 1] });
     for (let m = k ? 1 : 0; m <= n; m++) {
-      edgeAt(p.e, p.s0 + (p.s1 - p.s0) * m / n, o);
-      const off = 1.75 * p.dir;
-      px.push(o.x + o.nx * off); pz.push(o.z + o.nz * off); py.push(o.y);
+      const sv = p.s0 + (p.s1 - p.s0) * m / n;
+      edgeAt(p.e, sv, o);
+      let lane = LANE_IN;
+      if (wide) {
+        lane = LANE_OUT;
+        if (tEnd < 0 && Math.abs(sEnd - sv) < LANE_TURN_D) lane = LANE_IN;
+        else if (tPrev < 0 && Math.abs(sv - sStart) < LANE_AFTER_D) lane = LANE_IN;
+      }
+      cx.push(o.x); cz.push(o.z); cnx.push(o.nx * p.dir); cnz.push(o.nz * p.dir); py.push(o.y); offs.push(lane);
     }
   });
-  const N = px.length, X = Float32Array.from(px), Z = Float32Array.from(pz), Y = Float32Array.from(py);
+  { // 車線を変えるときは 40m くらいかけて、なめらかに
+    const M = offs.length, B = offs.slice();
+    for (let i = 0; i < M; i++) { let a = 0, c = 0; for (let k = Math.max(0, i - 10); k <= Math.min(M - 1, i + 10); k++) { a += B[k]; c++; } offs[i] = a / c; }
+  }
+  const N = cx.length, X = new Float32Array(N), Z = new Float32Array(N), Y = Float32Array.from(py);
+  for (let i = 0; i < N; i++) { X[i] = cx[i] + cnx[i] * offs[i]; Z[i] = cz[i] + cnz[i] * offs[i]; }
   const sm = (A, r, passes) => { for (let q = 0; q < passes; q++) { const B = Float32Array.from(A); for (let i = 1; i < N - 1; i++) { let s = 0, c = 0; for (let k = Math.max(0, i - r); k <= Math.min(N - 1, i + r); k++) { s += B[k]; c++; } A[i] = s / c; } } };
   sm(X, 4, 2); sm(Z, 4, 2); sm(Y, 3, 1);
   const S = new Float32Array(N);
@@ -6152,7 +6885,7 @@ const hhmmss = (sec) => { const d = new Date(sec * 1000); return [d.getHours(), 
 function busRecIndex(v, now) { return (((now - v.phase - (v.lag || 0)) % T_ALL) + T_ALL) % T_ALL / REC_DT; }
 function stepStopInfo(dt) {
   stopInfoT -= dt;
-  if (stopInfoT > 0) return;
+  if (stopInfoT > 0 || !trafficReady) return;
   stopInfoT = 0.5;
   const box = el('stopInfo');
   let st = null, bd = 40;
@@ -6249,7 +6982,7 @@ window.__world = {
   get driving() { return driving; },
   set camYaw(v) { camYaw = v; }, set camPitch(v) { camPitch = v; }, set camDist(v) { camDist = v; }, get camDist() { return camDist; },
   keys, touch, toggleRide, loadItem, ITEM_DEFS, heightAt, player, net, syncPeers,
-  addPropFromBuffer, blds, bldFloor, bldPush, nearBldAction, placeAt, get bldSeat() { return bldSeat; }, get dayLight() { return dayLight; },
+  addPropFromBuffer, wallet, addPoints, PG, touch, bgmState: () => ({ name: bgm.name, vol: +bgm.vol.toFixed(2), playing: !!(bgm.el && !bgm.el.paused), t: bgm.el ? +bgm.el.currentTime.toFixed(1) : 0 }), blds, bldFloor, bldPush, roadNear, nearBldAction, placeAt, get bldSeat() { return bldSeat; }, get dayLight() { return dayLight; },
   get aboard() { return aboard; }, get ride() { return ride; }, buses, get busRide() { return busRide; }, nearBusDoor, traffic, roadNet, worldHour, setHourOffset(h) { hourOffset = h; },
   hullGround, findWaterSpot, rescueBoat, get periscope() { return periscope; }, toggleLight, setPeriscope,
   teleport(x, z, y) { player.pos.set(x, y ?? heightAt(x, z), z); player.vy = 0; },
