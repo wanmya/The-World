@@ -1832,14 +1832,299 @@ function placeProp(item, name, cat, x, z, rot, id) {
   item.root.rotation.y = rot;
   scene.add(item.root);
   item.root.updateMatrixWorld(true);
-  const box = new THREE.Box3().setFromObject(item.root);
+  let box = new THREE.Box3().setFromObject(item.root);
+  if (cat === 'building') {   // 建物は、敷地のいちばん高い地面にのせる（床の中から地面が出ないように）
+    let top = -Infinity;
+    for (let gx = box.min.x; gx <= box.max.x + 0.01; gx += Math.max(0.5, (box.max.x - box.min.x) / 12)) for (let gz = box.min.z; gz <= box.max.z + 0.01; gz += Math.max(0.5, (box.max.z - box.min.z) / 12)) top = Math.max(top, heightAt(gx, gz));
+    item.root.position.y = Math.max(top, SEA + 0.05); item.root.updateMatrixWorld(true);
+    box = new THREE.Box3().setFromObject(item.root);
+  }
   const pr = { item, box, id, name, cat };
   props.push(pr);
+  if (cat === 'building') setupBuilding(pr);
   return pr;
 }
 function removeProp(pr) {
+  if (pr.bld) removeBuilding(pr);
   scene.remove(pr.item.root);
   const i = props.indexOf(pr); if (i >= 0) props.splice(i, 1);
+}
+/* ================= 使える建物 =================
+   「建物」で置いた .glb は、形そのものを床と壁として扱う（上を向いた面は床、立っている面は壁）。中を歩ける。
+   パーツの名前で役目が決まる（.glb は形と名前・カスタムプロパティだけ。動きはワールドが決める）：
+     ドア_1…：原点が蝶番。E で 90° 開く（カスタムプロパティ 開き方=横 なら原点の側へすべる）。開け閉めはみんなに共有
+     ライト_1…：夜（とスイッチで点けたとき）に光る。色・明るさ のプロパティ。本当に照らすのは近くのいくつかだけ
+     ガラス：透ける（当たり判定はある）  スイッチ：その建物のライトを点ける・消す  イス_1…：座れる（前は +Z） */
+const BLD_STEP = 0.45, BLD_CELL = 2;
+const blds = [];
+function bldRole(name) {
+  const s = String(name || '').toLowerCase();
+  if (/^(ドア|とびら|扉|door)/.test(s)) return 'door';
+  if (/^(ライト|照明|電気|light|lamp)/.test(s)) return 'light';
+  if (/^(ガラス|窓ガラス|glass)/.test(s)) return 'glass';
+  if (/^(スイッチ|switch)/.test(s)) return 'switch';
+  if (/^(イス|いす|椅子|chair|seat)/.test(s)) return 'chair';
+  return null;
+}
+const propOf = (o, keys) => { for (let p = o; p; p = p.parent) { const u = p.userData || {}; for (const k of keys) if (u[k] != null) return u[k]; } return null; };
+function setupBuilding(pr) {
+  const root = pr.item.root;
+  root.updateMatrixWorld(true);
+  const parts = { door: [], light: [], glass: [], switch: [], chair: [] };
+  const roleOf = new Map();
+  (function walk(o, role) {
+    const r = role || bldRole(o.name);
+    if (r && !role) parts[r].push(o);
+    if (r) roleOf.set(o, r);
+    for (const c of o.children) walk(c, r);
+  })(root, null);
+  const b = { pr, box: pr.box.clone().expandByScalar(0.5), floors: new Map(), walls: new Map(), tris: [], stamp: null, doors: [], lights: [], switches: [], chairs: [], manual: null, rayMeshes: [] };
+  // ガラスは透かす
+  for (const g of parts.glass) g.traverse((m) => { if (m.isMesh) { m.material = m.material.clone(); Object.assign(m.material, { transparent: true, opacity: 0.32, depthWrite: false }); m.castShadow = false; } });
+  // 床と壁の三角形を集める（ドア・ライト・イス・スイッチは除く。ガラスは壁）
+  const A = new THREE.Vector3(), B = new THREE.Vector3(), Cv = new THREE.Vector3(), N = new THREE.Vector3(), E1 = new THREE.Vector3(), E2 = new THREE.Vector3();
+  const rayPos = [];
+  root.traverse((m) => {
+    if (!m.isMesh || !m.geometry || !m.geometry.attributes.position) return;
+    const r = roleOf.get(m);
+    if (r && r !== 'glass') return;
+    const pos = m.geometry.attributes.position, idx = m.geometry.index, n = idx ? idx.count : pos.count;
+    for (let i = 0; i + 2 < n; i += 3) {
+      const ia = idx ? idx.getX(i) : i, ib = idx ? idx.getX(i + 1) : i + 1, ic = idx ? idx.getX(i + 2) : i + 2;
+      A.fromBufferAttribute(pos, ia).applyMatrix4(m.matrixWorld); B.fromBufferAttribute(pos, ib).applyMatrix4(m.matrixWorld); Cv.fromBufferAttribute(pos, ic).applyMatrix4(m.matrixWorld);
+      N.crossVectors(E1.subVectors(B, A), E2.subVectors(Cv, A));
+      const len = N.length(); if (len < 1e-6) continue;
+      const t = [A.x, A.y, A.z, B.x, B.y, B.z, Cv.x, Cv.y, Cv.z], k = b.tris.length;
+      b.tris.push(t);
+      rayPos.push(...t);
+      const grid = Math.abs(N.y / len) > 0.6 ? b.floors : b.walls;
+      const x0 = Math.floor(Math.min(A.x, B.x, Cv.x) / BLD_CELL), x1 = Math.floor(Math.max(A.x, B.x, Cv.x) / BLD_CELL);
+      const z0 = Math.floor(Math.min(A.z, B.z, Cv.z) / BLD_CELL), z1 = Math.floor(Math.max(A.z, B.z, Cv.z) / BLD_CELL);
+      for (let ix = x0; ix <= x1; ix++) for (let iz = z0; iz <= z1; iz++) { const key = ix * 100003 + iz; let a = grid.get(key); if (!a) grid.set(key, (a = [])); a.push(k); }
+    }
+  });
+  b.stamp = new Int32Array(b.tris.length);
+  // カメラが壁の向こうへ行かないように調べる、見えない形
+  if (rayPos.length) {
+    const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(rayPos, 3));
+    const rm = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ side: THREE.DoubleSide })); rm.visible = false; rm.matrixAutoUpdate = false; rm.updateMatrixWorld(true);
+    b.rayMeshes.push(rm);
+  }
+  // ドア：原点が蝶番。板の広い向きを幅、うすい向きを厚さとする
+  for (const d of parts.door) {
+    const inv = new THREE.Matrix4().copy(d.matrixWorld).invert(), lb = new THREE.Box3(), v = new THREE.Vector3();
+    d.traverse((m) => { if (!m.isMesh) return; const p = m.geometry.attributes.position; for (let i = 0; i < p.count; i++) lb.expandByPoint(v.fromBufferAttribute(p, i).applyMatrix4(m.matrixWorld).applyMatrix4(inv)); });
+    if (lb.isEmpty()) continue;
+    const alongX = lb.max.x - lb.min.x >= lb.max.z - lb.min.z;
+    const slide = /横|スライド|slide|引/.test(String(propOf(d, ['開き方', 'open', 'type']) || ''));
+    b.doors.push({ o: d, lb, alongX, slide, rot0: d.rotation.y, pos0: d.position.clone(), t: 0, want: 0, sign: 1, c0: lb.getCenter(new THREE.Vector3()).applyMatrix4(d.matrixWorld) });
+  }
+  for (const l of parts.light) {
+    const col = new THREE.Color(0xfff1d6); const c = propOf(l, ['色', 'color']); if (c) { try { col.set(String(c)); } catch (e) { /* そのまま */ } }
+    const pow = THREE.MathUtils.clamp(Number(propOf(l, ['明るさ', 'brightness'])) || 1, 0.2, 3);
+    const mats = [];
+    l.traverse((m) => { if (m.isMesh) { m.material = m.material.clone(); if ('emissive' in m.material) mats.push(m.material); } });
+    const c0 = new THREE.Box3().setFromObject(l).getCenter(new THREE.Vector3());
+    b.lights.push({ o: l, col, pow, mats, at: c0, on: null });
+  }
+  for (const s of parts.switch) b.switches.push({ o: s, at: new THREE.Box3().setFromObject(s).getCenter(new THREE.Vector3()) });
+  for (const c of parts.chair) {
+    const bb = new THREE.Box3().setFromObject(c), at = bb.getCenter(new THREE.Vector3());
+    const fw = new THREE.Vector3(0, 0, 1).transformDirection(c.matrixWorld); fw.y = 0; fw.normalize();
+    b.chairs.push({ o: c, at, seatY: bb.min.y + Math.min(0.45, (bb.max.y - bb.min.y) * 0.55), face: Math.atan2(fw.x, fw.z) });
+  }
+  pr.bld = b;
+  blds.push(b);
+  return b;
+}
+function removeBuilding(pr) {
+  const i = blds.indexOf(pr.bld); if (i >= 0) blds.splice(i, 1);
+  if (bldSeat && bldSeat.b === pr.bld) bldSeat = null;
+  pr.bld = null;
+}
+const nearBld = (b, x, z, m) => x > b.box.min.x - m && x < b.box.max.x + m && z > b.box.min.z - m && z < b.box.max.z + m;
+// (x, z) の、高さ y + 段差ぶん より下でいちばん高い床（なければ -Infinity）
+function bldFloor(x, z, y) {
+  let best = -Infinity;
+  const key = Math.floor(x / BLD_CELL) * 100003 + Math.floor(z / BLD_CELL);
+  for (const b of blds) {
+    if (!nearBld(b, x, z, 0)) continue;
+    const a = b.floors.get(key); if (!a) continue;
+    for (const k of a) {
+      const t = b.tris[k];
+      const d = (t[5] - t[8]) * (t[0] - t[6]) + (t[6] - t[3]) * (t[2] - t[8]);
+      if (Math.abs(d) < 1e-9) continue;
+      const l1 = ((t[5] - t[8]) * (x - t[6]) + (t[6] - t[3]) * (z - t[8])) / d, l2 = ((t[8] - t[2]) * (x - t[6]) + (t[0] - t[6]) * (z - t[8])) / d, l3 = 1 - l1 - l2;
+      if (l1 < -1e-4 || l2 < -1e-4 || l3 < -1e-4) continue;
+      const h = l1 * t[1] + l2 * t[4] + l3 * t[7];
+      if (h <= y + BLD_STEP && h > best) best = h;
+    }
+  }
+  return best;
+}
+// 円（x, z, 半径 R）を、線分 (ax,az)-(bx,bz) から押し出す
+function pushCircle(p, R, ax, az, bx, bz) {
+  const dx = bx - ax, dz = bz - az, l2 = dx * dx + dz * dz;
+  let t = l2 > 1e-9 ? ((p.x - ax) * dx + (p.z - az) * dz) / l2 : 0; t = Math.max(0, Math.min(1, t));
+  const cx = ax + dx * t, cz = az + dz * t, ex = p.x - cx, ez = p.z - cz, d = Math.hypot(ex, ez);
+  if (d >= R) return;
+  if (d < 1e-5) { const n = Math.hypot(dz, dx) || 1; p.x += (-dz / n) * R; p.z += (dx / n) * R; return; }
+  p.x += (ex / d) * (R - d); p.z += (ez / d) * (R - d);
+}
+const DOOR_A = new THREE.Vector3(), DOOR_B = new THREE.Vector3();
+let bldStampN = 0;
+// 壁とドアに体がめりこまないように押し出す（足もとの段差は乗りこえる）
+function bldPush(p, R) {
+  const x0 = Math.floor((p.x - R) / BLD_CELL), x1 = Math.floor((p.x + R) / BLD_CELL), z0 = Math.floor((p.z - R) / BLD_CELL), z1 = Math.floor((p.z + R) / BLD_CELL);
+  for (const b of blds) {
+    if (!nearBld(b, p.x, p.z, R + 1)) continue;
+    for (const hy of [p.y + BLD_STEP + 0.1, p.y + 1.0, p.y + P_H - 0.15]) {
+      bldStampN++;
+      for (let ix = x0; ix <= x1; ix++) for (let iz = z0; iz <= z1; iz++) {
+        const a = b.walls.get(ix * 100003 + iz); if (!a) continue;
+        for (const k of a) {
+          if (b.stamp[k] === bldStampN) continue; b.stamp[k] = bldStampN;
+          const t = b.tris[k], pts = [];
+          for (const [i, j] of [[0, 3], [3, 6], [6, 0]]) {
+            const ya = t[i + 1], yb = t[j + 1];
+            if ((ya - hy) * (yb - hy) <= 0 && ya !== yb) { const f = (hy - ya) / (yb - ya); pts.push(t[i] + (t[j] - t[i]) * f, t[i + 2] + (t[j + 2] - t[i + 2]) * f); }
+          }
+          if (pts.length >= 4) pushCircle(p, R, pts[0], pts[1], pts[2], pts[3]);
+        }
+      }
+    }
+    for (const d of b.doors) {
+      const lb = d.lb, m = d.o.matrixWorld;
+      if (d.alongX) { const zc = (lb.min.z + lb.max.z) / 2; DOOR_A.set(lb.min.x, 0, zc); DOOR_B.set(lb.max.x, 0, zc); }
+      else { const xc = (lb.min.x + lb.max.x) / 2; DOOR_A.set(xc, 0, lb.min.z); DOOR_B.set(xc, 0, lb.max.z); }
+      DOOR_A.applyMatrix4(m); DOOR_B.applyMatrix4(m);
+      const yb = new THREE.Vector3(0, lb.min.y, 0).applyMatrix4(m).y, yt = yb + (lb.max.y - lb.min.y);
+      if (p.y + P_H < yb || p.y + BLD_STEP > yt) continue;
+      const th = (d.alongX ? lb.max.z - lb.min.z : lb.max.x - lb.min.x) / 2;
+      pushCircle(p, R + th, DOOR_A.x, DOOR_A.z, DOOR_B.x, DOOR_B.z);
+    }
+  }
+}
+// ドアの開き具合を見た目に
+function poseDoor(d) {
+  const o = d.o;
+  if (d.slide) {
+    const w = d.alongX ? d.lb.max.x - d.lb.min.x : d.lb.max.z - d.lb.min.z, c = d.alongX ? (d.lb.min.x + d.lb.max.x) / 2 : (d.lb.min.z + d.lb.max.z) / 2;
+    const dir = c > 0 ? -1 : 1, off = new THREE.Vector3(d.alongX ? dir * w * 0.95 * d.t : 0, 0, d.alongX ? 0 : dir * w * 0.95 * d.t);
+    o.position.copy(d.pos0).add(off.applyQuaternion(o.quaternion));
+  } else o.rotation.y = d.rot0 + d.sign * d.t * Math.PI / 2;
+  o.updateMatrixWorld(true);
+}
+function doorCenter(d, out) { return d.lb.getCenter(out).applyMatrix4(d.o.matrixWorld); }
+// ドアを開ける・閉める。開き戸は、開ける人から遠ざかる向きへ
+function setDoor(b, k, open, sign, send) {
+  const d = b.doors[k]; if (!d) return;
+  if (open && sign == null && !d.slide) {
+    const save = d.t, c = new THREE.Vector3(), res = [];
+    for (const s of [1, -1]) { d.sign = s; d.t = 1; poseDoor(d); res.push(doorCenter(d, c).distanceTo(player.pos)); }
+    d.t = save; poseDoor(d);
+    sign = res[0] >= res[1] ? 1 : -1;
+  }
+  if (open && sign != null) d.sign = sign;
+  d.want = open ? 1 : 0;
+  if (send && net.room && b.pr.id) net.room.emit('bld', { id: b.pr.id, d: k, o: open ? 1 : 0, s: d.sign }).catch(() => {});
+}
+function setBldLights(b, on, send) {
+  b.manual = on;
+  if (send && net.room && b.pr.id) net.room.emit('bld', { id: b.pr.id, l: on ? 1 : 0 }).catch(() => {});
+}
+function onBldMsg(p) {
+  const m = p.data || p, b = blds.find((x) => x.pr.id === m.id);
+  if (!b) return;
+  if (Number.isInteger(m.d)) setDoor(b, m.d, !!m.o, m.s === -1 ? -1 : 1, false);
+  if (m.l === 0 || m.l === 1) b.manual = !!m.l;
+}
+// あとから来た人に、開いているドアと、スイッチで変えたライトを知らせる
+function sendBldStates() {
+  if (!net.room) return;
+  for (const b of blds) {
+    if (!b.pr.id) continue;
+    b.doors.forEach((d, k) => { if (d.want) net.room.emit('bld', { id: b.pr.id, d: k, o: 1, s: d.sign }).catch(() => {}); });
+    if (b.manual != null) net.room.emit('bld', { id: b.pr.id, l: b.manual ? 1 : 0 }).catch(() => {});
+  }
+}
+// 近くでできること（ドア・スイッチ・イス）
+let bldSeat = null;
+function nearBldAction() {
+  if (bldSeat) return { kind: 'stand', text: 'イスから', btn: '立つ' };
+  let best = null, bd = 1.7;
+  const c = new THREE.Vector3(), pp = new THREE.Vector3(player.pos.x, player.pos.y + 1, player.pos.z);
+  for (const b of blds) {
+    if (!nearBld(b, player.pos.x, player.pos.z, 2)) continue;
+    b.doors.forEach((d, k) => { const dist = doorCenter(d, c).distanceTo(pp); if (dist < bd + 0.3) { bd = dist - 0.3; best = { kind: 'door', b, k, text: 'ドアを', btn: d.want ? '閉める' : '開ける' }; } });
+    b.switches.forEach((s) => { const dist = s.at.distanceTo(pp); if (dist < bd) { bd = dist; best = { kind: 'switch', b, text: 'ライトを', btn: bldLightsOn(b) ? '消す' : '点ける' }; } });
+    b.chairs.forEach((ch, k) => { const dist = Math.hypot(ch.at.x - pp.x, ch.at.z - pp.z); if (dist < bd && Math.abs(ch.seatY - player.pos.y) < 1.2) { bd = dist; best = { kind: 'chair', b, k, text: 'イスに', btn: '座る' }; } });
+  }
+  if (!best) { const b = insideBld(); if (b) best = { kind: 'switch', b, text: 'へやのライトを', btn: bldLightsOn(b) ? '消す' : '点ける' }; }   // 建物の中ならどこでも
+  return best;
+}
+function doBldAction(a) {
+  if (a.kind === 'door') {   // となりあう 2 枚のドア（両開き・両引き）はいっしょに動かす
+    const d0 = a.b.doors[a.k], open = !d0.want;
+    a.b.doors.forEach((d, k) => { if (k === a.k || (d.slide === d0.slide && d.c0.distanceTo(d0.c0) < 2.4 && !!d.want !== open)) setDoor(a.b, k, open, null, true); });
+  }
+  else if (a.kind === 'switch') setBldLights(a.b, !bldLightsOn(a.b), true);
+  else if (a.kind === 'chair') { const ch = a.b.chairs[a.k]; bldSeat = { b: a.b, ch }; player.face = ch.face; player.vy = 0; }
+  else if (a.kind === 'stand') standUp();
+}
+function standUp() {
+  if (!bldSeat) return;
+  const ch = bldSeat.ch; bldSeat = null;
+  player.pos.x = ch.at.x + Math.sin(ch.face) * 0.7; player.pos.z = ch.at.z + Math.cos(ch.face) * 0.7;
+  player.pos.y = Math.max(bldFloor(player.pos.x, player.pos.z, ch.seatY - 0.3), groundAt(player.pos.x, player.pos.z, ch.seatY));
+}
+// いま中にいる建物（屋根の下にいる）
+function insideBld() {
+  const q = player.pos;
+  for (const b of blds) if (nearBld(b, q.x, q.z, -0.5) && q.y < b.pr.box.max.y - 1 && bldFloor(q.x, q.z, q.y) > -Infinity && hasRoof(b, q)) return b;
+  return null;
+}
+const ROOF_RAY = new THREE.Raycaster(), UPV = new THREE.Vector3(0, 1, 0), ROOF_O = new THREE.Vector3();
+function hasRoof(b, q) {
+  ROOF_O.set(q.x, q.y + 1.2, q.z); ROOF_RAY.set(ROOF_O, UPV); ROOF_RAY.far = 30;
+  return b.rayMeshes.some((rm) => ROOF_RAY.intersectObject(rm, false).length > 0);
+}
+const bldLightsOn = (b) => (b.manual != null ? b.manual : dayLight < 0.35);
+// ライトの光り方と、近くのライトだけ本当に照らす（数を決めておくので、点け消しで重くならない）
+const LAMP_POOL = [];
+for (let i = 0; i < (coarse ? 2 : 4); i++) { const L = new THREE.PointLight(0xfff1d6, 0, 14, 1.6); scene.add(L); LAMP_POOL.push(L); }
+let lampT = 0;
+const VLAMP = { at: new THREE.Vector3(), col: new THREE.Color(0xfff1d6), pow: 0.8 };
+function stepBuildings(dt) {
+  for (const b of blds) for (const d of b.doors) if (d.t !== d.want) { d.t += Math.sign(d.want - d.t) * Math.min(Math.abs(d.want - d.t), dt * 1.8); poseDoor(d); }
+  lampT -= dt; if (lampT > 0) return; lampT = 0.25;
+  const cand = [], cx = camera.position.x, cz = camera.position.z;
+  for (const b of blds) {
+    const on = bldLightsOn(b);
+    for (const l of b.lights) {
+      if (l.on !== on) { l.on = on; for (const m of l.mats) { m.emissive.copy(on ? l.col : new THREE.Color(0)); m.emissiveIntensity = on ? 1.4 : 0; } }
+      if (on) { const d = Math.hypot(l.at.x - cx, l.at.z - cz); if (d < 70) cand.push([d, l]); }
+    }
+    if (!b.lights.length && on && insideBld() === b) {   // ライトのない建物：中にいる人の頭の上を照らす
+      VLAMP.at.set(player.pos.x, player.pos.y + 2.3, player.pos.z); cand.push([-1, VLAMP]);
+    }
+  }
+  cand.sort((a, b) => a[0] - b[0]);
+  LAMP_POOL.forEach((L, i) => { const c = cand[i]; if (c) { L.position.copy(c[1].at); L.position.y -= 0.15; L.color.copy(c[1].col); L.intensity = 6 * c[1].pow; } else L.intensity = 0; });
+}
+// カメラと自分のあいだに建物の壁や屋根があれば、その手前までカメラを寄せる
+const bldRay = new THREE.Raycaster();
+function bldCamClip(target, camP) {
+  const dir = new THREE.Vector3().subVectors(camP, target), len = dir.length();
+  if (len < 0.01) return;
+  dir.divideScalar(len);
+  let hit = len;
+  for (const b of blds) {
+    if (!nearBld(b, target.x, target.z, len + 1)) continue;
+    bldRay.set(target, dir); bldRay.far = len;
+    for (const rm of b.rayMeshes) { const r = bldRay.intersectObject(rm, false)[0]; if (r && r.distance < hit) hit = r.distance; }
+  }
+  if (hit < len) camP.copy(target).addScaledVector(dir, Math.max(0.2, hit - 0.25));
 }
 // .glb を読んで、選んだ種類の形にする（自動車はルールに合わないと CarRuleError）
 async function buildThing(buf, name, cat, wheels) {
@@ -1850,7 +2135,8 @@ async function addPropFromBuffer(buf, name, cat, wheels) {
   const item = await buildThing(buf, name, cat, wheels);   // 乗り物のルール違反はここで投げる
   const veh = VEHICLE_CATS.has(cat), V = veh ? item.def.vehicle : null;
   const f = new THREE.Vector3(Math.sin(player.face), 0, Math.cos(player.face));
-  const ahead = veh ? 3 + Math.max(V.halfLength, V.halfWidth) : 4;
+  let ahead = veh ? 3 + Math.max(V.halfLength, V.halfWidth) : 4;
+  if (cat === 'building') { const sz = new THREE.Box3().setFromObject(item.root).getSize(new THREE.Vector3()); ahead = 2 + Math.max(sz.x, sz.z) / 2; }   // 建物は自分にかぶらない所に、入口（+Z）をこちらに向けて
   const at = player.pos.clone().addScaledVector(f, ahead);
   let x = clampX(at.x, 4), z = clampZ(at.z, 4);
   const rot = wrapA(veh ? player.face : player.face + Math.PI);
@@ -2222,6 +2508,7 @@ function toggleRide() {
   if (aboard) { getOff(); return; }
   if (ride) { leaveRide(false); return; }
   const nb = nearBusDoor();
+  if (!nb && !nearCar()) { const ba = nearBldAction(); if (ba) { doBldAction(ba); return; } }
   if (nb) { boardBus(nb); return; }
   const v = nearCar();
   if (!v) return;
@@ -2877,6 +3164,12 @@ function pushFromCar(V, cx, cz, cy, h) {
   }
 }
 function stepPlayer(dt) {
+  if (bldSeat) {   // イスに座っている：動こうとしたら立つ
+    const mv = keys.KeyW || keys.ArrowUp || keys.KeyS || keys.ArrowDown || keys.Space || touch.act || (touch.stickId !== null && Math.hypot(touch.x, touch.y) > 0.3);
+    if (mv) standUp();
+    else { const ch = bldSeat.ch; player.pos.set(ch.at.x, ch.seatY - 0.4, ch.at.z); player.vy = 0; player.onGround = true; player.moving = false; player.mode = 'walk';
+      player.face += ((keys.KeyA || keys.ArrowLeft ? 1 : 0) - (keys.KeyD || keys.ArrowRight ? 1 : 0)) * 2 * dt; return; }
+  }
   // ↑↓ で向いている方へ進む・下がる、←→ で向きを変える（カメラの向きとは関係なし）
   let fwdIn = (keys.KeyW || keys.ArrowUp ? 1 : 0) - (keys.KeyS || keys.ArrowDown ? 1 : 0);
   let turnIn = (keys.KeyA || keys.ArrowLeft ? 1 : 0) - (keys.KeyD || keys.ArrowRight ? 1 : 0);
@@ -2937,6 +3230,7 @@ function stepPlayer(dt) {
   let g2 = groundAt(player.pos.x, player.pos.z, player.pos.y);
   const roof = archTop(player.pos.x, player.pos.z);   // トンネルの屋根の上は歩ける（下をくぐるときは関係ない）
   if (roof > g2 && player.pos.y > roof - 1.2) g2 = roof;
+  if (blds.length) { const bf = bldFloor(player.pos.x, player.pos.z, player.pos.y - Math.min(0, player.vy * dt)); if (bf > g2) g2 = bf; }   // 建物の床・階段
   if (player.pos.y <= g2) { player.pos.y = g2; player.vy = Math.max(0, player.vy); player.onGround = true; if (!inWater) player.mode = 'walk'; }
 
   // 車にめり込まない（車の高さより上なら乗り越えられる）。自分の車も、ほかの人の車も
@@ -2952,7 +3246,9 @@ function stepPlayer(dt) {
       else { player.pos.x += (dx / d) * (R - d); player.pos.z += (dz / d) * (R - d); }
     }
   }
+  if (blds.length) bldPush(player.pos, P_R);   // 建物の壁とドア
   for (const pr of props) {
+    if (pr.bld) continue;
     const b = pr.box;
     if (player.pos.y >= b.max.y - 0.05) {
       if (player.pos.x > b.min.x && player.pos.x < b.max.x && player.pos.z > b.min.z && player.pos.z < b.max.z && player.pos.y < b.max.y + 0.05 && player.vy <= 0) {
@@ -3771,6 +4067,7 @@ async function startNet() {
     if (!p || typeof p.by !== 'string' || p.by.length > 40) return;
     const n = cleanName(p.n);
     net.names.set(p.by, n);
+    if (!others.has(p.tab)) setTimeout(sendBldStates, 400 + Math.random() * 800);   // 来た人に、開いているドアなどを知らせる
     others.set(p.tab, { by: p.by, presence: p, at: performance.now() });
     syncPeers(peerList());
   });
@@ -3786,6 +4083,7 @@ async function startNet() {
   ch.on('broadcast', { event: 'ping' }, ({ payload }) => { const p = heard(payload); if (p) onPing(p); });
   ch.on('broadcast', { event: 'load' }, ({ payload }) => { const p = heard(payload); if (p) onLoadSound(p); });
   ch.on('broadcast', { event: 'eject' }, ({ payload }) => { const p = heard(payload); if (p) onEject(p); });
+  ch.on('broadcast', { event: 'bld' }, ({ payload }) => { const p = heard(payload); if (p) onBldMsg(p); });
   ch.on('presence', { event: 'leave' }, ({ key }) => { if (others.delete(key)) syncPeers(peerList()); });
   // 置いた物の知らせは別の通り道にする（こちらがうまくいかなくても、みんなの姿は見える）
   sb.channel('world-props').on('postgres_changes', { event: '*', schema: 'public', table: 'props' }, (m) => {
@@ -3904,6 +4202,7 @@ function updateCamera(dt) {
   camera.far = Math.max(VIEW_R + 200, dist * 6);
   camPos.set(Math.sin(camYaw) * Math.cos(camPitch), Math.sin(camPitch), Math.cos(camYaw) * Math.cos(camPitch)).multiplyScalar(dist).add(camTarget);
   camPos.y = Math.max(heightAt(camPos.x, camPos.z) + 0.4, camPos.y);   // 地面の中にカメラを入れない
+  if (blds.length) { bldCamClip(camTarget, camPos); if (camPos.distanceTo(camTarget) < dist * 0.6) camera.position.copy(camPos); }   // 建物の中では壁の手前まで寄せる
   camera.position.lerp(camPos, 1 - Math.exp(-14 * dt));
   camera.position.y = Math.max(heightAt(camera.position.x, camera.position.z) + 0.3, camera.position.y);
   camera.lookAt(camTarget);
@@ -3950,6 +4249,7 @@ function updateUi() {
   if (lastUi.startsWith('bus|')) { el('navLine').hidden = true; el('speedBox').hidden = true; }
   const nv = !ride && !aboard ? nearCar() : null;
   const near = !!nv;
+  const ba = !ride && !aboard && !nv && blds.length ? nearBldAction() : null;   // ドア・スイッチ・イス
   const vt = ride ? vtype(ride) : null;
   const sea = ride && isBoat(ride);   // 船・潜水艦はノット（1 ノット = 1.852 km/h）
   const kmh = ride ? Math.round(Math.abs(ride.vF) * (sea ? 3.6 / 1.852 : 3.6)) : 0;
@@ -3968,7 +4268,7 @@ function updateUi() {
     const t = targetNow(ag);
     tgtTxt = t ? `目標 ${t.name}　方位 ${fmtB(bearingOf(Math.atan2(t.x - ag.pos.x, t.z - ag.pos.y)))}°・${Math.round(Math.hypot(t.x - ag.pos.x, t.z - ag.pos.y))}m　${ag.gunState || ''}` : 'レーダーを開いて目標を選ぶ';
   }
-  const key = [mode, near, share, kmh, alt, vname, vt, periscope, navTxt, hpTxt, tgtTxt].join('|');
+  const key = [mode, near, share, kmh, alt, vname, vt, periscope, navTxt, hpTxt, tgtTxt, ba ? ba.text + ba.btn : ''].join('|');
   if (key === lastUi) return;
   lastUi = key;
   el('state').textContent = mode === 'drive' ? `${vname}を${DRIVE_VERB[vt]}中` : mode === 'ride' ? `${vname}に相乗り中` : STATE_TEXT[mode];
@@ -3978,9 +4278,9 @@ function updateUi() {
   el('speedBox').hidden = !driving;
   el('speed').textContent = kmh;
   el('speedUnit').textContent = sea ? 'kt' : 'km/h';
-  el('prompt').hidden = !(near || driving || aboard);
-  el('promptText').textContent = driving || aboard ? `${vname}から` : share ? `${vname}に相乗り` : `${vname}に`;
-  el('promptBtn').textContent = driving || aboard ? '降りる' : '乗る';
+  el('prompt').hidden = !(near || driving || aboard || ba);
+  el('promptText').textContent = driving || aboard ? `${vname}から` : share ? `${vname}に相乗り` : ba ? ba.text : `${vname}に`;
+  el('promptBtn').textContent = driving || aboard ? '降りる' : ba ? ba.btn : '乗る';
   const wet = !driving && !aboard && (mode === 'swim' || mode === 'dive');
   tAct.hidden = vt === 'ship' || vt === 'sub' || !!aboard;
   tAct.textContent = vt === 'sub' ? 'うく' : vt === 'plane' ? '上昇' : vt === 'robot' ? 'ブレーキ' : vt ? 'サイド' : wet ? 'うく' : 'ジャンプ';
@@ -5448,8 +5748,9 @@ function frame() {
   stepPods(dt);
   stepWrecks(dt);
   for (const v of vehicles) stepVehicle(v, dt);
+  stepBuildings(dt);
   if (aboard) { player.pos.copy(seatWorld(aboard.v, aboard.seat)); player.vy = 0; player.face = visYaw(aboard.v); player.mode = 'walk'; }
-  avatar.visible = !driving && !busRide && !(aboard && vtype(aboard.v) === 'sub') && !(pod && pod.mine && !pod.landed);
+  avatar.visible = camera.position.distanceTo(camTarget) > 0.9 && !driving && !busRide && !(aboard && vtype(aboard.v) === 'sub') && !(pod && pod.mine && !pod.landed);
   avatar.position.copy(player.pos);
   avatar.rotation.y = player.face;
   avatar.rotation.x = player.mode === 'dive' ? 0.9 : 0;
@@ -5676,6 +5977,7 @@ window.__world = {
   get driving() { return driving; },
   set camYaw(v) { camYaw = v; }, set camPitch(v) { camPitch = v; }, set camDist(v) { camDist = v; }, get camDist() { return camDist; },
   keys, touch, toggleRide, loadItem, ITEM_DEFS, heightAt, player, net, syncPeers,
+  addPropFromBuffer, blds, bldFloor, bldPush, nearBldAction, placeAt, get bldSeat() { return bldSeat; }, get dayLight() { return dayLight; },
   get aboard() { return aboard; }, get ride() { return ride; }, buses, get busRide() { return busRide; }, nearBusDoor, traffic, roadNet, worldHour, setHourOffset(h) { hourOffset = h; },
   hullGround, findWaterSpot, rescueBoat, get periscope() { return periscope; }, toggleLight, setPeriscope,
   teleport(x, z, y) { player.pos.set(x, y ?? heightAt(x, z), z); player.vy = 0; },
