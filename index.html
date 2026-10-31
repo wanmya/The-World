@@ -2004,6 +2004,35 @@ function setupBuilding(pr) {
     const fw = new THREE.Vector3(0, 0, 1).transformDirection(c.matrixWorld); fw.y = 0; fw.normalize();
     b.chairs.push({ o: c, at, seatY: bb.min.y + Math.min(0.45, (bb.max.y - bb.min.y) * 0.55), face: Math.atan2(fw.x, fw.z) });
   }
+  // 看板（名前が 看板… / sign…）や、カスタムプロパティ 点滅 がある部品はチカチカ光らせる。点滅 に数字を入れると、その秒数で 1 回点滅
+  b.blinks = [];
+  (function walkBlink(o, hit) {
+    let me = hit;
+    if (!me) {
+      const u = o.userData || {}, bk = Object.keys(u).find((k) => /^(点滅|blink)$/i.test(k));
+      if (bk && !/^(いいえ|なし|no|false|0)$/i.test(String(u[bk]))) me = { per: Number(u[bk]) > 0.1 ? Number(u[bk]) : 1, ph: b.blinks.length * 0.37 };
+      else if (/^(看板|sign|ネオン|neon)/i.test(o.name)) me = { per: 1, ph: b.blinks.length * 0.37 };
+    }
+    if (me && o.isMesh) {
+      o.material = o.material.clone();
+      if ('emissive' in o.material) {
+        if (o.material.emissive.getHex() === 0) o.material.emissive.copy(o.material.color);
+        b.blinks.push({ m: o.material, base: Math.max(0.5, o.material.emissiveIntensity || 0), per: me.per, ph: me.ph });
+      }
+    }
+    for (const c of o.children) walkBlink(c, me);
+  })(root, null);
+  // 建物か、どれかのライトのカスタムプロパティ ライト / 点灯 = いつも なら、昼でもライトを点けておく
+  // お店（用途 に 店）も、ライトはいつも点いていて、お客はさわれない
+  b.always = false; let shop = false, shut = 0;
+  root.traverse((o) => { for (const [k, v] of Object.entries(o.userData || {})) {
+    if (/^(ライト|点灯|照明|lights?)$/i.test(k) && /いつも|常時|always/i.test(String(v))) b.always = true;
+    if (/^(用途|use)$/i.test(k) && /店|ショップ|shop|store/i.test(String(v))) shop = true;
+    if (/^(閉まる|自動|autoclose)$/i.test(k) && Number(v) > 0) shut = Number(v);
+  } });
+  if (shop) b.always = true;
+  // ドアがひとりでに閉まる：ドアか建物に 閉まる = 秒数。お店は 3 秒。だれもドアのそばにいなくなってから数える
+  for (const d of b.doors) { const v = Number(propOf(d.o, ['閉まる', '自動', 'autoclose'])); d.auto = v > 0 ? v : (shut || (shop ? 3 : 0)); d.hold = 0; }
   pr.bld = b;
   blds.push(b);
   return b;
@@ -2128,10 +2157,10 @@ function nearBldAction() {
   for (const b of blds) {
     if (!nearBld(b, player.pos.x, player.pos.z, 2)) continue;
     b.doors.forEach((d, k) => { const dist = Math.min(doorCenter(d, c).distanceTo(pp), d.c0.distanceTo(pp)); if (dist < bd + 0.3) { bd = dist - 0.3; best = { kind: 'door', b, k, text: 'ドアを', btn: d.want ? '閉める' : '開ける' }; } });
-    b.switches.forEach((s) => { const dist = s.at.distanceTo(pp); if (dist < bd) { bd = dist; best = { kind: 'switch', b, text: 'ライトを', btn: bldLightsOn(b) ? '消す' : '点ける' }; } });
+    if (!b.always) b.switches.forEach((s) => { const dist = s.at.distanceTo(pp); if (dist < bd) { bd = dist; best = { kind: 'switch', b, text: 'ライトを', btn: bldLightsOn(b) ? '消す' : '点ける' }; } });
     b.chairs.forEach((ch, k) => { const dist = Math.hypot(ch.at.x - pp.x, ch.at.z - pp.z); if (dist < bd && Math.abs(ch.seatY - player.pos.y) < 1.2) { bd = dist; best = { kind: 'chair', b, k, text: 'イスに', btn: '座る' }; } });
   }
-  if (!best) { const b = insideBld(); if (b) best = { kind: 'switch', b, text: 'へやのライトを', btn: bldLightsOn(b) ? '消す' : '点ける' }; }   // 建物の中ならどこでも
+  if (!best) { const b = insideBld(); if (b && !b.always) best = { kind: 'switch', b, text: 'へやのライトを', btn: bldLightsOn(b) ? '消す' : '点ける' }; }   // 建物の中ならどこでも
   return best;
 }
 function doBldAction(a) {
@@ -2160,7 +2189,7 @@ function hasRoof(b, q) {
   ROOF_O.set(q.x, q.y + 1.2, q.z); ROOF_RAY.set(ROOF_O, UPV); ROOF_RAY.far = 30;
   return b.rayMeshes.some((rm) => ROOF_RAY.intersectObject(rm, false).length > 0);
 }
-const bldLightsOn = (b) => (b.manual != null ? b.manual : dayLight < 0.35);
+const bldLightsOn = (b) => (b.always || (b.manual != null ? b.manual : dayLight < 0.35));
 // ライトの光り方と、近くのライトだけ本当に照らす（数を決めておくので、点け消しで重くならない）
 const LAMP_POOL = [];
 for (let i = 0; i < (coarse ? 2 : 4); i++) { const L = new THREE.PointLight(0xfff1d6, 0, 14, 1.6); scene.add(L); LAMP_POOL.push(L); }
@@ -2168,6 +2197,16 @@ let lampT = 0;
 const VLAMP = { at: new THREE.Vector3(), col: new THREE.Color(0xfff1d6), pow: 0.8 };
 function stepBuildings(dt) {
   for (const b of blds) for (const d of b.doors) if (d.t !== d.want) { d.t += Math.sign(d.want - d.t) * Math.min(Math.abs(d.want - d.t), dt * 1.8); poseDoor(d); }
+  for (const b of blds) b.doors.forEach((d, k) => {   // ひとりでに閉まるドア
+    if (!d.auto || !d.want) return;
+    let near = Math.hypot(player.pos.x - d.c0.x, player.pos.z - d.c0.z) < 1.8 && Math.abs(player.pos.y - d.c0.y) < 3;
+    if (!near) for (const o of net.others.values()) if (o.avatar && o.avatar.visible && Math.hypot(o.pos.x - d.c0.x, o.pos.z - d.c0.z) < 1.8) { near = true; break; }
+    const t = performance.now() / 1000;   // 画面が重くても本当の秒数で数える
+    if (near || !d.hold) d.hold = t;
+    else if (t - d.hold >= d.auto) { d.hold = 0; setDoor(b, k, false, null, true); }
+  });
+  const now = performance.now() / 1000, glow = dayLight < 0.35 ? 1.5 : 1.15;   // 夜はもっと明るく
+  for (const b of blds) for (const k of b.blinks) { const f = ((now + k.ph) / k.per) % 1; k.m.emissiveIntensity = (f < 0.55 ? k.base * glow : k.base * 0.08); }
   lampT -= dt; if (lampT > 0) return; lampT = 0.25;
   const cand = [], cx = camera.position.x, cz = camera.position.z;
   for (const b of blds) {
