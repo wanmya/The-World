@@ -228,7 +228,7 @@ body.helmOn .subbtns { flex-wrap: wrap; justify-content: flex-end; max-width: ca
 <body>
 <div id="view"></div>
 
-<div id="clock" aria-live="off"><span id="stateLabel">--:--</span> <span id="placeLabel"></span></div>
+<div id="clock" aria-live="off"><span id="stateLabel">--:--</span> <span id="placeLabel"></span> <span id="pointLabel"></span></div>
 <div class="hud" aria-live="polite">
   <span class="state" id="state">歩いている</span>
   <span class="alt" id="alt">高さ</span>
@@ -3192,12 +3192,29 @@ function pushFromTraffic() {
 }
 let busRide = null;   // { b, lx, lz, seat }
 let busYawPrev = 0;
+/* ================= ポイント（P） =================
+   はじめは全員 10 万 P。バスの運賃は 1 回 100 P。パチンコで増やせる（予定）。この端末（ブラウザ）に覚えておくので、閉じて開きなおしても残る */
+const P_START = 100000, BUS_FARE = 100;
+const wallet = { p: P_START };
+try { const v = Number(localStorage.getItem('world.points')); if (localStorage.getItem('world.points') != null && Number.isFinite(v) && v >= 0) wallet.p = Math.floor(v); else localStorage.setItem('world.points', String(P_START)); } catch (e) { /* 覚えられなくても遊べる */ }
+const fmtP = (v) => `${v.toLocaleString('ja-JP')}P`;
+function showPoints() { const e = document.getElementById('pointLabel'); if (e) e.textContent = '・' + fmtP(wallet.p); }
+function addPoints(d) {
+  wallet.p = Math.max(0, Math.floor(wallet.p + d));
+  try { localStorage.setItem('world.points', String(wallet.p)); } catch (e) { /* そのまま */ }
+  showPoints();
+  return wallet.p;
+}
+window.addEventListener('storage', (e) => { if (e.key === 'world.points' && e.newValue != null) { const v = Number(e.newValue); if (Number.isFinite(v) && v >= 0) { wallet.p = Math.floor(v); showPoints(); } } });   // ほかのタブで増減したとき
+showPoints();
 function boardBus(n) {
+  if (wallet.p < BUS_FARE) { showMsg(`P が足りないので乗れません（運賃 ${BUS_FARE}P・いま ${fmtP(wallet.p)}）`); return; }
+  addPoints(-BUS_FARE);
   busRide = { b: n.b, lx: BUS_DIM.hw - 0.5, lz: (n.d.z0 + n.d.z1) / 2, seat: null };
   camYaw = n.b.h + Math.PI / 2;   // 車内のほう（右）を向く
   camPitch = 0.05; busYawPrev = n.b.h;
   avatar.visible = false;
-  showMsg(`${n.b.line.no}番（${n.b.line.name}）に乗りました。座席の近くで「座る」（Space）。止まってドアがあいたら「降りる」`);
+  showMsg(`${n.b.line.no}番（${n.b.line.name}）に乗りました。運賃 ${BUS_FARE}P（のこり ${fmtP(wallet.p)}）。座席の近くで「座る」（Space）。止まってドアがあいたら「降りる」`);
 }
 function leaveBus(force) {
   const r = busRide; if (!r) return;
@@ -6108,7 +6125,7 @@ window.__world = {
   get driving() { return driving; },
   set camYaw(v) { camYaw = v; }, set camPitch(v) { camPitch = v; }, set camDist(v) { camDist = v; }, get camDist() { return camDist; },
   keys, touch, toggleRide, loadItem, ITEM_DEFS, heightAt, player, net, syncPeers,
-  addPropFromBuffer, blds, bldFloor, bldPush, roadNear, nearBldAction, placeAt, get bldSeat() { return bldSeat; }, get dayLight() { return dayLight; },
+  addPropFromBuffer, wallet, addPoints, blds, bldFloor, bldPush, roadNear, nearBldAction, placeAt, get bldSeat() { return bldSeat; }, get dayLight() { return dayLight; },
   get aboard() { return aboard; }, get ride() { return ride; }, buses, get busRide() { return busRide; }, nearBusDoor, traffic, roadNet, worldHour, setHourOffset(h) { hourOffset = h; },
   hullGround, findWaterSpot, rescueBoat, get periscope() { return periscope; }, toggleLight, setPeriscope,
   teleport(x, z, y) { player.pos.set(x, y ?? heightAt(x, z), z); player.vy = 0; },
