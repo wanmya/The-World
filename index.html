@@ -450,7 +450,7 @@ const ITEM_DEFS = {
     vehicle: {
       type: 'car', wheel: /タイヤ/, front: /前/, wheelRadius: 0.2925, wheelbase: 2.04,
       halfWidth: 0.9, halfLength: 1.8, centerZ: 0.04,
-      maxSpeed: 19, accel: 7.5, brake: 16, reverseMax: 6, maxSteer: 0.6,
+      maxSpeed: 50, accel: 7.5, brake: 16, reverseMax: 6, maxSteer: 0.6, pw: 3, drag: 0.0001,   // 最高 180km/h（2026-11-01）
       exit: [-1.55, -0.2],   // 降りる位置（車から見て右＝運転席側）
     },
   },
@@ -945,6 +945,11 @@ const NODES = {
   NJ: { x: -300, z: -4160, name: '北の交差点' }, NR: { x: 1000, z: -4000, name: '北東の交差点' }, J: { x: -300, z: 140, name: '浜の交差点' },
   // 最初の砂浜のバスターミナル（広場 BB）から、海の橋の道の交差点 BT まで上る道
   BB: { x: 5, z: 45, name: 'はじめの浜バスターミナル', plaza: 24 }, BT: { x: -75, z: 140, name: '浜の上の交差点' },
+  // 内陸の一般道（2026-11-01）：高速道路の料金所の広場（'IC:…'）をつなぎ、輪の里・みずうみ町・東浜・西山町へ
+  GA: { x: -130, z: 650, name: 'はじめ町入口' }, GM: { x: -700, z: 1150, name: 'ひろ野北' }, GMW: { x: -1250, z: 1150, name: 'みどり台南' },
+  GH: { x: -700, z: 2650, name: 'ひろ野' }, RN: { x: -200, z: 4100, name: '輪の里' }, GR: { x: 900, z: 3720, name: '輪の里東' },
+  MZ: { x: 3450, z: 3200, name: 'みずうみ町' }, GE2: { x: 3420, z: 2650, name: 'みずうみ町北' }, GE1: { x: 3420, z: 1150, name: '東浜' },
+  ETW: { x: 4100, z: 700, name: '東浜の海' }, WST: { x: -3100, z: 1750, name: '西山町' },
 };
 const EDGES = [
   { a: 'K', b: 'SW', w: 14, via: [[300, -2880, 30]] },
@@ -966,6 +971,27 @@ const EDGES = [
   { a: 'J', b: 'BT', w: 14, via: [] },   // 16：浜の交差点〜浜の上の交差点
   // 17：バスターミナルの広場の中を、北の隅へまわる輪（高速バス専用。上のまっすぐな所が高速バスのりば）
   { a: 'BB', b: 'BB', w: 7, via: [[16, 34, 3], [14, 24, 3], [-4, 24, 3], [-6, 34, 3]], inPlaza: true },
+  // 18〜：内陸の一般道（片側 1 車線）。高速道路の高架の下をくぐる
+  { a: 'BT', b: 'GA', w: 7, via: [[-130, 420, 60]] },
+  { a: 'GA', b: 'GM', w: 7, via: [[-130, 1050, 80], [-700, 1050, 60]] },
+  { a: 'GM', b: 'GH', w: 7, via: [] },
+  { a: 'GH', b: 'RN', w: 7, via: [[-700, 3300, 150], [-250, 3750, 150]] },
+  { a: 'GA', b: 'IC:はじめ町IC', w: 7, via: [[900, 650, 80]] },
+  { a: 'IC:はじめ町IC', b: 'IC:東山IC', w: 7, via: [[1100, 620, 60], [2000, 620, 80]] },
+  { a: 'IC:東山IC', b: 'GE1', w: 7, via: [[2550, 640, 120], [3420, 640, 150]] },
+  { a: 'GE1', b: 'IC:東浜IC', w: 7, via: [] },
+  { a: 'GE1', b: 'GE2', w: 7, via: [] },
+  { a: 'GE2', b: 'IC:みずうみ町IC', w: 7, via: [] },
+  { a: 'GE2', b: 'MZ', w: 7, via: [] },
+  { a: 'MZ', b: 'GR', w: 7, via: [[3300, 3720, 150]] },
+  { a: 'GR', b: 'IC:輪の里IC', w: 7, via: [] },
+  { a: 'GR', b: 'RN', w: 7, via: [[300, 3900, 150]] },
+  { a: 'GH', b: 'IC:ひろ野IC', w: 7, via: [] },
+  { a: 'GM', b: 'GMW', w: 7, via: [] },
+  { a: 'GMW', b: 'IC:みどり台IC', w: 7, via: [] },
+  { a: 'GMW', b: 'IC:西山町IC', w: 7, via: [[-2100, 1150, 80]] },
+  { a: 'IC:西山町IC', b: 'WST', w: 7, via: [[-2650, 1500, 120]] },
+  { a: 'GE1', b: 'ETW', w: 7, via: [[3800, 1150, 150]] },
 ];
 // バス停：何番の道の、どのあたり（0〜1）か。道の両側にある
 const BUS_STOPS = [
@@ -1105,10 +1131,126 @@ const CARS = [
   }
 }
 const RD_STEP = 2;
+// 曲がり角（via）をまるめた線：[[x, z, r], ...] → 2m ごとの点 [[x, z], ...]
+function polyPts(pts) {
+  const n = pts.length, P = [];
+  const C = pts.map((p, i) => {
+    if (i === 0 || i === n - 1) return { t: 0, th: 0 };
+    const a = pts[i - 1], c = pts[i + 1];
+    let ux = p[0] - a[0], uz = p[1] - a[1], vx = c[0] - p[0], vz = c[1] - p[1];
+    const la = Math.hypot(ux, uz), lb = Math.hypot(vx, vz); ux /= la; uz /= la; vx /= lb; vz /= lb;
+    const th = Math.acos(Math.min(1, Math.max(-1, ux * vx + uz * vz)));
+    let r = p[2], t = r * Math.tan(th / 2);
+    const tmax = 0.45 * Math.min(la, lb);
+    if (t > tmax) { t = tmax; r = t / Math.tan(th / 2); }
+    return { x: p[0], z: p[1], ux, uz, vx, vz, th, r, t, cr: ux * vz - uz * vx };
+  });
+  for (let i = 0; i < n - 1; i++) {
+    const a = C[i], b = C[i + 1], pa = pts[i], pb = pts[i + 1];
+    const dx = pb[0] - pa[0], dz = pb[1] - pa[1], l = Math.hypot(dx, dz), ux = dx / l, uz = dz / l;
+    const sx = pa[0] + ux * a.t, sz = pa[1] + uz * a.t, ex = pb[0] - ux * b.t, ez = pb[1] - uz * b.t;
+    const L = Math.hypot(ex - sx, ez - sz), m = Math.max(1, Math.round(L / RD_STEP));
+    for (let k = 0; k < m; k++) P.push([sx + (ex - sx) * k / m, sz + (ez - sz) * k / m]);
+    if (i + 1 < n - 1 && b.r * b.th >= RD_STEP) {
+      const sg = Math.sign(b.cr) || 1, cx = ex - b.uz * sg * b.r, cz = ez + b.ux * sg * b.r;
+      const ox = ex - cx, oz = ez - cz, steps = Math.round(b.r * b.th / RD_STEP);
+      const rot = (q) => [cx + ox * Math.cos(q) - oz * Math.sin(q), cz + ox * Math.sin(q) + oz * Math.cos(q)];
+      const fx = b.x + b.vx * b.t, fz = b.z + b.vz * b.t, e1 = rot(b.th), e2 = rot(-b.th);
+      const dir = Math.hypot(e1[0] - fx, e1[1] - fz) < Math.hypot(e2[0] - fx, e2[1] - fz) ? 1 : -1;
+      for (let k = 0; k < steps; k++) P.push(rot(dir * b.th * k / steps));
+    }
+  }
+  P.push([pts[n - 1][0], pts[n - 1][1]]);
+  return P;
+}
+/* ================= 高速道路（2026-11-01） =================
+   はじめ環状線：はじめ市のまん中を 1 周する（地図で時計回りが外回り）。西山線：ひろ野JCT から西山町へ。
+   地面から 8m の高架で、一般道は下をくぐる。片側 2 車線（左が走行車線、右が追い越し車線）。
+   IC：本線から下りて料金所（ETC）の広場へ。広場から一般道へ出る。PA：本線から下りた駐車場とお店。外の道とはつながっていない。
+   ランプ（IC・JCT・PA への道）は一方通行。高さは、とちゅうの点ごとに d（本線の高さ）・h（本線の 8m 上をまたぐ）・g（地面）・n（広場の高さ）で決める */
+const HW_W = 23.5, HW_LANE = [3.5, 7.0], RAMP_W = 6.5, HW_LIFT = 8, HW_V = 120 / 3.6;
+const HWY = (() => {
+  const ringPts = [[1550, 330, 0], [3150, 330, 350], [3150, 3450, 350], [0, 3450, 350], [0, 330, 400], [1550, 330, 0]];
+  const spurPts = [[-750, 1500, 0], [-2100, 1500, 0]];
+  const AL = { ring: polyPts(ringPts), spur: polyPts(spurPts) };
+  const out = { ics: [], pas: [], jcts: [], gates: [], ring: -1, spur: -1, names: [] };
+  let k = 0;
+  const node = (x, z, extra) => { const id = 'H' + (k++); NODES[id] = Object.assign({ x, z, hw: true }, extra); return id; };
+  // 道の上のある場所での向き（sg = -1 なら逆向き）。u：進む向き、v：左
+  const frame = (al, x, z, sg) => {
+    const P = AL[al]; let bi = 0, bd = Infinity;
+    for (let i = 0; i < P.length; i++) { const d = (P[i][0] - x) ** 2 + (P[i][1] - z) ** 2; if (d < bd) { bd = d; bi = i; } }
+    const a = P[Math.max(0, bi - 3)], b = P[Math.min(P.length - 1, bi + 3)], l = Math.hypot(b[0] - a[0], b[1] - a[1]);
+    const tx = (b[0] - a[0]) / l * sg, tz = (b[1] - a[1]) / l * sg;
+    return { x: P[bi][0], z: P[bi][1], tx, tz, nx: tz, nz: -tx, al };
+  };
+  const W = (f, u, v) => [f.x + f.tx * u + f.nx * v, f.z + f.tz * u + f.nz * v];
+  // ランプ：ends は { on: 本線の名前 } か { id: 広場など }。via は [u, v, r, 高さの決め方]
+  const ramp = (f, a, via, b, opt = {}) => {
+    const end = (q) => q.id || node(...W(f, q.u, q.v), { onEdge: out[q.on] });
+    const ia = end(a), ib = end(b);
+    const E = { a: ia, b: ib, w: RAMP_W, hw: 'ramp', via: via.map((p) => [...W(f, p[0], p[1]), p[2] || 0]),
+      hmode: [a.id ? 'n' : 'd', ...via.map((p) => p[3] ?? null), b.id ? 'n' : 'd'], ...opt };
+    EDGES.push(E);
+    return EDGES.length - 1;
+  };
+  // 本線：環状線（a と b が同じ点の輪）と西山線
+  NODES.HR = { x: 1550, z: 330, hw: true };
+  EDGES.push({ a: 'HR', b: 'HR', w: HW_W, hw: 'main', via: ringPts.slice(1, -1), name: 'はじめ環状線' }); out.ring = EDGES.length - 1;
+  NODES.HSJ = { x: -750, z: 1500, hw: true };
+  NODES['IC:西山町IC'] = { x: -2100, z: 1500, plaza: 30, name: '西山町IC', hw: true, ic: true, hwEnd: true };
+  EDGES.push({ a: 'HSJ', b: 'IC:西山町IC', w: HW_W, hw: 'main', via: [], name: '西山線', endGround: true }); out.spur = EDGES.length - 1;
+  out.ics.push({ name: '西山町IC', node: 'IC:西山町IC', terminal: true });
+  // IC：sg = +1 は本線（a→b）の左に料金所の広場。広場の向こう側から一般道が出る
+  const ic = (al, x, z, sg, name) => {
+    const f = frame(al, x, z, sg), on = al;
+    const P = 'IC:' + name; NODES[P] = { x: W(f, 0, 110)[0], z: W(f, 0, 110)[1], hw: true, plaza: 26, name, ic: true };
+    const r = [
+      ramp(f, { u: -440, v: HW_LANE[1], on }, [[-300, 13, 0, 'd'], [-100, 62, 70, 'g']], { id: P }, { gate: 'out', ic: name }),
+      ramp(f, { id: P }, [[100, 62, 70, 'g'], [300, 13, 0, 'd']], { u: 440, v: HW_LANE[1], on }, { gate: 'in', ic: name }),
+      ramp(f, { u: 440, v: -HW_LANE[1], on }, [[300, -13, 0, 'd'], [14, -75, 45, 'g'], [14, 84, 0, 'g']], { id: P }, { gate: 'out', ic: name }),
+      ramp(f, { id: P }, [[-14, 84, 0, 'g'], [-14, -75, 45, 'g'], [-300, -13, 0, 'd']], { u: -440, v: -HW_LANE[1], on }, { gate: 'in', ic: name }),
+    ];
+    out.ics.push({ name, node: P, ramps: r, f });
+  };
+  ic('ring', 900, 330, -1, 'はじめ町IC');
+  ic('ring', 2200, 330, -1, '東山IC');
+  ic('ring', 3150, 1150, 1, '東浜IC');
+  ic('ring', 3150, 2650, 1, 'みずうみ町IC');
+  ic('ring', 900, 3450, 1, '輪の里IC');
+  ic('ring', 0, 2650, 1, 'ひろ野IC');
+  ic('spur', -1250, 1500, -1, 'みどり台IC');
+  // PA：dir = +1 は本線の a→b 向き（外回り）の車が入る。駐車場は進む向きの左
+  const pa = (al, x, z, dir, name) => {
+    const f = frame(al, x, z, dir), on = al;
+    const y = (() => { let s = 0, c = 0; for (let u = -90; u <= 90; u += 15) for (let v = 62; v <= 150; v += 11) { s += rawHeight0(...W(f, u, v)); c++; } return Math.max(2.6, s / c); })();
+    const L1 = node(...W(f, -90, 70), { y, fixY: true, lot: true }), L2 = node(...W(f, 90, 70), { y, fixY: true, lot: true });
+    const rin = ramp(f, { u: -420, v: HW_LANE[1], on }, [[-300, 13, 0, 'd'], [-135, 50, 50, 'g']], { id: L1 }, { pa: name });
+    const rout = ramp(f, { id: L2 }, [[135, 50, 50, 'g'], [300, 13, 0, 'd']], { u: 420, v: HW_LANE[1], on }, { pa: name });
+    out.pas.push({ name, f, y, dir, rin, rout, L1, L2 });
+  };
+  pa('ring', 2000, 3450, 1, 'みずうみPA（外回り）');
+  pa('ring', 2000, 3450, -1, 'みずうみPA（内回り）');
+  // ひろ野JCT：環状線（西の辺、外回りは北向き）から西山線が西へ。u：北、v：西
+  {
+    const f = frame('ring', 0, 1500, 1), on = 'ring', sA = { id: 'HSJ' };
+    // 西山線のはしの車線の点（西山線の a 側）。外回り→西山線は内側の車線、内回り→西山線は外側の車線に入る
+    const spurLane = (u) => node(...W(f, u, 750), { onEdge: out.spur, laneOf: 'HSJ' });
+    const o1 = spurLane(-HW_LANE[0]), o2 = spurLane(-HW_LANE[1]), i1 = spurLane(HW_LANE[0]), i2 = spurLane(HW_LANE[1]);
+    const r1 = ramp(f, { u: -520, v: HW_LANE[1], on }, [[-400, 13, 0, 'd'], [-3.5, 13, 250, 'd']], { id: o1 }, { jct: 'ひろ野JCT' });
+    const r3 = ramp(f, { id: i2 }, [[16, 650, 0, 'd'], [16, 13, 250, 'd'], [400, 13, 0, 'd']], { u: 520, v: HW_LANE[1], on }, { jct: 'ひろ野JCT' });
+    const f1 = ramp(f, { u: 440, v: -HW_LANE[1], on }, [[300, -13, 0, 'd'], [150, -13, 60, null], [150, -133, 60, null], [270, -133, 60, 'g'], [270, 350, 60, 'g'], [-45, 350, 60, 'g']], { id: o2 }, { jct: 'ひろ野JCT' });
+    const f2 = ramp(f, { id: i1 }, [[3.5, 520, 0, 'h'], [-60, 300, 150, 'h'], [-230, -40, 200, 'h'], [-430, -13, 0, 'd']], { u: -580, v: -HW_LANE[1], on }, { jct: 'ひろ野JCT' });
+    out.jcts.push({ name: 'ひろ野JCT', f, ramps: [r1, r3, f1, f2], lanes: { o1, o2, i1, i2 } });
+  }
+  out.AL = AL; out.frame = frame; out.W = W;
+  return out;
+})();
 const roadNet = (() => {
   const nodes = Object.entries(NODES).map(([id, n]) => Object.assign({ id, deg: 0, y: 0, jr: 0, ends: [] }, n));
   const nodeOf = Object.fromEntries(nodes.map((n) => [n.id, n]));
   for (const n of nodes) {   // 交差点の高さ：まわりの地面のならし
+    if (n.fixY) continue;
     let s = 0, c = 0;
     for (let dx = -24; dx <= 24; dx += 8) for (let dz = -24; dz <= 24; dz += 8) { s += rawHeight0(n.x + dx, n.z + dz); c++; }
     n.y = Math.max(2.4, s / c);
@@ -1120,6 +1262,88 @@ const roadNet = (() => {
       for (let i = 0; i < N; i++) { let acc = 0, c = 0; for (let k = Math.max(0, i - R); k <= Math.min(N - 1, i + R); k++) { acc += B[k]; c++; } A[i] = acc / c; }
     }
   };
+  // 高速道路の高さ。本線：地面（道のはばの中でいちばん高い所）の 8m 上をなめらかに。下を通る一般道からも 7.5m 以上あける。
+  // ランプ：hmode の点の高さ（d 本線・h 本線の 8m 上・g 地面・n 広場）のあいだをなめらかにつなぐ
+  let genHash = null;
+  const genAt = (x, z) => {   // 下を通る一般道のいちばん高い所（なければ -Infinity）
+    if (!genHash) {
+      genHash = new Map();
+      for (const o of built) if (o && !o.hw) for (let i = 0; i < o.N; i++) { const key = Math.floor(o.X[i] / 16) * 65536 + Math.floor(o.Z[i] / 16); let a = genHash.get(key); if (!a) genHash.set(key, a = []); a.push(o.X[i], o.Z[i], o.Y[i], o.W[i]); }
+    }
+    let best = -Infinity;
+    for (let gx = Math.floor(x / 16) - 1; gx <= Math.floor(x / 16) + 1; gx++) for (let gz = Math.floor(z / 16) - 1; gz <= Math.floor(z / 16) + 1; gz++) {
+      const a = genHash.get(gx * 65536 + gz); if (!a) continue;
+      for (let k = 0; k < a.length; k += 4) if (Math.hypot(a[k] - x, a[k + 1] - z) < a[k + 3] / 2 + 3) best = Math.max(best, a[k + 2]);
+    }
+    return best;
+  };
+  const deckDatum = (x, z) => {   // その場所にいちばん近い本線の高さ
+    let bd = Infinity, y = 2.4;
+    for (const o of built) if (o && o.hw === 'main') for (let i = 0; i < o.N; i += 2) { const d = (o.X[i] - x) ** 2 + (o.Z[i] - z) ** 2; if (d < bd) { bd = d; y = o.Y[i]; } }
+    return y;
+  };
+  const sm1 = (A, R, passes, loop, lock) => {
+    const N = A.length;
+    for (let p = 0; p < passes; p++) {
+      const B = Float32Array.from(A);
+      for (let i = 0; i < N; i++) {
+        if (lock && lock(i)) continue;
+        let acc = 0, c = 0;
+        for (let k = i - R; k <= i + R; k++) { let j = k; if (loop) j = (k + N - 1) % (N - 1); else if (j < 0 || j >= N) continue; acc += B[j]; c++; }
+        A[i] = acc / c;
+      }
+    }
+  };
+  function hwProfile(E, A, B, X, Z, S, base, NX, NZ, Y) {
+    const N = X.length, L = S[N - 1];
+    if (E.hw === 'main') {
+      const top = new Float32Array(N), req = new Float32Array(N);
+      for (let i = 0; i < N; i++) {
+        let m = Math.max(base[i], 0);
+        for (const o of [-1, -0.5, 0.5, 1]) m = Math.max(m, rawHeight0(X[i] + NX[i] * o * (E.w / 2 + 3), Z[i] + NZ[i] * o * (E.w / 2 + 3)));
+        top[i] = m; req[i] = Math.max(m + 7.2, genAt(X[i], Z[i]) + 7.5);
+        Y[i] = m + HW_LIFT;
+      }
+      const loop = E.a === E.b;
+      sm1(Y, 70, 3, loop);
+      for (let it = 0; it < 5; it++) { for (let i = 0; i < N; i++) Y[i] = Math.max(Y[i], req[i]); sm1(Y, 35, 2, loop); }
+      for (let i = 0; i < N; i++) Y[i] = Math.max(Y[i], req[i] - 0.3);
+      if (E.endGround) {   // 終わりは地面へ下りて料金所の広場へ
+        const G = new Float32Array(N); for (let i = 0; i < N; i++) G[i] = Math.max(base[i], 2.4);
+        sm1(G, 20, 3, false);
+        for (let i = 0; i < N; i++) { const w = ss(L - 420, L - 60, S[i]); Y[i] = Y[i] * (1 - w) + G[i] * w; Y[i] = B.y + (Y[i] - B.y) * ss(B.plaza, B.plaza + 30, L - S[i]); }
+      }
+      if (loop) Y[N - 1] = Y[0];
+      A.y = Y[0]; if (!loop) { if (!B.plaza) B.y = Y[N - 1]; }
+      return;
+    }
+    // ランプ
+    const pts = [[A.x, A.z], ...E.via.map((v) => [v[0], v[1]]), [B.x, B.z]];
+    const ctl = [];
+    pts.forEach((p, k) => {
+      const m = E.hmode[k]; if (!m) return;
+      let bi = 0, bd = Infinity; for (let i = 0; i < N; i++) { const d = (X[i] - p[0]) ** 2 + (Z[i] - p[1]) ** 2; if (d < bd) { bd = d; bi = i; } }
+      if (k === 0) bi = 0; if (k === pts.length - 1) bi = N - 1;
+      const v = m === 'n' ? (k === 0 ? A.y : B.y) : m === 'd' ? (k === 0 ? A.y : k === pts.length - 1 ? B.y : deckDatum(p[0], p[1])) : m === 'h' ? deckDatum(p[0], p[1]) + HW_LIFT : null;
+      ctl.push({ i: bi, s: S[bi], v });
+    });
+    ctl.sort((a, b) => a.s - b.s);
+    const G = new Float32Array(N); for (let i = 0; i < N; i++) G[i] = Math.max(base[i], 2.4);
+    sm1(G, 6, 2, false);
+    const val = (c, i) => c.v == null ? G[i] : c.v;
+    for (let i = 0; i < N; i++) {
+      let q = 0; while (q < ctl.length - 2 && S[i] > ctl[q + 1].s) q++;
+      const a = ctl[q], b = ctl[Math.min(ctl.length - 1, q + 1)];
+      const w = b.s > a.s ? ss(a.s, b.s, S[i]) : 0;
+      Y[i] = val(a, i) * (1 - w) + val(b, i) * w;
+    }
+    sm1(Y, 5, 2, false, (i) => i < 3 || i > N - 4);
+    for (const P of [A, B]) if (P.plaza || P.lot) {   // 広場・駐車場の中は平らに
+      const r = P.plaza || 0;
+      for (let i = 0; i < N; i++) { const d = Math.hypot(X[i] - P.x, Z[i] - P.z); Y[i] = P.y + (Y[i] - P.y) * ss(r, r + 25, d); }
+    }
+    for (let i = 0; i < N; i++) Y[i] = Math.max(Y[i], G[i] - 0.05);
+  }
   const built = [];
   const edges = EDGES.map((E, ei) => {
     const A = nodeOf[E.a], B = nodeOf[E.b];
@@ -1128,58 +1352,40 @@ const roadNet = (() => {
       for (let i = 0; i < o.N; i++) { const d = (o.X[i] - Q.x) ** 2 + (o.Z[i] - Q.z) ** 2; if (d < bd) { bd = d; bi = i; } }
       Q.y = o.Y[bi];
     }
-    const pts = [[A.x, A.z, 0], ...E.via, [B.x, B.z, 0]], n = pts.length, P = [];
-    const C = pts.map((p, i) => {
-      if (i === 0 || i === n - 1) return { t: 0, th: 0 };
-      const a = pts[i - 1], c = pts[i + 1];
-      let ux = p[0] - a[0], uz = p[1] - a[1], vx = c[0] - p[0], vz = c[1] - p[1];
-      const la = Math.hypot(ux, uz), lb = Math.hypot(vx, vz); ux /= la; uz /= la; vx /= lb; vz /= lb;
-      const th = Math.acos(Math.min(1, Math.max(-1, ux * vx + uz * vz)));
-      let r = p[2], t = r * Math.tan(th / 2);
-      const tmax = 0.45 * Math.min(la, lb);
-      if (t > tmax) { t = tmax; r = t / Math.tan(th / 2); }
-      return { x: p[0], z: p[1], ux, uz, vx, vz, th, r, t, cr: ux * vz - uz * vx };
-    });
-    for (let i = 0; i < n - 1; i++) {
-      const a = C[i], b = C[i + 1], pa = pts[i], pb = pts[i + 1];
-      const dx = pb[0] - pa[0], dz = pb[1] - pa[1], l = Math.hypot(dx, dz), ux = dx / l, uz = dz / l;
-      const sx = pa[0] + ux * a.t, sz = pa[1] + uz * a.t, ex = pb[0] - ux * b.t, ez = pb[1] - uz * b.t;
-      const L = Math.hypot(ex - sx, ez - sz), m = Math.max(1, Math.round(L / RD_STEP));
-      for (let k = 0; k < m; k++) P.push([sx + (ex - sx) * k / m, sz + (ez - sz) * k / m]);
-      if (i + 1 < n - 1 && b.r * b.th >= RD_STEP) {
-        const sg = Math.sign(b.cr) || 1, cx = ex - b.uz * sg * b.r, cz = ez + b.ux * sg * b.r;
-        const ox = ex - cx, oz = ez - cz, steps = Math.round(b.r * b.th / RD_STEP);
-        const rot = (q) => [cx + ox * Math.cos(q) - oz * Math.sin(q), cz + ox * Math.sin(q) + oz * Math.cos(q)];
-        const fx = b.x + b.vx * b.t, fz = b.z + b.vz * b.t, e1 = rot(b.th), e2 = rot(-b.th);
-        const dir = Math.hypot(e1[0] - fx, e1[1] - fz) < Math.hypot(e2[0] - fx, e2[1] - fz) ? 1 : -1;
-        for (let k = 0; k < steps; k++) P.push(rot(dir * b.th * k / steps));
-      }
-    }
-    P.push([B.x, B.z]);
+    const P = polyPts([[A.x, A.z, 0], ...E.via, [B.x, B.z, 0]]);
     const N = P.length;
     const X = new Float32Array(N), Z = new Float32Array(N), Y = new Float32Array(N), W = new Float32Array(N), S = new Float32Array(N), base = new Float32Array(N), BR = new Uint8Array(N);
     for (let i = 0; i < N; i++) { X[i] = P[i][0]; Z[i] = P[i][1]; base[i] = rawHeight0(X[i], Z[i]); W[i] = E.w; if (i) S[i] = S[i - 1] + Math.hypot(X[i] - X[i - 1], Z[i] - Z[i - 1]); }
-    for (let i = 0; i < N; i++) Y[i] = Math.max(base[i], base[i] < -2 ? 30 : 2.4);   // 海の上は船がくぐれる高さ
-    smooth(Y, E.sea ? 70 : 40, 4);
-    const d0 = A.y - Y[0], d1 = B.y - Y[N - 1];   // はしを交差点の高さに合わせる
-    for (let i = 0; i < N; i++) { const t = S[i] / S[N - 1]; Y[i] = Math.max(2.2, Y[i] + d0 * (1 - t) + d1 * t); }
-    for (let i = 0; i < N; i++) {   // 広場の中は平らに（広場の高さ）
-      if (A.plaza) Y[i] = A.y + (Y[i] - A.y) * ss(A.plaza, A.plaza + 20, S[i]);
-      if (B.plaza) Y[i] = B.y + (Y[i] - B.y) * ss(B.plaza, B.plaza + 20, S[N - 1] - S[i]);
-      if (E.inPlaza) Y[i] = A.y;   // 広場の中だけの道
-    }
     const NX = new Float32Array(N), NZ = new Float32Array(N);
     for (let i = 0; i < N; i++) {
       const a = Math.max(0, i - 1), b = Math.min(N - 1, i + 1), dx = X[b] - X[a], dz = Z[b] - Z[a], l = Math.hypot(dx, dz) || 1;
       NX[i] = dz / l; NZ[i] = -dx / l;   // 進む向きの左
     }
-    // 橋：まん中か道のはしの下が水なら橋（川をななめにわたる所で、はしの車線が川岸に落ちないように）
-    for (let i = 0; i < N; i++) {
-      const hw = E.w / 2 + 1, low = Math.min(base[i], rawHeight0(X[i] + NX[i] * hw, Z[i] + NZ[i] * hw), rawHeight0(X[i] - NX[i] * hw, Z[i] - NZ[i] * hw));
-      if (low < 0.8) for (let k = -4; k <= 4; k++) if (i + k >= 0 && i + k < N) BR[i + k] = 1;
+    let EL = null;
+    if (E.hw) {   // 高速道路：高架の高さ
+      hwProfile(E, A, B, X, Z, S, base, NX, NZ, Y);
+      EL = new Uint8Array(N);
+      for (let i = 0; i < N; i++) EL[i] = Y[i] - Math.max(base[i], 0) > 2.2 ? 1 : 0;
+      BR.set(EL);
+    } else {
+      for (let i = 0; i < N; i++) Y[i] = Math.max(base[i], base[i] < -2 ? 30 : 2.4);   // 海の上は船がくぐれる高さ
+      smooth(Y, E.sea ? 70 : 40, 4);
+      const d0 = A.y - Y[0], d1 = B.y - Y[N - 1];   // はしを交差点の高さに合わせる
+      for (let i = 0; i < N; i++) { const t = S[i] / S[N - 1]; Y[i] = Math.max(2.2, Y[i] + d0 * (1 - t) + d1 * t); }
+      for (let i = 0; i < N; i++) {   // 広場の中は平らに（広場の高さ）
+        if (A.plaza) Y[i] = A.y + (Y[i] - A.y) * ss(A.plaza, A.plaza + 20, S[i]);
+        if (B.plaza) Y[i] = B.y + (Y[i] - B.y) * ss(B.plaza, B.plaza + 20, S[N - 1] - S[i]);
+        if (E.inPlaza) Y[i] = A.y;   // 広場の中だけの道
+      }
+      // 橋：まん中か道のはしの下が水なら橋（川をななめにわたる所で、はしの車線が川岸に落ちないように）
+      for (let i = 0; i < N; i++) {
+        const hw = E.w / 2 + 1, low = Math.min(base[i], rawHeight0(X[i] + NX[i] * hw, Z[i] + NZ[i] * hw), rawHeight0(X[i] - NX[i] * hw, Z[i] - NZ[i] * hw));
+        if (low < 0.8) for (let k = -4; k <= 4; k++) if (i + k >= 0 && i + k < N) BR[i + k] = 1;
+      }
     }
     A.deg++; B.deg++;
-    const e = { id: ei, a: A, b: B, w: E.w, N, X, Z, Y, W, WB: Float32Array.from(W), S, L: S[N - 1], NX, NZ, BR, base, sea: !!E.sea, inPlaza: !!E.inPlaza };
+    const e = { id: ei, a: A, b: B, w: E.w, N, X, Z, Y, W, WB: Float32Array.from(W), S, L: S[N - 1], NX, NZ, BR, base, sea: !!E.sea, inPlaza: !!E.inPlaza,
+      hw: E.hw || null, EL, loop: E.a === E.b, name: E.name || '', gate: E.gate || null, ic: E.ic || '', pa: E.pa || '', jct: E.jct || '' };
     A.ends.push({ e, end: 0 }); B.ends.push({ e, end: 1 });
     built[ei] = e;
     return e;
@@ -1214,16 +1420,21 @@ const roadNet = (() => {
     return { e, s, dir };
   });
   // すばやく探すための格子（32m）
-  const G = 32, PAD = 56, grid = new Map();
+  // 高架（高速道路の地面から離れた所）は別の格子に入れる：地面をならさず、上を歩く・走るときだけ使う
+  const G = 32, PAD = 56, grid = new Map(), gridEL = new Map();
   let bx0 = Infinity, bx1 = -Infinity, bz0 = Infinity, bz1 = -Infinity;
   for (const e of edges) for (let i = 0; i < e.N - 1; i++) {
-    const x0 = Math.min(e.X[i], e.X[i + 1]) - PAD, x1 = Math.max(e.X[i], e.X[i + 1]) + PAD, z0 = Math.min(e.Z[i], e.Z[i + 1]) - PAD, z1 = Math.max(e.Z[i], e.Z[i + 1]) + PAD;
-    bx0 = Math.min(bx0, x0); bx1 = Math.max(bx1, x1); bz0 = Math.min(bz0, z0); bz1 = Math.max(bz1, z1);
+    const el = e.EL ? (e.EL[i] || e.EL[i + 1]) : 0, gr = !(e.EL && e.EL[i] && e.EL[i + 1]);
+    const pad = el && !gr ? 20 : PAD;
+    const x0 = Math.min(e.X[i], e.X[i + 1]) - pad, x1 = Math.max(e.X[i], e.X[i + 1]) + pad, z0 = Math.min(e.Z[i], e.Z[i + 1]) - pad, z1 = Math.max(e.Z[i], e.Z[i + 1]) + pad;
+    if (gr) { bx0 = Math.min(bx0, x0); bx1 = Math.max(bx1, x1); bz0 = Math.min(bz0, z0); bz1 = Math.max(bz1, z1); }
     for (let gx = Math.floor(x0 / G); gx <= Math.floor(x1 / G); gx++) for (let gz = Math.floor(z0 / G); gz <= Math.floor(z1 / G); gz++) {
-      const key = gx * 65536 + gz; let a = grid.get(key); if (!a) grid.set(key, a = []); a.push(e.id * 65536 + i);
+      const key = gx * 65536 + gz;
+      if (gr) { let a = grid.get(key); if (!a) grid.set(key, a = []); a.push(e.id * 65536 + i); }
+      if (el) { let a = gridEL.get(key); if (!a) gridEL.set(key, a = []); a.push(e.id * 65536 + i); }
     }
   }
-  return { nodes, nodeOf, edges, stops, parks, grid, G, box: [bx0, bx1, bz0, bz1], plazas: nodes.filter((n) => n.plaza) };
+  return { nodes, nodeOf, edges, stops, parks, grid, gridEL, G, box: [bx0, bx1, bz0, bz1], plazas: nodes.filter((n) => n.plaza) };
 })();
 // いちばん近い道の中心線：{ d：中心からの距離, y：道の高さ, w：はば, e, i, br：橋か }
 const roadQ = { d: 0, y: 0, w: 0, e: null, i: 0, t: 0, br: 0 };
@@ -1248,7 +1459,18 @@ function roadNear(x, z) {
   return roadQ;
 }
 // 道の下とまわりの地面を、道の高さにならす（川や海の上はそのまま＝橋の下）
+// PA の駐車場（高速道路の外の地面）：平らにならす
+const HW_LOTS = HWY.pas.map((pa) => {
+  const f = pa.f, c = [[-95, 58], [95, 58], [95, 152], [-95, 152]].map(([u, v]) => HWY.W(f, u, v));
+  return { f, y: pa.y, x0: Math.min(...c.map((q) => q[0])) - 22, x1: Math.max(...c.map((q) => q[0])) + 22, z0: Math.min(...c.map((q) => q[1])) - 22, z1: Math.max(...c.map((q) => q[1])) + 22, pa };
+});
+const lotUV = (L, x, z) => { const dx = x - L.f.x, dz = z - L.f.z; return [dx * L.f.tx + dz * L.f.tz, dx * L.f.nx + dz * L.f.nz]; };
 function roadGround(x, z, h) {
+  for (const L of HW_LOTS) {
+    if (x < L.x0 || x > L.x1 || z < L.z0 || z > L.z1) continue;
+    const [u, v] = lotUV(L, x, z), d = Math.hypot(Math.max(0, Math.abs(u) - 95), Math.max(0, 58 - v, v - 152));
+    if (d < 20) { const r0 = roadGround0(x, z, h); return r0 + (L.y - 0.1 - r0) * (1 - ss(1, 20, d)); }
+  }
   for (const n of roadNet.plazas) {   // 広場（バスターミナル）のまわりは平らに
     const d = Math.hypot(x - n.x, z - n.z);
     if (d < n.jr + 24 && h > 0.8) { const r0 = roadGround0(x, z, h); return r0 + (n.y - 0.12 - r0) * (1 - ss(n.jr + 1, n.jr + 24, d)); }
@@ -1264,13 +1486,34 @@ function roadGround0(x, z, h) {
   return h + (y - h) * (1 - ss(hw + 1.5, hw + 1.5 + bw, q.d));
 }
 // 橋の上を歩く・走るときの高さ（橋でなければ -Infinity）
-function deckAt(x, z) {
+function deckAt(x, z, y = Infinity) {
   const q = roadNear(x, z);
-  return q && q.br && q.d < q.w / 2 + 0.6 ? q.y : -Infinity;
+  let best = q && q.br && q.d < q.w / 2 + 0.6 && q.y < y + 1.3 ? q.y : -Infinity;
+  const k = deckNear(x, z, y);
+  return k && k.y > best ? k.y : best;
+}
+// 高架（高速道路）の床：y（足もとの高さ）から 1.3m 上までにある、いちばん高い床。{ y, e, i, d：中心からの距離（左が＋） }
+const deckQ = { y: 0, e: null, i: 0, d: 0, t: 0 };
+function deckNear(x, z, y = Infinity, margin = 0.6) {
+  const R = roadNet, a = R.gridEL.get(Math.floor(x / R.G) * 65536 + Math.floor(z / R.G));
+  if (!a) return null;
+  let best = -Infinity;
+  for (const code of a) {
+    const e = R.edges[code >> 16], i = code & 65535;
+    const ex = e.X[i + 1] - e.X[i], ez = e.Z[i + 1] - e.Z[i], l2 = ex * ex + ez * ez || 1;
+    const t = Math.min(1, Math.max(0, ((x - e.X[i]) * ex + (z - e.Z[i]) * ez) / l2));
+    const dx = x - e.X[i] - ex * t, dz = z - e.Z[i] - ez * t, d = Math.hypot(dx, dz);
+    if (d > e.W[i] / 2 + margin) continue;
+    const yy = e.Y[i] + (e.Y[i + 1] - e.Y[i]) * t;
+    if (yy > y + 1.3 || yy <= best) continue;
+    if (!e.EL[i] && !e.EL[i + 1]) continue;
+    best = yy; deckQ.y = yy; deckQ.e = e; deckQ.i = i; deckQ.t = t; deckQ.d = dx * e.NX[i] + dz * e.NZ[i];
+  }
+  return best > -Infinity ? deckQ : null;
 }
 // 歩く・走る地面：橋の上にいれば橋、下（川の中）にいれば川底
 function groundAt(x, z, y) {
-  const h = heightAt(x, z), d = deckAt(x, z);
+  const h = heightAt(x, z), d = deckAt(x, z, y);
   return d > h && y > d - 1.3 ? d : h;
 }
 /* 建物の敷地：足もとの地面を平らにならす（まわり 5m でなだらかにつなぐ）。だれの画面でも、置いてある建物から同じ形になる */
@@ -1753,7 +1996,7 @@ function signalState(node, grp, t) {
   for (const wide of [false, true]) {
     const pos = [], uv = [];
     for (const e of R.edges) {
-      if ((e.w > 10.5) !== wide || e.inPlaza) continue;   // 広場の中の道は、広場の舗装のまま
+      if ((e.w > 10.5) !== wide || e.inPlaza || e.hw) continue;   // 広場の中の道は、広場の舗装のまま（高速道路は別に描く）
       for (let i = 0; i < e.N - 1; i++) {
         const j = i + 1;
         if (nearNode(e, i) < -0.5 && nearNode(e, j) < -0.5) continue;   // 交差点の中は、線のない舗装で描く
@@ -1778,6 +2021,7 @@ function signalState(node, grp, t) {
   const lineMat = new THREE.MeshLambertMaterial({ color: 0xf2f2ee, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -8 });
   const lines = [];
   for (const n of R.nodes) {
+    if (n.hw && !n.plaza) continue;   // 高速道路の分かれ目・合流には円い舗装はいらない
     const g = new THREE.CircleGeometry(n.jr + 0.5, 28); g.rotateX(-Math.PI / 2);
     const m = new THREE.Mesh(g, jMat); m.position.set(n.x, n.y + 0.04, n.z); m.receiveShadow = true; scene.add(m);
     if (!n.signal) continue;
@@ -1800,7 +2044,7 @@ function signalState(node, grp, t) {
   const rail = [], under = [], piers = [];
   for (const e of R.edges) for (let i = 0; i < e.N - 1; i++) {
     const j = i + 1;
-    if (!e.BR[i] || !e.BR[j]) continue;
+    if (!e.BR[i] || !e.BR[j] || e.hw) continue;
     const P = (k, side, dy) => { const h = e.W[k] / 2 * side; return [e.X[k] + e.NX[k] * h, e.Y[k] + dy, e.Z[k] + e.NZ[k] * h]; };
     for (const side of [1, -1]) { const a0 = P(i, side, -1.1), a1 = P(i, side, 0.95), b0 = P(j, side, -1.1), b1 = P(j, side, 0.95); rail.push(...a0, ...b0, ...a1, ...a1, ...b0, ...b1); }
     under.push(...P(i, 1, -1.1), ...P(i, -1, -1.1), ...P(j, 1, -1.1), ...P(j, 1, -1.1), ...P(i, -1, -1.1), ...P(j, -1, -1.1));
@@ -1894,7 +2138,7 @@ const streetLamps = (() => {
   const GAP = coarse ? 40 : 32, H = 7, ARM = 1.6, spots = [];
   const nearJ = (e, s) => s < e.a.jr + 5 || s > e.L - e.b.jr - 5;
   for (const e of roadNet.edges) {
-    if (e.inPlaza) continue;
+    if (e.inPlaza || e.hw) continue;   // 高速道路の照明は別
     let side = e.id % 2 ? 1 : -1;
     for (let s = GAP / 2; s < e.L; s += GAP, side = -side) {
       if (nearJ(e, s) || roadNet.stops.some((st) => st.e === e && Math.abs(st.s - s) < 12)) continue;
@@ -1940,6 +2184,332 @@ const streetLamps = (() => {
   scene.add(poles, bulbs, pools);
   return { N, bulbMat, poolMat, pools, on: -1 };
 })();
+// 高速道路を描く：路面（車線の線つき）、高架の側面と裏、欄干（かべ）、中央分離帯、橋脚、照明。
+// 500m 四方ごとに形を分けて、見えない所は描かない（スマホでも軽く）
+const hwDraw = (() => {
+  const R = roadNet, HE = R.edges.filter((e) => e.hw);
+  const tex = (kind) => {
+    const c = document.createElement('canvas'); c.width = 512; c.height = 256; const g = c.getContext('2d');
+    g.fillStyle = '#4e5054'; g.fillRect(0, 0, 512, 256);
+    for (let k = 0; k < 4000; k++) { const v = 62 + Math.random() * 36 | 0; g.fillStyle = `rgba(${v},${v},${v + 3},0.5)`; g.fillRect(Math.random() * 512, Math.random() * 256, 2, 2); }
+    const Wd = kind === 'main' ? HW_W : RAMP_W, m = 512 / Wd, lw = Math.max(2, 0.18 * m), X = (o) => 256 + o * m;   // o：まん中からの距離（m）
+    g.fillStyle = '#f2f2ee';
+    const line = (o, dash) => { if (dash) { g.fillRect(X(o) - lw / 2, 0, lw, 256 * 8 / 20); } else g.fillRect(X(o) - lw / 2, 0, lw, 256); };
+    if (kind === 'main') {
+      for (const sg of [1, -1]) { line(sg * 1.75); line(sg * 5.25, true); line(sg * 8.75); }
+      g.fillStyle = '#6b6e72'; g.fillRect(X(-1.0), 0, 2 * m, 256);   // 中央分離帯
+    } else { line(1.85); line(-1.85); }
+    const t = new THREE.CanvasTexture(c);
+    t.wrapS = THREE.ClampToEdgeWrapping; t.wrapT = THREE.RepeatWrapping;
+    t.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy()); t.colorSpace = THREE.SRGBColorSpace;
+    return t;
+  };
+  const mats = {
+    main: new THREE.MeshLambertMaterial({ map: tex('main'), polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -4 }),
+    ramp: new THREE.MeshLambertMaterial({ map: tex('ramp'), polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -2 }),
+    conc: new THREE.MeshLambertMaterial({ color: 0xb4b0a6, side: THREE.DoubleSide }),
+    wall: new THREE.MeshLambertMaterial({ color: 0xd2cec4 }),
+  };
+  const CH = 500, groups = new Map();
+  const bucket = (x, z, m) => { const key = Math.floor(x / CH) * 1000 + Math.floor(z / CH) + ':' + m; let b = groups.get(key); if (!b) groups.set(key, b = []); return b; };
+  // ほかの床（ランプの分かれ目など）が続いているか：そこには欄干を立てない
+  const covered = (e, x, z, y) => {
+    const q = deckNear(x, z, y + 0.6, -0.2);
+    if (q && q.e !== e && Math.abs(q.y - y) < 1.2) return true;
+    const r = roadNear(x, z);
+    return !!(r && r.e !== e && r.e.hw && r.d < r.w / 2 - 0.2 && Math.abs(r.y - y) < 1.2);
+  };
+  const wallSeg = (arr, a, b, ya, yb, h, th) => {   // a, b：[x, z]、高さ h、厚さ th の壁（上と両側）
+    const dx = b[0] - a[0], dz = b[1] - a[1], l = Math.hypot(dx, dz) || 1, nx = dz / l * th / 2, nz = -dx / l * th / 2;
+    const p = (q, y, s) => [q[0] + nx * s, y, q[1] + nz * s];
+    for (const s of [1, -1]) arr.push(...p(a, ya, s), ...p(b, yb, s), ...p(a, ya + h, s), ...p(a, ya + h, s), ...p(b, yb, s), ...p(b, yb + h, s));
+    arr.push(...p(a, ya + h, 1), ...p(b, yb + h, 1), ...p(a, ya + h, -1), ...p(a, ya + h, -1), ...p(b, yb + h, 1), ...p(b, yb + h, -1));
+  };
+  const piers = [], lamps = [];
+  for (const e of HE) {
+    const main = e.hw === 'main', hw2 = e.w / 2, plazaB = e.b.plaza ? e.b : null;
+    for (let i = 0; i < e.N - 1; i += 2) {   // 4m ごと（三角形を少なく）
+      const j = Math.min(e.N - 1, i + 2), mx = (e.X[i] + e.X[j]) / 2, mz = (e.Z[i] + e.Z[j]) / 2;
+      if (plazaB && Math.hypot(e.X[j] - plazaB.x, e.Z[j] - plazaB.z) < plazaB.plaza - 1) continue;   // 料金所の広場の中は広場の舗装
+      const P = (k, side, dy) => [e.X[k] + e.NX[k] * hw2 * side, e.Y[k] + dy, e.Z[k] + e.NZ[k] * hw2 * side];
+      const top = bucket(mx, mz, main ? 'main' : 'ramp');
+      const v0 = e.S[i] / 20, v1 = e.S[j] / 20, a = P(i, 1, 0.04), b = P(i, -1, 0.04), c = P(j, 1, 0.04), d = P(j, -1, 0.04);
+      top.push([...a, 0, v0], [...b, 1, v0], [...c, 0, v1], [...b, 1, v0], [...d, 1, v1], [...c, 0, v1]);
+      const el = e.EL[i] && e.EL[j];
+      if (el) {
+        const cc = bucket(mx, mz, 'conc');
+        for (const side of [1, -1]) { const a0 = P(i, side, -1.2), a1 = P(i, side, 0.02), b0 = P(j, side, -1.2), b1 = P(j, side, 0.02); cc.push(a0, b0, a1, a1, b0, b1); }
+        cc.push(P(i, 1, -1.2), P(i, -1, -1.2), P(j, 1, -1.2), P(j, 1, -1.2), P(i, -1, -1.2), P(j, -1, -1.2));
+      }
+      const wl = bucket(mx, mz, 'wall');
+      if (el || (!main && Math.max(e.Y[i], e.Y[j]) - Math.max(0, e.base[i]) > 0.8)) for (const side of [1, -1]) {   // 欄干（高い所だけ）
+        const o = hw2 - 0.15, ax = e.X[i] + e.NX[i] * o * side, az = e.Z[i] + e.NZ[i] * o * side, bx = e.X[j] + e.NX[j] * o * side, bz = e.Z[j] + e.NZ[j] * o * side;
+        if (covered(e, e.X[i] + e.NX[i] * (hw2 + 0.8) * side, e.Z[i] + e.NZ[i] * (hw2 + 0.8) * side, e.Y[i])) continue;
+        const arr = []; wallSeg(arr, [ax, az], [bx, bz], e.Y[i], e.Y[j], 1.0, 0.3);
+        for (let q = 0; q < arr.length; q += 3) wl.push([arr[q], arr[q + 1], arr[q + 2]]);
+      }
+      if (main) {   // 中央分離帯のかべ
+        const arr = []; wallSeg(arr, [e.X[i], e.Z[i]], [e.X[j], e.Z[j]], e.Y[i], e.Y[j], 0.85, 0.5);
+        for (let q = 0; q < arr.length; q += 3) wl.push([arr[q], arr[q + 1], arr[q + 2]]);
+      }
+      // 橋脚：32m ごと（下に一般道やほかの高架がある所はよける）
+      if (el && i % 16 === 0) {
+        const low = deckNear(e.X[i], e.Z[i], e.Y[i] - 2.5, 1.5), rq = roadNear(e.X[i], e.Z[i]);
+        const onRoad = rq && rq.d < rq.w / 2 + 2.5 && rq.e !== e && e.Y[i] - rq.y > 3;
+        if (!low && !onRoad) piers.push([e, i]);
+      }
+      // 照明：本線は中央分離帯に 60m ごと（両側に腕）、ランプは 40m ごと
+      if (main ? i % 30 === 0 : i % 20 === 10) lamps.push({ e, i, main });
+    }
+  }
+  const meshes = [];
+  for (const [key, list] of groups) {
+    const m = key.split(':')[1], pos = [], uv = [];
+    for (const p of list) { pos.push(p[0], p[1], p[2]); if (p.length > 3) uv.push(p[3], p[4]); }
+    const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    if (uv.length) g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+    g.computeVertexNormals();
+    const mesh = new THREE.Mesh(g, mats[m]); mesh.receiveShadow = m === 'main' || m === 'ramp'; mesh.castShadow = m === 'conc';
+    scene.add(mesh); meshes.push(mesh);
+  }
+  // 橋脚（柱と、その上の横ばり）
+  if (piers.length) {
+    const colG = new THREE.BoxGeometry(1, 1, 1);
+    const pm = new THREE.InstancedMesh(colG, mats.conc, piers.length * 2);
+    const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), sc = new THREE.Vector3(), p = new THREE.Vector3(), up = new THREE.Vector3(0, 1, 0);
+    let n = 0;
+    for (const [e, i] of piers) {
+      const top = e.Y[i] - 1.2, bot = Math.min(e.base[i], heightAt(e.X[i], e.Z[i])) - 2, main = e.hw === 'main';
+      q.setFromAxisAngle(up, Math.atan2(e.NX[i], e.NZ[i]));
+      sc.set(main ? 2.4 : 1.5, top - 1 - bot, main ? 2.4 : 1.5); p.set(e.X[i], (top - 1 + bot) / 2, e.Z[i]); pm.setMatrixAt(n++, m4.compose(p, q, sc));
+      sc.set(e.w * 0.8, 1.05, 1.8); p.set(e.X[i], top - 0.5, e.Z[i]); pm.setMatrixAt(n++, m4.compose(p, q, sc));
+    }
+    pm.count = n; pm.castShadow = true; pm.computeBoundingSphere(); scene.add(pm);
+  }
+  // 照明（街灯と同じ材料。夜になるといっしょに点く）
+  if (lamps.length) {
+    const H = 9, ARM = 2.2;
+    const poleG = new THREE.CylinderGeometry(0.1, 0.13, H, 6); poleG.translate(0, H / 2, 0);
+    const armA = new THREE.BoxGeometry(0.1, 0.1, ARM); armA.translate(0, H - 0.05, ARM / 2);
+    const armB = armA.clone(); armB.rotateY(Math.PI);
+    const capA = new THREE.BoxGeometry(0.4, 0.14, 0.7); capA.translate(0, H - 0.1, ARM);
+    const capB = capA.clone(); capB.rotateY(Math.PI);
+    const bulbA = new THREE.PlaneGeometry(0.32, 0.6); bulbA.rotateX(Math.PI / 2); bulbA.translate(0, H - 0.18, ARM);
+    const bulbB = bulbA.clone(); bulbB.rotateY(Math.PI);
+    const one = [mergeGeometries([poleG, armA, capA]), mergeGeometries([bulbA])], two = [mergeGeometries([poleG, armA, armB, capA, capB]), mergeGeometries([bulbA, bulbB])];
+    const poleMat = new THREE.MeshLambertMaterial({ color: 0x8d949a });
+    const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), s1 = new THREE.Vector3(1, 1, 1), p = new THREE.Vector3(), up = new THREE.Vector3(0, 1, 0);
+    const pools = [];
+    for (const [kind, geo] of [['two', two], ['one', one]]) {
+      const list = lamps.filter((L) => L.main === (kind === 'two'));
+      if (!list.length) continue;
+      const pm = new THREE.InstancedMesh(geo[0], poleMat, list.length), bm = new THREE.InstancedMesh(geo[1], streetLamps.bulbMat, list.length);
+      list.forEach((L, k) => {
+        const e = L.e, i = L.i, side = L.main ? 1 : (i % 40 < 20 ? 1 : -1), off = L.main ? 0 : (e.w / 2 + 0.3) * side;
+        p.set(e.X[i] + e.NX[i] * off, e.Y[i] + (L.main ? 0.8 : 0), e.Z[i] + e.NZ[i] * off);
+        q.setFromAxisAngle(up, Math.atan2(L.main ? e.NX[i] : -e.NX[i] * side, L.main ? e.NZ[i] : -e.NZ[i] * side));
+        m4.compose(p, q, s1); pm.setMatrixAt(k, m4); bm.setMatrixAt(k, m4);
+        for (const sg of L.main ? [1, -1] : [1]) { const d = L.main ? (ARM + 2.5) * sg : ARM + 1.2, nx = L.main ? e.NX[i] : -e.NX[i] * side, nz = L.main ? e.NZ[i] : -e.NZ[i] * side; pools.push([p.x + nx * d, e.Y[i] + 0.07, p.z + nz * d]); }
+      });
+      pm.castShadow = true; pm.computeBoundingSphere(); bm.computeBoundingSphere(); scene.add(pm, bm);
+    }
+    // 光の輪（平らな四角を、路面の少し上に）
+    const pos = [], uv = [], Rr = 9;
+    for (const [x, y, z] of pools) { pos.push(x - Rr, y, z - Rr, x + Rr, y, z - Rr, x - Rr, y, z + Rr, x - Rr, y, z + Rr, x + Rr, y, z - Rr, x + Rr, y, z + Rr); uv.push(0, 0, 1, 0, 0, 1, 0, 1, 1, 0, 1, 1); }
+    const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+    const pm = new THREE.Mesh(g, streetLamps.poolMat); pm.renderOrder = 2; pm.frustumCulled = false; scene.add(pm);
+    streetLamps.hwPools = pm;
+  }
+  return { meshes, piers: piers.length, lamps: lamps.length };
+})();
+/* ================= 高速道路の PA（駐車場とお店）と料金所（ETC） =================
+   PA は高速道路の中だけからはいれる（外の道や地面からは入れない）。料金所はバーが上がって通れる */
+const hwSign = (lines, w, h, bg, fg) => {
+  const c = document.createElement('canvas'); c.width = w; c.height = h; const g = c.getContext('2d');
+  g.fillStyle = bg; g.fillRect(0, 0, w, h);
+  g.fillStyle = fg; g.textAlign = 'center'; g.textBaseline = 'middle';
+  lines.forEach((t, k) => { const fs = Math.round(h / lines.length * (k ? 0.5 : 0.62)); g.font = `900 ${fs}px sans-serif`; g.fillText(t[0], w / 2, h * (k + 0.5) / lines.length, w * 0.92); });
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
+};
+// お店の建物（PA ごと）：駐車場の座標 u（進む向き）・v（本線から離れる向き）
+const HW_SHOP = { u0: -30, u1: 30, v0: 132, v1: 148, h: 5.5 };
+const hwExtra = (() => {
+  const R = roadNet;
+  // PA：舗装・区画の線・歩道・お店・さく
+  const asphalt = new THREE.MeshLambertMaterial({ color: 0x55575b, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -4 });
+  const walkM = new THREE.MeshLambertMaterial({ color: 0xc9c2b4, polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -6 });
+  const lineM = new THREE.MeshBasicMaterial({ color: 0xeeeeea, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -8 });
+  const wallM = new THREE.MeshLambertMaterial({ color: 0xf1ece2 }), roofM = new THREE.MeshLambertMaterial({ color: 0x5f6b78 });
+  const glassM = new THREE.MeshLambertMaterial({ color: 0x29435c, emissive: 0x000000 }), fenceM = new THREE.MeshLambertMaterial({ color: 0x6f8f6a });
+  const shops = [];
+  for (const L of HW_LOTS) {
+    const f = L.f, y = L.y, g = new THREE.Group();
+    g.position.set(f.x, y, f.z); g.rotation.y = Math.atan2(-f.tz, f.tx);   // 中の座標：x = u、z = -v
+    const quad = (pos, u0, v0, u1, v1, yy) => pos.push(u0, yy, -v0, u1, yy, -v0, u0, yy, -v1, u0, yy, -v1, u1, yy, -v0, u1, yy, -v1);
+    const geo = (pos) => { const gg = new THREE.BufferGeometry(); gg.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); gg.computeVertexNormals(); return gg; };
+    const pa = [], wk = [], ln = [];
+    quad(pa, -95, 58, 95, 126, -0.02); quad(pa, -95, 126, -45, 152, -0.02); quad(pa, 45, 126, 95, 152, -0.02);
+    quad(wk, -45, 126, 45, 152, 0.1);
+    // 斜めの区画（シミュレーションの車は (a+24, 94) に止まる。a = -72 + 6k）
+    const seg = (u0, v0, u1, v1, w) => { const dx = u1 - u0, dv = v1 - v0, l = Math.hypot(dx, dv), nu = -dv / l * w / 2, nv = dx / l * w / 2;
+      ln.push(u0 + nu, 0.03, -(v0 + nv), u1 + nu, 0.03, -(v1 + nv), u0 - nu, 0.03, -(v0 - nv), u0 - nu, 0.03, -(v0 - nv), u1 + nu, 0.03, -(v1 + nv), u1 - nu, 0.03, -(v1 - nv)); };
+    for (let k = 0; k <= 16; k++) { const uc = -48 - 3 + 6 * k; seg(uc - 5.5, 88.5, uc + 5.5, 99.5, 0.15); }
+    seg(-56.5, 88.5, 46.5, 88.5, 0.12); seg(-45.5, 99.5, 57.5, 99.5, 0.12);
+    for (let u = -80; u <= 80; u += 8) { seg(u, 76, u + 4, 76, 0.15); seg(u, 112, u + 4, 112, 0.15); }   // 通路の矢印のかわりの点線
+    const m1 = new THREE.Mesh(geo(pa), asphalt), m2 = new THREE.Mesh(geo(wk), walkM), m3 = new THREE.Mesh(geo(ln), lineM);
+    m1.receiveShadow = m2.receiveShadow = true;
+    g.add(m1, m2, m3);
+    // お店：駐車場に向いたガラスの正面と、看板
+    const S = HW_SHOP, cu = (S.u0 + S.u1) / 2, cv = (S.v0 + S.v1) / 2, w = S.u1 - S.u0, d = S.v1 - S.v0;
+    const body = new THREE.Mesh(new THREE.BoxGeometry(w, S.h, d), wallM); body.position.set(cu, S.h / 2, -cv); body.castShadow = body.receiveShadow = true;
+    const roof = new THREE.Mesh(new THREE.BoxGeometry(w + 3, 0.5, d + 4), roofM); roof.position.set(cu, S.h + 0.25, -cv + 1); roof.castShadow = true;
+    const glass = new THREE.Mesh(new THREE.PlaneGeometry(w - 8, 3.2), glassM); glass.position.set(cu, 1.9, -S.v0 + 0.03); 
+    const door = new THREE.Mesh(new THREE.PlaneGeometry(3, 2.6), new THREE.MeshLambertMaterial({ color: 0x9fc4dc })); door.position.set(cu, 1.3, -S.v0 + 0.05); 
+    const sign = new THREE.Mesh(new THREE.PlaneGeometry(16, 2.4), new THREE.MeshBasicMaterial({ map: hwSign([[L.pa.name.replace(/（.*）/, '')], ['ショップ・休憩所']], 640, 192, '#1f6b3a', '#ffffff') }));
+    sign.position.set(cu, S.h - 0.6, -S.v0 + 0.06); 
+    g.add(body, roof, glass, door, sign);
+    // 高い看板（本線から見える）
+    const pole = new THREE.Mesh(new THREE.BoxGeometry(0.5, 14, 0.5), new THREE.MeshLambertMaterial({ color: 0x8d949a })); pole.position.set(-70, 7, -60); pole.castShadow = true;
+    const ps = new THREE.Mesh(new THREE.PlaneGeometry(6, 3), new THREE.MeshBasicMaterial({ map: hwSign([['P'], ['PA']], 256, 128, '#1f6b3a', '#ffffff'), side: THREE.DoubleSide })); ps.position.set(-70, 15, -60); ps.rotation.y = Math.PI / 2;
+    g.add(pole, ps);
+    // さく（ランプとつながる角はあける）
+    const fp = [], fence = (u0, v0, u1, v1) => { const l = Math.hypot(u1 - u0, v1 - v0), b = new THREE.BoxGeometry(l, 1.2, 0.12); b.rotateY(-Math.atan2(-(v1 - v0), u1 - u0)); b.translate((u0 + u1) / 2, 0.6, -(v0 + v1) / 2); fp.push(b); };
+    fence(-97, 154, 97, 154); fence(-97, 82, -97, 154); fence(97, 82, 97, 154); fence(-78, 56, 78, 56);
+    const fm = new THREE.Mesh(mergeGeometries(fp), fenceM); fm.castShadow = true; g.add(fm);
+    scene.add(g); shops.push({ L, glassM });
+  }
+  // 料金所（ETC）：ランプの広場の近く、と西山線の終点。門と、車が来ると上がるバー
+  const gates = [], postM = new THREE.MeshLambertMaterial({ color: 0xc6c9cc }), barM = new THREE.MeshLambertMaterial({ color: 0xf4f0e6 }), islM = new THREE.MeshLambertMaterial({ color: 0xd9d4c4 });
+  const etcTex = hwSign([['ETC'], ['専用']], 256, 128, '#6b2f8f', '#ffffff');
+  const gantry = (x, z, y, nx, nz, half, lanes) => {   // lanes：[横の位置（左＋）, バーの向き（+1 なら右の柱から左へ）]
+    const g = new THREE.Group(); g.position.set(x, y, z); g.rotation.y = Math.atan2(nx, nz) + Math.PI / 2;   // 中の x：道の右（左は -x）
+    const post = new THREE.BoxGeometry(0.5, 5.6, 0.5);
+    for (const s of [1, -1]) { const p = new THREE.Mesh(post, postM); p.position.set(-s * (half + 0.6), 2.8, 0); p.castShadow = true; g.add(p); }
+    const beam = new THREE.Mesh(new THREE.BoxGeometry(half * 2 + 1.7, 0.7, 0.8), postM); beam.position.set(0, 5.6, 0); beam.castShadow = true; g.add(beam);
+    const bars = [];
+    for (const [lat, dir] of lanes) {
+      const sg = new THREE.Mesh(new THREE.PlaneGeometry(2.4, 1.2), new THREE.MeshBasicMaterial({ map: etcTex, side: THREE.DoubleSide })); sg.position.set(-lat, 5.6, 0.45); g.add(sg);
+      const piv = new THREE.Group(), x0 = -(lat - dir * 1.75);   // 車線の右はしにバーの根もと
+      const isl = new THREE.Mesh(new THREE.BoxGeometry(0.7, 1.0, 3.2), islM); isl.position.set(x0 + dir * 0.45, 0.5, 0); g.add(isl);
+      piv.position.set(x0, 1.0, 0); g.add(piv);
+      const bar = new THREE.Mesh(new THREE.BoxGeometry(3.0, 0.1, 0.1), barM); bar.position.set(dir * -1.5, 0, 0); piv.add(bar);
+      bars.push({ piv, dir, open: 0, wx: x + nx * lat, wz: z + nz * lat, y });
+    }
+    scene.add(g); gates.push({ x, z, y, bars });
+  };
+  for (const e of R.edges) {
+    if (!e.gate) continue;
+    const s = e.gate === 'out' ? e.L - 45 : 45; let i = 0; while (i < e.N - 2 && e.S[i] < s) i++;
+    gantry(e.X[i], e.Z[i], e.Y[i], e.NX[i], e.NZ[i], RAMP_W / 2, [[0, 1]]);
+  }
+  { const e = R.edges[HWY.spur], s = e.L - 70; let i = 0; while (i < e.N - 2 && e.S[i] < s) i++;
+    gantry(e.X[i], e.Z[i], e.Y[i], e.NX[i], e.NZ[i], HW_W / 2, [[7, 1], [3.5, 1], [-3.5, -1], [-7, -1]]); }
+  // IC の広場（外と高速道路の出入り口）
+  const portals = HWY.ics.map((ic) => { const n = R.nodeOf[ic.node]; return { name: ic.name, x: n.x, z: n.z, y: n.y, r: (n.plaza || 26) + (ic.terminal ? 45 : 25) }; });
+  return { shops, gates, portals };
+})();
+const portalAt = (x, z) => hwExtra.portals.find((p) => Math.hypot(x - p.x, z - p.z) < p.r) || null;
+// 高速道路の中か（本線・ランプ・PA の駐車場）。道のはしからの深さ（m、中が＋）。hwD.e：いちばん深い道（駐車場なら HW_LOTS の 1 つ）
+const HW_IN = -0.9, hwD = { e: null };
+function hwDepth(x, z, y) {
+  const R = roadNet, key = Math.floor(x / R.G) * 65536 + Math.floor(z / R.G);
+  let best = -Infinity; hwD.e = null;
+  for (const a of [R.gridEL.get(key), R.grid.get(key)]) if (a) for (const code of a) {
+    const e = R.edges[code >> 16]; if (!e.hw) continue;
+    const i = code & 65535, ex = e.X[i + 1] - e.X[i], ez = e.Z[i + 1] - e.Z[i], l2 = ex * ex + ez * ez || 1;
+    const t = Math.min(1, Math.max(0, ((x - e.X[i]) * ex + (z - e.Z[i]) * ez) / l2));
+    const yy = e.Y[i] + (e.Y[i + 1] - e.Y[i]) * t;
+    if (y < yy - 1.3 || y > yy + 4) continue;
+    const dep = e.W[i] / 2 - Math.hypot(x - e.X[i] - ex * t, z - e.Z[i] - ez * t);
+    if (dep > best) { best = dep; hwD.e = e; }
+  }
+  for (const L of HW_LOTS) {
+    if (x < L.x0 || x > L.x1 || z < L.z0 || z > L.z1 || Math.abs(y - L.y) > 4) continue;
+    const [u, v] = lotUV(L, x, z), dep = Math.min(97 - Math.abs(u), v - 56, 154 - v);
+    if (dep > best) { best = dep; hwD.e = L; }
+  }
+  return best;
+}
+function hwZone(x, z, y) { return hwDepth(x, z, y) > HW_IN ? hwD.e : null; }
+// PA のお店の中には入れない（いまは外から見るだけ）
+function hwShopHit(x, z, y, r) {
+  for (const L of HW_LOTS) {
+    if (x < L.x0 || x > L.x1 || z < L.z0 || z > L.z1 || y > L.y + HW_SHOP.h) continue;
+    const [u, v] = lotUV(L, x, z), S = HW_SHOP;
+    if (u > S.u0 - r && u < S.u1 + r && v > S.v0 - r && v < S.v1 + r) return true;
+  }
+  return false;
+}
+// 料金（ETC）：入った所から出る所まで、走った道のりで 1km 500P
+const HW_TOLL_KM = 500, TOLL = { on: false, dist: 0, from: '', portal: null, stopT: 0, warnT: 0 };
+function hwTollStart(p) { Object.assign(TOLL, { on: true, dist: 0, from: p ? p.name : '', portal: null }); showMsg(`ETC：${TOLL.from || '高速道路'}から入りました（1km ${HW_TOLL_KM}P）`); }
+function hwTollEnd(p) {
+  const km = TOLL.dist / 1000, fee = Math.round(km * HW_TOLL_KM / 10) * 10;
+  TOLL.on = false;
+  addPoints(-fee);
+  showMsg(`ETC：${TOLL.from}→${p ? p.name : '出口'}　${km.toFixed(1)}km　${fee}P（のこり ${fmtP(wallet.p)}）`);
+}
+const hwMsg = (t) => { const n = performance.now(); if (t !== hwMsg.t || n - hwMsg.at > 3000) { hwMsg.t = t; hwMsg.at = n; showMsg(t); } };
+// 車：高速道路の中と外は、IC の広場でしか行き来できない（はしまで来たら壁）。false なら元の位置へもどす
+function hwCarMove(car, ox, oz, mine) {
+  if (hwShopHit(car.pos.x, car.pos.y, car.y, 1.2)) return false;
+  const was = hwDepth(ox, oz, car.y), now = hwDepth(car.pos.x, car.pos.y, car.y), need = car.item.def.vehicle.halfWidth + 0.2;
+  if (was > HW_IN) {
+    if (now >= need || now >= was) return true;
+    const p = portalAt(car.pos.x, car.pos.y);
+    if (!p) { if (mine && car.y - heightAt(car.pos.x, car.pos.y) < 2) hwMsg('高速道路からは IC（出口）でしか出られません'); return false; }
+    return true;
+  }
+  if (now <= HW_IN) return true;
+  const p = portalAt(car.pos.x, car.pos.y);
+  if (!p) { if (mine) hwMsg('高速道路には IC の料金所からしか入れません'); return false; }
+  if (mine && !TOLL.on) {
+    if (wallet.p < HW_TOLL_KM) { hwMsg(`P が足りないので高速道路に入れません（${HW_TOLL_KM}P 以上いります・いま ${fmtP(wallet.p)}）`); return false; }
+    hwTollStart(p);
+  }
+  return true;
+}
+// 歩き：高速道路には歩いて入れない（車から降りたときは、中を歩ける。外へは IC の広場から）
+function hwWalkMove(ox, oz, oy) {
+  if (hwShopHit(player.pos.x, player.pos.z, player.pos.y, P_R)) return false;
+  const was = hwDepth(ox, oz, oy), now = hwDepth(player.pos.x, player.pos.z, player.pos.y);
+  if (was > HW_IN) {
+    if (now >= 0.4 || now >= was || portalAt(player.pos.x, player.pos.z)) return true;
+    return false;
+  }
+  if (now <= HW_IN || player.vy < -8) return true;   // 上から落ちてきたときだけは入ってしまう
+  if (portalAt(player.pos.x, player.pos.z)) { hwMsg('高速道路には歩いて入れません'); return false; }
+  return false;
+}
+// 毎コマ：料金の道のり・停車の注意・料金所のバー
+function stepHwRules(dt) {
+  const car = driving && ride ? ride : null;
+  if (car) {
+    const z = hwZone(car.pos.x, car.pos.y, car.y);
+    if (TOLL.on) {
+      if (z) { TOLL.dist += Math.abs(car.vF) * dt; TOLL.portal = null; }
+      else { const p = portalAt(car.pos.x, car.pos.y); if (p) TOLL.portal = p; else hwTollEnd(TOLL.portal); }   // IC の広場を出たら払う
+    }
+    // 本線の上で止まっている
+    if (z && z.hw === 'main' && Math.abs(car.vF) < 1.5) { TOLL.stopT += dt; if (TOLL.stopT > 3 && TOLL.warnT <= 0) { showMsg('⚠ 高速道路上で停車してはいけません'); TOLL.warnT = 8; } }
+    else TOLL.stopT = 0;
+    TOLL.warnT -= dt;
+  }
+  // バー：車（自分・ほかの人・高速の車）が近いと上がる
+  const cx = camera.position.x, cz = camera.position.z;
+  for (const G of hwExtra.gates) {
+    if (Math.abs(G.x - cx) > 400 || Math.abs(G.z - cz) > 400) continue;
+    for (const b of G.bars) {
+      let want = 0;
+      const near = (x, z, y) => Math.abs(y - b.y) < 4 && Math.hypot(x - b.wx, z - b.wz) < 20;
+      if (car && near(car.pos.x, car.pos.y, car.y)) want = 1;
+      if (!want) for (const o of net.others.values()) if (o.carObj && near(o.carObj.position.x, o.carObj.position.z, o.carObj.position.y)) { want = 1; break; }
+      if (!want && HWT.ready) for (const v of HWT.vs) if (v.root.visible && near(v.x, v.z, v.y)) { want = 1; break; }
+      b.open += THREE.MathUtils.clamp(want - b.open, -dt * 1.2, dt * 2.5);
+      b.piv.rotation.z = -b.dir * b.open * 1.45;
+    }
+  }
+}
 const LAMP_OFF = new THREE.Color(0x777064), LAMP_ON = new THREE.Color(0xffe2a0);
 window.__lampCount = () => streetLamps.N;
 function stepStreetLamps() {   // 暗くなるとだんだん点く（dayLight：1＝昼、0＝夜）
@@ -1947,7 +2517,7 @@ function stepStreetLamps() {   // 暗くなるとだんだん点く（dayLight�
   if (on === streetLamps.on) return;
   streetLamps.on = on;
   streetLamps.bulbMat.color.copy(LAMP_OFF).lerp(LAMP_ON, on);
-  streetLamps.poolMat.opacity = 0.55 * on; streetLamps.pools.visible = on > 0;
+  streetLamps.poolMat.opacity = 0.55 * on; streetLamps.pools.visible = on > 0; if (streetLamps.hwPools) streetLamps.hwPools.visible = on > 0;
 }
 const SIG_ON = [0x1fd17a, 0xffc21a, 0xff3322], SIG_OFF = [0x1b2a22, 0x2a2610, 0x2a1512];
 function stepSignals() {
@@ -3435,6 +4005,372 @@ for (const v of traffic) {
   scene.add(v.root);
 }
 const tp0 = { x: 0, y: 0, z: 0 }, tp1 = { x: 0, y: 0, z: 0 }, tp2 = { x: 0, y: 0, z: 0 };
+/* ================= 高速道路の車（2026-11-01） =================
+   PA の駐車場から出て、環状線を何周かして（ときどき西山線の終点まで行って U ターン）、PA にもどって休む。
+   1 時間ぶんを、全部の車をいっしょに動かして計算する（前の車との車間・追い越し・合流）。
+   出る時刻は毎時同じで、もどってから次に出るまでの休みで 1 時間に合わせる（毎時同じ動きになる）。
+   追い越し車線を 120km/h で走る車、走行車線を 100km/h 前後で走る車、トラック・バス（85km/h 前後）。車間はおよそ 200m。 */
+const HWT = { pieces: [], vs: [], ready: false };
+{
+  const R = roadNet, ring = R.edges[HWY.ring], spur = R.edges[HWY.spur];
+  const P_L0 = HW_LANE[1], P_L1 = HW_LANE[0];
+  // 本線の上の点の位置（向き d の走行車線からの「右へのずれ」rb）
+  const esOf = (e, d, i) => d > 0 ? e.S[i] : e.L - e.S[i];
+  const idxAt = (e, d, es) => { const s = d > 0 ? es : e.L - es; let lo = 0, hi = e.N - 1; while (lo < hi) { const m = (lo + hi + 1) >> 1; if (e.S[m] <= s) lo = m; else hi = m - 1; } return lo; };
+  const attachEs = (main, x, z) => {   // 本線の車線の上の点：どちらの向きの、どこか
+    let bi = 0, bd = Infinity; for (let i = 0; i < main.N; i++) { const d = (main.X[i] - x) ** 2 + (main.Z[i] - z) ** 2; if (d < bd) { bd = d; bi = i; } }
+    const lat = (x - main.X[bi]) * main.NX[bi] + (z - main.Z[bi]) * main.NZ[bi], d = lat > 0 ? 1 : -1;
+    return { d, es: esOf(main, d, bi) };
+  };
+  // 線（piece）：点の列。X Z Y、key（同じ車線を通る車をくらべる番号）、es（その key の中の位置）、lanes（車線の数）、rb、need（その点で入っていたい車線）
+  const mk = () => ({ X: [], Z: [], Y: [], key: [], es: [], lanes: [], rb: [], need: [], vmax: [], alt: [], altEs: [], gate: [] });
+  const push = (p, x, z, y, key, es, lanes, rb, vmax, extra = {}) => {
+    const n = p.X.length;
+    if (n && Math.hypot(x - p.X[n - 1], z - p.Z[n - 1]) < 0.5) return;
+    p.X.push(x); p.Z.push(z); p.Y.push(y); p.key.push(key); p.es.push(es); p.lanes.push(lanes); p.rb.push(rb); p.need.push(extra.need ?? -1); p.vmax.push(vmax); p.alt.push(-1); p.altEs.push(0); p.gate.push(extra.gate || 0);
+  };
+  const keyMain = (e, d) => e.id * 2 + (d > 0 ? 0 : 1);
+  const addMain = (p, e, d, es0, es1, rbAt = () => 0, needAt = () => -1, gateAt = () => 0) => {   // es0 から es1 まで（環状線は 1 周をこえてもよい）
+    const loop = e.loop, L = e.L;
+    let span = es1 - es0; if (loop && span <= 0) span += L;
+    const n = Math.ceil(span / RD_STEP);
+    for (let k = 0; k <= n; k++) {
+      let es = es0 + span * k / n; const esw = loop ? ((es % L) + L) % L : Math.min(L, Math.max(0, es));
+      const i = Math.min(e.N - 2, idxAt(e, d, esw)), s = d > 0 ? esw : L - esw, t = Math.min(1, Math.max(0, (s - e.S[i]) / Math.max(1e-6, e.S[i + 1] - e.S[i])));
+      const cx = e.X[i] + (e.X[i + 1] - e.X[i]) * t, cz = e.Z[i] + (e.Z[i + 1] - e.Z[i]) * t, cy = e.Y[i] + (e.Y[i + 1] - e.Y[i]) * t;
+      const rb = rbAt(es - es0, span), off = (P_L0 - rb) * d;
+      push(p, cx + e.NX[i] * off, cz + e.NZ[i] * off, cy, keyMain(e, d), esw, 2, rb, 99, { need: needAt(es - es0, span), gate: gateAt(esw) });
+    }
+  };
+  const addRamp = (p, e, vmax = 16.7, gate) => {
+    for (let i = 0; i < e.N; i++) push(p, e.X[i], e.Z[i], e.Y[i], 1000 + e.id, e.S[i], 1, 0, vmax);
+  };
+  const addPts = (p, pts, y, keyOf, vmax) => {   // 駐車場の中・U ターン
+    const P = polyPts(pts); let s = 0;
+    for (let i = 0; i < P.length; i++) { if (i) s += Math.hypot(P[i][0] - P[i - 1][0], P[i][1] - P[i - 1][1]); const [key, es] = keyOf(P[i], s); push(p, P[i][0], P[i][1], typeof y === 'function' ? y(P[i]) : y, key, es, 1, 0, vmax); }
+  };
+  // 仕上げ：長さ・曲がりの速さの上限・合流の手前（本線の key に重ねて見せる）
+  const finish = (p, name) => {
+    const N = p.X.length, S = new Float32Array(N);
+    for (let i = 1; i < N; i++) S[i] = S[i - 1] + Math.hypot(p.X[i] - p.X[i - 1], p.Z[i] - p.Z[i - 1]);
+    const vmax = Float32Array.from(p.vmax);
+    for (let i = 2; i < N - 2; i++) {
+      const h0 = Math.atan2(p.X[i] - p.X[i - 2], p.Z[i] - p.Z[i - 2]), h1 = Math.atan2(p.X[i + 2] - p.X[i], p.Z[i + 2] - p.Z[i]);
+      const kap = Math.abs(wrapA(h1 - h0)) / Math.max(1, S[i + 2] - S[i - 2]) * 2;
+      vmax[i] = Math.min(vmax[i], Math.sqrt((p.key[i] < 1000 ? 2.6 : 2.0) / Math.max(kap, 1e-5)));
+    }
+    for (let pass = 0; pass < 2; pass++) for (let i = N - 2; i >= 0; i--) vmax[i] = Math.min(vmax[i], Math.sqrt(vmax[i + 1] ** 2 + 2 * 1.2 * (S[i + 1] - S[i])));
+    // 合流：ランプの最後 150m は、合流先の本線の走行車線にもいるとみなす
+    for (let i = 1; i < N; i++) if (p.key[i] < 1000 && p.key[i - 1] >= 1000 && p.key[i - 1] < 2000) {
+      for (let j = i - 1; j >= 0 && S[i] - S[j] < 150 && p.key[j] >= 1000; j--) { p.alt[j] = p.key[i]; p.altEs[j] = p.es[i] - (S[i] - S[j]); }
+    }
+    const f32 = (a) => Float32Array.from(a);
+    const pc = { name, N, L: S[N - 1], S, X: f32(p.X), Z: f32(p.Z), Y: f32(p.Y), key: Int32Array.from(p.key), es: f32(p.es), lanes: Uint8Array.from(p.lanes), rb: f32(p.rb), need: Int8Array.from(p.need), vmax, alt: Int32Array.from(p.alt), altEs: f32(p.altEs), gate: Uint8Array.from(p.gate), entry: -1 };
+    pc.id = HWT.pieces.length; HWT.pieces.push(pc);
+    return pc;
+  };
+  // ひろ野JCT と西山線
+  const J = HWY.jcts[0], [r1, r3, f1, f2] = J.ramps.map((k) => R.edges[k]);
+  const plazaW = R.nodeOf['IC:西山町IC'];
+  const uturn = (p) => {   // 西山町の料金所の広場で U ターン（右まわり）
+    const a = { e: spur, d: 1 }, i0 = idxAt(spur, 1, spur.L - 36), i1 = idxAt(spur, -1, 36);
+    const ax = spur.X[i0] + spur.NX[i0] * P_L0, az = spur.Z[i0] + spur.NZ[i0] * P_L0, bx = spur.X[i1] - spur.NX[i1] * P_L0, bz = spur.Z[i1] - spur.NZ[i1] * P_L0;
+    const cx = plazaW.x, cz = plazaW.z, ux = spur.X[spur.N - 1] - spur.X[spur.N - 9], uz = spur.Z[spur.N - 1] - spur.Z[spur.N - 9], ul = Math.hypot(ux, uz);
+    const tx = ux / ul, tz = uz / ul, nx = tz, nz = -tx;   // 進む向き（西）、左（南）
+    const q = (u, v) => [cx + tx * u + nx * v, cz + tz * u + nz * v];
+    addPts(p, [[ax, az, 0], [...q(14, P_L0), 7], [...q(14, -P_L0), 7], [bx, bz, 0]], plazaW.y, (pt, s) => [3001, s], 6);
+    void a;
+  };
+  const excursion = (D) => {   // JCT で西山線へ → 終点で U ターン → JCT から同じ向きへもどる
+    const p = mk();
+    addRamp(p, D > 0 ? r1 : f1, D > 0 ? 18 : 12);
+    const L = spur.L, gateOut = (es) => Math.abs(es - (L - 70)) < 1.5 ? 1 : 0, gateIn = (es) => Math.abs(es - 70) < 1.5 ? 2 : 0;
+    addMain(p, spur, 1, 0, L - 36, (t) => D > 0 ? P_L1 * (1 - ss(0, 220, t)) : 0, (t, span) => span - t < 600 ? 0 : -1, gateOut);
+    uturn(p);
+    addMain(p, spur, -1, 36, L, (t, span) => D > 0 ? 0 : P_L1 * ss(span - 260, span - 40, t), (t, span) => span - t < 700 ? (D > 0 ? 0 : 1) : -1, gateIn);
+    addRamp(p, D > 0 ? r3 : f2, D > 0 ? 18 : 16);
+    for (let i = 0; i < p.X.length; i++) if (p.key[i] === 3001 || (p.key[i] === keyMain(spur, 1) && p.es[i] > spur.L - 120) || (p.key[i] === keyMain(spur, -1) && p.es[i] < 100)) p.vmax[i] = Math.min(p.vmax[i], 6.5);   // 料金所のあたりはゆっくり
+    return finish(p, 'jct' + D);
+  };
+  // PA ごとの線
+  const LOT = [];
+  for (const pa of HWY.pas) {
+    const D = pa.dir, f = pa.f, W2 = (u, v) => HWY.W(f, u, v);
+    const rin = R.edges[pa.rin], rout = R.edges[pa.rout];
+    const div = attachEs(ring, rin.X[0], rin.Z[0]), mrg = attachEs(ring, rout.X[rout.N - 1], rout.Z[rout.N - 1]);
+    const jd = attachEs(ring, (D > 0 ? r1 : f1).X[0], (D > 0 ? r1 : f1).Z[0]), jm = attachEs(ring, (D > 0 ? r3 : f2).X[(D > 0 ? r3 : f2).N - 1], (D > 0 ? r3 : f2).Z[(D > 0 ? r3 : f2).N - 1]);
+    const need0 = (t, span) => span - t < 700 ? 0 : -1;
+    const m1 = mk(); addMain(m1, ring, D, mrg.es, jd.es, () => 0, () => -1);
+    const m2 = mk(); addMain(m2, ring, D, jd.es, jm.es);
+    const m3 = mk(); addMain(m3, ring, D, jm.es, div.es);
+    const m4 = mk(); addMain(m4, ring, D, div.es, mrg.es);
+    const pcs = { m1: finish(m1, 'm1'), m2: finish(m2, 'm2'), m3: finish(m3, 'm3'), m4: finish(m4, 'm4'), x: excursion(D) };
+    // 駐車場：通路 A（v=70）から斜めの区画へ入って止まり、そのまま前へ出て通路 B（v=118）、出口へ
+    const stalls = [];
+    const lotKey = 4000 + LOT.length * 100;
+    const keyOf = (pt) => { const dx = pt[0] - f.x, dz = pt[1] - f.z, u = dx * f.tx + dz * f.tz, v = dx * f.nx + dz * f.nz; return v < 73 ? [lotKey, u] : v > 115 ? [lotKey + 1, u] : null; };
+    for (let k = 0; k < 16; k++) {
+      const a = -72 + 6 * k;
+      const pin = mk();
+      addRamp(pin, rin, 16.7);
+      addPts(pin, [[...W2(-90, 70), 0], [...W2(a, 70), 8], [...W2(a + 24, 94), 0]], pa.y, (pt, s) => keyOf(pt) || [lotKey + 10 + k, s], 5);
+      const pout = mk();
+      addPts(pout, [[...W2(a + 24, 94), 0], [...W2(a + 48, 118), 8], [...W2(82, 118), 10], [...W2(90, 98), 10], [...W2(90, 70), 0]], pa.y, (pt, s) => (pt[0] - f.x) * f.tx + (pt[1] - f.z) * f.tz > 78 ? [lotKey + 2, s] : keyOf(pt) || [lotKey + 10 + k, s], 5);
+      for (let i = 0; i < pin.X.length; i++) if (pin.key[i] >= lotKey) pin.vmax[i] = Math.min(pin.vmax[i], 4.5);
+      addRamp(pout, rout, 16.7);
+      const fi = finish(pin, 'in' + k), fo = finish(pout, 'out' + k);
+      fi.vmax[fi.N - 1] = 0;   // 区画のまん中で止まる
+      for (let pass = 0; pass < 2; pass++) for (let i = fi.N - 2; i >= 0; i--) fi.vmax[i] = Math.min(fi.vmax[i], Math.sqrt(fi.vmax[i + 1] ** 2 + 2 * 1.0 * (fi.S[i + 1] - fi.S[i])));
+      stalls.push({ k, a, in: fi, out: fo });
+    }
+    LOT.push({ pa, D, pcs, stalls, div, mrg });
+  }
+  HWT.lots = LOT;
+  // 車：PA ごとに 32 台。出る時刻は 1 時間に等間隔。種類と速さは決まった乱数（どの端末でも同じ）
+  const CLS = [
+    { c: 'fast', w: 0.25, v: [114, 121], lane: 1, types: ['sedan', 'sedan', 'van'] },
+    { c: 'car', w: 0.43, v: [92, 104], lane: 0, types: ['sedan', 'van', 'sedan'] },
+    { c: 'truck', w: 0.22, v: [80, 89], lane: 0, types: ['truck'] },
+    { c: 'bus', w: 0.10, v: [86, 92], lane: 0, types: ['coach'] },
+  ];
+  const COLORS = [0xd8dde3, 0x23272e, 0xb8312f, 0xf2f2f2, 0x2a4f8f, 0x6d7a88, 0x3b8f5a, 0xe3a32b, 0x8f2a52, 0x3c9db8, 0xc9c2b0, 0x5b3f8f, 0xa8a8a8, 0x1f1f24];
+  const PER = 32;
+  LOT.forEach((lot, li) => {
+    const lapLen = lot.pcs.m1.L + lot.pcs.m2.L + lot.pcs.m3.L + lot.pcs.m4.L;
+    for (let n = 0; n < PER; n++) {
+      const h = (k) => hash(li * 1000 + n, 700 + k);
+      let u = h(1), cl = CLS[0]; for (const c of CLS) { if (u < c.w) { cl = c; break; } u -= c.w; }
+      const kmh = cl.v[0] + (cl.v[1] - cl.v[0]) * h(2), cruise = kmh / 3.6;
+      const type = cl.types[Math.floor(h(3) * cl.types.length)];
+      const exc = h(4) < 0.35 ? 1 : 0;
+      // 周回数：休み（PA にいる時間）が 5 分以上になるように
+      const lapT = lapLen / (cruise * 0.94), xT = lot.pcs.x.L / (cruise * 0.6) - (lot.pcs.m2.L / (cruise * 0.94));
+      let K = 1; while ((K + 1) * lapT + exc * xT + 150 < T_ALL - 330) K++;
+      const laps = []; for (let j = 0; j < K; j++) laps.push(j === Math.floor(h(5) * K) && exc ? 1 : 0);
+      HWT.vs.push({ hl: type === 'coach' ? COACH_DIM.hl : VTYPE[type].hl, hw: type === 'coach' ? COACH_DIM.hw : VTYPE[type].hw, li, n, cls: cl.c, pref: cl.lane, cruise, kmh, type, color: COLORS[Math.floor(h(6) * COLORS.length)], dep: ((n + 0.5) / PER * T_ALL + li * 47) % T_ALL, K, laps, estTrip: K * lapT + exc * xT + 150 });
+    }
+  });
+  // 区画の割りあて：休む時間（もどる予定〜次に出る時刻）が重ならないように
+  for (const lot of LOT) {
+    const free = lot.stalls.map(() => []);   // 区画ごとの使う時間 [はじめ, おわり]（1 時間の中、またぐときは 2 つ）
+    const mine = HWT.vs.filter((v) => v.li === LOT.indexOf(lot)).sort((a, b) => a.dep - b.dep);
+    const over = (A, a0, a1) => A.some(([b0, b1]) => a0 < b1 && b0 < a1);
+    for (const v of mine) {
+      const a0 = v.dep - (T_ALL - v.estTrip) - 240, a1 = v.dep + 60;   // 早めにもどってもよいように
+      const iv = []; for (const sh of [-T_ALL, 0, T_ALL]) iv.push([a0 + sh, a1 + sh]);
+      let k = lot.stalls.findIndex((_, q) => !iv.some(([x0, x1]) => over(free[q], x0, x1)));
+      if (k < 0) { k = mine.indexOf(v) % lot.stalls.length; }
+      free[k].push(...iv); v.stall = k;
+    }
+  }
+  // 1 台の 1 回ぶんの道のり（piece の id の列）
+  for (const v of HWT.vs) {
+    const lot = LOT[v.li], st = lot.stalls[v.stall], P = lot.pcs, seq = [st.out.id];
+    v.laps.forEach((x, j) => { seq.push(P.m1.id, x ? P.x.id : P.m2.id, P.m3.id); seq.push(j < v.laps.length - 1 ? P.m4.id : st.in.id); });
+    v.seq = seq;
+  }
+}
+// 1 台ずつ順に計算する（おそい車から）。あとの車は、先に決まった車の 1 時間の動き（毎時くり返す）を見て、
+// 車間をあけ、追い越し、合流でゆずる。先の車はあとの車を見ないので、毎時の動きがぴったり同じになる
+// （Worker の中でも動くよう、ここに出てくる名前だけを使う）
+function hwSimulate(pieces, vs, T, dt, recDt, loopL) {
+  const NREC = Math.round(T / recDt), step = Math.max(1, Math.round(recDt / dt));
+  dt = recDt / step;
+  const order = vs.map((v, i) => i).sort((a, b) => vs[a].cruise - vs[b].cruise || a - b);
+  const out = vs.map(() => null), done = [];
+  const IDM = (v, v0, gap, dv, T0, A, B) => { const sStar = 4 + Math.max(0, v * T0 + v * dv / (2 * Math.sqrt(A * B))); return A * (1 - Math.pow(Math.max(0, v) / Math.max(0.1, v0), 4) - (sStar / Math.max(0.5, gap)) ** 2); };
+  const others = [];
+  for (const vi of order) {
+    const v = vs[vi], seq = v.seq.map((id) => pieces[id]);
+    const rec = { s: new Float32Array(NREC), lat: new Int8Array(NREC), fl: new Uint8Array(NREC), arrive: -1,
+      key: new Int32Array(NREC), es: new Float32Array(NREC), sp: new Float32Array(NREC), alt: new Int32Array(NREC), altEs: new Float32Array(NREC) };
+    let pi = 0, s = 0, sp = 0, lane = 0, lat = 0, tripS = 0, parked = false, lcT = 0, blinkT = 0, blink = 0;
+    const A = v.cls === 'truck' || v.cls === 'bus' ? 0.6 : 1.0, B = 1.6;
+    for (let r = 0; r < NREC; r++) {
+      const g = v.dep + r * recDt;
+      // 先に決まった車の、いまの位置
+      others.length = 0;
+      for (const o of done) {
+        const ro = Math.floor(((((g - o.dep) % T) + T) % T) / recDt + 1e-6) % NREC, R = o.rec;
+        others.push({ key: R.key[ro], es: R.es[ro], lat: R.lat[ro] / 20, sp: R.sp[ro], alt: R.alt[ro], altEs: R.altEs[ro], hl: o.hl, cruise: o.cruise, parked: R.fl[ro] & 32 });
+      }
+      let fl = 0;
+      for (let k = 0; k < step; k++) {
+        const p = seq[pi];
+        let lo = 0, hi = p.N - 1; while (lo < hi) { const m = (lo + hi + 1) >> 1; if (p.S[m] <= s) lo = m; else hi = m - 1; }
+        const i = lo, key = p.key[i], es = p.es[i] + (s - p.S[i]), lanes = p.lanes[i], rb = p.rb[i];
+        const altK = p.alt[i], altE = p.altEs[i] + (s - p.S[i]);
+        if (parked) { sp = 0; fl = 1 | 8 | 32; break; }
+        const nextP = pi + 1 < seq.length ? seq[pi + 1] : null, rem = p.L - s;
+        const look = (kk, base, myLat, ahead) => {   // その車線（横の位置 myLat）で前（ahead）かうしろの、いちばん近い車
+          let best = null;
+          for (const o of others) {
+            let oes;
+            if (o.key === kk) oes = o.es; else if (o.alt === kk) oes = o.altEs; else continue;
+            let gg = oes - base; if (loopL[kk]) { const L = loopL[kk]; if (gg < -L / 2) gg += L; if (gg > L / 2) gg -= L; }
+            if (ahead ? gg <= 0 : gg >= 0) continue;
+            if (Math.abs(o.lat - myLat) > 2.6 && o.key === kk) continue;
+            if (o.alt === kk && o.key !== kk && myLat > 1.5) continue;   // 合流してくる車は走行車線だけ
+            if (!best || Math.abs(gg) < Math.abs(best.g)) best = { o, g: gg };
+          }
+          return best;
+        };
+        const leaderIn = (myLat) => {
+          let L = look(key, es, myLat, true);
+          if (altK >= 0) { const L2 = look(altK, altE, 0, true); if (L2 && (!L || L2.g < L.g)) L = L2; }
+          if (!L && nextP && rem < 300) { const L3 = look(nextP.key[0], nextP.es[0] - rem, myLat, true); if (L3) L = L3; }
+          return L;
+        };
+        let need = p.need[i];
+        if (need < 0 && nextP && rem < 700 && nextP.lanes[0] === 1 && lanes === 2) need = 0;   // 出口・JCT・PA の手前は走行車線へ
+        const lead = leaderIn(lat);
+        if (lanes === 2 && lcT <= 0) {
+          const cur = lane, other = 1 - cur, oLat = other * 3.5;
+          const safe = () => {
+            const f = leaderIn(oLat), bk = look(key, es, oLat, false);
+            return (!f || f.g > 40 + Math.max(0, sp - f.o.sp) * 4) && (!bk || -bk.g > 35 + Math.max(0, bk.o.sp - sp) * 7);
+          };
+          let want = cur;
+          if (need >= 0) want = need;
+          else if (v.pref === 1) want = 1;
+          else if (cur === 0) { if (lead && lead.g < 260 && lead.o.cruise < v.cruise - 1.2 && rem > 800) want = 1; }   // 前のおそい車を追い越す
+          else { const f = leaderIn(0); if (!f || (f.g > 170 && f.o.cruise >= v.cruise - 1.2) || f.g > 330) want = 0; }   // 走行車線へもどる
+          if (want !== cur && (safe() || (need >= 0 && rem < 220))) { lane = want; lcT = 6; blink = want === 1 ? 4 : 2; blinkT = 3.5; }
+        }
+        if (lanes === 1) lane = 0;
+        lcT -= dt;
+        if (lanes === 1) lat = rb; else lat += Math.max(-dt * 0.9, Math.min(dt * 0.9, lane * 3.5 - lat));
+        // 速さ：先のカーブ・料金所・前の車（車間 およそ 200m）
+        let v0 = Math.min(v.cruise, p.vmax[i]);
+        for (let ip = i + 1; ip < p.N && p.S[ip] - s < 160; ip += 3) v0 = Math.min(v0, Math.sqrt(p.vmax[ip] ** 2 + 2 * 1.2 * Math.max(0, p.S[ip] - s)));
+        if (nextP && rem < 160) v0 = Math.min(v0, Math.sqrt(nextP.vmax[0] ** 2 + 2 * 1.2 * rem));
+        const T0 = key >= 1000 ? 1.8 : Math.max(2, 200 / Math.max(15, v.cruise));
+        let acc = IDM(sp, Math.max(0.5, v0), 1e6, 0, T0, A, B);
+        const ld = lead || leaderIn(lane * 3.5);
+        if (ld) { const gap = ld.g - ld.o.hl - v.hl; acc = Math.min(acc, IDM(sp, Math.max(0.5, v0), gap, sp - ld.o.sp, T0, A, B)); }
+        {   // うしろから来る速い車（先に決まった車は、こちらを見ていない）にぶつけられないよう、速さを合わせる
+          const bk = look(key, es, lat, false);
+          if (bk && bk.o.sp > sp) { const gap = -bk.g - bk.o.hl - v.hl; if (gap < 30 + (bk.o.sp - sp) * 5) acc = Math.max(acc, Math.min(2.5, (bk.o.sp - sp) / 1.5)); }
+        }
+        if (altK >= 0) {   // 合流：うしろから来る本線の車にゆずる
+          const bk = look(altK, altE, 0, false);
+          if (bk && -bk.g < 30 + Math.max(0, bk.o.sp - sp) * 3.5 && rem > 12) acc = Math.min(acc, -1.2);
+        }
+        acc = Math.max(-6, Math.min(A, acc));
+        const sp0 = sp;
+        sp = Math.max(0, sp + acc * dt);
+        if (pi === seq.length - 1 && p.vmax[p.N - 1] === 0 && rem < 0.8 && sp < 1.2) { sp = 0; s = p.L; }   // 区画に着いた
+        s += sp * dt; tripS += sp * dt;
+        fl = sp < sp0 - 0.4 * dt || sp < 0.3 ? 8 : 0;
+        if (blinkT > 0) { blinkT -= dt; fl |= blink; }
+        if (nextP && rem < 160 && nextP.lanes[0] === 1 && lanes === 2) fl |= 2;   // 出口へ：左のウインカー
+        if (altK >= 0) fl |= 4;   // 合流：右のウインカー
+        if (s >= p.L - 1e-6) {
+          if (pi === seq.length - 1) { s = p.L; parked = true; rec.arrive = r * recDt; fl = 1 | 8 | 32; }
+          else {
+            s -= p.L; pi++;
+            const np = seq[pi];
+            if (np.lanes[0] === 1) lane = 0;
+            else if (p.lanes[p.N - 1] === 1) { lane = np.rb[0] > 1 ? 1 : 0; lat = np.rb[0]; }   // ランプから本線へ（JCT から西山線の追い越し車線へ入るときも）
+          }
+        }
+      }
+      // 記録
+      const p = seq[pi];
+      let lo = 0, hi = p.N - 1; while (lo < hi) { const m = (lo + hi + 1) >> 1; if (p.S[m] <= s) lo = m; else hi = m - 1; }
+      rec.s[r] = tripS; rec.lat[r] = Math.round(lat * 20); rec.fl[r] = fl | (parked ? 32 : 0);
+      rec.key[r] = p.key[lo]; rec.es[r] = p.es[lo] + (s - p.S[lo]); rec.sp[r] = sp; rec.alt[r] = p.alt[lo]; rec.altEs[r] = p.altEs[lo] + (s - p.S[lo]);
+    }
+    out[vi] = rec;
+    done.push({ dep: v.dep, rec, hl: v.hl, cruise: v.cruise });
+  }
+  return typeof __hwDbg !== 'undefined' ? out : out.map((o) => ({ s: o.s, lat: o.lat, fl: o.fl, arrive: o.arrive }));
+}
+// 計算は Worker で（画面を止めない）。終わるまで高速道路の車は出ない
+{
+  const t0 = performance.now();
+  const loopL = {}; { const e = roadNet.edges[HWY.ring]; loopL[e.id * 2] = e.L; loopL[e.id * 2 + 1] = e.L; }
+  const pcs = HWT.pieces.map((p) => ({ N: p.N, L: p.L, S: p.S, key: p.key, es: p.es, lanes: p.lanes, rb: p.rb, need: p.need, vmax: p.vmax, alt: p.alt, altEs: p.altEs, entry: p.entry }));
+  const vs = HWT.vs.map((v) => ({ dep: v.dep, seq: v.seq, cruise: v.cruise, pref: v.pref, cls: v.cls, hl: v.hl }));
+  const done = (out, how) => {
+    out.forEach((o, k) => { const v = HWT.vs[k]; v.rec = o; });
+    HWT.ready = true; window.__hwMs = performance.now() - t0; window.__hwHow = how; window.__hwt = HWT; window.__hwSim = () => hwSimulate(pcs, vs, T_ALL, 0.5, REC_DT, loopL);
+  };
+  try {
+    const src = `${hwSimulate.toString()}
+onmessage = (e) => { const { pcs, vs, T, dt, recDt, loopL } = e.data; const out = hwSimulate(pcs, vs, T, dt, recDt, loopL); postMessage(out, out.flatMap((o) => [o.s.buffer, o.lat.buffer, o.fl.buffer])); };`;
+    const url = URL.createObjectURL(new Blob([src], { type: 'text/javascript' })), w = new Worker(url);
+    w.onmessage = (e) => { w.terminate(); URL.revokeObjectURL(url); done(e.data, 'worker'); };
+    w.onerror = (e) => { e.preventDefault(); w.terminate(); done(hwSimulate(pcs, vs, T_ALL, 0.5, REC_DT, loopL), 'main'); };
+    w.postMessage({ pcs, vs, T: T_ALL, dt: 0.5, recDt: REC_DT, loopL });
+  } catch (e) { done(hwSimulate(pcs, vs, T_ALL, 0.5, REC_DT, loopL), 'main'); }
+  // 見た目と、道のりから piece をさがすための表
+  for (const v of HWT.vs) {
+    const m = v.type === 'coach' ? makeBus('貸切', v.color, COACH_DIM, { text: 'はじめ観光' }) : makeCar(v.type, v.color);
+    Object.assign(v, m, { x: 0, y: 0, z: 0, h: 0, speed: 0, fl: 0, lag: 0, rate: 1, T: { hw: v.hw, hl: v.hl } });
+    v.cum = new Float64Array(v.seq.length + 1); v.seq.forEach((id, k) => { v.cum[k + 1] = v.cum[k] + HWT.pieces[id].L; });
+    v.root.visible = false; scene.add(v.root);
+  }
+}
+const hwP = { x: 0, y: 0, z: 0, rb: 0, i: 0, p: null };
+function hwPoint(v, s, out = hwP) {   // 1 回の道のり s（m）→ 位置
+  let lo = 0, hi = v.seq.length - 1; while (lo < hi) { const m = (lo + hi + 1) >> 1; if (v.cum[m] <= s) lo = m; else hi = m - 1; }
+  const p = HWT.pieces[v.seq[lo]], ls = Math.min(p.L, Math.max(0, s - v.cum[lo]));
+  let a = 0, b = p.N - 1; while (a < b) { const m = (a + b + 1) >> 1; if (p.S[m] <= ls) a = m; else b = m - 1; }
+  const j = Math.min(p.N - 1, a + 1), f = j > a ? (ls - p.S[a]) / Math.max(1e-6, p.S[j] - p.S[a]) : 0;
+  out.x = p.X[a] + (p.X[j] - p.X[a]) * f; out.z = p.Z[a] + (p.Z[j] - p.Z[a]) * f; out.y = p.Y[a] + (p.Y[j] - p.Y[a]) * f; out.rb = p.rb[a]; out.i = a; out.p = p;
+  return out;
+}
+const hwA = { x: 0, y: 0, z: 0 }, hwB = { x: 0, y: 0, z: 0 };
+function stepHwTraffic(dt) {
+  const now = Date.now() / 1000, cx = camera.position.x, cz = camera.position.z;
+  if (!HWT.ready) return;
+  const blink = Math.floor(now * 3) % 2 === 0, night = dayLight < 0.35;
+  const rdt = THREE.MathUtils.clamp(now - (stepHwTraffic.last || now), 0, 1); stepHwTraffic.last = now;
+  const NREC = HWT.vs[0].rec.s.length;
+  // じゃまな物：自分の車（高速道路の上）と、予定より遅れている車
+  const obs = [];
+  if (driving && ride) obs.push({ x: ride.pos.x, z: ride.pos.y, y: ride.y, r: 2.2, ref: null });
+  else if (!busRide) obs.push({ x: player.pos.x, z: player.pos.z, y: player.pos.y, r: 0.8, ref: null });
+  for (const o of net.others.values()) if (o.carObj && o.carObj.visible) obs.push({ x: o.carObj.position.x, z: o.carObj.position.z, y: o.carObj.position.y, r: 2.2, ref: null });
+  for (const v of HWT.vs) if (v.root.visible) obs.push({ x: v.x, z: v.z, y: v.y, r: v.T.hl, ref: v, car: true });
+  for (const v of HWT.vs) {
+    const tau = (((now - v.dep - v.lag) % T_ALL) + T_ALL) % T_ALL, r = tau / REC_DT, i0 = Math.min(NREC - 1, Math.floor(r)), i1 = Math.min(NREC - 1, i0 + 1), f = r - i0;
+    const rec = v.rec, s = rec.s[i0] + (rec.s[i1] - rec.s[i0]) * f, lat = (rec.lat[i0] + (rec.lat[i1] - rec.lat[i0]) * f) / 20;
+    const schedV = (rec.s[i1] - rec.s[i0]) / REC_DT;
+    hwPoint(v, s + 3, hwA); hwPoint(v, s - 3, hwB); const q = hwPoint(v, s);
+    const h = Math.atan2(hwA.x - hwB.x, hwA.z - hwB.z), sh = lat - q.rb, rx = -Math.cos(h), rz = Math.sin(h);
+    const x = q.x + rx * sh, z = q.z + rz * sh, dCam = Math.hypot(x - cx, z - cz);
+    v.x = x; v.z = z; v.y = q.y; v.h = h; v.speed = schedV * v.rate; v.fl = rec.fl[i0];
+    const near = dCam < CAR_VIEW;
+    // 前にじゃまな物があれば、止まれる速さまで落とす（ぶつからないように）。どいたら少し速く走って予定にもどる
+    let target = v.lag > 0.05 ? 1.25 : 1;
+    if (dCam < OBS_NEAR && schedV > 0.5) {
+      const fx = Math.sin(h), fz = Math.cos(h), look = Math.min(90, schedV * schedV / 6 + 15);
+      for (const o of obs) {
+        if (o.ref === v || Math.abs(o.y - v.y) > 3) continue;
+        const dx = o.x - x, dz = o.z - z, ah = dx * fx + dz * fz, la = dx * -rx + dz * -rz;
+        if (ah < 0 || ah > (o.car ? Math.min(look, 45) : look) + v.T.hl + o.r || Math.abs(la) > v.T.hw + 1.1) continue;
+        const gap = ah - v.T.hl - o.r - 3, vAllow = Math.sqrt(2 * 3 * Math.max(0, gap));
+        if (schedV * target > vAllow) target = vAllow / schedV;
+      }
+    }
+    v.rate += THREE.MathUtils.clamp(target - v.rate, -rdt * 3, rdt * 0.6); v.rate = Math.max(0, v.rate);
+    v.lag = Math.max(0, v.lag + (1 - v.rate) * rdt); if (v.lag <= 0 && v.rate > 1) v.rate = 1;
+    if (!near) v.lag = Math.max(0, v.lag - rdt * 3);
+    if (v.rate < 0.9) v.fl |= 8;
+    v.root.visible = near;
+    if (!near) continue;
+    if (coarse) { nearCars.push(v); v.dCam = dCam; }
+    v.root.position.set(x, q.y, z);
+    v.root.rotation.set(-Math.atan2(hwA.y - hwB.y, 6), h, 0);
+    const L = v.lights, haz = v.fl & 1 && !(v.fl & 32);
+    L.bl.color.setHex(blink && (haz || v.fl & 2) ? LAMP.blinkOn : LAMP.blinkOff);
+    L.br.color.setHex(blink && (haz || v.fl & 4) ? LAMP.blinkOn : LAMP.blinkOff);
+    L.tail.color.setHex(v.fl & 8 && !(v.fl & 32) ? LAMP.tailBrake : night ? LAMP.tailDim : LAMP.tailOff);
+    L.head.color.setHex(night && !(v.fl & 32) ? LAMP.headOn : LAMP.headOff);
+  }
+}
 /* ---- 道の上のじゃまな物（人・置いた物・乗り物・遅れているバスや車）。止まるか、ウインカーを出してよける ---- */
 const OBS_NEAR = 260;   // カメラからこの距離までの車だけ、じゃまな物を見る
 function trafficObstacles() {
@@ -3638,6 +4574,7 @@ function stepTraffic(dt) {
     L.tail.color.setHex(v.fl & 8 ? LAMP.tailBrake : night ? LAMP.tailDim : LAMP.tailOff);
     L.head.color.setHex(night ? LAMP.headOn : LAMP.headOff);
   }
+  stepHwTraffic(dt);   // 高速道路の車
   if (nearCars.length > CAR_MAX_PHONE) {   // スマホ：描く車は近いほうから決まった台数まで
     nearCars.sort((a, b) => a.dCam - b.dCam);
     for (let k = CAR_MAX_PHONE; k < nearCars.length; k++) nearCars[k].root.visible = false;
@@ -3660,6 +4597,7 @@ function nearBusDoor() {
 // ふつうの車とバスには押しのけられる
 function pushFromTraffic() {
   for (const v of traffic) if (v.root.visible && !(busRide && busRide.b === v)) pushFromCar({ halfWidth: v.T.hw, halfLength: v.T.hl, centerZ: 0 }, v.x, v.z, v.y, v.h);
+  for (const v of HWT.vs) if (v.root.visible) pushFromCar({ halfWidth: v.T.hw, halfLength: v.T.hl, centerZ: 0 }, v.x, v.z, v.y, v.h);
 }
 let busRide = null;   // { b, lx, lz, seat }
 let busYawPrev = 0;
@@ -4133,6 +5071,7 @@ function stepPlayer(dt) {
     else { const ch = bldSeat.ch; player.pos.set(ch.at.x, ch.seatY - 0.4, ch.at.z); player.vy = 0; player.onGround = true; player.moving = false; player.mode = 'walk';
       player.face += ((keys.KeyA || keys.ArrowLeft ? 1 : 0) - (keys.KeyD || keys.ArrowRight ? 1 : 0)) * 2 * dt; return; }
   }
+  const ox = player.pos.x, oz = player.pos.z, oy = player.pos.y;
   // ↑↓ で向いている方へ進む・下がる、←→ で向きを変える（カメラの向きとは関係なし）
   let fwdIn = (keys.KeyW || keys.ArrowUp ? 1 : 0) - (keys.KeyS || keys.ArrowDown ? 1 : 0);
   let turnIn = (keys.KeyA || keys.ArrowLeft ? 1 : 0) - (keys.KeyD || keys.ArrowRight ? 1 : 0);
@@ -4217,6 +5156,7 @@ function stepPlayer(dt) {
     }
   }
   if (blds.length) bldPush(player.pos, P_R);   // 建物の壁とドア
+  if (!hwWalkMove(ox, oz, oy)) { player.pos.x = ox; player.pos.z = oz; if (player.pos.y < oy) { player.pos.y = oy; player.vy = Math.max(0, player.vy); } }   // 高速道路は歩いて出入りできない
   for (const pr of props) {
     if (pr.bld) continue;
     const b = pr.box;
@@ -4280,7 +5220,7 @@ function stepCar(car, dt) {
   }
   if (gas > 0) {
     if (car.vF < -0.3) car.vF += V.brake * gas * dt;
-    else car.vF += V.accel * gas * (1 - car.vF / V.maxSpeed) * dt;
+    else car.vF += V.accel * gas * (1 - Math.pow(Math.max(0, car.vF) / V.maxSpeed, V.pw ?? 1)) * dt;
   }
   if (brk > 0) {
     if (car.vF > 0.3) car.vF -= V.brake * brk * dt;
@@ -4291,7 +5231,8 @@ function stepCar(car, dt) {
   if (hand) car.vF -= Math.sign(car.vF) * Math.min(Math.abs(car.vF), 5 * dt);
   if (!mine) car.vF = 0;   // 降りたらパーキングブレーキ
   if (auto && auto.hold) car.vF = 0;   // 自動運転で止まっているとき（坂でも動かない）
-  car.vF -= car.vF * Math.abs(car.vF) * 0.004 * dt;
+  car.vF -= car.vF * Math.abs(car.vF) * (V.drag ?? 0.004) * dt;
+  car.vF = Math.min(car.vF, V.maxSpeed);
   if (car.y < SEA) car.vF *= Math.exp(-1.4 * dt);   // 浅瀬は水の抵抗
 
   const target = auto ? auto.steer : steerIn * V.maxSteer / (1 + Math.abs(car.vF) / 10);
@@ -4343,6 +5284,7 @@ function stepCar(car, dt) {
     }
   }
   if (bumped) hitWall(car);
+  if (mine && !hwCarMove(car, old.x, old.z, true)) { car.pos.x = old.x; car.pos.y = old.z; car.h = old.h; hitWall(car); if (AUTO.on) stopAuto(); }   // 高速道路の出入りは IC だけ
   // 地形：急すぎる坂・深い水なら、元の位置に戻して止める
   let pose = carPose(car);
   const tooSteep = Math.abs(pose.pitch) > MAX_TILT || Math.abs(pose.roll) > MAX_TILT, tooDeep = pose.y < (V.wade ?? MAX_WADE);
@@ -6753,6 +7695,7 @@ function frame() {
   if (aboard && !vehicles.includes(aboard.v)) getOff();
   stepTraffic(dt);
   stepSignals();
+  stepHwRules(dt);
   stepStreetLamps();
   if (busRide) stepBusRider(dt);
   else if (pod && pod.mine && !pod.landed) followPod(); else if (!driving && !aboard) stepPlayer(dt);
@@ -6783,6 +7726,7 @@ function frame() {
   stepBooms(dt);
   netTick += dt;
   if (netTick > 0.25) { netTick = 0; sendPresence(); }
+  if (window.__camOverride) { const c = window.__camOverride; camera.position.set(c.x, c.y, c.z); camera.lookAt(c.tx, c.ty, c.tz); camera.far = 3000; camera.updateProjectionMatrix(); }   // テスト用
   renderer.render(scene, camera);
   requestAnimationFrame(frame);
 }
@@ -6801,7 +7745,7 @@ const canAuto = () => !!(driving && ride && vtype(ride) === 'car' && !ride.remot
 // いちばん近い道の点（maxD m まで）
 function nearestRoadPoint(x, z, maxD) {
   let best = null, bd = maxD * maxD;
-  for (const e of roadNet.edges) for (let i = 0; i < e.N - 1; i++) {
+  for (const e of roadNet.edges) if (!e.hw) for (let i = 0; i < e.N - 1; i++) {   // 自動運転は一般道だけ
     const ex = e.X[i + 1] - e.X[i], ez = e.Z[i + 1] - e.Z[i], l2 = ex * ex + ez * ez || 1;
     const t = Math.min(1, Math.max(0, ((x - e.X[i]) * ex + (z - e.Z[i]) * ez) / l2));
     const dx = x - e.X[i] - ex * t, dz = z - e.Z[i] - ez * t, d = dx * dx + dz * dz;
@@ -6841,6 +7785,7 @@ function planAuto(car, tx, tz) {
     if (u === null) break;
     done.add(u);
     for (const q of R.nodeOf[u].ends) {
+      if (q.e.hw) continue;
       const o = q.end ? q.e.a : q.e.b, nd = ud + q.e.L;
       if (nd < (D.get(o.id) ?? Infinity)) { D.set(o.id, nd); prev.set(o.id, { from: u, e: q.e, dir: q.end ? -1 : 1 }); }
     }
@@ -7074,14 +8019,21 @@ function drawWmap() {
   else { g.fillStyle = '#fff'; g.font = '800 16px ' + getComputedStyle(document.body).fontFamily; g.textAlign = 'center'; g.fillText('地図を作っています…', W / 2, H / 2); }
   g.lineCap = g.lineJoin = 'round';
   // 道路
-  for (const pass of [0, 1]) for (const e of roadNet.edges) {
+  const mapEdges = [...roadNet.edges.filter((e) => !e.hw), ...roadNet.edges.filter((e) => e.hw === 'ramp'), ...roadNet.edges.filter((e) => e.hw === 'main')];   // 高速道路は上に
+  for (const pass of [0, 1]) for (const e of mapEdges) {
     g.beginPath();
     for (let i = 0; i < e.N; i += 3) { const [x, y] = P(e.X[i], e.Z[i]); i ? g.lineTo(x, y) : g.moveTo(x, y); }
     const [x, y] = P(e.X[e.N - 1], e.Z[e.N - 1]); g.lineTo(x, y);
-    g.strokeStyle = pass ? '#fff' : 'rgba(40,40,40,.55)';
-    g.lineWidth = Math.max(pass ? 2 : 4, e.w * sc * (pass ? 1 : 1.5));
+    g.strokeStyle = pass ? (e.hw ? '#3bb15c' : '#fff') : 'rgba(40,40,40,.55)';
+    g.lineWidth = Math.max(pass ? (e.hw === 'main' ? 3.5 : 2) : (e.hw === 'main' ? 6 : 4), e.w * sc * (pass ? 1 : 1.5));
     g.stroke();
   }
+  // 高速道路の IC・PA・JCT の名前
+  g.font = `800 ${WMAP.mode === 'all' ? 11 : 13}px ` + getComputedStyle(document.body).fontFamily; g.textAlign = 'left'; g.textBaseline = 'middle';
+  const hwLabel = (t, x, z) => { const [X, Y] = P(x, z); if (X < -50 || Y < -20 || X > W + 50 || Y > H + 20) return; g.fillStyle = '#1f6b3a'; g.beginPath(); g.arc(X, Y, 4, 0, 7); g.fill(); g.lineWidth = 3; g.strokeStyle = 'rgba(255,255,255,.9)'; g.strokeText(t, X + 6, Y); g.fillText(t, X + 6, Y); };
+  for (const ic of HWY.ics) { const n = roadNet.nodeOf[ic.node]; hwLabel(ic.name, n.x, n.z); }
+  hwLabel('みずうみPA', HWY.pas[0].f.x, HWY.pas[0].f.z);
+  for (const j of HWY.jcts) hwLabel(j.name, j.f.x, j.f.z);
   // 路線（路線図のとき）
   if (WMAP.routes) {
     const seen = new Set();
@@ -7280,6 +8232,7 @@ window.__world = {
   set camYaw(v) { camYaw = v; }, set camPitch(v) { camPitch = v; }, set camDist(v) { camDist = v; }, get camDist() { return camDist; },
   keys, touch, toggleRide, loadItem, ITEM_DEFS, heightAt, player, net, syncPeers,
   addPropFromBuffer, wallet, addPoints, PG, touch, insideB: () => insideBld(), setCamYaw: (v) => { camYaw = v; }, bgmState: () => ({ name: bgm.name, vol: +bgm.vol.toFixed(2), playing: !!(bgm.el && !bgm.el.paused), t: bgm.el ? +bgm.el.currentTime.toFixed(1) : 0 }), blds, bldFloor, bldPush, roadNear, nearBldAction, placeAt, get bldSeat() { return bldSeat; }, get dayLight() { return dayLight; },
+  HWY, hwExtra, hwZone, TOLL, HW_LOTS, stepHwRules, hwDraw, HWT, scene, THREE, get rinfo() { return { calls: renderer.info.render.calls, tris: renderer.info.render.triangles }; },
   get aboard() { return aboard; }, get ride() { return ride; }, buses, get busRide() { return busRide; }, nearBusDoor, traffic, roadNet, worldHour, setHourOffset(h) { hourOffset = h; },
   hullGround, findWaterSpot, rescueBoat, get periscope() { return periscope; }, toggleLight, setPeriscope,
   teleport(x, z, y) { player.pos.set(x, y ?? heightAt(x, z), z); player.vy = 0; },
