@@ -968,7 +968,10 @@ function rawHeight0(x, z) {   // 道を作る前の地面（前の世界の中�
   return oldHeight(x, z) * (1 - m) + newHeight0(x, z) * m;
 }
 // はじめの浜バスターミナルのロータリーの輪の上の点（角度は x 軸から z 軸へ。度）
-function ringPt(deg, r = 14) { const a = deg * Math.PI / 180; return [5 + r * Math.cos(a), 45 + r * Math.sin(a)]; }
+function ringPt(deg, r = 14, c = [5, 45]) { const a = deg * Math.PI / 180; return [c[0] + r * Math.cos(a), c[1] + r * Math.sin(a)]; }
+// みさき はなれ島ロータリー（2026-11-01）：高速バス HAKATA の終点。はじめの浜バスターミナルと同じ形（半径 14m の輪を時計回り）
+const MB_C = [2560, -3690], MB_IN = 150, MB_BERTH = 60;   // 広場のまん中、入口の角度（東の交差点のほう）、のりばの角度
+const mbPt = (deg, r = 14) => ringPt(deg, r, MB_C);
 const NODES = {
   K: { x: 1000, z: -2740, name: '港の交差点' }, SW: { x: -300, z: -2930, name: '西の大通り交差点' }, WJ: { x: -1550, z: -3450, name: '西の交差点' },
   CJ: { x: -300, z: -3450, name: '中央交差点' }, RJ: { x: 1000, z: -3450, name: '川向こう交差点' }, EJ: { x: 2200, z: -3450, name: '東の交差点' },
@@ -982,6 +985,8 @@ const NODES = {
   GH: { x: -700, z: 2650, name: 'ひろ野' }, RN: { x: -200, z: 4100, name: '輪の里' }, GR: { x: 900, z: 3720, name: '輪の里東' },
   MZ: { x: 3450, z: 3200, name: 'みずうみ町' }, GE2: { x: 3420, z: 2650, name: 'みずうみ町北' }, GE1: { x: 3420, z: 1150, name: '東浜' },
   ETW: { x: 4100, z: 700, name: '東浜の海' }, WST: { x: -3100, z: 1750, name: '西山町' },
+  MB: { x: MB_C[0], z: MB_C[1], name: 'みさき はなれ島ロータリー', plaza: 24 },
+  ME: { x: mbPt(MB_IN)[0], z: mbPt(MB_IN)[1], name: 'みさき はなれ島ロータリー', inPlazaOf: 'MB', jr0: 10.5 },
 };
 const EDGES = [
   { a: 'K', b: 'SW', w: 14, via: [[300, -2880, 30]] },
@@ -1028,6 +1033,9 @@ const EDGES = [
   // みなと環状線の IC の広場から（2026-11-01）
   { a: 'IC:西大通りIC', b: 'CJ', w: 7, via: [] },
   { a: 'IC:北大通りIC', b: 'EJ', w: 7, via: [] },
+  // みさき はなれ島ロータリー（2026-11-01）：東の交差点から東へ。広場の中の輪は時計回り
+  { a: 'ME', b: 'EJ', w: 7, via: [[2420, -3600, 120]], tag: 'misakiRoad' },
+  { a: 'ME', b: 'ME', w: 7, via: Array.from({ length: 35 }, (_, k) => [...mbPt(MB_IN + 10 + k * 10), 0]), inPlaza: true, tag: 'misakiRing' },
 ];
 // バス停：何番の道の、どのあたり（0〜1）か。道の両側にある（one：片側だけ）。
 //   bay：寄せる幅、r0／r1：広げる長さ（ロータリーは 1 周が短いので短く）
@@ -1039,8 +1047,9 @@ const BUS_STOPS = [
   ...[80, 155, 230].map((deg, k) => ({ e: 17, at: ringPt(deg), name: 'はじめの浜', terminal: true, one: true, bay: 7, r0: 9, r1: 5, line: 2, slot: k })),
   // 高速バス専用（路線バスは止まらない）。片側だけに待合所。at：その場所にいちばん近い所
   { e: 17, at: ringPt(305), name: 'はじめの浜 高速バスのりば', express: true, bay: 7, r0: 10, r1: 6 },
-  { e: 4, f: 0.75, name: '東野原 高速バスのりば', express: true, bay: 6.5 },
 ];
+// みさき はなれ島ロータリーの高速バスのりば（道の番号は名前でさがす）
+BUS_STOPS.push({ e: EDGES.findIndex((e) => e.tag === 'misakiRing'), at: mbPt(MB_BERTH), name: 'みさき 高速バスのりば', express: true, bay: 7, r0: 10, r1: 6 });
 /* ================= 地名 =================
    陸を 2 つの市と 20 の町・地区に分ける（2026-10-30 わんみゃさんと決めた）。区域は x, z の多角形で、陸の上だけに効く
    （はじめ諸島だけは海ごと）。海は z と x で 4 つに分ける。表と地図の元：README の「地名」 */
@@ -1081,6 +1090,7 @@ const LANDMARKS = [
   { name: 'まんなか山', kind: '山', x: -100, z: -3360, h: 54 },
   { name: 'みなと川', kind: '川', x: 420, z: -3550 },
   { name: 'はなれ島', kind: '島', x: 3000, z: -4000 },
+  { name: 'みさき はなれ島ロータリー', kind: '駅', x: MB_C[0], z: MB_C[1] },
   { name: '西山', kind: '山', x: -3820, z: 1660, h: 123 },
   { name: '東山', kind: '山', x: 1420, z: 2160, h: 125 },
   { name: 'みなみ山', kind: '山', x: -740, z: 3980, h: 104 },
@@ -1111,9 +1121,9 @@ const LINES = [
   { no: 1, name: '大陸循環 内回り', color: '#e0453a', legs: [[5, -1], [4, -1], [3, -1], [2, -1], [1, -1], [0, -1]], buses: 2 },
   { no: 2, name: 'はじめの浜・港・中央', color: '#2f7fd8', legs: [[17, 1], [15, 1], [13, 1], [11, 1], [9, -1], [6, -1], [0, -1], [13, -1], [16, -1], [14, 1], [16, 1], [15, -1]], buses: 3 },   // はじめの浜バスターミナル発着（ロータリーをまわって、のりばに寄る）
   { no: 3, name: '中央循環', color: '#2aa35a', legs: [[7, 1], [3, 1], [12, -1], [9, -1]], buses: 2 },
-  // 高速バス（2026-10-31）：はじめの浜バスターミナル 21:00 発 → なか海大橋 → みなと市を時計回り → 東野原。
-  // 東野原から海ぞいに港へ出て橋をもどり、はじめの浜に 20:00 に着く（時刻はゲームの時刻。ゲームの 1 時間 = 150 秒）
-  { no: 0, express: true, name: 'はじめの浜⇔東野原', color: '#ffffff', legs: [[17, 1], [15, 1], [13, 1], [0, 1], [1, 1], [2, 1], [3, 1], [4, 1], [5, 1], [13, -1], [15, -1]], buses: 1, arrive: 20, depart: 21 },
+  // 高速バス HAKATA（2026-11-01 わんみゃさんの案）：はじめの浜 21:00 発 → 高速道路（PA 5 か所で 60 分ずつ休憩）→ みさき はなれ島ロータリー。
+  // 帰りは逆の道で、はじめの浜に 20:00 に着く。2 台で毎晩 行き 1 本・帰り 1 本（時刻はゲームの時刻。ゲームの 1 時間 = 150 秒）。道順は hakataRoute()
+  { no: 0, express: true, name: 'はじめの浜⇔みさき', color: '#ffffff', legs: null, buses: 2, arrive: 20, depart: 21 },
 ];
 const T_DAY = 3600;   // ゲームの 1 日（実際の秒）。バスと車の予定も 1 時間でひとまわり
 const lineLabel = (ln) => ln.express ? `高速バス ${ln.name}` : `${ln.no}番 ${ln.name}`;
@@ -2253,8 +2263,8 @@ function signalState(node, grp, t) {
     }
   }
   {   // バスターミナルのロータリー：内側のふち（実線）と、のりばとの境（点線）
-    const P = R.nodeOf.BB, y = P.y + 0.05;
-    for (const [r, dash] of [[10.5, false], [17.6, true]]) for (let k = 0; k < 72; k++) {
+    for (const P of [R.nodeOf.BB, R.nodeOf.MB]) for (const [r, dash] of [[10.5, false], [17.6, true]]) for (let k = 0; k < 72; k++) {   // みさき はなれ島ロータリーも同じ形
+      const y = P.y + 0.05;
       if (dash && k % 2) continue;
       const a0 = k / 72 * Math.PI * 2, a1 = (k + 1) / 72 * Math.PI * 2, r0 = r - 0.1, r1 = r + 0.1;
       const p = (a, rr) => [P.x + rr * Math.cos(a), y, P.z + rr * Math.sin(a)];
@@ -3155,6 +3165,7 @@ function stepHwRules(dt) {
       if (car && near(car.pos.x, car.pos.y, car.y)) want = 1;
       if (!want) for (const o of net.others.values()) if (o.carObj && near(o.carObj.position.x, o.carObj.position.z, o.carObj.position.y)) { want = 1; break; }
       if (!want && HWT.ready) for (const v of HWT.vs) if (v.root.visible && near(v.x, v.z, v.y)) { want = 1; break; }
+      if (!want && trafficReady) for (const v of buses) if (v.express && near(v.x, v.z, v.y)) { want = 1; break; }   // 高速バス HAKATA
       b.open += THREE.MathUtils.clamp(want - b.open, -dt * 1.2, dt * 2.5);
       b.piv.rotation.z = -b.dir * b.open * 1.45;
     }
@@ -4325,17 +4336,28 @@ function buildPath(legs, isBus, opt = {}) {
   const R = roadNet, px = [], pz = [], py = [], off = [], rw = [], legOf = [], edgeS = [], nodeAt = [], src = [];
   const turns = isBus ? null : legTurns(legs), pref = opt.pref ? LANE_IN : LANE_OUT;
   const served = isBus ? R.stops.filter((st) => st.bay && busServes(st, opt.serve)) : [];   // このバスが止まるバス停（そこだけ寄せる）
-  for (let li = 0; li < legs.length; li++) {
-    const [ei, dir] = legs[li], e = R.edges[ei];
-    const next = legs[(li + 1) % legs.length], startNode = dir > 0 ? e.a : e.b, endNode = dir > 0 ? e.b : e.a;
-    const ne = R.edges[next[0]], nStart = next[1] > 0 ? ne.a : ne.b;
-    if (endNode !== nStart) throw new Error('道順がつながっていません: ' + ei);
+  // opt.segs（高速バス）：道の番号と向き { ei, dir } のほかに、点の列 { pts: [{ x, z, y, es, hk, hes }], ei, dir }（高速道路の本線・PA の駐車場）もまぜられる。つながりは確かめない
+  const segs = opt.segs || legs.map(([ei, dir]) => ({ ei, dir }));
+  const outLegs = segs.map((g) => [g.ei, g.dir]);
+  const hk = [], hes = [];   // 高速道路の車から見た位置（hwKey・es）。高速道路でない所は -1
+  for (let li = 0; li < segs.length; li++) {
+    const g = segs[li], ei = g.ei, dir = g.dir, e = R.edges[ei];
+    if (g.pts) {
+      for (const q of g.pts) { src.push([e, -1, dir, q.y, false, 99, q.x, q.z]); off.push(0); rw.push(3.5); legOf.push(li); edgeS.push(q.es); nodeAt.push(null); hk.push(q.hk ?? -1); hes.push(q.hes ?? 0); }
+      continue;
+    }
+    const startNode = dir > 0 ? e.a : e.b, endNode = dir > 0 ? e.b : e.a;
+    if (!opt.segs) {
+      const next = legs[(li + 1) % legs.length], ne = R.edges[next[0]], nStart = next[1] > 0 ? ne.a : ne.b;
+      if (endNode !== nStart) throw new Error('道順がつながっていません: ' + ei);
+    }
     const wide = e.w > 10.5, tEnd = turns ? turns[li] : 0, tPrev = turns ? turns[(li - 1 + legs.length) % legs.length] : 0;
     for (let k = 0; k < e.N - 1; k++) {
       const i = dir > 0 ? k : e.N - 1 - k;
       const es = dir > 0 ? e.S[i] : e.L - e.S[i];
       let o;
-      if (isBus) { let b = 0; for (const st of served) if (st.e === e) { const d = Math.abs(e.S[i] - st.s); if (d < st.r0) b = Math.max(b, st.bay * ss(st.r0, st.r1, d)); } o = (e.WB[i] + b) / 2 - 1.75; }
+      if (isBus && e.hw) o = 0;   // 高速道路のランプ（一方通行）はまん中
+      else if (isBus) { let b = 0; for (const st of served) if (st.e === e) { const d = Math.abs(e.S[i] - st.s); if (d < st.r0) b = Math.max(b, st.bay * ss(st.r0, st.r1, d)); } o = (e.WB[i] + b) / 2 - 1.75; }
       else if (!wide) o = LANE_IN;
       else if (opt.park && opt.park.li === li && Math.abs(es - opt.park.want) < 45) o = LANE_OUT;
       else if (tEnd && e.L - es < LANE_TURN_D) o = tEnd > 0 ? LANE_OUT : LANE_IN;
@@ -4343,6 +4365,7 @@ function buildPath(legs, isBus, opt = {}) {
       else o = pref;
       src.push([e, i, dir, k === 0 ? startNode.y : e.Y[i], wide, Math.min(k, e.N - 1 - k)]);
       off.push(o); rw.push(e.W[i] / 2); legOf.push(li); edgeS.push(es); nodeAt.push(k === 0 ? startNode : null);
+      hk.push(e.hw === 'ramp' ? 1000 + e.id : -1); hes.push(e.S[i]);
     }
   }
   if (!isBus) {   // 車線を変えるときは 40m くらいかけて、なめらかに
@@ -4352,6 +4375,7 @@ function buildPath(legs, isBus, opt = {}) {
   const key = [];
   for (let q = 0; q < src.length; q++) {
     const [e, i, dir, y, wide] = src[q], o = off[q];
+    if (i < 0) { px.push(src[q][6]); pz.push(src[q][7]); py.push(y); key.push(e.id * 4 + (dir > 0 ? 0 : 2)); continue; }
     px.push(e.X[i] + e.NX[i] * o * dir); pz.push(e.Z[i] + e.NZ[i] * o * dir); py.push(y);
     key.push(e.id * 4 + (dir > 0 ? 0 : 2) + (!isBus && wide && o < 3.5 ? 1 : 0));   // 車線の番号：道・向き・右の車線か
   }
@@ -4361,12 +4385,14 @@ function buildPath(legs, isBus, opt = {}) {
   const X = Float32Array.from(px), Z = Float32Array.from(pz), Y = Float32Array.from(py);
   sm(X, 4, 2); sm(Z, 4, 2); sm(Y, 3, 1);
   for (let q = 0; q < N; q++) {   // 広場の中の輪（ロータリー）は、ならすと小さくなってしまうので、はし以外はそのまま（のりばに寄せる形も残す）
-    const w = src[q][0].inPlaza ? ss(2, 6, src[q][5]) : 0;
+    const w = src[q][0].inPlaza && src[q][1] >= 0 ? ss(2, 6, src[q][5]) : 0;
     if (w) { X[q] += (px[q] - X[q]) * w; Z[q] += (pz[q] - Z[q]) * w; }
   }
   const S = new Float32Array(N + 1);
   for (let i = 0; i < N; i++) { const j = (i + 1) % N; S[i + 1] = S[i] + Math.hypot(X[j] - X[i], Z[j] - Z[i]); }
-  return { N, X, Z, Y, S, L: S[N], legs, legOf: Int16Array.from(legOf), edgeS: Float32Array.from(edgeS), nodeAt, Off: Float32Array.from(off), RW: Float32Array.from(rw), Key: Int16Array.from(key) };
+  const P = { N, X, Z, Y, S, L: S[N], legs: outLegs, legOf: Int16Array.from(legOf), edgeS: Float32Array.from(edgeS), nodeAt, Off: Float32Array.from(off), RW: Float32Array.from(rw), Key: Int16Array.from(key) };
+  if (opt.segs) { P.HK = Int32Array.from(hk); P.HES = Float32Array.from(hes); }
+  return P;
 }
 function pathIndex(P, s) {   // s（0〜L）がどの区間か
   let lo = 0, hi = P.N - 1;
@@ -4386,7 +4412,10 @@ function rotatePath(P, k0) {
   const nodeAt = []; for (let i = 0; i < N; i++) nodeAt.push(P.nodeAt[(i + k0) % N]);
   const S = new Float32Array(N + 1);
   for (let i = 0; i < N; i++) { const j = (i + 1) % N; S[i + 1] = S[i] + Math.hypot(X[j] - X[i], Z[j] - Z[i]); }
-  return Object.assign({}, P, { X, Z, Y, S, L: S[N], legOf, edgeS, nodeAt, Off, RW, Key });
+  const out = Object.assign({}, P, { X, Z, Y, S, L: S[N], legOf, edgeS, nodeAt, Off, RW, Key });
+  if (P.HK) { out.HK = r(P.HK, Int32Array); out.HES = r(P.HES, Float32Array); }
+  if (P.VM) out.VM = r(P.VM, Float32Array);
+  return out;
 }
 // 走る線の上の印：交差点（停止線・曲がる向き・信号の組）、バス停
 // そのバスが止まるバス停か。who：{ line, k }（何番の路線の何台目か）。高速バスは高速バスのりばだけ。slot のあるのりばは、決まったバスだけ
@@ -4422,23 +4451,24 @@ function pathMarks(P, isBus, who) {
 // 走り方の計算：信号・バス停・前の車を見ながら、T_ALL 秒ぶん。結果は 0.5 秒ごとの「進んだ距離」と「ライトの状態」
 const traffic = [];
 let trafficReady = false;   // 走り方の計算が終わったか
+let onTrafficReady = null;   // 終わったら呼ぶ（高速道路の車の計算）
 let TRAFFIC_PASSES = 1;
 function simulate(v, others, cruise, laps) {
-  const P = v.path, T = v.T, L = P.L, total = laps * L, nRec = Math.round(T_ALL / REC_DT) + 1;
+  const P = v.path, T = v.T, L = P.L, total = v.trip != null ? v.trip : laps * L, nRec = Math.round(T_ALL / REC_DT) + 1;
   const rec = new Float32Array(nRec), flags = new Uint8Array(nRec);
   const curveV = new Float32Array(P.N);
   for (let i = 0; i < P.N; i++) {
     const a = (i - 2 + P.N) % P.N, b = (i + 2) % P.N, c = (i + 4) % P.N;
     const h0 = Math.atan2(P.X[b] - P.X[a], P.Z[b] - P.Z[a]), h1 = Math.atan2(P.X[c] - P.X[b], P.Z[c] - P.Z[b]);
     const kap = Math.abs(wrapA(h1 - h0)) / Math.max(1, P.S[Math.min(P.N, i + 3)] - P.S[Math.max(0, i - 1)]);
-    curveV[i] = Math.min(cruise, Math.sqrt(T.lat / Math.max(kap, 1e-4)));
+    curveV[i] = Math.min(P.VM && P.VM[i] > 0 ? P.VM[i] : cruise, Math.sqrt(T.lat / Math.max(kap, 1e-4)));   // VM：高速道路の上の速さ（高速バス）
   }
   // 先のカーブに向けて減速しておく上限（後ろから前へ）
   const capV = Float32Array.from(curveV);
   for (let pass = 0; pass < 2; pass++) for (let i = P.N - 1; i >= 0; i--) { const j = (i + 1) % P.N; capV[i] = Math.min(capV[i], Math.sqrt(capV[j] ** 2 + 2 * T.dec * (P.S[i + 1] - P.S[i]))); }
   const { junc, stops } = v.marks;
   const isBus = v.kind === 'bus';
-  let s = 0, sp = 0, tau = 0, wait = isBus ? 12 : 4, waitKind = 1, lastDepartS = 0, prevV = 0, ri = 0, done = false, departAt = 0;
+  let s = 0, sp = 0, tau = 0, wait = v.wait0 != null ? v.wait0 : isBus ? 12 : 4, waitKind = 1, lastDepartS = 0, prevV = 0, ri = 0, done = false, departAt = 0;
   // 次の止まる場所（バス停・終点）
   const nextStopAfter = (s) => {
     let best = total;
@@ -4469,7 +4499,7 @@ function simulate(v, others, cruise, laps) {
       const ls = ((s % L) + L) % L;
       if (ls < P.S[ci]) ci = pathIndex(P, ls); else while (ci < P.N - 1 && P.S[ci + 1] <= ls) ci++;   // いまの区間（前へ進むだけなので順に送る）
       const i = ci;
-      let vt = Math.min(cruise, capV[i]);
+      let vt = capV[i];
       if (v.slowV && s > v.slowFrom) vt = Math.min(vt, v.slowV);   // 高速バス：終点の手前はゆっくり（着く時刻を合わせる）
       const dStop = target - s;
       vt = Math.min(vt, Math.sqrt(2 * T.dec * Math.max(0, dStop - 0.2)));
@@ -4513,6 +4543,7 @@ function simulate(v, others, cruise, laps) {
         else {   // 時刻の決まったのりば（高速バス）は、その時刻まで待つ
           const q = stops.find((q) => Math.abs(((target % L) + L) % L - q.s) < 1);
           wait = q && q.dep != null ? ((((q.dep - v.phase - tau) % T_ALL) + T_ALL) % T_ALL) : BUS_DWELL; waitKind = 1;
+          if (q && q.dwell) { const t0 = v.phase + tau; wait = Math.ceil((t0 + q.dwell) / q.round) * q.round - t0; }   // PA の休憩：決まった長さのあと、きりのよい時刻に出る
         }
       }
       if (sp < prevV - 0.15 * SIM_DT || sp < 0.2) fl |= 8;
@@ -4566,36 +4597,116 @@ function runTrafficSim(traffic, passes) {
     laneRecords(v);
   }
 }
-// 高速バス：始発（はじめの浜）を決まった時刻に出て、終点（東野原）を出る時刻は、はじめの浜に決まった時刻の少し前に着くように選ぶ
+// 高速バス HAKATA（2 台）：行きは はじめの浜を決まった時刻に出て、みさきに着いたらそこで待つ。
+// 帰りは みさきを出る時刻を、はじめの浜に決まった時刻（ちょうど）に着くように選ぶ。2 台とも記録の 0 秒は 行きの発車の 12 秒前
 function fitExpress(v, others) {
-  v.laps = 1; v.cruise = v.T.cruise; v.phase = v.depart - 12; v.slowV = 0;   // 記録の 0 秒：はじめの浜で、発車 12 秒前（ドアをあけて待っている）
-  const far = v.marks.stops[v.marks.stops.length - 1];
+  v.laps = 1; v.cruise = v.T.cruise; v.phase = v.depart - 12; v.slowV = 0;
+  const keepRes = (res) => { v.simIt = res.finishedAt; v.rec = res.rec; v.flags = res.flags; v.total = res.total; };
+  if (!v.back) { v.wait0 = 12; keepRes(simulate(v, others, v.cruise, 1)); v.farDep = v.depart; return; }
   const want = ((((v.arrive + 1.5 - v.phase) % T_ALL) + T_ALL) % T_ALL);   // はじめの浜に着きたい時刻（記録の中で。ちょうど〜1.5 秒後＝ゲームの 20:00）
   let best = null;
-  const tryDep = (dep) => {
-    far.dep = dep;
+  const tryDep = (w) => {
+    v.wait0 = w;
     const res = simulate(v, others, v.cruise, 1), late = res.finishedAt - want;   // ＋なら遅れ
-    if (Number.isFinite(late) && (!best || ((late <= 0) !== (best.late <= 0) ? late <= 0 : late <= 0 ? late > best.late : late < best.late))) best = { res, dep, late, slow: v.slowV };   // 間に合う中でいちばん遅い（＝ちょうどよい）もの
+    if (Number.isFinite(late) && (!best || ((late <= 0) !== (best.late <= 0) ? late <= 0 : late <= 0 ? late > best.late : late < best.late))) best = { res, w, late, slow: v.slowV };   // 間に合う中でいちばん遅い（＝ちょうどよい）もの
     return Number.isFinite(late) ? late : 1e9;
   };
-  // 出る時刻を遅らせると着く時刻も遅れる（信号で止まる分だけ、ずれないこともある）。間に合う／間に合わないの境目を半分ずつ探す
-  let lo = v.phase + want - 500, l0 = tryDep(lo), hi;
-  if (l0 > 0) { hi = lo; for (let k = 0; k < 6 && l0 > 0; k++) { lo -= Math.min(l0, 2000) + 30; l0 = tryDep(lo); } }
-  else { hi = lo - l0 + 30; for (let k = 0; k < 6 && tryDep(hi) <= 0; k++) { lo = hi; hi += 60; } }
-  for (let it = 0; it < 9 && best && best.late < -1.5; it++) { const mid = (lo + hi) / 2; if (tryDep(mid) <= 0) lo = mid; else hi = mid; }
-  // 信号で止まる分だけ早く着いてしまうときは、最後の交差点のあと（はじめの浜へ下る道）をゆっくり走って合わせる
+  // 出る時刻を遅らせると着く時刻も遅れる（信号や休憩の時刻のきりで、ずれないこともある）。間に合う／間に合わないの境目を半分ずつ探す
+  let lo = 12, hi = want - 60;
+  if (tryDep(lo) <= 0) for (let it = 0; it < 16 && best.late < -1.5; it++) { const mid = (lo + hi) / 2; if (tryDep(mid) <= 0) lo = mid; else hi = mid; }
+  // 早く着いてしまうときは、最後の道（はじめの浜へ下る道）をゆっくり走って合わせる
   if (best && best.late < -1.5) {
-    const d0 = best.dep; let a = 2.5, b = v.cruise;
-    for (let it = 0; it < 10 && best.late < -1.5; it++) { v.slowV = (a + b) / 2; if (tryDep(d0) <= 0) b = v.slowV; else a = v.slowV; }
+    const w0 = best.w; let a = 2.5, b = v.cruise;
+    for (let it = 0; it < 10 && best.late < -1.5; it++) { v.slowV = (a + b) / 2; if (tryDep(w0) <= 0) b = v.slowV; else a = v.slowV; }
   }
   if (!best) return;
-  far.dep = best.dep; v.slowV = best.slow; v.simIt = best.res.finishedAt; v.rec = best.res.rec; v.flags = best.res.flags; v.total = best.res.total; v.farDep = best.dep;
+  v.wait0 = best.w; v.slowV = best.slow; keepRes(best.res); v.farDep = v.phase + best.w;
 }
 // 記録から、各時刻にどの道（車線）のどこにいるかを作っておく（あとの車が前の車を見るため）
 function laneRecords(v) {
   const P = v.path, n = v.rec.length, keyRec = new Int16Array(n), esRec = new Float32Array(n);
   for (let r = 0; r < n; r++) { const s = ((v.rec[r] % P.L) + P.L) % P.L, i = pathIndex(P, s); keyRec[r] = P.Key[i]; esRec[r] = P.edgeS[i]; }
   v.keyRec = keyRec; v.esRec = esRec; v.flRec = v.flags;
+}
+/* ================= 高速バス HAKATA の道順（2026-11-01 わんみゃさんの案） =================
+   はじめの浜 → はじめ町IC → ひろ野PA → みずうみPA → 東山PA → はじめ町JCT → みなと線 → みなとJCT → 港町PA → 北浜PA → 北大通りIC → みさき はなれ島ロータリー。
+   帰りは同じ道を逆に。PA では駐車場のお店の前（バスのりば）に 60 分（ゲームの時刻）止まる。2 台で、毎晩 行き 1 本・帰り 1 本 */
+const HK_PA_DWELL = 150, HK_ROUND = 12.5;   // PA の休憩：ゲームの 60 分（150 秒）。発車はゲームの 5 分きざみ
+const HK_BERTH = { u0: -26, u: -20, v: 122.5 };   // PA の中のバスのりば（駐車場の座標。お店の前の歩道ぞい）
+function hakataRoute() {
+  const R = roadNet, ring = R.edges[HWY.ring], mring = R.edges[HWY.mring], ext = R.edges[HWY.ext];
+  const MAIN = { ring, mring, ext };
+  const edgeOf = (a, b) => { const k = EDGES.findIndex((e) => e.a === a && e.b === b); if (k < 0) throw new Error('道がありません: ' + a + '→' + b); return k; };
+  const tagged = (t) => EDGES.findIndex((e) => e.tag === t);
+  const attach = (e, x, z) => {   // 本線の車線の上の点：どちらの向きの、どこか（向きにそった長さ）
+    let bi = 0, bd = Infinity; for (let i = 0; i < e.N; i++) { const d = (e.X[i] - x) ** 2 + (e.Z[i] - z) ** 2; if (d < bd) { bd = d; bi = i; } }
+    const lat = (x - e.X[bi]) * e.NX[bi] + (z - e.Z[bi]) * e.NZ[bi], d = lat > 0 ? 1 : -1;
+    return { d, es: d > 0 ? e.S[bi] : e.L - e.S[bi] };
+  };
+  const idxAt = (e, s) => { let lo = 0, hi = e.N - 1; while (lo < hi) { const m = (lo + hi + 1) >> 1; if (e.S[m] <= s) lo = m; else hi = m - 1; } return lo; };
+  const mainSeg = (e, d, es0, es1) => {   // 本線の走行車線（左の車線）を es0 から es1 まで
+    let span = es1 - es0; if (e.loop && span <= 0) span += e.L;
+    const n = Math.max(1, Math.ceil(span / RD_STEP)), pts = [];
+    for (let k = 0; k < n; k++) {   // 最後の点（次のランプのはじめ）は入れない
+      const es = es0 + span * k / n, esw = e.loop ? ((es % e.L) + e.L) % e.L : Math.min(e.L, Math.max(0, es)), sA = d > 0 ? esw : e.L - esw;
+      const i = Math.min(e.N - 2, idxAt(e, sA)), t = Math.min(1, Math.max(0, (sA - e.S[i]) / Math.max(1e-6, e.S[i + 1] - e.S[i])));
+      const cx = e.X[i] + (e.X[i + 1] - e.X[i]) * t, cz = e.Z[i] + (e.Z[i + 1] - e.Z[i]) * t, cy = e.Y[i] + (e.Y[i + 1] - e.Y[i]) * t, o = HW_LANE[1] * d;
+      pts.push({ x: cx + e.NX[i] * o, z: cz + e.NZ[i] * o, y: cy, es: esw, hk: e.id * 2 + (d > 0 ? 0 : 1), hes: esw });
+    }
+    return { ei: e.id, dir: d, pts };
+  };
+  const segs = [], stops = [];
+  let cur = null;   // いま走っている本線 { e, d, es }
+  const leg = (ei, dir) => segs.push({ ei, dir });
+  const enter = (rampId) => {   // ランプから本線へ
+    const r = R.edges[rampId]; leg(rampId, 1);
+    const q = attach(cur.e, r.X[r.N - 1], r.Z[r.N - 1]); if (q.d !== cur.d) throw new Error('ランプの向きがちがいます: ' + rampId);
+    cur.es = q.es;
+  };
+  const leave = (rampId) => {   // 本線からランプへ（そこまでの本線を足す）
+    const r = R.edges[rampId], q = attach(cur.e, r.X[0], r.Z[0]);
+    if (q.d !== cur.d) throw new Error('ランプの向きがちがいます: ' + rampId);
+    segs.push(mainSeg(cur.e, cur.d, cur.es, q.es)); leg(rampId, 1);
+  };
+  const rampOn = (ramps, mainE, d, toMain) => ramps.find((k) => { const r = R.edges[k], i = toMain ? r.N - 1 : 0; return R.edges[k].hw === 'ramp' && attach(mainE, r.X[i], r.Z[i]).d === d && (toMain ? r.b.onEdge != null : r.a.onEdge != null); });
+  const icIn = (name, al, d) => { const ic = HWY.ics.find((q) => q.name === name); cur = { e: MAIN[al], d, es: 0 }; enter(rampOn(ic.ramps, MAIN[al], d, true)); };
+  const icOut = (name) => { const ic = HWY.ics.find((q) => q.name === name); leave(rampOn(ic.ramps, cur.e, cur.d, false)); cur = null; };
+  const jct = (name, toAl, toD) => {   // JCT：いまの本線から別の本線へ
+    const J = HWY.jcts.find((q) => q.name === name), [r1, r3, f1, f2] = J.ramps, onRing = cur.e !== ext;
+    const k = onRing ? (cur.d > 0 ? r1 : f1) : (toD > 0 ? r3 : f2);
+    leave(k); cur = { e: MAIN[toAl], d: toD, es: 0 }; const r = R.edges[k], q = attach(cur.e, r.X[r.N - 1], r.Z[r.N - 1]); cur.es = q.es;
+  };
+  const pa = (name) => {   // PA：入って、お店の前のバスのりばで止まって、出る
+    const P = HWY.pas.find((q) => q.name === name + (cur.d > 0 ? '（外回り）' : '（内回り）'));
+    const f = P.f, W2 = (u, v, r = 0) => [...HWY.W(f, u, v), r], lotKey = 4000 + HWY.pas.indexOf(P) * 100;
+    leave(P.rin);
+    const B = HK_BERTH, raw = polyPts([W2(-90, 70), W2(-86, 98, 16), W2(-72, B.v, 14), W2(B.u, B.v), W2(58, B.v, 12), W2(84, 114, 12), W2(90, 96, 8), W2(90, 70)]);
+    let s = 0, best = 0, bd = Infinity; const bx = HWY.W(f, B.u, B.v);
+    const pts = raw.map((p, i) => {
+      if (i) s += Math.hypot(p[0] - raw[i - 1][0], p[1] - raw[i - 1][1]);
+      const dx = p[0] - f.x, dz = p[1] - f.z, u = dx * f.tx + dz * f.tz, v = dx * f.nx + dz * f.nz;
+      const d = Math.hypot(p[0] - bx[0], p[1] - bx[1]); if (d < bd) { bd = d; best = i; }
+      return { x: p[0], z: p[1], y: P.y, es: R.edges[P.rin].L + s, hk: v < 73 ? lotKey : v > 115 && v < 120.5 && u < 78 ? lotKey + 1 : -1, hes: u };
+    });
+    pts.pop();   // 最後の点は出口のランプのはじめ
+    segs.push({ ei: P.rin, dir: 1, pts });
+    stops.push({ seg: segs.length - 1, at: best, name: name, pa: P.name, dwell: HK_PA_DWELL });
+    leg(P.rout, 1);
+    const r = R.edges[P.rout]; cur.es = attach(cur.e, r.X[r.N - 1], r.Z[r.N - 1]).es;
+  };
+  const ring17 = 17, road15 = 15, bt = edgeOf('BT', 'GA'), ga = edgeOf('GA', 'IC:はじめ町IC'), kita = edgeOf('IC:北大通りIC', 'EJ');
+  const mRoad = tagged('misakiRoad'), mRing = tagged('misakiRing');
+  // 行き
+  leg(ring17, 1); leg(road15, 1); leg(bt, 1); leg(ga, 1);
+  icIn('はじめ町IC', 'ring', -1); pa('ひろ野PA'); pa('みずうみPA'); pa('東山PA');
+  jct('はじめ町JCT', 'ext', 1); jct('みなとJCT', 'mring', 1); pa('港町PA'); pa('北浜PA'); icOut('北大通りIC');
+  leg(kita, 1); leg(mRoad, -1); leg(mRing, 1);
+  const turn = segs.length;   // ここから帰り
+  leg(mRoad, 1); leg(kita, -1);
+  icIn('北大通りIC', 'mring', -1); pa('北浜PA'); pa('港町PA'); jct('みなとJCT', 'ext', -1); jct('はじめ町JCT', 'ring', 1);
+  pa('東山PA'); pa('みずうみPA'); pa('ひろ野PA'); icOut('はじめ町IC');
+  leg(ga, -1); leg(bt, -1); leg(road15, -1);
+  return { segs, stops, turn, lastLeg: segs.length - 1 };
 }
 {
   const R = roadNet, t0 = performance.now();
@@ -4623,12 +4734,44 @@ function laneRecords(v) {
     v.legKey0 = legs.map((_, li) => { let k = -1; for (let i = 0; i < P.N; i++) if (P.legOf[i] === li) { k = P.Key[i]; if (P.edgeS[i] >= 20) break; } return k; });
     return v;
   };
-  LINES.forEach((ln, li) => { for (let k = 0; k < ln.buses; k++) traffic.push(mk('bus', ln.legs, { line: ln, lineIndex: li, k, phase: 0, express: !!ln.express, arrive: gameSec(ln.arrive || 0), depart: gameSec(ln.depart || 0) })); });
+  // 高速バス HAKATA：k = 0 は行き（はじめの浜 → みさき）、k = 1 は帰り（みさき → はじめの浜）。道順は hakataRoute()
+  const mkHakata = (ln, li, k) => {
+    const HR = hakataRoute();
+    const v = { kind: 'bus', T: VTYPE.coach, legs: null, line: ln, lineIndex: li, k, phase: 0, express: true, back: k === 1, arrive: gameSec(ln.arrive), depart: gameSec(ln.depart) };
+    let P = buildPath(null, true, { serve: v, segs: HR.segs });
+    const m0 = pathMarks(P, true, v), first = (seg) => { let i = 0; while (i < P.N && P.legOf[i] !== seg) i++; return i; };
+    const home = m0.stops.find((q) => q.st.name.startsWith('はじめの浜')), far = m0.stops.find((q) => q.st.name.startsWith('みさき'));
+    if (!home || !far) throw new Error('HAKATA ののりばが見つかりません');
+    const k0 = pathIndex(P, k ? far.s : home.s), N = P.N;
+    const paIdx = HR.stops.map((q) => Object.assign({}, q, { i: (first(q.seg) + q.at - k0 + N) % N }));
+    // 速さの上限（高速道路の本線 100km/h、ランプ 60km/h、料金所のあたり 20km/h、PA の駐車場 18km/h）
+    const VM = new Float32Array(N);
+    for (let i = 0; i < N; i++) {
+      const g = HR.segs[P.legOf[i]], e = roadNet.edges[g.ei], es = P.edgeS[i];
+      VM[i] = g.pts ? (e.hw === 'main' ? 100 / 3.6 : 5) : e.hw === 'ramp' ? ((e.a.plaza && es < 70) || (e.b.plaza && es > e.L - 70) ? 6 : 16.7) : -1;
+    }
+    P.VM = VM;
+    P = rotatePath(P, k0);
+    v.path = P; v.marks = pathMarks(P, true, v);
+    for (const q of paIdx) v.marks.stops.push({ s: P.S[q.i], name: q.name, pa: q.pa, dwell: HK_PA_DWELL, round: HK_ROUND });
+    v.marks.stops.sort((a, b) => a.s - b.s);
+    const end = v.marks.stops.find((q) => q.name.startsWith(k ? 'はじめの浜' : 'みさき'));
+    v.trip = end.s;
+    v.marks.stops = v.marks.stops.filter((q) => q.s <= v.trip + 0.5);   // この便が止まるのりば（はじめ・PA・終点）
+    v.marks.stops = v.marks.stops.filter((q) => q.s > 0.5 || q === v.marks.stops[0]);
+    if (k) { let i = 0; while (i < P.N - 1 && !(HR.segs[P.legOf[i]].ei === 15 && HR.segs[P.legOf[i]].dir < 0)) i++; v.slowFrom = P.S[i]; }   // 最後の道（はじめの浜へ下る道）の始まり
+    else v.slowFrom = Infinity;
+    v.keySet = new Set(P.Key);
+    v.keyAhead = new Int16Array(P.N); for (let i = 0; i < P.N; i++) v.keyAhead[i] = P.Key[pathIndex(P, (P.S[i] + 25) % P.L)];
+    v.legKey0 = P.legs.map((_, li) => { let kk = -1; for (let i = 0; i < P.N; i++) if (P.legOf[i] === li) { kk = P.Key[i]; if (P.edgeS[i] >= 20) break; } return kk; });
+    return v;
+  };
+  LINES.forEach((ln, li) => { if (ln.express) { traffic.push(mkHakata(ln, li, 0), mkHakata(ln, li, 1)); return; } for (let k = 0; k < ln.buses; k++) traffic.push(mk('bus', ln.legs, { line: ln, lineIndex: li, k, phase: 0, express: !!ln.express, arrive: gameSec(ln.arrive || 0), depart: gameSec(ln.depart || 0) })); });
   CARS.forEach((c, ci) => traffic.push(mk('car', CAR_ROUTES[c.r], { type: c.type, color: c.color, r: c.r, carIndex: ci, phase: 0 })));
   // 走り方の計算は重いので、別の作業場所（Web Worker）で計算して、画面を止めない。終わるまでバスと車は出ない
   for (const v of traffic) { v.nBus = v.kind === 'bus' ? v.line.buses : 0; v.carPhase = v.kind === 'car' ? hash(v.carIndex, 5) * T_ALL : 0; }
-  const finish = (how) => { trafficReady = true; window.__trafficMs = performance.now() - t0; window.__trafficHow = how; window.__traffic = traffic; };
-  const keep = ['slowV', 'laps', 'cruise', 'total', 'simIt', 'phase', 'rec', 'flags', 'farDep'];
+  const finish = (how) => { trafficReady = true; window.__trafficMs = performance.now() - t0; window.__trafficHow = how; window.__traffic = traffic; hakataTimetable(); if (onTrafficReady) { const f = onTrafficReady; onTrafficReady = null; f(); } };
+  const keep = ['slowV', 'laps', 'cruise', 'total', 'simIt', 'phase', 'rec', 'flags', 'farDep', 'wait0'];
   try {
     const src = `const T_ALL = ${T_ALL}, REC_DT = ${REC_DT}, SIM_DT = ${SIM_DT}, BUS_DWELL = ${BUS_DWELL}, SIG_CYCLE = ${SIG_CYCLE};
 let roadNet;
@@ -4638,14 +4781,14 @@ onmessage = (e) => {
   roadNet = { edges: edgesL.map((q) => ({ L: q[0], inPlaza: q[1] })) };
   for (const v of vs) v.keySet = new Set(v.keySet);
   runTrafficSim(vs, passes);
-  const out = vs.map((v) => ({ slowV: v.slowV, laps: v.laps, cruise: v.cruise, total: v.total, simIt: v.simIt, phase: v.phase, rec: v.rec, flags: v.flags, farDep: v.farDep }));
+  const out = vs.map((v) => ({ slowV: v.slowV, laps: v.laps, cruise: v.cruise, total: v.total, simIt: v.simIt, phase: v.phase, rec: v.rec, flags: v.flags, farDep: v.farDep, wait0: v.wait0 }));
   postMessage(out, out.flatMap((o) => [o.rec.buffer, o.flags.buffer]));
 };`;
     const url = URL.createObjectURL(new Blob([src], { type: 'text/javascript' })), w = new Worker(url);
     const vs = traffic.map((v) => ({
-      kind: v.kind, T: v.T, k: v.k, nBus: v.nBus, lineIndex: v.lineIndex, carPhase: v.carPhase, express: v.express, arrive: v.arrive, depart: v.depart, slowFrom: v.slowFrom,
-      path: { N: v.path.N, X: v.path.X, Z: v.path.Z, S: v.path.S, L: v.path.L, legs: v.path.legs, legOf: v.path.legOf, edgeS: v.path.edgeS, Key: v.path.Key },
-      marks: { junc: v.marks.junc.map((j) => ({ s: j.s, stopS: j.stopS, grp: j.grp, turn: j.turn, node: { jr: j.node.jr, sigOff: j.node.sigOff } })), stops: v.marks.stops.map((q) => ({ s: q.s })) },
+      kind: v.kind, T: v.T, k: v.k, nBus: v.nBus, lineIndex: v.lineIndex, carPhase: v.carPhase, express: v.express, arrive: v.arrive, depart: v.depart, slowFrom: v.slowFrom, back: v.back, trip: v.trip,
+      path: { N: v.path.N, X: v.path.X, Z: v.path.Z, S: v.path.S, L: v.path.L, legs: v.path.legs, legOf: v.path.legOf, edgeS: v.path.edgeS, Key: v.path.Key, VM: v.path.VM },
+      marks: { junc: v.marks.junc.map((j) => ({ s: j.s, stopS: j.stopS, grp: j.grp, turn: j.turn, node: { jr: j.node.jr, sigOff: j.node.sigOff } })), stops: v.marks.stops.map((q) => ({ s: q.s, dwell: q.dwell, round: q.round })) },
       keySet: [...v.keySet], keyAhead: v.keyAhead, legKey0: v.legKey0,
     }));
     w.onmessage = (e) => { e.data.forEach((o, i) => { for (const k of keep) traffic[i][k] = o[k]; }); w.terminate(); URL.revokeObjectURL(url); finish('worker'); };
@@ -4657,7 +4800,7 @@ onmessage = (e) => {
 const buses = traffic.filter((v) => v.kind === 'bus'), cars = traffic.filter((v) => v.kind === 'car');
 for (const v of traffic) {
   const ex = v.kind === 'bus' && v.line.express;
-  const m = v.kind !== 'bus' ? makeCar(v.type, v.color) : ex ? makeBus('高速 はじめの浜⇔東野原', 0x111111, COACH_DIM, { text: 'HAKATA' })   // 高速バス：白い大きな車体に黒い字
+  const m = v.kind !== 'bus' ? makeCar(v.type, v.color) : ex ? makeBus(v.back ? '高速 はじめの浜' : '高速 みさき', 0x111111, COACH_DIM, { text: 'HAKATA' })   // 高速バス：白い大きな車体に黒い字
     : makeBus(`${v.line.no} ${v.line.name}`, new THREE.Color(v.line.color).getHex());
   Object.assign(v, m, { x: 0, y: 0, z: 0, h: 0, pitch: 0, speed: 0, open: 0, fl: 0, s: 0, name: v.kind === 'bus' ? (ex ? '高速バス' : `${v.line.no}番 路線バス`) : '車', stopName: '', nextName: '' });
   if (v.kind === 'bus') v.D = ex ? COACH_DIM : BUS_DIM;
@@ -4671,6 +4814,38 @@ const tp0 = { x: 0, y: 0, z: 0 }, tp1 = { x: 0, y: 0, z: 0 }, tp2 = { x: 0, y: 0
    1 時間ぶんを、全部の車をいっしょに動かして計算する（前の車との車間・追い越し・合流）。
    出る時刻は毎時同じで、もどってから次に出るまでの休みで 1 時間に合わせる（毎時同じ動きになる）。
    追い越し車線を 120km/h で走る車、走行車線を 100km/h 前後で走る車、トラック・バス（85km/h 前後）。車間はおよそ 200m。 */
+// 高速バス HAKATA の時刻表（記録から）：のりばごとに 着く時刻・出る時刻（1 時間の中の秒）
+function hakataTimetable() {
+  for (const v of traffic) {
+    if (!v.express || !v.rec) continue;
+    const R = v.rec, n = R.length;
+    v.tt = v.marks.stops.map((q) => {
+      let i = 0; while (i < n - 1 && R[i] < q.s - 0.05) i++;
+      let j = i; while (j < n - 1 && R[j + 1] < q.s + 0.05) j++;
+      return { name: q.name, short: q.name.replace(/ 高速バスのりば$/, ''), pa: q.pa || '', s: q.s, arr: v.phase + i * REC_DT, dep: v.phase + j * REC_DT };
+    });
+  }
+}
+// 高速バス HAKATA の 1 日の動きを、高速道路の車から見た形（車線の番号 key・その中の位置 es・速さ）にする
+function hakataHwRecs() {
+  const NREC = Math.round(T_ALL / REC_DT), out = [];
+  for (const v of traffic) {
+    if (!v.express || !v.path.HK || !v.rec) continue;
+    const P = v.path, N = P.N;
+    // ランプの最後 150m は、合流先の本線の走行車線にもいるとみなす（高速道路の車の合流と同じ）
+    const AK = new Int32Array(N).fill(-1), AE = new Float32Array(N);
+    for (let i = 1; i < N; i++) if (P.HK[i] >= 0 && P.HK[i] < 1000 && P.HK[i - 1] >= 1000 && P.HK[i - 1] < 2000) {
+      for (let j = i - 1; j >= 0 && P.S[i] - P.S[j] < 150 && P.HK[j] >= 1000 && P.HK[j] < 2000; j--) { AK[j] = P.HK[i]; AE[j] = P.HES[i] - (P.S[i] - P.S[j]); }
+    }
+    const key = new Int32Array(NREC), es = new Float32Array(NREC), sp = new Float32Array(NREC), lat = new Int8Array(NREC), alt = new Int32Array(NREC), altEs = new Float32Array(NREC), fl = new Uint8Array(NREC);
+    for (let r = 0; r < NREC; r++) {
+      const s = ((v.rec[r] % P.L) + P.L) % P.L, i = pathIndex(P, s), ds = s - P.S[i];
+      key[r] = P.HK[i]; es[r] = P.HES[i] + ds; sp[r] = Math.max(0, (v.rec[Math.min(v.rec.length - 1, r + 1)] - v.rec[r]) / REC_DT); alt[r] = AK[i]; altEs[r] = AE[i] + ds;
+    }
+    out.push({ dep: v.phase, rec: { key, es, sp, lat, alt, altEs, fl }, hl: v.T.hl, cruise: 100 / 3.6, grp: -1, pre: true });
+  }
+  return out;
+}
 const HWT = { pieces: [], vs: [], ready: false };
 {
   const R = roadNet, ring = R.edges[HWY.ring], spur = R.edges[HWY.spur];
@@ -4837,13 +5012,14 @@ const HWT = { pieces: [], vs: [], ready: false };
 // 1 台ずつ順に計算する（おそい車から）。あとの車は、先に決まった車の 1 時間の動き（毎時くり返す）を見て、
 // 車間をあけ、追い越し、合流でゆずる。先の車はあとの車を見ないので、毎時の動きがぴったり同じになる
 // （Worker の中でも動くよう、ここに出てくる名前だけを使う）
-function hwSimulate(pieces, vs, T, dt, recDt, loopL) {
+function hwSimulate(pieces, vs, T, dt, recDt, loopL, pre) {
   const NREC = Math.round(T / recDt), step = Math.max(1, Math.round(recDt / dt));
   dt = recDt / step;
   const order = vs.map((v, i) => i).sort((a, b) => vs[a].cruise - vs[b].cruise || a - b);
   const out = vs.map(() => null), done = [];
   const IDM = (v, v0, gap, dv, T0, A, B) => { const sStar = 4 + Math.max(0, v * T0 + v * dv / (2 * Math.sqrt(A * B))); return A * (1 - Math.pow(Math.max(0, v) / Math.max(0.1, v0), 4) - (sStar / Math.max(0.5, gap)) ** 2); };
   const others = [];
+  for (const o of pre || []) done.push(o);   // 先に決まっている車（高速バス HAKATA）。ほかの車はこれをよける
   for (const vi of order) {
     const v = vs[vi], seq = v.seq.map((id) => pieces[id]);
     const rec = { s: new Float32Array(NREC), lat: new Int8Array(NREC), fl: new Uint8Array(NREC), arrive: -1,
@@ -4855,9 +5031,9 @@ function hwSimulate(pieces, vs, T, dt, recDt, loopL) {
       // 先に決まった車の、いまの位置
       others.length = 0;
       for (const o of done) {
-        if (o.grp !== v.grp) continue;   // ちがう環状線の車は見ない
+        if (o.grp !== v.grp && o.grp !== -1) continue;   // ちがう環状線の車は見ない（-1：高速バス HAKATA。どちらの環状線も走る）
         const ro = Math.floor(((((g - o.dep) % T) + T) % T) / recDt + 1e-6) % NREC, R = o.rec;
-        others.push({ key: R.key[ro], es: R.es[ro], lat: R.lat[ro] / 20, sp: R.sp[ro], alt: R.alt[ro], altEs: R.altEs[ro], hl: o.hl, cruise: o.cruise, parked: R.fl[ro] & 32 });
+        others.push({ key: R.key[ro], es: R.es[ro], lat: R.lat[ro] / 20, sp: R.sp[ro], alt: R.alt[ro], altEs: R.altEs[ro], hl: o.hl, cruise: o.cruise, parked: R.fl[ro] & 32, pre: !!o.pre });
       }
       let fl = 0;
       for (let k = 0; k < step; k++) {
@@ -4913,15 +5089,21 @@ function hwSimulate(pieces, vs, T, dt, recDt, loopL) {
         let acc = IDM(sp, Math.max(0.5, v0), 1e6, 0, T0, A, B);
         const ld = lead || leaderIn(lane * 3.5);
         if (ld) { const gap = ld.g - ld.o.hl - v.hl; acc = Math.min(acc, IDM(sp, Math.max(0.5, v0), gap, sp - ld.o.sp, T0, A, B)); }
+        let pushPre = 0;
         {   // うしろから来る速い車（先に決まった車は、こちらを見ていない）にぶつけられないよう、速さを合わせる
           const bk = look(key, es, lat, false);
-          if (bk && bk.o.sp > sp) { const gap = -bk.g - bk.o.hl - v.hl; if (gap < 30 + (bk.o.sp - sp) * 5) acc = Math.max(acc, Math.min(2.5, (bk.o.sp - sp) / 1.5)); }
+          if (bk && bk.o.sp > sp) {
+            const gap = -bk.g - bk.o.hl - v.hl, dv = bk.o.sp - sp;
+            if (gap < 30 + dv * 5) acc = Math.max(acc, Math.min(2.5, dv / 1.5));
+            if (bk.o.pre && gap < 60 + dv * 7) pushPre = Math.min(3, dv / 1.2 + Math.max(0, 25 - gap) * 0.1);   // 高速バス HAKATA は止まらないので、トラックなども早めに速さを合わせる
+          }
         }
         if (altK >= 0) {   // 合流：うしろから来る本線の車にゆずる
           const bk = look(altK, altE, 0, false);
           if (bk && -bk.g < 30 + Math.max(0, bk.o.sp - sp) * 3.5 && rem > 12) acc = Math.min(acc, -1.2);
         }
         acc = Math.max(-6, Math.min(A, acc));
+        if (pushPre) acc = Math.max(acc, pushPre);
         const sp0 = sp;
         sp = Math.max(0, sp + acc * dt);
         if (pi === seq.length - 1 && p.vmax[p.N - 1] === 0 && rem < 0.8 && sp < 1.2) { sp = 0; s = p.L; }   // 区画に着いた
@@ -4957,18 +5139,24 @@ function hwSimulate(pieces, vs, T, dt, recDt, loopL) {
   const loopL = {}; for (const k of [HWY.ring, HWY.mring]) { const e = roadNet.edges[k]; loopL[e.id * 2] = e.L; loopL[e.id * 2 + 1] = e.L; }
   const pcs = HWT.pieces.map((p) => ({ N: p.N, L: p.L, S: p.S, key: p.key, es: p.es, lanes: p.lanes, rb: p.rb, need: p.need, vmax: p.vmax, alt: p.alt, altEs: p.altEs, entry: p.entry }));
   const vs = HWT.vs.map((v) => ({ dep: v.dep, seq: v.seq, cruise: v.cruise, pref: v.pref, cls: v.cls, hl: v.hl, grp: v.grp }));
+  let pre = [];
   const done = (out, how) => {
     out.forEach((o, k) => { const v = HWT.vs[k]; v.rec = o; });
-    HWT.ready = true; window.__hwMs = performance.now() - t0; window.__hwHow = how; window.__hwt = HWT; window.__hwSim = () => hwSimulate(pcs, vs, T_ALL, 0.5, REC_DT, loopL);
+    HWT.ready = true; window.__hwMs = performance.now() - t0; window.__hwHow = how; window.__hwt = HWT; window.__hwSim = () => hwSimulate(pcs, vs, T_ALL, 0.5, REC_DT, loopL, pre);
   };
-  try {
-    const src = `${hwSimulate.toString()}
-onmessage = (e) => { const { pcs, vs, T, dt, recDt, loopL } = e.data; const out = hwSimulate(pcs, vs, T, dt, recDt, loopL); postMessage(out, out.flatMap((o) => [o.s.buffer, o.lat.buffer, o.fl.buffer])); };`;
-    const url = URL.createObjectURL(new Blob([src], { type: 'text/javascript' })), w = new Worker(url);
-    w.onmessage = (e) => { w.terminate(); URL.revokeObjectURL(url); done(e.data, 'worker'); };
-    w.onerror = (e) => { e.preventDefault(); w.terminate(); done(hwSimulate(pcs, vs, T_ALL, 0.5, REC_DT, loopL), 'main'); };
-    w.postMessage({ pcs, vs, T: T_ALL, dt: 0.5, recDt: REC_DT, loopL });
-  } catch (e) { done(hwSimulate(pcs, vs, T_ALL, 0.5, REC_DT, loopL), 'main'); }
+  const start = () => {
+    pre = hakataHwRecs();
+    try {
+      const src = `${hwSimulate.toString()}
+onmessage = (e) => { const { pcs, vs, T, dt, recDt, loopL, pre } = e.data; const out = hwSimulate(pcs, vs, T, dt, recDt, loopL, pre); postMessage(out, out.flatMap((o) => [o.s.buffer, o.lat.buffer, o.fl.buffer])); };`;
+      const url = URL.createObjectURL(new Blob([src], { type: 'text/javascript' })), w = new Worker(url);
+      w.onmessage = (e) => { w.terminate(); URL.revokeObjectURL(url); done(e.data, 'worker'); };
+      w.onerror = (e) => { e.preventDefault(); w.terminate(); done(hwSimulate(pcs, vs, T_ALL, 0.5, REC_DT, loopL, pre), 'main'); };
+      w.postMessage({ pcs, vs, T: T_ALL, dt: 0.5, recDt: REC_DT, loopL, pre });
+    } catch (e) { done(hwSimulate(pcs, vs, T_ALL, 0.5, REC_DT, loopL, pre), 'main'); }
+  };
+  // 高速バス HAKATA の走り方が決まってから計算する（ほかの車が HAKATA をよけるため）
+  if (trafficReady) start(); else onTrafficReady = start;
   // 見た目と、道のりから piece をさがすための表
   for (const v of HWT.vs) {
     const m = v.type === 'coach' ? makeBus('貸切', v.color, COACH_DIM, { text: 'はじめ観光' }) : makeCar(v.type, v.color);
@@ -5634,6 +5822,7 @@ function pgBall(c, x, y) {
 window.addEventListener('storage', (e) => { if (e.key === 'world.points' && e.newValue != null) { const v = Number(e.newValue); if (Number.isFinite(v) && v >= 0) { wallet.p = Math.floor(v); showPoints(); } } });   // ほかのタブで増減したとき
 showPoints();
 function boardBus(n) {
+  if (hkTrip && hkTrip.b === n.b) { hkBoard(n.b, n.d); return; }   // PA の休憩からもどった（運賃はいらない）
   if (wallet.p < BUS_FARE) { showMsg(`P が足りないので乗れません（運賃 ${BUS_FARE}P・いま ${fmtP(wallet.p)}）`); return; }
   addPoints(-BUS_FARE);
   busRide = { b: n.b, lx: n.b.D.hw - 0.5, lz: (n.d.z0 + n.d.z1) / 2, seat: null };
@@ -5652,6 +5841,55 @@ function leaveBus(force) {
   player.pos.set(p.x, Math.max(groundAt(p.x, p.z, b.y + 1), b.y - 0.5), p.z);
   player.vy = 0; player.face = b.h + Math.PI / 2;
   camPitch = 0.35; avatar.visible = true;
+  // 高速バス HAKATA：PA の休憩中に降りた。発車が近づくと自動でバスへもどる
+  const here = b.express && b.tt ? b.tt.find((q) => q.pa && q.name === b.stopName) : null;
+  if (here) {
+    const dep = busDepTime(b, Date.now() / 1000);
+    hkTrip = { b, name: here.name, dep, warned: false, auto: false, t: 0 };
+    showMsg(`${here.name}で休憩です。${gameHM(dep)} に発車します。PA の中を歩けます（発車の 10 分前になると、自動でバスにもどります）`);
+  }
+}
+// 止まっているバスが次に動き出す時刻（実際の秒）
+function busDepTime(b, now) {
+  const n = b.rec.length - 1, r = busRecIndex(b, now);
+  let i = Math.floor(r);
+  while (i < 2 * n && (i % n === n - 1 || b.rec[(i % n) + 1] - b.rec[i % n] < 0.05)) i++;
+  return now + (i - r) * REC_DT;
+}
+/* ---- 高速バス HAKATA：PA で降りて休憩 → 発車 10 分前（ゲームの時刻）に自動でバスへもどる ---- */
+const HK_CALL = 25, HK_WARN = 50;   // 現実の秒：25 秒 ＝ ゲームの 10 分、50 秒 ＝ 20 分
+let hkTrip = null;   // { b, name, dep, warned, auto, t }
+function hkBoard(b, d) {   // 運賃なしで乗る（PA の休憩からもどる）
+  d = d || b.D.doors[0];
+  hkTrip = null;
+  busRide = { b, lx: b.D.hw - 0.5, lz: (d.z0 + d.z1) / 2, seat: null };
+  camYaw = b.h + Math.PI / 2; camPitch = 0.05; busYawPrev = b.h;
+  avatar.visible = false; lastUi = '';
+  showMsg('HAKATA にもどりました。まもなく発車します');
+}
+function stepHakataTrip(dt) {
+  const T = hkTrip; if (!T) return false;
+  if (busRide) { hkTrip = null; return false; }
+  const b = T.b, now = Date.now() / 1000, left = T.dep - now;
+  const quit = (msg) => { hkTrip = null; if (msg) showMsg(msg); return false; };
+  if (left < -3) return quit('HAKATA は発車しました');
+  if (driving || aboard) return quit(`${T.name}で HAKATA をおりました（休憩の自動もどりはなし）`);
+  const d = b.D.doors[0], p = busLocalToWorld(b, b.D.hw + 0.9, 0, (d.z0 + d.z1) / 2), tx = p.x, tz = p.z;
+  const dist = Math.hypot(tx - player.pos.x, tz - player.pos.z);
+  if (dist > 400 || Math.abs(player.pos.y - b.y) > 30) return quit(`${T.name}をはなれたので、HAKATA にはもどりません`);
+  if (!T.warned && left < HK_WARN) { T.warned = true; showMsg(`HAKATA はまもなく発車します（${gameHM(T.dep)}）。バスにもどってください`); }
+  if (left > HK_CALL) return false;
+  // 自動でバスへ：まっすぐ歩いて（走って）ドアへ。お店の建物をよけられない所や、間に合わないときは、そのままバスの中へ
+  if (!T.auto) { T.auto = true; showMsg('発車 10 分前です。自動でバスにもどります'); }
+  T.t += dt;
+  let blocked = false;
+  for (let k = 1; k <= 8 && !blocked; k++) { const f = k / 8; if (hwShopHit(player.pos.x + (tx - player.pos.x) * f, player.pos.z + (tz - player.pos.z) * f, player.pos.y, P_R)) blocked = true; }
+  if (dist < 0.8 || blocked || left < 4 || T.t > 20) { hkBoard(b, d); return true; }
+  const step = Math.min(dist, RUN * dt), ux = (tx - player.pos.x) / dist, uz = (tz - player.pos.z) / dist;
+  player.pos.x += ux * step; player.pos.z += uz * step;
+  player.pos.y = Math.max(groundAt(player.pos.x, player.pos.z, player.pos.y + 1), b.y - 0.5); player.vy = 0; player.onGround = true; player.mode = 'walk';
+  player.face = Math.atan2(ux, uz); player.moving = true;
+  return true;
 }
 // バスの車内視点（一人称）と車外視点（バスのまわりを自由に見回す）を切りかえる
 function toggleBusView() {
@@ -5677,7 +5915,11 @@ function toggleSeat() {
 }
 // 車内を歩く（一人称）。W/S と スティックで歩き、A/D とドラッグで見回す
 function stepBusRider(dt) {
-  const r = busRide, b = r.b;
+  const r = busRide;
+  // 高速バス HAKATA は 2 台が毎日入れかわる（終点で、行きの便が次の日の帰りの便になる）。同じ場所にいるほうへ乗りかえる
+  if (r.b.express && r.px != null && Math.hypot(r.b.x - r.px, r.b.z - r.pz) > 40) { const o = buses.find((v) => v.express && v !== r.b && Math.hypot(v.x - r.px, v.z - r.pz) < 15); if (o) { r.b = o; lastUi = ''; } }
+  r.px = r.b.x; r.pz = r.b.z;
+  const b = r.b;
   camYaw += wrapA(b.h - busYawPrev); busYawPrev = b.h;   // バスが曲がると、見ている向きもいっしょに回る
   const fwd = (keys.KeyW || keys.ArrowUp ? 1 : 0) - (keys.KeyS || keys.ArrowDown ? 1 : 0);
   const turn = (keys.KeyA || keys.ArrowLeft ? 1 : 0) - (keys.KeyD || keys.ArrowRight ? 1 : 0);
@@ -6944,7 +7186,7 @@ function updateUi() {
 function busUi() {
   const r = busRide, b = r ? r.b : nearBusDoor().b;
   const kmh = Math.round(b.speed * 3.6);
-  const next = b.stopName ? `${b.stopName}に停車中` : `次は ${b.nextName}`;
+  const next = b.stopName ? `${b.stopName}に停車中${b.express && b.open > 0.8 ? `（${gameHM(busDepTime(b, Date.now() / 1000))} 発車）` : ''}` : `次は ${b.nextName}`;
   const sit = !!(r && r.seat);
   const key = ['bus', !!r, kmh, next, b.open > 0.8, sit, b.id, !!(r && r.out)].join('|');
   if (key === lastUi) return;
@@ -8392,6 +8634,7 @@ function frame() {
   stepHwRules(dt);
   stepStreetLamps();
   if (busRide) stepBusRider(dt);
+  else if (stepHakataTrip(dt)) { /* PA から自動でバスへもどっている */ }
   else if (pod && pod.mine && !pod.landed) followPod(); else if (!driving && !aboard) stepPlayer(dt);
   stepPods(dt);
   stepWrecks(dt);
@@ -9310,13 +9553,19 @@ function stepStopInfo(dt) {
   if (stopInfoT > 0 || !trafficReady) return;
   stopInfoT = 0.5;
   const box = el('stopInfo');
+  if (hkTrip && !busRide) {   // PA で休憩中：HAKATA の発車時刻
+    const w = Math.max(0, Math.ceil(hkTrip.dep - Date.now() / 1000));
+    box.innerHTML = `🚌 <b>高速バス HAKATA</b>　${hkTrip.name}で休憩中<br><span class="dep">${gameHM(hkTrip.dep)} 発車</span>（あと ${w >= 60 ? Math.round(w / 60) + ' 分' : w + ' 秒'}）`;
+    if (box.hidden) box.hidden = false;
+    return;
+  }
   let st = null, bd = 40;
   if (!driving && !busRide && !aboard) for (const q of roadNet.stops) { const d = Math.hypot(q.e.X[q.i] - player.pos.x, q.e.Z[q.i] - player.pos.z); if (d < bd) { bd = d; st = q; } }
   if (!st) { if (!box.hidden) box.hidden = true; return; }
   const now = Date.now() / 1000, lines = [];
   // 止まっているバス：いつ動き出すか
   for (const v of buses) {
-    if (!(v.fl & 16) || v.stopName !== st.name) continue;
+    if (v.express || !(v.fl & 16) || v.stopName !== st.name) continue;
     const r = busRecIndex(v, now);
     let i = Math.floor(r);
     const n = v.rec.length - 1;   // 1 時間の終わりで止まっていたら、次の 1 時間の初めへ続けて見る（高速バスは終点で時間をまたいで待つ）
@@ -9330,13 +9579,7 @@ function stepStopInfo(dt) {
     if ((v.fl & 16) && v.stopName === st.name) continue;
     const m = v.marks.stops.find((q) => q.name === st.name);
     if (!m) continue;
-    if (v.line.express) {   // 高速バス：1 日 1 往復。着く時刻と出る時刻（ゲームの時刻）
-      const tgt = m.s < 0.5 ? v.total : m.s;
-      let i = 0; while (i < v.rec.length - 1 && v.rec[i] < tgt - 0.5) i++;
-      const arr = v.phase + i * REC_DT, dep = m.s < 0.5 ? v.depart : v.farDep, wait = ((((arr - now) % T_ALL) + T_ALL) % T_ALL);
-      lines.push(`<b>${lineLabel(v.line)}</b>　${gameHM(arr)} ごろ着・<span class="dep">${gameHM(dep)} 発</span>（着くまで あと ${Math.max(1, Math.round(wait / 60))} 分）`);
-      continue;
-    }
+    if (v.express) continue;
     const r = busRecIndex(v, now), L = v.path.L;
     let target = m.s + Math.ceil((v.s + 3 - m.s) / L) * L;
     let i = Math.floor(r);
@@ -9346,6 +9589,14 @@ function stepStopInfo(dt) {
     if (!next || t < next.t) next = { t, v };
   }
   if (next) lines.push(`次のバス：${lineLabel(next.v.line)}　${hhmmss(next.t)} ごろ着（あと ${Math.max(1, Math.round((next.t - now) / 60))} 分）`);
+  // 高速バス HAKATA：1 日 1 本ずつ。ここを出る便と、ここに着く便（ゲームの時刻）
+  const until = (t) => { const w = ((((t - now) % T_ALL) + T_ALL) % T_ALL); return w < 60 ? `あと ${Math.ceil(w)} 秒` : `あと ${Math.round(w / 60)} 分`; };
+  for (const v of buses) {
+    if (!v.express || !v.tt) continue;
+    const a = v.tt[0], z = v.tt[v.tt.length - 1];
+    if (a.name === st.name) lines.push(`<b>高速バス HAKATA ${z.short}行き</b>　<span class="dep">${gameHM(a.dep)} 発</span>（${until(a.dep)}）`);
+    if (z.name === st.name) lines.push(`高速バス HAKATA ${a.short}から　${gameHM(z.arr)} 着（${v.stopName === st.name ? '着いています' : until(z.arr)}）`);
+  }
   box.innerHTML = `🚏 <b>${st.name}</b><br>` + (lines.length ? lines.join('<br>') : 'このあと 1 時間、バスは来ません');
   if (box.hidden) box.hidden = false;
 }
@@ -9501,7 +9752,7 @@ document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && WMAP.ope
   const lg = el('wmapLegend'), seen = new Set();
   for (const ln of LINES) {
     if (seen.has(ln.no)) continue; seen.add(ln.no);
-    const row = document.createElement('div'); row.innerHTML = `<i style="background:${ln.color}${ln.express ? ';outline:2px solid #222' : ''}"></i>${ln.express ? `高速バス ${ln.name}（はじめの浜 ${ln.depart}:00 発・${ln.arrive}:00 着）` : `${ln.no}番 ${ln.no === 1 ? '大陸循環（外回り・内回り）' : ln.name}`}`;
+    const row = document.createElement('div'); row.innerHTML = `<i style="background:${ln.color}${ln.express ? ';outline:2px solid #222' : ''}"></i>${ln.express ? `高速バス HAKATA ${ln.name}（高速道路・PA 5 か所で休憩。はじめの浜 ${ln.depart}:00 発・${ln.arrive}:00 着）` : `${ln.no}番 ${ln.no === 1 ? '大陸循環（外回り・内回り）' : ln.name}`}`;
     lg.appendChild(row);
   }
 }
