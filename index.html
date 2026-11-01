@@ -105,12 +105,19 @@ body.mapOn #msg { top: max(145px, 30vh); }
 #wmapGoBox .gos { display: flex; gap: 6px; flex-wrap: wrap; justify-content: center; }
 #wmapGo, #wmapGoLocal { max-width: 100%; font: 800 14px var(--font-ui); color: #fff; background: #e8650a; border: 0; border-radius: 999px; padding: 10px 16px; box-shadow: 0 4px 14px rgba(0,0,0,.25); cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 #wmapGoLocal { background: #4d6276; }
-#autoPanel { position: fixed; left: 50%; bottom: calc(50px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); display: flex; gap: 6px; flex-wrap: wrap; justify-content: center; max-width: calc(100vw - 16px); z-index: 3; }
+#autoPanel { position: fixed; left: 8px; right: 8px; bottom: calc(50px + env(safe-area-inset-bottom, 0px)); display: flex; gap: 6px; flex-wrap: wrap; justify-content: center; align-items: center; z-index: 3; pointer-events: none; }
+#autoPanel > * { pointer-events: auto; }
 #autoPanel .grp { display: flex; align-items: center; gap: 2px; padding: 3px; background: var(--panel); border: 1px solid var(--line); border-radius: 999px; }
 #autoPanel button { font: 800 12px var(--font-ui); color: var(--ink); background: #fff; border: 1px solid var(--line); border-radius: 999px; padding: 6px 9px; cursor: pointer; white-space: nowrap; }
 #autoPanel button[aria-pressed="true"] { background: #e8650a; color: #fff; border-color: #e8650a; }
 #autoPanel #apSpd { min-width: 64px; }
-@media (pointer: coarse) { #autoPanel { bottom: calc(108px + env(safe-area-inset-bottom, 0px)); } #autoPanel button { padding: 6px 8px; } }
+#autoPanel [hidden] { display: none !important; }
+#autoPanel button:disabled { opacity: 0.4; cursor: default; }
+#autoPanel .apToggle { background: var(--panel); padding: 6px 11px; }
+/* しまったとき：「▴ 操作」だけ。「降りる」の案内と下の説明も隠す */
+body.apMinOn #autoPanel > :not(#apMax) { display: none !important; }
+body.apMinOn #prompt, body.apMinOn #hint { display: none !important; }
+@media (pointer: coarse) { #autoPanel { bottom: calc(108px + env(safe-area-inset-bottom, 0px)); gap: 4px; } #autoPanel button { padding: 6px 7px; } }
 #wmapCv { cursor: crosshair; }
 #wmapNote { margin: 0; font: 500 12px var(--font-ui); color: var(--ink-dim); }
 #prompt { position: fixed; left: 50%; bottom: calc(96px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%);
@@ -296,6 +303,7 @@ body.helmOn .subbtns { flex-wrap: wrap; justify-content: flex-end; max-width: ca
   </div>
   <button class="mi" id="seacatBtn" type="button" hidden>シーキャット（潜水艦）を出す</button>
   <button class="mi" id="autoBtn" type="button" hidden>🚗 自動運転（地図で行き先をえらぶ）</button>
+  <button class="mi" id="semiBtn" type="button" hidden>🚙 半自動運転（行き先なしで道なりに）</button>
   <div id="vehMenu" hidden>
     <p class="mh">船・潜水艦</p>
     <div class="mgrid">
@@ -319,9 +327,12 @@ body.helmOn .subbtns { flex-wrap: wrap; justify-content: flex-end; max-width: ca
 </div>
 <div id="msg" hidden></div>
 <div id="autoPanel" hidden aria-label="自動運転の操作">
+  <span class="grp" id="apSemiG"><button type="button" id="apGo">▶前進</button><button type="button" id="apHalt">■停止</button><button type="button" id="apSemiOff" aria-label="半自動運転をやめる" title="半自動運転をやめる">✕</button></span>
   <span class="grp"><button type="button" id="apSlow" aria-label="おそく">−</button><button type="button" id="apSpd" title="押すとおまかせ">おまかせ</button><button type="button" id="apFast" aria-label="はやく">＋</button></span>
-  <span class="grp"><button type="button" id="apLaneL">⇦ 車線</button><button type="button" id="apLaneR">車線 ⇨</button></span>
-  <span class="grp"><button type="button" id="apTurnL">↰ 左折</button><button type="button" id="apTurnR">右折 ↱</button></span>
+  <span class="grp" id="apLaneG"><button type="button" id="apLaneL">⇦車線</button><button type="button" id="apLaneR">車線⇨</button></span>
+  <span class="grp" id="apTurnG"><button type="button" id="apTurnL">↰左折</button><button type="button" id="apTurnR">右折↱</button></span>
+  <button type="button" class="apToggle" id="apMin" aria-label="操作ボタンをしまう" title="しまう">▾</button>
+  <button type="button" class="apToggle" id="apMax" hidden aria-label="操作ボタンを出す">▴ 操作</button>
 </div>
 <button class="pill" id="routeBtn" type="button" hidden>🚏 路線図</button>
 <div id="stopInfo" hidden aria-live="polite"></div>
@@ -3833,7 +3844,7 @@ function leaveRide(force) {
   if (!force && Math.abs(car.vF) > 3) { showMsg('止まってから降りてください'); return; }
   dropPlayerAt(exitPoint(car), visYaw(car), car.y);
   ride = null; driving = false; avatar.visible = true;
-  stopAuto();
+  stopAuto(); SEMI.on = false;
   if (periscope) setPeriscope(false);
   car.vF = 0; car.vL = 0; car.settled = false;
   car.h = wrapA(visYaw(car)); car.yawOff = 0;   // 見た目の向きを、そのまま止めた向きにする
@@ -5646,7 +5657,7 @@ function stepCar(car, dt) {
       steerIn = -touch.x;
     }
     if (AUTO.on) {   // 自動運転：さわったら手動にもどす
-      if (gas > 0.3 || brk > 0.3 || Math.abs(steerIn) > 0.3 || hand) stopAuto('手動運転にもどしました');
+      if (gas > 0.3 || brk > 0.3 || Math.abs(steerIn) > 0.3 || hand) stopAuto(AUTO.semi ? '手動運転にもどしました（「▶前進」で半自動にもどります）' : '手動運転にもどしました');
       else { auto = autoDrive(car, dt); gas = auto.gas; brk = auto.brk; steerIn = 0; }
     }
   }
@@ -6643,6 +6654,7 @@ const HINT = {
   wet: '下半分をなぞって泳ぐ。「もぐる」で下へ、「うく」で上へ。2 本指でズーム',
   walk: '下半分をなぞって移動、上半分をなぞって視点、2 本指でズーム',
   auto: '自動運転中。画面をなぞって見回す、2 本指でズーム。やめるときは ☰「自動運転をやめる」',
+  semi: '半自動運転中。画面をなぞって見回す、2 本指でズーム。「■停止」で止まって手動にもどる',
   busOut: '車外視点。画面をなぞって見回す、2 本指でズーム。「車内視点」で車内にもどる',
 };
 function updateUi() {
@@ -6670,7 +6682,12 @@ function updateUi() {
     tgtTxt = t ? `目標 ${t.name}　方位 ${fmtB(bearingOf(Math.atan2(t.x - ag.pos.x, t.z - ag.pos.y)))}°・${Math.round(Math.hypot(t.x - ag.pos.x, t.z - ag.pos.y))}m　${ag.gunState || ''}` : 'レーダーを開いて目標を選ぶ';
   }
   let autoTxt = '';
-  if (AUTO.on && AUTO.route && driving) { const left = Math.max(0, AUTO.route.P.L - AUTO.s); autoTxt = `自動運転 →${AUTO.route.name} ${left < 1000 ? Math.round(left / 10) * 10 + 'm' : (left / 1000).toFixed(1) + 'km'}${AUTO.why ? '・' + AUTO.why : ''}`; }
+  if (AUTO.on && AUTO.route && AUTO.semi && driving) {
+    const nx = semiNext(), tl = nx ? (nx.tdir ? (nx.tdir > 0 ? '左折' : '右折') : 'まっすぐ') + (nx.by === 'user' ? '' : '（おまかせ）') : '';
+    const dl = AUTO.route.dead ? AUTO.route.P.L - AUTO.s : Infinity;
+    autoTxt = `半自動${nx ? `・${Math.max(0, Math.round(nx.d / 10) * 10)}m 先を${tl}` : dl < 400 ? `・${Math.round(dl / 10) * 10}m 先で行き止まり` : ''}${AUTO.why ? '・' + AUTO.why : ''}`;
+  } else if (SEMI.on && driving && !AUTO.on) autoTxt = '半自動：道路で「▶前進」を押すと走り出します';
+  else if (AUTO.on && AUTO.route && driving) { const left = Math.max(0, AUTO.route.P.L - AUTO.s); autoTxt = `自動運転 →${AUTO.route.name} ${left < 1000 ? Math.round(left / 10) * 10 + 'm' : (left / 1000).toFixed(1) + 'km'}${AUTO.why ? '・' + AUTO.why : ''}`; }
   const key = [mode, near, share, kmh, alt, vname, vt, periscope, navTxt, hpTxt, tgtTxt, autoTxt, ba ? ba.text + ba.btn : ''].join('|');
   if (key === lastUi) return;
   lastUi = key;
@@ -6690,7 +6707,7 @@ function updateUi() {
   tDive.hidden = !(wet || vt === 'plane');
   tDive.textContent = vt === 'plane' ? '下降' : 'もぐる';
   const kind = ride && ride.item.def.vehicle.aegis ? 'aegis' : vt || (aboard ? 'ride' : wet ? 'wet' : 'walk');
-  el('hint').textContent = driving && AUTO.on ? HINT.auto : HINT[kind] || HINT.ship;
+  el('hint').textContent = driving && AUTO.on ? (AUTO.semi ? HINT.semi : HINT.auto) : HINT[kind] || HINT.ship;
   el('subBtns').hidden = vt !== 'sub' && vt !== 'ship' && vt !== 'robot';
   el('ejectBtn').hidden = vt !== 'robot';
   el('lightBtn').hidden = el('scopeBtn').hidden = el('pingBtn').hidden = vt !== 'sub';
@@ -8024,7 +8041,8 @@ function setMenu(open) {
   menuEl.hidden = !open; menuBtn.setAttribute('aria-expanded', String(open));
   if (open) {
     renderMyList(); renderVehMenu();
-    el('autoBtn').hidden = !canAuto(); el('autoBtn').textContent = AUTO.on ? '🚗 自動運転をやめる' : '🚗 自動運転（地図で行き先をえらぶ）';
+    el('autoBtn').hidden = !canAuto(); el('autoBtn').textContent = AUTO.on && !AUTO.semi ? '🚗 自動運転をやめる' : '🚗 自動運転（地図で行き先をえらぶ）';
+    el('semiBtn').hidden = !canAuto(); el('semiBtn').textContent = SEMI.on ? '🚙 半自動運転をやめる' : '🚙 半自動運転（行き先なしで道なりに）';
     // コンピュータ対戦は潜水艦を操縦しているときだけ（対戦中は「やめる」も）
     const inSub = driving && ride && vtype(ride) === 'sub' && !ride.ai;
     el('aiMenu').hidden = !(inSub || aiSub); el('aiStart').hidden = !inSub || !!aiSub; el('aiStop').hidden = !aiSub;
@@ -8450,23 +8468,24 @@ function startAuto(tx, tz, noHw, plan) {
   if (!canAuto()) { showMsg('車を運転しているときに使えます'); return false; }
   const r = plan || planAuto(ride, tx, tz, noHw);
   if (r.err) { showMsg(r.err); return false; }
-  Object.assign(AUTO, { on: true, route: r, k: 0, s: 0, why: '', stuckT: 0, ignoreT: 0, shift: 0, lat: 0, turn: '', noHw: !!noHw });
+  Object.assign(AUTO, { on: true, route: r, k: 0, s: 0, why: '', stuckT: 0, ignoreT: 0, shift: 0, lat: 0, turn: '', noHw: !!noHw, semi: false, halt: false, semiTurn: null });
+  SEMI.on = false;
   const hwT = r.hw ? autoHwText(r) + '。' : r.note ? r.note + '。' : '';
   showMsg(`自動運転で「${r.name}」へ向かいます（約 ${(r.len / 1000).toFixed(1)}km）。${hwT}下のボタンで速さ・車線・右左折をえらべます`);
   return true;
 }
 function stopAuto(msg) {
   if (!AUTO.on) return;
-  AUTO.on = false; AUTO.route = null; AUTO.why = ''; AUTO.shift = 0; AUTO.lat = 0; AUTO.turn = '';
+  AUTO.on = false; AUTO.route = null; AUTO.why = ''; AUTO.shift = 0; AUTO.lat = 0; AUTO.turn = ''; AUTO.semi = false; AUTO.halt = false; AUTO.semiTurn = null;
   if (msg) showMsg(msg);
 }
 // 自動運転中の操作：速さ（10km/h ずつ、まん中のボタンでおまかせ）・車線変更・つぎの交差点で右左折
 const AUTO_GEN_MAX = 70 / 3.6;   // 一般道で自動運転が出す速さの上限
 function autoSpeed(d) {
-  if (!AUTO.on) return;
+  if (!AUTO.on && !(SEMI.on && driving && ride)) return;
   const V = ride.item.def.vehicle, top = Math.floor(V.maxSpeed * 0.85 * 3.6 / 10) * 10;
   if (!d) { AUTO.vset = 0; showMsg('速さ：おまかせ（一般道 50km/h・高速道路 100km/h）'); return; }
-  const now = AUTO.vset ? Math.round(AUTO.vset * 3.6) : (AUTO.route.P.hw[AUTO.k] ? 100 : 50);
+  const now = AUTO.vset ? Math.round(AUTO.vset * 3.6) : (AUTO.on && AUTO.route.P.hw[AUTO.k] ? 100 : 50);
   const k = Math.min(top, Math.max(10, Math.round(now / 10) * 10 + d * 10));
   AUTO.vset = k / 3.6;
   showMsg(`速さ：${k}km/h まで${k > 70 ? '（一般道では 70km/h まで）' : ''}（カーブ・信号・前の車ではゆっくり）`);
@@ -8482,6 +8501,7 @@ function autoLaneReq(dir) {   // dir：+1 左・-1 右
 }
 function autoTurnReq(dir) {   // dir：+1 左折・-1 右折。つぎの交差点で曲がって、そこから行き先への道をさがしなおす
   if (!AUTO.on) return;
+  if (AUTO.semi) { semiTurnReq(dir); return; }
   const P = AUTO.route.P, pcs = P.pieces, r = AUTO.route, car = ride;
   let m = 0; while (m + 1 < pcs.length && P.pAt[m + 1] <= AUTO.k) m++;
   if (pcs[m].hw) { showMsg('高速道路では曲がれません（車線変更はできます）'); return; }
@@ -8518,6 +8538,156 @@ function autoTurnReq(dir) {   // dir：+1 左折・-1 右折。つぎの交差�
     return;
   }
   showMsg('この先に曲がれる交差点がありません');
+}
+/* ================= 半自動運転（行き先なし・2026-11-01） =================
+   ☰ の「半自動運転」をえらぶと、道路の上で ▶前進 ／ ■停止 をえらべる。行き先は決めずに、道にそって走りつづける。
+   交差点の 100m くらい手前から右左折をえらべる（えらばなければ、まっすぐ。まっすぐがなければ、どちらかを自分でえらぶ）。
+   速さ・車線変更は自動運転と同じ。信号・前の車・人も自動運転と同じきまりで守る。行き止まりでは止まる */
+const SEMI = { on: false };   // on：半自動のモード。走っているあいだは AUTO.on と AUTO.semi
+const SEMI_LOOK = 100, SEMI_AHEAD = 1500, SEMI_MIN = 600;   // 右左折をえらべる距離・先に決めておく道のり・のこりがこれより短くなったら先をのばす
+const roadEnds = (n) => n.ends.filter((q) => !q.e.hw);
+const isJct = (n) => roadEnds(n).length >= 3;   // 道が 2 本の曲がり角は交差点ではない
+const pieceHd = (e, s, d) => { const a = edgeAt(e, s, {}), b = edgeAt(e, s + 6 * d, {}); return Math.atan2(b.x - a.x, b.z - a.z); };
+// prev の道の終わりの交差点から進める道（t：曲がる角度、左が＋）。来た道へはもどらない
+function semiExits(prev) {
+  const n = prev.dir > 0 ? prev.e.b : prev.e.a, hin = pieceHd(prev.e, prev.dir > 0 ? prev.e.L - 12 : 12, prev.dir), out = [];
+  for (const q of n.ends) {
+    if (q.e.hw) continue;
+    const dd = q.end ? -1 : 1;
+    if (q.e === prev.e && dd === -prev.dir) continue;
+    const t = wrapA(pieceHd(q.e, dd > 0 ? 0 : q.e.L, dd) - hin);
+    out.push({ t, tdir: Math.abs(t) < 0.5 ? 0 : Math.sign(t), piece: { e: q.e, dir: dd, s0: dd > 0 ? 0 : q.e.L, s1: dd > 0 ? q.e.L : 0 } });
+  }
+  return { n, out };
+}
+// want：+1 左折・-1 右折（その向きがなければ null）、0 おまかせ（まっすぐ。なければどちらか）
+function semiPick(prev, want) {
+  let { out } = semiExits(prev);
+  if (!out.length) return null;
+  if (want) {
+    let best = null;
+    for (const o of out) if (o.tdir === want) { const sc = Math.abs(Math.abs(o.t) - Math.PI / 2); if (!best || sc < best.sc) best = { ...o, sc }; }
+    return best;
+  }
+  if (out.length === 1) return out[0];
+  // おまかせでは、行き止まり（IC の料金所の広場など）へは入らない
+  const far = (o) => o.piece.dir > 0 ? o.piece.e.b : o.piece.e.a;
+  const open = out.filter((o) => roadEnds(far(o)).length > 1);
+  if (open.length && open.length < out.length) out = open;
+  let st = null;
+  for (const o of out) if (!o.tdir && (!st || Math.abs(o.t) < Math.abs(st.t))) st = o;
+  return st || out[Math.floor(Math.random() * out.length)];
+}
+// 先の道を SEMI_AHEAD m まで決めておく。行き止まりなら dead
+function semiExtend(pcs) {
+  let len = pcs.reduce((a, p) => a + Math.abs(p.s1 - p.s0), 0);
+  for (let g = 0; g < 60 && len < SEMI_AHEAD; g++) {
+    const prev = pcs[pcs.length - 1], nx = semiPick(prev, 0);
+    if (!nx) return prev.dir > 0 ? prev.e.b : prev.e.a;
+    const n = prev.dir > 0 ? prev.e.b : prev.e.a;
+    pcs.push({ ...nx.piece, tdir: nx.tdir, by: isJct(n) ? 'auto' : '' });
+    len += nx.piece.e.L;
+  }
+  return null;
+}
+function semiBuild(pcs) {
+  const dead = semiExtend(pcs), P = buildAutoPath(pcs), old = AUTO.route && AUTO.route.P, s0 = AUTO.s;
+  AUTO.route = { P, semi: true, dead, name: '' };
+  AUTO.k = 0; AUTO.s = 0;
+  // 黄信号で「もう止まれないから進む」と決めた交差点は、そのまま進む
+  if (old) for (const j of old.junc) if (j.go && j.stopS - s0 > -5) { const nj = P.junc.find((x) => x.node === j.node && x.stopS < 60); if (nj) nj.go = true; }
+}
+// 道 e の上で (x, z) にいちばん近い所（s）。p の s0〜s1 の間だけ
+function edgeProjS(e, x, z, p) {
+  let bs = p.s0, bd = Infinity;
+  for (let i = 0; i < e.N - 1; i++) {
+    const ex = e.X[i + 1] - e.X[i], ez = e.Z[i + 1] - e.Z[i], l2 = ex * ex + ez * ez || 1;
+    const t = Math.min(1, Math.max(0, ((x - e.X[i]) * ex + (z - e.Z[i]) * ez) / l2));
+    const dx = x - e.X[i] - ex * t, dz = z - e.Z[i] - ez * t, d = dx * dx + dz * dz;
+    if (d < bd) { bd = d; bs = e.S[i] + (e.S[i + 1] - e.S[i]) * t; }
+  }
+  const lo = Math.min(p.s0, p.s1), hi = Math.max(p.s0, p.s1);
+  return Math.min(hi, Math.max(lo, bs));
+}
+// いまの所から先の、決まっている道。m：いま走っている道（P.pieces の何番目か）
+function semiCur() {
+  const P = AUTO.route.P, pcs = P.pieces;
+  let m = 0; while (m + 1 < pcs.length && P.pAt[m + 1] <= AUTO.k) m++;
+  const cur = pcs[m], s = edgeProjS(cur.e, ride.pos.x, ride.pos.y, cur);
+  const first = { ...cur, s0: s };
+  return { m, head: Math.abs(cur.s1 - s) < 2 && m + 1 < pcs.length ? [] : [first] };
+}
+function semiRebuild() { const { m, head } = semiCur(); semiBuild([...head, ...AUTO.route.P.pieces.slice(m + 1)]); }
+// 道路の上で ▶前進
+function semiGo() {
+  if (!canAuto()) { showMsg('車を運転しているときに使えます'); return; }
+  const car = ride;
+  if (TOLL.on && hwZone(car.pos.x, car.pos.y, car.y)) { showMsg('高速道路では半自動運転は使えません（一般道で使えます）'); return; }
+  const st = nearestRoadPoint(car.pos.x, car.pos.y, 12);
+  if (!st || Math.abs(car.y - st.e.Y[st.i]) > 3) { showMsg('道路に入ると「▶前進」をえらべます'); return; }
+  const e = st.e, tx0 = e.X[st.i + 1] - e.X[st.i], tz0 = e.Z[st.i + 1] - e.Z[st.i];
+  const fwd = Math.sin(car.h) * tx0 + Math.cos(car.h) * tz0 >= 0 ? 1 : -1;
+  Object.assign(AUTO, { on: true, semi: true, halt: false, haltV: 0, semiTurn: null, route: null, k: 0, s: 0, why: '', stuckT: 0, ignoreT: 0, shift: 0, lat: 0, turn: '', noHw: true });
+  semiBuild([{ e, dir: fwd, s0: st.s, s1: fwd > 0 ? e.L : 0 }]);
+  showMsg('半自動運転：道にそって走ります。交差点の 100m 手前から右左折をえらべます');
+}
+// ■停止：ゆっくり止まって、手動にもどす（半自動のモードはそのまま）
+function semiHalt() {
+  if (!(AUTO.on && AUTO.semi)) return;
+  if (AUTO.halt) return;
+  AUTO.halt = true; AUTO.haltV = Math.max(0, ride.vF);
+}
+function setSemi(on) {
+  if (on === SEMI.on) return;
+  SEMI.on = on;
+  if (!on) { if (AUTO.on && AUTO.semi) stopAuto(); showMsg('半自動運転をやめました'); return; }
+  if (AUTO.on) stopAuto();
+  if (ride && ride.vF > 2 && nearestRoadPoint(ride.pos.x, ride.pos.y, 12)) semiGo();   // 道路を走っているなら、そのまま半自動で
+  else showMsg('半自動運転：道路で「▶前進」を押すと走り出します');
+}
+// 右左折をえらべる交差点：100m 以内で、いまの速さで曲がれる（止まれる）いちばん近い所
+function semiTurnCand(dir) {
+  if (!(AUTO.on && AUTO.semi && AUTO.route)) return null;
+  const P = AUTO.route.P, pcs = P.pieces;
+  let m = 0; while (m + 1 < pcs.length && P.pAt[m + 1] <= AUTO.k) m++;
+  const sp = Math.max(0, ride.vF), need = Math.max(12, sp * sp / (2 * 3.0) + 6);
+  for (let k = m + 1; k < pcs.length; k++) {
+    const d = P.S[P.pAt[k]] - AUTO.s;
+    if (d > SEMI_LOOK) break;
+    const prev = pcs[k - 1], n = prev.dir > 0 ? prev.e.b : prev.e.a;
+    if (d < need || !isJct(n)) continue;
+    const pick = semiPick(prev, dir);
+    if (pick) return { k, pick, d, node: n };
+  }
+  return null;
+}
+// つぎの交差点（HUD に出す）
+function semiNext() {
+  const P = AUTO.route.P, pcs = P.pieces;
+  for (let k = 1; k < pcs.length; k++) {
+    const d = P.S[P.pAt[k]] - AUTO.s;
+    if (d < -2) continue;
+    if (d > 400) return null;
+    if (pcs[k].by) return { d, tdir: pcs[k].tdir, by: pcs[k].by, node: pcs[k - 1].dir > 0 ? pcs[k - 1].e.b : pcs[k - 1].e.a };
+  }
+  return null;
+}
+function semiTurnReq(dir) {
+  if (!(AUTO.on && AUTO.semi)) return;
+  const P = AUTO.route.P, pcs = P.pieces, nx = semiNext();
+  const { m, head } = semiCur();
+  // 同じボタンをもう一度：取り消して、まっすぐ（おまかせ）にもどす
+  if (nx && nx.by === 'user' && nx.tdir === dir) {
+    const k = pcs.findIndex((p, i) => i > m && p.by === 'user');
+    const pick = semiPick(pcs[k - 1], 0);
+    if (pick) { semiBuild([...head, ...pcs.slice(m + 1, k), { ...pick.piece, tdir: pick.tdir, by: 'auto' }]); AUTO.semiTurn = null; showMsg(`${dir > 0 ? '左折' : '右折'}をやめました（${pick.tdir ? (pick.tdir > 0 ? '左' : '右') + 'へ曲がります' : 'まっすぐ進みます'}）`); }
+    return;
+  }
+  const c = semiTurnCand(dir);
+  if (!c) { showMsg(`100m 以内に${dir > 0 ? '左' : '右'}へ曲がれる交差点がありません`); return; }
+  semiBuild([...head, ...pcs.slice(m + 1, c.k), { ...c.pick.piece, tdir: dir, by: 'user' }]);
+  AUTO.semiTurn = { node: c.node, dir };
+  showMsg(`約 ${Math.round(c.d / 10) * 10}m 先の交差点を${dir > 0 ? '左' : '右'}に曲がります`);
 }
 // 自分の走る線の前にあるじゃまな物（バス・車・人・置いた物・ほかの乗り物）。いちばん近いもの
 function autoObstacle(car, P, look) {
@@ -8576,6 +8746,7 @@ function autoLaneBusy(car, P, bi, want) {
 // 毎コマ：ハンドルの角度と、アクセル・ブレーキを決める
 const autoTp = { x: 0, z: 0, i: 0 };
 function autoDrive(car, dt) {
+  if (AUTO.semi && !AUTO.route.dead && AUTO.route.P.L - AUTO.s < SEMI_MIN) semiRebuild();   // 半自動：先の道をのばす
   const P = AUTO.route.P, V = car.item.def.vehicle;
   // 走る線のどこまで来たか
   let bi = AUTO.k, bd = Infinity;
@@ -8587,7 +8758,12 @@ function autoDrive(car, dt) {
     AUTO.s = P.S[bi] + (P.S[j] - P.S[bi]) * t;
   }
   const sp = car.vF, left = P.L - AUTO.s;
-  if (left < 1.2 && Math.abs(sp) < 0.6) { stopAuto(`「${AUTO.route.name}」に着きました`); return { gas: 0, brk: 0, steer: 0, hold: true }; }
+  if (left < 1.2 && Math.abs(sp) < 0.6) { stopAuto(AUTO.semi ? (AUTO.route.dead.plaza ? 'IC の入口なので止まりました（高速道路は手動か自動運転で）' : '行き止まりなので止まりました（手動で動かせます）') : `「${AUTO.route.name}」に着きました`); return { gas: 0, brk: 0, steer: 0, hold: true }; }
+  if (AUTO.semi && AUTO.halt) {   // ■停止：ゆっくり止まったら手動にもどす
+    AUTO.haltV = Math.max(0, AUTO.haltV - 2.5 * dt);
+    if (AUTO.haltV <= 0 && Math.abs(sp) < 0.3) { stopAuto('止まりました。「▶前進」でまた走ります（手動でも動かせます）'); return { gas: 0, brk: 0, steer: 0, hold: true }; }
+  }
+  if (AUTO.semiTurn) { const nx = semiNext(); if (!nx || nx.node !== AUTO.semiTurn.node) AUTO.semiTurn = null; }   // 曲がり終わった
   // ハンドル：少し先の線の上の点を目ざす
   const Ld = Math.min(P.hw[bi] ? 26 : 14, Math.max(5, 4 + 0.6 * Math.abs(sp)));   // 高速道路では速いので、もっと先を見る
   autoPoint(P, AUTO.s + Ld, autoTp);
@@ -8602,6 +8778,7 @@ function autoDrive(car, dt) {
   let vt = Math.min(V.maxSpeed * 0.85, AUTO.vset ? Math.min(AUTO.vset, P.hw[bi] ? Infinity : AUTO_GEN_MAX, P.capC[bi]) : P.capV[bi]), why = '';   // 一般道は 70km/h まで
   vt = Math.min(vt, Math.sqrt(2 * AUTO_T.dec * Math.max(0, left - 0.5)));
   if (Math.abs(al) > 1.1) vt = Math.min(vt, 3);   // 向きが大きくちがう（Ｕターンなど）：ゆっくり
+  if (AUTO.semi && AUTO.halt) { vt = Math.min(vt, AUTO.haltV); why = '停止します'; }
   const tNow = Date.now() / 1000;
   for (const j of P.junc) {
     const d = j.stopS - AUTO.s;
@@ -8625,7 +8802,7 @@ function autoDrive(car, dt) {
   // 車同士で長く止まったままなら、しばらく車を気にせず進む（バスや車と同じ。おたがいに待ち合うのを防ぐ）
   AUTO.stuckT = ob && ob.kind === 'traffic' && vt < 0.3 && Math.abs(sp) < 0.3 ? AUTO.stuckT + dt : 0;
   if (AUTO.stuckT > 10) { AUTO.ignoreT = 5; AUTO.stuckT = 0; }
-  AUTO.why = vt < 0.3 && why ? why.replace('に合わせています', 'を待っています') : why === '黄信号' || why === '赤信号' ? why : AUTO.laneWait ? '車線変更：となりの車を待っています' : '';
+  AUTO.why = vt < 0.3 && why ? why.replace('に合わせています', 'を待っています') : why === '黄信号' || why === '赤信号' || why === '停止します' ? why : AUTO.laneWait ? '車線変更：となりの車を待っています' : '';
   // アクセルとブレーキ
   AUTO.vt = vt;
   const err = vt - sp;
@@ -8713,10 +8890,12 @@ function drawWmap() {
     const [ex, ey] = P(A.X[A.N - 1], A.Z[A.N - 1]); g.lineTo(ex, ey);
     g.strokeStyle = 'rgba(255,255,255,.9)'; g.lineWidth = Math.max(7, 9 * sc); g.stroke();
     g.strokeStyle = '#e8650a'; g.lineWidth = Math.max(4, 5 * sc); g.stroke();
+    if (!ar.semi) {   // 半自動は行き先がないので旗は出さない
     g.fillStyle = '#e8650a'; g.strokeStyle = '#fff'; g.lineWidth = 2.5;
     g.beginPath(); g.moveTo(ex, ey); g.lineTo(ex, ey - 26); g.stroke();
     g.beginPath(); g.moveTo(ex, ey - 26); g.lineTo(ex + 15, ey - 20); g.lineTo(ex, ey - 14); g.closePath(); g.fill(); g.stroke();
     g.beginPath(); g.arc(ex, ey, 4, 0, 7); g.fill(); g.stroke();
+    }
   }
   // 信号のある交差点
   for (const n of roadNet.nodes) if (n.signal) { const [x, y] = P(n.x, n.z); g.fillStyle = '#333'; g.beginPath(); g.arc(x, y, Math.max(2.5, n.jr * sc), 0, 7); g.fill(); }
@@ -8837,7 +9016,7 @@ el('routeBtn').addEventListener('click', () => openWmap(true));
 el('mapBtn').addEventListener('click', () => { setMenu(false); openWmap(false); });
 el('autoBtn').addEventListener('click', () => {
   setMenu(false);
-  if (AUTO.on) { stopAuto('自動運転をやめました'); return; }
+  if (AUTO.on && !AUTO.semi) { stopAuto('自動運転をやめました'); return; }
   openWmap(false);
   showMsg('地図で行きたい所をタップしてください');
 });
@@ -8867,6 +9046,14 @@ el('wmapGoLocal').addEventListener('click', () => {
   const p = WMAP.pick; if (!p) return;
   if (startAuto(p.tx, p.tz, true)) closeWmap();
 });
+el('semiBtn').addEventListener('click', () => { setMenu(false); setSemi(!SEMI.on); });
+el('apGo').addEventListener('click', () => { if (AUTO.on && AUTO.semi) { if (AUTO.halt) { AUTO.halt = false; showMsg('走りつづけます'); } return; } semiGo(); });
+el('apHalt').addEventListener('click', () => { if (AUTO.on && AUTO.semi) semiHalt(); else showMsg('止まっています。「▶前進」で走り出します'); });
+el('apSemiOff').addEventListener('click', () => setSemi(false));
+el('apMin').addEventListener('click', () => setApMin(true));
+el('apMax').addEventListener('click', () => setApMin(false));
+let apMin = localStorage.getItem('world.apMin') === '1';
+function setApMin(on) { apMin = on; try { localStorage.setItem('world.apMin', on ? '1' : '0'); } catch (e) {} }
 el('apSlow').addEventListener('click', () => autoSpeed(-1));
 el('apFast').addEventListener('click', () => autoSpeed(1));
 el('apSpd').addEventListener('click', () => autoSpeed(0));
@@ -8874,10 +9061,23 @@ el('apLaneL').addEventListener('click', () => autoLaneReq(1));
 el('apLaneR').addEventListener('click', () => autoLaneReq(-1));
 el('apTurnL').addEventListener('click', () => autoTurnReq(1));
 el('apTurnR').addEventListener('click', () => autoTurnReq(-1));
-// 自動運転の操作パネル：運転中で自動運転のときだけ
+// 自動運転の操作パネル：運転中で自動運転・半自動運転のときだけ。▾ でしまえる（しまうと「降りる」の案内も隠す）
 setInterval(() => {
-  const show = !!(AUTO.on && driving && ride);
+  const show = !!((AUTO.on || SEMI.on) && driving && ride);
   if (el('autoPanel').hidden === show) el('autoPanel').hidden = !show;
+  document.body.classList.toggle('apMinOn', show && apMin);
+  el('apMin').hidden = apMin; el('apMax').hidden = !apMin;
+  el('apSemiG').hidden = !SEMI.on;
+  el('apLaneG').hidden = el('apTurnG').hidden = !AUTO.on;
+  if (show && SEMI.on) {
+    const run = AUTO.on && AUTO.semi;
+    el('apGo').setAttribute('aria-pressed', String(run && !AUTO.halt)); el('apHalt').setAttribute('aria-pressed', String(!run || !!AUTO.halt));
+    for (const [id, d] of [['apTurnL', 1], ['apTurnR', -1]]) {
+      const on = !!(run && AUTO.semiTurn && AUTO.semiTurn.dir === d);
+      el(id).setAttribute('aria-pressed', String(on));
+      el(id).disabled = run && !on && !semiTurnCand(d);   // 100m 以内に曲がれる交差点があるときだけ
+    }
+  } else { el('apTurnL').disabled = el('apTurnR').disabled = false; el('apTurnL').setAttribute('aria-pressed', 'false'); el('apTurnR').setAttribute('aria-pressed', 'false'); }
   // 「降りる」などの案内（#prompt）は、操作パネルの上へずらす（重ならないように）
   const pr = el('prompt'), want = show ? `${Math.round(window.innerHeight - el('autoPanel').getBoundingClientRect().top + 8)}px` : '';
   if (pr.style.bottom !== want) pr.style.bottom = want;
@@ -8919,7 +9119,7 @@ window.__world = {
   hullGround, findWaterSpot, rescueBoat, get periscope() { return periscope; }, toggleLight, setPeriscope,
   teleport(x, z, y) { player.pos.set(x, y ?? heightAt(x, z), z); player.vy = 0; },
   torps, tube, ord, booms, get clockT() { return clock.elapsedTime; },
-  AUTO, startAuto, stopAuto, planAuto, stepHwTraffic, autoSpeed, autoLaneReq, autoTurnReq, get myCar() { return myCar; }, stepTraffic, stepVehicle, camera, signalState,
+  AUTO, SEMI, semiGo, semiHalt, setSemi, semiTurnReq, semiTurnCand, semiNext, setApMin, startAuto, stopAuto, planAuto, stepHwTraffic, autoSpeed, autoLaneReq, autoTurnReq, get myCar() { return myCar; }, stepTraffic, stepVehicle, camera, signalState,
 };
 
 camera.position.set(player.pos.x, player.pos.y + 6, player.pos.z + 10);
