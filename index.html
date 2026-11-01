@@ -100,7 +100,17 @@ body.mapOn #msg { top: max(145px, 30vh); }
 #wmap canvas { display: block; width: 100%; height: 100%; }
 #wmapLegend { position: absolute; left: 8px; top: 8px; display: grid; gap: 3px; padding: 6px 8px; background: rgba(255,255,255,.88); border-radius: 8px; font: 800 12px var(--font-ui); }
 #wmapLegend i { display: inline-block; width: 18px; height: 5px; border-radius: 3px; margin-right: 6px; vertical-align: middle; }
-#wmapGo { position: absolute; left: 50%; bottom: 10px; transform: translateX(-50%); max-width: calc(100% - 20px); font: 800 14px var(--font-ui); color: #fff; background: #e8650a; border: 0; border-radius: 999px; padding: 10px 16px; box-shadow: 0 4px 14px rgba(0,0,0,.25); cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#wmapGoBox { position: absolute; left: 50%; bottom: 10px; transform: translateX(-50%); max-width: calc(100% - 20px); display: grid; gap: 6px; justify-items: center; }
+#wmapToll { font: 800 13px var(--font-ui); color: #16324f; background: rgba(255,255,255,.94); border: 2px solid #1f6b3a; border-radius: 10px; padding: 6px 10px; text-align: center; }
+#wmapGoBox .gos { display: flex; gap: 6px; flex-wrap: wrap; justify-content: center; }
+#wmapGo, #wmapGoLocal { max-width: 100%; font: 800 14px var(--font-ui); color: #fff; background: #e8650a; border: 0; border-radius: 999px; padding: 10px 16px; box-shadow: 0 4px 14px rgba(0,0,0,.25); cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#wmapGoLocal { background: #4d6276; }
+#autoPanel { position: fixed; left: 50%; bottom: calc(50px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); display: flex; gap: 6px; flex-wrap: wrap; justify-content: center; max-width: calc(100vw - 16px); z-index: 3; }
+#autoPanel .grp { display: flex; align-items: center; gap: 2px; padding: 3px; background: var(--panel); border: 1px solid var(--line); border-radius: 999px; }
+#autoPanel button { font: 800 12px var(--font-ui); color: var(--ink); background: #fff; border: 1px solid var(--line); border-radius: 999px; padding: 6px 9px; cursor: pointer; white-space: nowrap; }
+#autoPanel button[aria-pressed="true"] { background: #e8650a; color: #fff; border-color: #e8650a; }
+#autoPanel #apSpd { min-width: 64px; }
+@media (pointer: coarse) { #autoPanel { bottom: calc(14px + env(safe-area-inset-bottom, 0px)); } }
 #wmapCv { cursor: crosshair; }
 #wmapNote { margin: 0; font: 500 12px var(--font-ui); color: var(--ink-dim); }
 #prompt { position: fixed; left: 50%; bottom: calc(96px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%);
@@ -308,6 +318,11 @@ body.helmOn .subbtns { flex-wrap: wrap; justify-content: flex-end; max-width: ca
   <div id="myList" hidden></div>
 </div>
 <div id="msg" hidden></div>
+<div id="autoPanel" hidden aria-label="自動運転の操作">
+  <span class="grp"><button type="button" id="apSlow" aria-label="おそく">−</button><button type="button" id="apSpd" title="押すとおまかせ">おまかせ</button><button type="button" id="apFast" aria-label="はやく">＋</button></span>
+  <span class="grp"><button type="button" id="apLaneL">⇦ 車線</button><button type="button" id="apLaneR">車線 ⇨</button></span>
+  <span class="grp"><button type="button" id="apTurnL">↰ 左折</button><button type="button" id="apTurnR">右折 ↱</button></span>
+</div>
 <button class="pill" id="routeBtn" type="button" hidden>🚏 路線図</button>
 <div id="stopInfo" hidden aria-live="polite"></div>
 <div id="wmap" hidden role="dialog" aria-modal="true" aria-label="地図">
@@ -316,7 +331,7 @@ body.helmOn .subbtns { flex-wrap: wrap; justify-content: flex-end; max-width: ca
     <button type="button" id="homeBtn">🏖️ 砂浜に戻る</button>
     <button type="button" id="wmapClose" aria-label="閉じる">✕</button>
   </div>
-  <div class="wbody"><canvas id="wmapCv"></canvas><div id="wmapLegend" hidden></div><button type="button" id="wmapGo" hidden>自動運転で行く</button></div>
+  <div class="wbody"><canvas id="wmapCv"></canvas><div id="wmapLegend" hidden></div><div id="wmapGoBox" hidden><div id="wmapToll" hidden></div><div class="gos"><button type="button" id="wmapGo">自動運転で行く</button><button type="button" id="wmapGoLocal" hidden>一般道で行く</button></div></div></div>
   <p id="wmapNote"></p>
 </div>
 <div id="pingWarn" hidden role="alert">ピンガーが打たれました</div>
@@ -1336,7 +1351,7 @@ const roadNet = (() => {
       let bi = 0, bd = Infinity; for (let i = 0; i < N; i++) { const d = (X[i] - p[0]) ** 2 + (Z[i] - p[1]) ** 2; if (d < bd) { bd = d; bi = i; } }
       if (k === 0) bi = 0; if (k === pts.length - 1) bi = N - 1;
       const v = m === 'n' ? (k === 0 ? A.y : B.y) : m === 'd' ? (k === 0 ? A.y : k === pts.length - 1 ? B.y : deckDatum(p[0], p[1])) : m === 'h' ? deckDatum(p[0], p[1]) + HW_LIFT : null;
-      ctl.push({ i: bi, s: S[bi], v });
+      ctl.push({ i: bi, s: S[bi], v, m });
     });
     ctl.sort((a, b) => a.s - b.s);
     const G = new Float32Array(N); for (let i = 0; i < N; i++) G[i] = Math.max(base[i], 2.4);
@@ -1354,7 +1369,11 @@ const roadNet = (() => {
       for (let i = 0; i < N; i++) { const d = Math.hypot(X[i] - P.x, Z[i] - P.z); Y[i] = P.y + (Y[i] - P.y) * ss(r, r + 25, d); }
     }
     const inFlat = (i) => [A, B].some((P) => (P.plaza || P.lot) && Math.hypot(X[i] - P.x, Z[i] - P.z) < (P.plaza || 0) + 25);
-    for (let i = 0; i < N; i++) if (!inFlat(i)) Y[i] = Math.max(Y[i], G[i] - 0.05);   // 広場・駐車場の近くは広場の高さのまま（地面に合わせて浮かない）
+    // 本線とつながる側（最後の d の点から本線まで）は本線の高さに合わせる。本線が切り通しで地面より低い所でも、ランプだけ丘の上に残らないように
+    const dIn = ctl.filter((c) => c.m === 'd' && c.i > 0 && c.i < N - 1);
+    const sA = A.onEdge != null && dIn.length ? dIn[0].s : -1, sB = B.onEdge != null && dIn.length ? dIn[dIn.length - 1].s : Infinity;
+    const onMain = (i) => S[i] <= sA || S[i] >= sB;
+    for (let i = 0; i < N; i++) if (!inFlat(i) && !onMain(i)) Y[i] = Math.max(Y[i], G[i] - 0.05);   // 広場・駐車場の近くは広場の高さのまま（地面に合わせて浮かない）
   }
   const built = [];
   const edges = EDGES.map((E, ei) => {
@@ -2433,9 +2452,45 @@ const hwExtra = (() => {
   }
   { const e = R.edges[HWY.spur], s = e.L - 70; let i = 0; while (i < e.N - 2 && e.S[i] < s) i++;
     gantry(e.X[i], e.Z[i], e.Y[i], e.NX[i], e.NZ[i], HW_W / 2, [[7, 1], [3.5, 1], [-3.5, -1], [-7, -1]]); }
+  // 入口・出口の看板：入口は緑の「入口」、出口は広場から見ると「進入禁止」、高速道路から見ると「出口」
+  const noEntryTex = (() => {
+    const c = document.createElement('canvas'); c.width = 256; c.height = 320; const g = c.getContext('2d');
+    g.fillStyle = '#ffffff'; g.fillRect(0, 0, 256, 320);
+    g.fillStyle = '#d0202a'; g.beginPath(); g.arc(128, 128, 112, 0, 7); g.fill();
+    g.fillStyle = '#ffffff'; g.fillRect(36, 108, 184, 40);
+    g.fillStyle = '#d0202a'; g.font = '900 54px sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('進入禁止', 128, 284);
+    const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
+  })();
+  const inTex = hwSign([['入口'], ['高速道路 ↑']], 320, 200, '#1f6b3a', '#ffffff'), outTex = hwSign([['出口'], ['EXIT ↑']], 320, 200, '#1f6b3a', '#ffffff');
+  const signPostG = new THREE.CylinderGeometry(0.08, 0.08, 3.4, 6), signPostM = new THREE.MeshLambertMaterial({ color: 0x9aa0a6 });
+  const roadSign = (x, y, z, fx, fz, front, back, w, h) => {   // fx, fz：表の向き（見る人のほう）
+    const g = new THREE.Group(); g.position.set(x, y, z); g.rotation.y = Math.atan2(fx, fz);
+    const post = new THREE.Mesh(signPostG, signPostM); post.position.y = 1.7; g.add(post);
+    const a = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshBasicMaterial({ map: front })); a.position.set(0, 3.4 - h / 2 + 0.3, 0.1); g.add(a);
+    if (back) { const b = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshBasicMaterial({ map: back })); b.position.set(0, 3.4 - h / 2 + 0.3, -0.1); b.rotation.y = Math.PI; g.add(b); }
+    scene.add(g);
+  };
+  const signs = [];
+  for (const e of R.edges) {
+    if (!e.gate) continue;
+    const s = e.gate === 'in' ? 30 : e.L - 30; let i = 0; while (i < e.N - 2 && e.S[i] < s) i++;
+    const tx = e.X[i + 1] - e.X[i], tz = e.Z[i + 1] - e.Z[i], tl = Math.hypot(tx, tz) || 1, side = RAMP_W / 2 + 0.7;
+    for (const sd of [1, -1]) {   // 両がわに立てる
+      const x = e.X[i] + e.NX[i] * side * sd, z = e.Z[i] + e.NZ[i] * side * sd;
+      if (e.gate === 'in') roadSign(x, e.Y[i], z, -tx / tl, -tz / tl, inTex, null, 1.6, 1.0);
+      else roadSign(x, e.Y[i], z, tx / tl, tz / tl, noEntryTex, outTex, 1.2, 1.5);
+    }
+    signs.push({ e: e.id, gate: e.gate, x: e.X[i], z: e.Z[i] });
+  }
+  { // 西山線の終点：本線の入口（東へ）と出口（西へ）
+    const e = R.edges[HWY.spur], s = e.L - 40; let i = 0; while (i < e.N - 2 && e.S[i] < s) i++;
+    const tx = e.X[i + 1] - e.X[i], tz = e.Z[i + 1] - e.Z[i], tl = Math.hypot(tx, tz) || 1, side = HW_W / 2 + 0.7;
+    roadSign(e.X[i] - e.NX[i] * side, e.Y[i], e.Z[i] - e.NZ[i] * side, tx / tl, tz / tl, inTex, null, 1.6, 1.0);
+    roadSign(e.X[i] + e.NX[i] * side, e.Y[i], e.Z[i] + e.NZ[i] * side, tx / tl, tz / tl, noEntryTex, outTex, 1.2, 1.5);
+  }
   // IC の広場（外と高速道路の出入り口）
   const portals = HWY.ics.map((ic) => { const n = R.nodeOf[ic.node]; return { name: ic.name, x: n.x, z: n.z, y: n.y, r: (n.plaza || 26) + (ic.terminal ? 45 : 25) }; });
-  return { shops, gates, portals };
+  return { shops, gates, portals, signs };
 })();
 const portalAt = (x, z) => hwExtra.portals.find((p) => Math.hypot(x - p.x, z - p.z) < p.r) || null;
 // 高速道路の中か（本線・ランプ・PA の駐車場）。道のはしからの深さ（m、中が＋）。hwD.e：いちばん深い道（駐車場なら HW_LOTS の 1 つ）
@@ -2483,12 +2538,20 @@ const hwMsg = (t) => { const n = performance.now(); if (t !== hwMsg.t || n - hwM
 // 車：高速道路の中と外は、IC の広場でしか行き来できない（はしまで来たら壁）。false なら元の位置へもどす
 function hwCarMove(car, ox, oz, mine) {
   if (hwShopHit(car.pos.x, car.pos.y, car.y, 1.2)) return false;
+  // 本線の中央分離帯：反対の車線へは行けない（壁と同じに、そってすべる）
+  if (mine) hwMedian(car, ox, oz);
+  // 逆走：入口（ランプ）から出る・出口から入る・本線を反対に走るのは止める（バックはできる）
+  if (mine && car.vF > 0.3) {
+    const w = hwWrongWay(car.pos.x, car.pos.y, car.y, car.h);
+    if (w) { hwMsg(w === 'out' ? '⛔ ここは出口です（進入禁止）。高速道路には「入口」から入ってください' : w === 'in' ? '⛔ ここは入口です。高速道路からは「出口」から出てください' : '⛔ 逆走です。向きを変えてください'); return false; }
+  }
   const was = hwDepth(ox, oz, car.y), now = hwDepth(car.pos.x, car.pos.y, car.y), need = car.item.def.vehicle.halfWidth + 0.2;
   if (was > HW_IN) {
     if (now >= need || now >= was) return true;
     const p = portalAt(car.pos.x, car.pos.y);
-    if (!p) { if (mine && car.y - heightAt(car.pos.x, car.pos.y) < 2) hwMsg('高速道路からは IC（出口）でしか出られません'); return false; }
-    return true;
+    if (p) return true;
+    if (mine && car.y - heightAt(car.pos.x, car.pos.y) < 2) hwMsg('高速道路からは IC（出口）でしか出られません');
+    return hwSlide(car, need);   // ガードレール：押しもどして、そってすべる
   }
   if (now <= HW_IN) return true;
   const p = portalAt(car.pos.x, car.pos.y);
@@ -2497,6 +2560,63 @@ function hwCarMove(car, ox, oz, mine) {
     if (wallet.p < HW_TOLL_KM) { hwMsg(`P が足りないので高速道路に入れません（${HW_TOLL_KM}P 以上いります・いま ${fmtP(wallet.p)}）`); return false; }
     hwTollStart(p);
   }
+  return true;
+}
+// ランプと本線の進む向き。いる所のどの道とも反対向き（120° より大きくちがう）なら、そのランプの種類（'in' 入口・'out' 出口・'main' 本線）
+function hwWrongWay(x, z, y, h) {
+  const R = roadNet, key = Math.floor(x / R.G) * 65536 + Math.floor(z / R.G), fx = Math.sin(h), fz = Math.cos(h);
+  let ok = false, bad = null;
+  for (const a of [R.gridEL.get(key), R.grid.get(key)]) if (a) for (const code of a) {
+    const e = R.edges[code >> 16]; if (!e.gate && e.hw !== 'main') continue;
+    const i = code & 65535, ex = e.X[i + 1] - e.X[i], ez = e.Z[i + 1] - e.Z[i], l2 = ex * ex + ez * ez || 1;
+    const t = Math.min(1, Math.max(0, ((x - e.X[i]) * ex + (z - e.Z[i]) * ez) / l2));
+    const yy = e.Y[i] + (e.Y[i + 1] - e.Y[i]) * t;
+    if (y < yy - 1.3 || y > yy + 4) continue;
+    const dx = x - e.X[i] - ex * t, dz = z - e.Z[i] - ez * t;
+    if (e.W[i] / 2 - Math.hypot(dx, dz) < -0.5) continue;
+    if ((e.a.plaza && Math.hypot(x - e.a.x, z - e.a.z) < e.a.plaza) || (e.b.plaza && Math.hypot(x - e.b.x, z - e.b.z) < e.b.plaza)) continue;   // 料金所の広場の中は自由
+    let sg = 1;
+    if (e.hw === 'main') { const lat = dx * e.NX[i] + dz * e.NZ[i]; if (Math.abs(lat) < 1) continue; sg = lat > 0 ? 1 : -1; }   // 本線：中央より左がわは a→b の向き
+    const dot = (fx * ex + fz * ez) / Math.sqrt(l2) * sg;
+    if (dot > -0.5) ok = true; else bad = e.gate || 'main';
+  }
+  return ok ? null : bad;
+}
+function hwMedian(car, ox, oz) {
+  const R = roadNet, x = car.pos.x, z = car.pos.y, a = R.gridEL.get(Math.floor(x / R.G) * 65536 + Math.floor(z / R.G)) || [], b = R.grid.get(Math.floor(x / R.G) * 65536 + Math.floor(z / R.G)) || [];
+  const need = car.item.def.vehicle.halfWidth + 0.9;
+  let best = null, bd = Infinity;
+  for (const code of [...a, ...b]) {
+    const e = R.edges[code >> 16]; if (e.hw !== 'main') continue;
+    const i = code & 65535, ex = e.X[i + 1] - e.X[i], ez = e.Z[i + 1] - e.Z[i], l2 = ex * ex + ez * ez || 1;
+    const t = Math.min(1, Math.max(0, ((x - e.X[i]) * ex + (z - e.Z[i]) * ez) / l2)), cx = e.X[i] + ex * t, cz = e.Z[i] + ez * t;
+    const yy = e.Y[i] + (e.Y[i + 1] - e.Y[i]) * t; if (car.y < yy - 1.3 || car.y > yy + 4) continue;
+    const d = Math.hypot(x - cx, z - cz); if (d < bd && d < e.W[i] / 2) { bd = d; best = { e, i, cx, cz }; }
+  }
+  if (!best) return;
+  const { e, i, cx, cz } = best;
+  if ((e.a.plaza && Math.hypot(x - e.a.x, z - e.a.z) < e.a.plaza + 10) || (e.b.plaza && Math.hypot(x - e.b.x, z - e.b.z) < e.b.plaza + 10)) return;   // 終点の広場の近くは分離帯なし
+  const latNew = (x - cx) * e.NX[i] + (z - cz) * e.NZ[i], latOld = (ox - cx) * e.NX[i] + (oz - cz) * e.NZ[i];
+  if (Math.abs(latOld) < 0.3) return;
+  const sg = Math.sign(latOld);
+  if (latNew * sg >= need) return;
+  const push = need - latNew * sg;
+  car.pos.x += e.NX[i] * sg * push; car.pos.y += e.NZ[i] * sg * push;
+  slideOnWall(car, e.NX[i] * sg, e.NZ[i] * sg);
+}
+// ガードレールにぶつかった車：道の中へ押しもどし、ぶつかった向きの速さだけなくして、壁にそってすべらせる
+function hwSlide(car, need) {
+  let nx = 0, nz = 0;
+  for (let it = 0; it < 3; it++) {
+    const x = car.pos.x, z = car.pos.y, y = car.y, d0 = hwDepth(x, z, y);
+    if (d0 >= need - 0.01) break;
+    const gx = hwDepth(x + 0.3, z, y) - hwDepth(x - 0.3, z, y), gz = hwDepth(x, z + 0.3, y) - hwDepth(x, z - 0.3, y), gl = Math.hypot(gx, gz);
+    if (!(gl > 1e-3)) return false;
+    nx = gx / gl; nz = gz / gl;
+    car.pos.x += nx * (need - d0 + 0.02); car.pos.y += nz * (need - d0 + 0.02);
+  }
+  if (hwDepth(car.pos.x, car.pos.y, car.y) < need - 0.1) return false;
+  if (nx || nz) slideOnWall(car, nx, nz);
   return true;
 }
 // 歩き：高速道路には歩いて入れない（車から降りたときは、中を歩ける。外へは IC の広場から）
@@ -5269,8 +5389,8 @@ function stepCar(car, dt) {
   for (const [ax, az] of CORNERS) {
     const p = carLocalToWorld(car, ax * V.halfWidth, V.centerZ + az * V.halfLength);
     const ox = p.x < X0 ? X0 - p.x : p.x > X1 ? X1 - p.x : 0, oz = p.y < Z0 ? Z0 - p.y : p.y > Z1 ? Z1 - p.y : 0;
-    if (ox) { car.pos.x += ox; hitWall(car); }
-    if (oz) { car.pos.y += oz; hitWall(car); }
+    if (ox) { car.pos.x += ox; slideOnWall(car, Math.sign(ox), 0); }
+    if (oz) { car.pos.y += oz; slideOnWall(car, 0, Math.sign(oz)); }
   }
   for (const pr of props) {
     const b = pr.box, R = 1.3;
@@ -5278,8 +5398,8 @@ function stepCar(car, dt) {
     const qx = THREE.MathUtils.clamp(car.pos.x, b.min.x, b.max.x), qz = THREE.MathUtils.clamp(car.pos.y, b.min.z, b.max.z);
     const dx = car.pos.x - qx, dz = car.pos.y - qz, d = Math.hypot(dx, dz);
     if (d < R) {
-      if (d > 1e-4) { car.pos.x += (dx / d) * (R - d); car.pos.y += (dz / d) * (R - d); }
-      hitWall(car);
+      if (d > 1e-4) { car.pos.x += (dx / d) * (R - d); car.pos.y += (dz / d) * (R - d); slideOnWall(car, dx / d, dz / d); }
+      else hitWall(car);
     }
   }
   // ほかの人と、ほかの人の車にぶつかったら止まる（車は前後 2 つの円で考える）
@@ -5323,6 +5443,24 @@ function stepCar(car, dt) {
   }
 }
 function hitWall(car) { car.vF *= -0.15; car.vL *= 0.3; }
+// 壁や物にななめにぶつかったとき：壁に向かう速さだけなくし（少しはね返る）、壁にそってすべる。浅い角度なら車の向きも壁にそわせる
+// （nx, nz：壁から車へ向かう向き）
+function slideOnWall(car, nx, nz) {
+  const s = Math.sin(car.h), c = Math.cos(car.h);
+  let vx = s * car.vF + c * car.vL, vz = c * car.vF - s * car.vL;
+  const vn = vx * nx + vz * nz;
+  if (vn >= 0) return;
+  vx -= nx * vn * 1.15; vz -= nz * vn * 1.15;
+  const sp = Math.hypot(vx, vz), loss = Math.min(0.5, 0.25 * -vn / (sp + 1));   // ぶつかった強さのぶん、少しおそくなる
+  vx *= 1 - loss; vz *= 1 - loss;
+  car.vF = vx * s + vz * c; car.vL = vx * c - vz * s;
+  if (Math.abs(car.vF) > 1) {
+    let tx = -nz, tz = nx; if (tx * s + tz * c < 0) { tx = -tx; tz = -tz; }
+    if (car.vF < 0) { tx = -tx; tz = -tz; }
+    const da = wrapA(Math.atan2(tx, tz) - car.h);
+    if (Math.abs(da) < 1.1) car.h += da * 0.35;
+  }
+}
 
 /* ---- 人型ロボット：すべる動き ---- */
 function animRobot(v, dt, acc) {
@@ -7758,7 +7896,7 @@ window.addEventListener('resize', () => {
 /* ================= 自動運転（自分で運転している車） =================
    地図をタップして行き先をえらぶと、道路にそって走る。信号・前の車・人は、バスやトラックと同じきまりで守る
    （左側通行・赤と黄は止まれるなら止まる・前の車とは間をあける）。ハンドル・アクセル・ブレーキをさわると手動にもどる */
-const AUTO = { on: false, route: null, pick: null, k: 0, s: 0, why: '', stuckT: 0, ignoreT: 0 };
+const AUTO = { on: false, route: null, pick: null, k: 0, s: 0, why: '', stuckT: 0, ignoreT: 0, vset: 0, shift: 0, lat: 0, turn: '' };   // vset：自分で決めた速さ（m/s、0 はおまかせ）、shift：車線変更（-1 右・+1 左）、lat：いまの横のずれ（m、左が＋）
 const AUTO_T = { cruise: 13.9, dec: 2.0, lat: 2.2 };   // ふつうの車（セダン）と同じ：時速 50km・減速・カーブ
 const canAuto = () => !!(driving && ride && vtype(ride) === 'car' && !ride.remote);
 // いちばん近い道の点（maxD m まで）
@@ -7791,11 +7929,11 @@ function autoRampPiece(e, s0) {
   return { e, dir: 1, s0, s1: e.L, hw: 'ramp', lane: () => 0, vmax: (sv) => (e.a.plaza && sv < 70) || (e.b.plaza && sv > e.L - 70) ? AUTO_GATE_V : AUTO_RAMP_V };
 }
 // 本線の向き d の上を es0 から es1 まで（環状線は 1 周のつぎ目をこえてもよい）。lat0・lat1：はしの点の車線（中央からの m）。そこから走行車線へうつる
-function autoMainPieces(e, d, es0, lat0, es1, lat1, tap0 = 200) {
+function autoMainPieces(e, d, es0, lat0, es1, lat1, tap0 = 200, tap1 = 200) {
   const L = e.L, lt = HW_LANE[1];
   let span = es1 - es0; if (e.loop && span <= 0) span += L;
-  const laneAt = (t) => lt + (lat0 - lt) * (1 - ss(0, tap0, t)) + (lat1 - lt) * ss(span - 200, span, t);
-  const vmax = () => AUTO_HW_V;
+  const laneAt = (t) => lt + (lat0 - lt) * (1 - ss(0, tap0, t)) + (lat1 - lt) * ss(span - tap1, span, t);
+  const vmax = (sv) => e.b.plaza && sv > L - 160 ? AUTO_GATE_V : AUTO_HW_V;   // 西山線の終点の料金所
   const mk = (a, c, off) => ({ e, dir: d, s0: d > 0 ? a : L - a, s1: d > 0 ? c : L - c, hw: 'main', lane: (sv) => laneAt((d > 0 ? sv : L - sv) - es0 + off), vmax });
   if (es0 + span <= L + 0.01) return [mk(es0, Math.min(L, es0 + span), 0)];
   return [mk(es0, L, 0), mk(0, es0 + span - L, L)];
@@ -7811,14 +7949,18 @@ function autoHwNet() {
     for (const n of [e.a, e.b]) if (n.onEdge != null) { const main = R.edges[n.onEdge], q = autoMainAt(main, n.x, n.z); addPt(main, q.d, { id: n.id, es: q.es, lat: q.lat }); }
     link(e.a.id, { to: e.b.id, c: autoTimeC(e.L, AUTO_RAMP_V) + (e.gate === 'in' ? AUTO_HW_IN : 0), icIn: e.gate === 'in' ? e.ic : '', icOut: e.gate === 'out' ? e.ic : '', pieces: [autoRampPiece(e, 0)] });
   }
-  // 西山線の終点（西山町IC）は、本線のおわりの急な下り坂で車が止まってしまうので、自動運転では使わない（みどり台IC で出入りする）
+  for (const e of R.edges) if (e.hw === 'main' && e.b.plaza) {   // 西山線の終点：本線がそのまま料金所の広場へ
+    addPt(e, 1, { id: e.b.id, es: e.L, lat: 0, ic: e.b.name });
+    addPt(e, -1, { id: e.b.id, es: 0, lat: 0, ic: e.b.name });
+  }
   for (const C of cw.values()) {
     C.pts.sort((a, b) => a.es - b.es);
     const n = C.pts.length;
     for (let i = 0; i < (C.e.loop ? n : n - 1); i++) {
       const A = C.pts[i], B = C.pts[(i + 1) % n];
       let span = B.es - A.es; if (span <= 0) span += C.e.L;
-      link(A.id, { to: B.id, c: autoTimeC(span, AUTO_HW_V), pieces: autoMainPieces(C.e, C.d, A.es, A.lat, B.es, B.lat) });
+      link(A.id, { to: B.id, c: autoTimeC(span, AUTO_HW_V) + (A.ic ? AUTO_HW_IN : 0), icIn: A.ic || '', icOut: B.ic || '',
+        pieces: autoMainPieces(C.e, C.d, A.es, A.lat, B.es, B.lat, A.ic ? 30 : 200, B.ic ? 30 : 200) });
     }
   }
   return (autoHwCache = { adj, cw });
@@ -7834,22 +7976,23 @@ function autoMainAt(main, x, z) {
 }
 // 道順をさがす：いまの位置（車の向き）から行き先まで、いちばん早い道。向きが反対ならＵターンの分だけ遠いとみる。
 // 高速道路の通行料（ETC）の P が足りなければ、一般道だけでさがす
-function planAuto(car, tx, tz) {
-  const r = planAutoRoute(car, tx, tz, false);
+function planAuto(car, tx, tz, noHw, forced) {
+  const r = planAutoRoute(car, tx, tz, !!noHw, forced);
   if (!r.err && r.hw && !TOLL.on && wallet.p < Math.max(HW_TOLL_KM, r.hw.fee)) {
-    const g = planAutoRoute(car, tx, tz, true);
+    const g = planAutoRoute(car, tx, tz, true, forced);
     if (!g.err) { g.note = `P が足りないので高速道路は使いません（通行料 約 ${r.hw.fee}P）`; return g; }
   }
   return r;
 }
-function planAutoRoute(car, tx, tz, noHw) {
+function planAutoRoute(car, tx, tz, noHw, forced) {
   const R = roadNet, H = noHw ? null : autoHwNet();
   const de = nearestRoadPoint(tx, tz, 400);
   if (!de) return { err: '道路から遠い所です。道路の近くをタップしてください' };
   const seeds = [];
   let st = null, e = null;
   const hz = TOLL.on ? hwZone(car.pos.x, car.pos.y, car.y) : null;   // ETC で入っているときだけ（料金所の広場の一般道は一般道）
-  if (hz) {   // 高速道路の上から：前へ進んで、つぎのランプの分かれ目（または終点）から
+  if (forced) seeds.push(forced);   // 右左折をえらんだとき：そこまでの道は決まっている
+  else if (hz) {   // 高速道路の上から：前へ進んで、つぎのランプの分かれ目（または終点）から
     if (!hz.hw || hz.pa) return { err: 'PA の中では自動運転を使えません。本線に出てから使ってください' };
     const Hn = autoHwNet();
     if (hz.hw === 'ramp') {
@@ -7859,7 +8002,7 @@ function planAutoRoute(car, tx, tz, noHw) {
       const q = autoMainAt(hz, car.pos.x, car.pos.y), C = Hn.cw.get(hz.id * 2 + (q.d > 0 ? 0 : 1));
       const B = C && (C.pts.find((p) => p.es > q.es + 30) || (hz.loop ? C.pts[0] : null));
       if (!B) return { err: 'この先に出口がありません' };
-      seeds.push({ id: B.id, c: autoTimeC(((B.es - q.es) % hz.L + hz.L) % hz.L, AUTO_HW_V), pieces: autoMainPieces(hz, q.d, q.es, Math.min(q.lat, HW_LANE[1]), B.es, B.lat, 150) });
+      seeds.push({ id: B.id, c: autoTimeC(((B.es - q.es) % hz.L + hz.L) % hz.L, AUTO_HW_V), icOut: B.ic || '', pieces: autoMainPieces(hz, q.d, q.es, Math.min(q.lat, HW_LANE[1]), B.es, B.lat, 150, B.ic ? 30 : 200) });
     }
   } else {
     st = nearestRoadPoint(car.pos.x, car.pos.y, 30);
@@ -7878,7 +8021,7 @@ function planAutoRoute(car, tx, tz, noHw) {
     if (u === null) break;
     done.add(u);
     for (const q of R.nodeOf[u].ends) {
-      if (q.e.hw) continue;
+      if (q.e.hw || (forced && u === forced.id && q.e === forced.noBack)) continue;   // 曲がった道をすぐにもどらない
       const o = q.end ? q.e.a : q.e.b, nd = ud + q.e.L;
       if (nd < (D.get(o.id) ?? Infinity)) { D.set(o.id, nd); prev.set(o.id, { from: u, e: q.e, dir: q.end ? -1 : 1 }); }
     }
@@ -7906,6 +8049,7 @@ function planAutoRoute(car, tx, tz, noHw) {
       id = p.from;
     }
     const S0 = seeds[seed];
+    if (S0.icOut) links.unshift({ icIn: '', icOut: S0.icOut });
     best = { c, pieces: [...S0.pieces, ...mid, { e: de.e, dir: dd, s0: dd > 0 ? 0 : de.e.L, s1: de.s }], links };
   }
   if (!best) return { err: 'そこへ行く道が見つかりません' };
@@ -7923,7 +8067,7 @@ function planAutoRoute(car, tx, tz, noHw) {
 }
 // 走る線（左の車線の中心）。交差点の角はまるめる。行き先の手前で路肩へ寄せる
 function buildAutoPath(pieces) {
-  const cx = [], cz = [], cnx = [], cnz = [], py = [], offs = [], joins = [], vcap = [], grp = [], o = {};
+  const cx = [], cz = [], cnx = [], cnz = [], py = [], offs = [], joins = [], vcap = [], grp = [], alt = [], pAt = [], o = {};
   // 交差点で曲がる向き（左 +1・右 -1・まっすぐ 0）。片側 2 車線の道では、ふつうの車と同じ車線をえらぶ
   //（ふだんは左の車線、右折の手前 100m は右の車線、曲がったあと 40m はそのまま）
   const hdAt = (p, s) => { const a = edgeAt(p.e, s, {}), b = edgeAt(p.e, s + 6 * Math.sign(p.s1 - p.s0 || 1), {}); return Math.atan2(b.x - a.x, b.z - a.z); };
@@ -7936,7 +8080,8 @@ function buildAutoPath(pieces) {
   pieces.forEach((p, k) => {
     const n = Math.max(1, Math.ceil(Math.abs(p.s1 - p.s0) / RD_STEP)), wide = p.e.w > 10.5, tEnd = turnOf(k), tPrev = k ? turnOf(k - 1) : 0;
     const sEnd = p.dir > 0 ? p.e.L : 0, sStart = p.dir > 0 ? 0 : p.e.L;
-    if (k) joins.push({ at: cx.length, node: p.dir > 0 ? p.e.a : p.e.b, prev: pieces[k - 1] });
+    if (k) joins.push({ at: cx.length, node: p.dir > 0 ? p.e.a : p.e.b, prev: pieces[k - 1], cur: p });
+    pAt.push(Math.max(0, cx.length - (k ? 1 : 0)));
     for (let m = k ? 1 : 0; m <= n; m++) {
       const sv = p.s0 + (p.s1 - p.s0) * m / n;
       edgeAt(p.e, sv, o);
@@ -7949,6 +8094,8 @@ function buildAutoPath(pieces) {
       }
       cx.push(o.x); cz.push(o.z); cnx.push(o.nx * p.dir); cnz.push(o.nz * p.dir); py.push(o.y); offs.push(lane);
       vcap.push(p.hw ? p.vmax(sv) : AUTO_T.cruise); grp.push(p.hw ? 1 : 0);
+      // となりの車線（同じ向き）：-1 右へ 3.5m、+1 左へ 3.5m、0 なし（片側 1 車線・ランプ）
+      alt.push(p.hw === 'main' ? (Math.abs(lane - HW_LANE[1]) < 0.1 ? -1 : Math.abs(lane - HW_LANE[0]) < 0.1 ? 1 : 0) : !p.hw && wide ? (lane === LANE_OUT ? -1 : 1) : 0);
     }
   });
   { // 車線を変えるときは 40m くらいかけて、なめらかに
@@ -7968,15 +8115,24 @@ function buildAutoPath(pieces) {
     const a = Math.max(0, i - 1), b = Math.min(N - 1, i + 1), dx = X[b] - X[a], dz = Z[b] - Z[a], l = Math.hypot(dx, dz) || 1;
     X[i] += (dz / l) * k; Z[i] += (-dx / l) * k;
   }
-  // カーブの手前で減速しておく速さの上限
-  const capV = new Float32Array(N);
+  // 車線変更はできない所：交差点・ランプの分かれ目の手前（一般道 40m・高速道路 300m）と、行き先の手前
+  const ALT = Int8Array.from(alt);
+  for (const j of joins) {
+    if (j.prev.e === j.cur.e) continue;   // 環状線のつぎ目
+    const sj = S[Math.min(N - 1, j.at)], D = grp[Math.min(N - 1, j.at)] || j.prev.hw ? 300 : 40;
+    for (let i = 0; i < N; i++) if (S[i] > sj - D && S[i] < sj + 25) ALT[i] = 0;
+  }
+  for (let i = 0; i < N; i++) if (L - S[i] < 60) ALT[i] = 0;
+  // カーブの手前で減速しておく速さの上限（capV：ふだん、capC：自分で速さを決めたとき。カーブと料金所だけ）
+  const capV = new Float32Array(N), capC = new Float32Array(N);
   for (let i = 0; i < N; i++) {
     const a = Math.max(0, i - 2), b = Math.min(N - 1, i + 2), c = Math.min(N - 1, i + 4);
     const h0 = Math.atan2(X[b] - X[a], Z[b] - Z[a]), h1 = Math.atan2(X[c] - X[b], Z[c] - Z[b]);
     const kap = Math.abs(wrapA(h1 - h0)) / Math.max(1, S[Math.min(N - 1, i + 3)] - S[Math.max(0, i - 1)]);
-    capV[i] = Math.min(vcap[i], Math.sqrt(AUTO_T.lat / Math.max(kap, 1e-4)));
+    const curve = Math.sqrt(AUTO_T.lat / Math.max(kap, 1e-4));
+    capV[i] = Math.min(vcap[i], curve); capC[i] = Math.min(vcap[i] < 10 ? vcap[i] : Infinity, curve);
   }
-  for (let q = 0; q < 2; q++) for (let i = N - 2; i >= 0; i--) capV[i] = Math.min(capV[i], Math.sqrt(capV[i + 1] ** 2 + 2 * AUTO_T.dec * (S[i + 1] - S[i])));
+  for (const A of [capV, capC]) for (let q = 0; q < 2; q++) for (let i = N - 2; i >= 0; i--) A[i] = Math.min(A[i], Math.sqrt(A[i + 1] ** 2 + 2 * AUTO_T.dec * (S[i + 1] - S[i])));
   // 信号のある交差点：停止線と、信号の組（入ってくる道で決まる）
   const junc = [];
   for (const j of joins) {
@@ -7984,29 +8140,88 @@ function buildAutoPath(pieces) {
     const q = n.ends.find((q) => q.e === j.prev.e && q.end === (j.prev.dir > 0 ? 1 : 0));
     junc.push({ node: n, grp: q ? q.grp : 0, stopS: S[j.at] - (n.jr + 1.6) });
   }
-  return { N, X, Z, Y, S, L, capV, junc, hw: Uint8Array.from(grp) };
+  return { N, X, Z, Y, S, L, capV, capC, junc, hw: Uint8Array.from(grp), alt: ALT, pieces, pAt, joins };
 }
 function autoPoint(P, s, out) {
   s = Math.min(P.L, Math.max(0, s));
   let lo = 0, hi = P.N - 1;
   while (lo < hi) { const m = (lo + hi + 1) >> 1; if (P.S[m] <= s) lo = m; else hi = m - 1; }
   const j = Math.min(P.N - 1, lo + 1), f = j === lo ? 0 : (s - P.S[lo]) / Math.max(1e-6, P.S[j] - P.S[lo]);
-  out.x = P.X[lo] + (P.X[j] - P.X[lo]) * f; out.z = P.Z[lo] + (P.Z[j] - P.Z[lo]) * f;
+  out.x = P.X[lo] + (P.X[j] - P.X[lo]) * f; out.z = P.Z[lo] + (P.Z[j] - P.Z[lo]) * f; out.i = lo;
   return out;
 }
-function startAuto(tx, tz) {
+const autoHwText = (r) => r.hw ? `高速道路 ${r.hw.from ? r.hw.from + '→' : ''}${r.hw.to || '出口'}（${(r.hw.len / 1000).toFixed(1)}km）通行料 約 ${fmtP(r.hw.fee)}` : '';
+function startAuto(tx, tz, noHw, plan) {
   if (!canAuto()) { showMsg('車を運転しているときに使えます'); return false; }
-  const r = planAuto(ride, tx, tz);
+  const r = plan || planAuto(ride, tx, tz, noHw);
   if (r.err) { showMsg(r.err); return false; }
-  Object.assign(AUTO, { on: true, route: r, k: 0, s: 0, why: '', stuckT: 0, ignoreT: 0 });
-  const hwT = r.hw ? `高速道路：${r.hw.from ? r.hw.from + '→' : ''}${r.hw.to || '出口'}・通行料 約 ${r.hw.fee}P。` : r.note ? r.note + '。' : '';
-  showMsg(`自動運転で「${r.name}」へ向かいます（約 ${(r.len / 1000).toFixed(1)}km）。${hwT}ハンドルやアクセルをさわると手動にもどります`);
+  Object.assign(AUTO, { on: true, route: r, k: 0, s: 0, why: '', stuckT: 0, ignoreT: 0, shift: 0, lat: 0, turn: '', noHw: !!noHw });
+  const hwT = r.hw ? autoHwText(r) + '。' : r.note ? r.note + '。' : '';
+  showMsg(`自動運転で「${r.name}」へ向かいます（約 ${(r.len / 1000).toFixed(1)}km）。${hwT}下のボタンで速さ・車線・右左折をえらべます`);
   return true;
 }
 function stopAuto(msg) {
   if (!AUTO.on) return;
-  AUTO.on = false; AUTO.route = null; AUTO.why = '';
+  AUTO.on = false; AUTO.route = null; AUTO.why = ''; AUTO.shift = 0; AUTO.lat = 0; AUTO.turn = '';
   if (msg) showMsg(msg);
+}
+// 自動運転中の操作：速さ（10km/h ずつ、まん中のボタンでおまかせ）・車線変更・つぎの交差点で右左折
+function autoSpeed(d) {
+  if (!AUTO.on) return;
+  const V = ride.item.def.vehicle, top = Math.floor(V.maxSpeed * 0.85 * 3.6 / 10) * 10;
+  if (!d) { AUTO.vset = 0; showMsg('速さ：おまかせ（一般道 50km/h・高速道路 100km/h）'); return; }
+  const now = AUTO.vset ? Math.round(AUTO.vset * 3.6) : (AUTO.route.P.hw[AUTO.k] ? 100 : 50);
+  const k = Math.min(top, Math.max(10, Math.round(now / 10) * 10 + d * 10));
+  AUTO.vset = k / 3.6;
+  showMsg(`速さ：${k}km/h まで（カーブ・信号・前の車ではゆっくり）`);
+}
+function autoLaneReq(dir) {   // dir：+1 左・-1 右
+  if (!AUTO.on) return;
+  const P = AUTO.route.P;
+  if (AUTO.shift === dir) return;
+  if (AUTO.shift === -dir) { AUTO.shift = 0; showMsg('元の車線にもどります'); return; }
+  if (P.alt[AUTO.k] !== dir) { showMsg(P.alt[AUTO.k] ? `${dir > 0 ? '左' : '右'}にはもう車線がありません` : 'ここでは車線変更できません（片側 1 車線・交差点や出口の近く）'); return; }
+  AUTO.shift = dir;
+  showMsg(`${dir > 0 ? '左' : '右'}の車線へ移ります（交差点や出口の手前でもどります）`);
+}
+function autoTurnReq(dir) {   // dir：+1 左折・-1 右折。つぎの交差点で曲がって、そこから行き先への道をさがしなおす
+  if (!AUTO.on) return;
+  const P = AUTO.route.P, pcs = P.pieces, r = AUTO.route, car = ride;
+  let m = 0; while (m + 1 < pcs.length && P.pAt[m + 1] <= AUTO.k) m++;
+  if (pcs[m].hw) { showMsg('高速道路では曲がれません（車線変更はできます）'); return; }
+  const need = Math.max(15, car.vF * car.vF / (2 * AUTO_T.dec) + 6);
+  const hd = (e, s, d) => { const a = edgeAt(e, s, {}), b = edgeAt(e, s + 6 * d, {}); return Math.atan2(b.x - a.x, b.z - a.z); };
+  for (let k = m + 1; k <= pcs.length; k++) {
+    const prev = pcs[k - 1];
+    if (prev.hw) break;
+    const at = k < pcs.length ? P.pAt[k] : P.N - 1;
+    if (k === pcs.length) break;   // 行き先の道：この先に交差点はない
+    if (P.S[at] - AUTO.s < need) continue;
+    const n = prev.dir > 0 ? prev.e.b : prev.e.a;
+    const sIn = prev.dir > 0 ? prev.e.L - 12 : 12, hin = hd(prev.e, sIn, prev.dir);
+    let best = null;
+    for (const q of n.ends) {
+      if (q.e.hw || q.e === prev.e) continue;
+      const dd = q.end ? -1 : 1, t = wrapA(hd(q.e, dd > 0 ? 0 : q.e.L, dd) - hin);
+      if (Math.sign(t) !== dir || Math.abs(t) < 0.5) continue;
+      const score = Math.abs(Math.abs(t) - Math.PI / 2);
+      if (!best || score < best.score) best = { q, dd, score };
+    }
+    if (n.ends.filter((q) => !q.e.hw).length < 3) continue;   // 曲がり角（道が 2 本）は交差点ではない
+    if (!best) { showMsg(`つぎの交差点は${dir > 0 ? '左' : '右'}に曲がれません`); return; }
+    // そこまでの道（いまの所から）＋ 曲がった先の道。そこから先は、行き先へのいちばん早い道
+    const cur = pcs[m], seg = P.S[P.pAt[Math.min(m + 1, pcs.length - 1)]] - P.S[P.pAt[m]] || 1, f = Math.min(1, Math.max(0, (AUTO.s - P.S[P.pAt[m]]) / seg));
+    const first = { ...cur, s0: cur.s0 + (cur.s1 - cur.s0) * f };
+    const q = best.q, out = { e: q.e, dir: best.dd, s0: best.dd > 0 ? 0 : q.e.L, s1: best.dd > 0 ? q.e.L : 0 };
+    const seed = { id: (best.dd > 0 ? q.e.b : q.e.a).id, c: 0, pieces: [first, ...pcs.slice(m + 1, k), out], noBack: q.e };
+    let nr = planAuto(car, r.tx, r.tz, AUTO.noHw, seed);
+    if (nr.err) nr = planAuto(car, r.tx, r.tz, AUTO.noHw, { ...seed, noBack: null });   // 行き止まりなら、もどってもよい
+    if (nr.err) { showMsg(nr.err); return; }
+    Object.assign(AUTO, { route: nr, k: 0, s: 0, shift: 0, lat: 0, turn: dir > 0 ? '左折' : '右折', turnS: P.S[at] - AUTO.s });
+    showMsg(`つぎの交差点を${dir > 0 ? '左' : '右'}に曲がって「${nr.name}」へ（約 ${(nr.len / 1000).toFixed(1)}km）${nr.hw ? '・' + autoHwText(nr) : ''}`);
+    return;
+  }
+  showMsg('この先に曲がれる交差点がありません');
 }
 // 自分の走る線の前にあるじゃまな物（バス・車・人・置いた物・ほかの乗り物）。いちばん近いもの
 function autoObstacle(car, P, look) {
@@ -8021,7 +8236,7 @@ function autoObstacle(car, P, look) {
     const j = Math.min(P.N - 1, bi + 1), i0 = j === bi ? bi - 1 : bi, tx0 = P.X[j] - P.X[i0], tz0 = P.Z[j] - P.Z[i0], tl = Math.hypot(tx0, tz0) || 1, tx = tx0 / tl, tz = tz0 / tl;
     const dx = x - P.X[bi], dz = z - P.Z[bi], a = dx * tx + dz * tz, l = dx * tz - dz * tx;
     const ea = hx * Math.abs(tx) + hz * Math.abs(tz), el = hx * Math.abs(tz) + hz * Math.abs(tx);
-    if (Math.abs(l) - el > hw + 0.4) return;   // 横にずれていて当たらない（対向車など）
+    if (Math.abs(l - AUTO.lat) - el > hw + 0.4) return;   // 横にずれていて当たらない（対向車・となりの車線の車など）
     const gap = P.S[bi] + a - ea - AUTO.s - front;
     if (gap > look || P.S[bi] + a + ea < AUTO.s) return;   // 遠い・もう横か後ろ
     if (kind === 'traffic' && gap < 0.3) return;   // もう重なっている車は待たない（止まったままにならないように）
@@ -8039,8 +8254,31 @@ function autoObstacle(car, P, look) {
   for (const pr of props) { const b = pr.box; if (b.max.y - b.min.y < 0.25 || b.min.y > car.y + 2) continue; test((b.min.x + b.max.x) / 2, (b.min.z + b.max.z) / 2, b.min.y, (b.max.x - b.min.x) / 2, (b.max.z - b.min.z) / 2, 'thing', 0); }
   return best;
 }
+// 車線変更：となりの車線へ 3.5m ずらす。となりの車線に車がいれば待つ。交差点・出口の手前では元の車線にもどる
+function autoLane(car, P, bi, dt) {
+  if (AUTO.shift && P.alt[bi] !== AUTO.shift) { AUTO.shift = 0; }
+  let want = AUTO.shift * 3.5;
+  AUTO.laneWait = false;
+  if (want && Math.abs(AUTO.lat) < 0.3 && autoLaneBusy(car, P, bi, want)) { want = AUTO.lat; AUTO.laneWait = true; }
+  const d = want - AUTO.lat, mx = dt * 1.1;   // 横へ 1 秒に 1.1m（3 秒くらいで 1 車線）
+  AUTO.lat += Math.max(-mx, Math.min(mx, d));
+}
+function autoLaneBusy(car, P, bi, want) {
+  const j = Math.min(P.N - 1, bi + 1), i0 = j === bi ? bi - 1 : bi, tx0 = P.X[j] - P.X[i0], tz0 = P.Z[j] - P.Z[i0], tl = Math.hypot(tx0, tz0) || 1, tx = tx0 / tl, tz = tz0 / tl;
+  const sp = Math.max(5, car.vF), back = 10 + sp * 1.2, ahead = 8 + sp * 0.5;
+  const busy = (x, z, y) => {
+    if (Math.abs(y - car.y) > 3) return false;
+    const dx = x - car.pos.x, dz = z - car.pos.y, a = dx * tx + dz * tz, l = dx * tz - dz * tx;
+    return a > -back && a < ahead && Math.abs(l - want) < 2.2;
+  };
+  for (const v of traffic) if (v.root.visible && busy(v.x, v.z, v.y)) return true;
+  if (HWT.ready) for (const v of HWT.vs) if (v.root.visible && busy(v.x, v.z, v.y)) return true;
+  for (const v of vehicles) if (v !== car && !v.sunk && busy(v.pos.x, v.pos.y, v.y)) return true;
+  for (const o of net.others.values()) if (o.carObj && o.carObj.visible && busy(o.carObj.position.x, o.carObj.position.z, o.carObj.position.y)) return true;
+  return false;
+}
 // 毎コマ：ハンドルの角度と、アクセル・ブレーキを決める
-const autoTp = { x: 0, z: 0 };
+const autoTp = { x: 0, z: 0, i: 0 };
 function autoDrive(car, dt) {
   const P = AUTO.route.P, V = car.item.def.vehicle;
   // 走る線のどこまで来たか
@@ -8057,10 +8295,15 @@ function autoDrive(car, dt) {
   // ハンドル：少し先の線の上の点を目ざす
   const Ld = Math.min(P.hw[bi] ? 26 : 14, Math.max(5, 4 + 0.6 * Math.abs(sp)));   // 高速道路では速いので、もっと先を見る
   autoPoint(P, AUTO.s + Ld, autoTp);
+  autoLane(car, P, bi, dt);
+  if (Math.abs(AUTO.lat) > 0.01) {   // 車線変更：走る線から横へずらす
+    const j = Math.min(P.N - 1, autoTp.i + 1), i0 = j === autoTp.i ? j - 1 : autoTp.i, tx = P.X[j] - P.X[i0], tz = P.Z[j] - P.Z[i0], tl = Math.hypot(tx, tz) || 1;
+    autoTp.x += tz / tl * AUTO.lat; autoTp.z += -tx / tl * AUTO.lat;
+  }
   const al = wrapA(Math.atan2(autoTp.x - car.pos.x, autoTp.z - car.pos.y) - car.h);
   const steer = Math.min(V.maxSteer, Math.max(-V.maxSteer, Math.atan2(2 * V.wheelbase * Math.sin(al), Ld)));
   // 速さ：カーブ・行き先・信号・前のじゃまな物
-  let vt = Math.min(V.maxSpeed * 0.85, P.capV[bi]), why = '';
+  let vt = Math.min(V.maxSpeed * 0.85, AUTO.vset ? Math.min(AUTO.vset, P.capC[bi]) : P.capV[bi]), why = '';
   vt = Math.min(vt, Math.sqrt(2 * AUTO_T.dec * Math.max(0, left - 0.5)));
   if (Math.abs(al) > 1.1) vt = Math.min(vt, 3);   // 向きが大きくちがう（Ｕターンなど）：ゆっくり
   const tNow = Date.now() / 1000;
@@ -8086,7 +8329,7 @@ function autoDrive(car, dt) {
   // 車同士で長く止まったままなら、しばらく車を気にせず進む（バスや車と同じ。おたがいに待ち合うのを防ぐ）
   AUTO.stuckT = ob && ob.kind === 'traffic' && vt < 0.3 && Math.abs(sp) < 0.3 ? AUTO.stuckT + dt : 0;
   if (AUTO.stuckT > 10) { AUTO.ignoreT = 5; AUTO.stuckT = 0; }
-  AUTO.why = vt < 0.3 && why ? why.replace('に合わせています', 'を待っています') : why === '黄信号' || why === '赤信号' ? why : '';
+  AUTO.why = vt < 0.3 && why ? why.replace('に合わせています', 'を待っています') : why === '黄信号' || why === '赤信号' ? why : AUTO.laneWait ? '車線変更：となりの車を待っています' : '';
   // アクセルとブレーキ
   AUTO.vt = vt;
   const err = vt - sp;
@@ -8234,7 +8477,7 @@ function myPose() { return ride ? { x: ride.pos.x, z: ride.pos.y, h: visYaw(ride
 let lastPlace = '';
 setInterval(() => { try { const me = myPose(), p = placeAt(me.x, me.z), t = p.city ? `${p.city} ${p.name}` : p.name;
   if (t !== lastPlace) { lastPlace = t; el('placeLabel').textContent = '・' + t; } } catch (e) { /* 読みこみ中 */ } }, 600);
-function closeWmap() { WMAP.open = false; wmapEl.hidden = true; WMAP.pick = null; el('wmapGo').hidden = true; cv.focus(); }
+function closeWmap() { WMAP.open = false; wmapEl.hidden = true; WMAP.pick = null; el('wmapGoBox').hidden = true; cv.focus(); }
 // バス停の近くでは、止まっているバスの発車時刻と、次に来るバスを出す
 let stopInfoT = 0;
 const hhmmss = (sec) => { const d = new Date(sec * 1000); return [d.getHours(), d.getMinutes(), d.getSeconds()].map((n) => String(n).padStart(2, '0')).join(':'); };
@@ -8307,19 +8550,43 @@ wmapCv.addEventListener('click', (e) => {
   const T = WMAP.tf; if (!T) return;
   const r = wmapCv.getBoundingClientRect(), px = (e.clientX - r.left) * (wmapCv.width / r.width), py = (e.clientY - r.top) * (wmapCv.height / r.height);
   const x = T.V.x0 + (px - T.ox) / T.sc, z = T.V.z0 + (py - T.oy) / T.sc;
-  if (!canAuto()) { WMAP.pick = null; el('wmapGo').hidden = true; showMsg('車を運転しているときに地図をタップすると、そこまで自動運転できます'); return; }
+  if (!canAuto()) { WMAP.pick = null; el('wmapGoBox').hidden = true; showMsg('車を運転しているときに地図をタップすると、そこまで自動運転できます'); return; }
   const plan = planAuto(ride, x, z);
-  if (plan.err) { WMAP.pick = null; el('wmapGo').hidden = true; showMsg(plan.err); drawWmap(); return; }
-  WMAP.pick = plan;
-  el('wmapGo').hidden = false;
-  el('wmapGo').textContent = `▶ 「${plan.name}」へ自動運転（${(plan.len / 1000).toFixed(1)}km${plan.hw ? `・高速 ${plan.hw.from ? plan.hw.from + '→' : ''}${plan.hw.to} 約${plan.hw.fee}P` : ''}）`;
-  if (plan.note) showMsg(plan.note);
+  if (plan.err) { WMAP.pick = null; el('wmapGoBox').hidden = true; showMsg(plan.err); drawWmap(); return; }
+  WMAP.pick = plan; WMAP.alt = null;
+  // 高速道路を使うときは、走り出す前に通行料を出す。一般道だけで行くこともえらべる
+  el('wmapGoBox').hidden = false;
+  el('wmapToll').hidden = !plan.hw && !plan.note;
+  el('wmapToll').textContent = plan.hw ? `🛣️ ${autoHwText(plan)}（ETC で払います・いま ${fmtP(wallet.p)}）` : plan.note || '';
+  el('wmapGo').textContent = `▶ 「${plan.name}」へ${plan.hw ? '高速道路で' : '自動運転'}（${(plan.len / 1000).toFixed(1)}km）`;
+  el('wmapGoLocal').hidden = !plan.hw;
+  if (plan.hw) { const g = planAuto(ride, x, z, true); WMAP.alt = g.err ? null : g; el('wmapGoLocal').hidden = !WMAP.alt; if (WMAP.alt) el('wmapGoLocal').textContent = `一般道で（${(WMAP.alt.len / 1000).toFixed(1)}km・無料）`; }
   drawWmap();
 });
 el('wmapGo').addEventListener('click', () => {
   const p = WMAP.pick; if (!p) return;
-  if (startAuto(p.tx, p.tz)) closeWmap();
+  if (startAuto(p.tx, p.tz, false, planAuto(ride, p.tx, p.tz))) closeWmap();
 });
+el('wmapGoLocal').addEventListener('click', () => {
+  const p = WMAP.pick; if (!p) return;
+  if (startAuto(p.tx, p.tz, true)) closeWmap();
+});
+el('apSlow').addEventListener('click', () => autoSpeed(-1));
+el('apFast').addEventListener('click', () => autoSpeed(1));
+el('apSpd').addEventListener('click', () => autoSpeed(0));
+el('apLaneL').addEventListener('click', () => autoLaneReq(1));
+el('apLaneR').addEventListener('click', () => autoLaneReq(-1));
+el('apTurnL').addEventListener('click', () => autoTurnReq(1));
+el('apTurnR').addEventListener('click', () => autoTurnReq(-1));
+// 自動運転の操作パネル：運転中で自動運転のときだけ
+setInterval(() => {
+  const show = !!(AUTO.on && driving && ride);
+  if (el('autoPanel').hidden === show) el('autoPanel').hidden = !show;
+  if (!show) return;
+  const t = AUTO.vset ? `${Math.round(AUTO.vset * 3.6)}km/h` : 'おまかせ';
+  if (el('apSpd').textContent !== t) el('apSpd').textContent = t;
+  el('apLaneL').setAttribute('aria-pressed', String(AUTO.shift === 1)); el('apLaneR').setAttribute('aria-pressed', String(AUTO.shift === -1));
+}, 250);
 wmapEl.addEventListener('click', (e) => {
   const b = e.target.closest('button'); if (!b) return;
   if (b.id === 'wmapClose') { closeWmap(); return; }
@@ -8353,7 +8620,7 @@ window.__world = {
   hullGround, findWaterSpot, rescueBoat, get periscope() { return periscope; }, toggleLight, setPeriscope,
   teleport(x, z, y) { player.pos.set(x, y ?? heightAt(x, z), z); player.vy = 0; },
   torps, tube, ord, booms, get clockT() { return clock.elapsedTime; },
-  AUTO, startAuto, stopAuto, planAuto, stepHwTraffic, get myCar() { return myCar; }, stepTraffic, stepVehicle, camera, signalState,
+  AUTO, startAuto, stopAuto, planAuto, stepHwTraffic, autoSpeed, autoLaneReq, autoTurnReq, get myCar() { return myCar; }, stepTraffic, stepVehicle, camera, signalState,
 };
 
 camera.position.set(player.pos.x, player.pos.y + 6, player.pos.z + 10);
