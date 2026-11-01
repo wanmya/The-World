@@ -2325,7 +2325,8 @@ const streetLamps = (() => {
     for (let s = GAP / 2; s < e.L; s += GAP, side = -side) {
       if (nearJ(e, s) || roadNet.stops.some((st) => st.e === e && Math.abs(st.s - s) < 12)) continue;
       let i = 0; while (i < e.N - 2 && e.S[i + 1] < s) i++;
-      const off = (e.W[i] / 2 + 0.5) * side, x = e.X[i] + e.NX[i] * off, z = e.Z[i] + e.NZ[i] * off;
+      let wm = 0; for (let k = Math.max(0, i - 2); k <= Math.min(e.N - 1, i + 3); k++) wm = Math.max(wm, e.W[k]);   // 前後でいちばん広いはばの外（道の上に立たないように）
+      const off = (wm / 2 + 0.6) * side, x = e.X[i] + e.NX[i] * off, z = e.Z[i] + e.NZ[i] * off;
       spots.push({ x, z, y: e.Y[i], ix: -e.NX[i] * side, iz: -e.NZ[i] * side, br: e.BR[i] });   // ix, iz：道のまん中への向き
     }
   }
@@ -2405,6 +2406,23 @@ const hwDraw = (() => {
     }
     return false;
   };
+  // 照明の柱を立てる所が、ほかの道（一般道・ほかのランプ・本線）や料金所の広場の上でないか
+  const allHash = new Map();
+  for (const o of R.edges) for (let i = 0; i < o.N; i++) { const key = Math.floor(o.X[i] / 32) * 65536 + Math.floor(o.Z[i] / 32); let a = allHash.get(key); if (!a) allHash.set(key, a = []); a.push(o, i); }
+  const onRoad = (own, x, z, y) => {
+    for (const n of R.plazas) if (Math.abs(n.y - y) < 5 && Math.hypot(x - n.x, z - n.z) < n.plaza + 3) return true;
+    for (let gx = Math.floor(x / 32) - 1; gx <= Math.floor(x / 32) + 1; gx++) for (let gz = Math.floor(z / 32) - 1; gz <= Math.floor(z / 32) + 1; gz++) {
+      const a = allHash.get(gx * 65536 + gz); if (!a) continue;
+      for (let k = 0; k < a.length; k += 2) { const o = a[k], i = a[k + 1]; if (o !== own && Math.abs(o.Y[i] - y) < 4 && Math.hypot(o.X[i] - x, o.Z[i] - z) < (o.hw ? o.w : o.W[i]) / 2 + 1.2) return true; }
+    }
+    return false;
+  };
+  // ランプの照明：道のはし（欄干の外）。そこがほかの道の上なら反対側、どちらもだめなら立てない
+  const rampLampSide = (e, i) => {
+    const pref = i % 40 < 20 ? 1 : -1;
+    for (const side of [pref, -pref]) { const off = (e.w / 2 + 0.35) * side; if (!onRoad(e, e.X[i] + e.NX[i] * off, e.Z[i] + e.NZ[i] * off, e.Y[i])) return side; }
+    return 0;
+  };
   const covered = (e, x, z, y) => {
     const q = deckNear(x, z, y + 0.6, -0.2);
     if (q && q.e !== e && Math.abs(q.y - y) < 1.2) return true;
@@ -2451,7 +2469,8 @@ const hwDraw = (() => {
         if (!low && !onRoad) piers.push([e, i]);
       }
       // 照明：本線は中央分離帯に 60m ごと（両側に腕）、ランプは 40m ごと
-      if (!tn && (main ? i % 30 === 0 : i % 20 === 10 && !byMain(e.X[i], e.Z[i], e.Y[i], HW_W / 2 + RAMP_W / 2 + 2.5))) lamps.push({ e, i, main });
+      if (!tn && main && i % 30 === 0) lamps.push({ e, i, main });
+      if (!tn && !main && i % 20 === 10 && !byMain(e.X[i], e.Z[i], e.Y[i], HW_W / 2 + RAMP_W / 2 + 2.5)) { const side = rampLampSide(e, i); if (side) lamps.push({ e, i, main, side }); }
     }
   }
   const meshes = [];
@@ -2497,7 +2516,7 @@ const hwDraw = (() => {
       if (!list.length) continue;
       const pm = new THREE.InstancedMesh(geo[0], poleMat, list.length), bm = new THREE.InstancedMesh(geo[1], streetLamps.bulbMat, list.length);
       list.forEach((L, k) => {
-        const e = L.e, i = L.i, side = L.main ? 1 : (i % 40 < 20 ? 1 : -1), off = L.main ? 0 : (e.w / 2 + 0.3) * side;
+        const e = L.e, i = L.i, side = L.main ? 1 : L.side, off = L.main ? 0 : (e.w / 2 + 0.35) * side;
         p.set(e.X[i] + e.NX[i] * off, e.Y[i] + (L.main ? 0.8 : 0), e.Z[i] + e.NZ[i] * off);
         q.setFromAxisAngle(up, Math.atan2(L.main ? e.NX[i] : -e.NX[i] * side, L.main ? e.NZ[i] : -e.NZ[i] * side));
         m4.compose(p, q, s1); pm.setMatrixAt(k, m4); bm.setMatrixAt(k, m4);
