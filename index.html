@@ -1292,6 +1292,23 @@ const roadNet = (() => {
     }
     return best;
   };
+  let mainHash = null;
+  const mainAt = (x, z) => {   // いちばん近い本線の中心線への距離と、そこの路面の高さ
+    if (!mainHash) {
+      mainHash = new Map();
+      for (const o of built) if (o && o.hw === 'main') for (let i = 0; i < o.N - 1; i++) { const key = Math.floor(o.X[i] / 32) * 65536 + Math.floor(o.Z[i] / 32); let a = mainHash.get(key); if (!a) mainHash.set(key, a = []); a.push(o, i); }
+    }
+    let bd = Infinity, y = 0;
+    for (let gx = Math.floor(x / 32) - 1; gx <= Math.floor(x / 32) + 1; gx++) for (let gz = Math.floor(z / 32) - 1; gz <= Math.floor(z / 32) + 1; gz++) {
+      const a = mainHash.get(gx * 65536 + gz); if (!a) continue;
+      for (let k = 0; k < a.length; k += 2) {
+        const o = a[k], i = a[k + 1], ex = o.X[i + 1] - o.X[i], ez = o.Z[i + 1] - o.Z[i], l2 = ex * ex + ez * ez || 1;
+        const t = Math.min(1, Math.max(0, ((x - o.X[i]) * ex + (z - o.Z[i]) * ez) / l2)), d = Math.hypot(x - o.X[i] - ex * t, z - o.Z[i] - ez * t);
+        if (d < bd) { bd = d; y = o.Y[i] + (o.Y[i + 1] - o.Y[i]) * t; }
+      }
+    }
+    return bd < Infinity ? { d: bd, y } : null;
+  };
   const deckDatum = (x, z) => {   // その場所にいちばん近い本線の高さ
     let bd = Infinity, y = 2.4;
     for (const o of built) if (o && o.hw === 'main') for (let i = 0; i < o.N; i += 2) { const d = (o.X[i] - x) ** 2 + (o.Z[i] - z) ** 2; if (d < bd) { bd = d; y = o.Y[i]; } }
@@ -1313,13 +1330,21 @@ const roadNet = (() => {
     const N = X.length, L = S[N - 1];
     if (E.hw === 'main') {
       // 下の地面と一般道からの高さ（req）を守る、いちばん低くてなめらかな線。坂は 4% まで、小さな谷はうめる（うねらないように）
-      const loop = E.a === E.b, GR = 0.04, req = new Float32Array(N);
+      const loop = E.a === E.b, GR = 0.04, req = new Float32Array(N), top = new Float32Array(N);
       const dEnd = E.endGround ? 650 : 0;   // 終点の手前は地面へ下りる（丘は切り通し）
       for (let i = 0; i < N; i++) {
         let m = Math.max(base[i], 0);
         for (const o of [-1, -0.5, 0.5, 1]) m = Math.max(m, rawHeight0(X[i] + NX[i] * o * (E.w / 2 + 3), Z[i] + NZ[i] * o * (E.w / 2 + 3)));
         req[i] = L - S[i] < dEnd ? -1e9 : Math.max(m + 7.2, genAt(X[i], Z[i]) + 7.5);
+        top[i] = m;
       }
+      // 山：まわり（前後 200m）より 12m 以上高い所は越えずに、トンネルで抜ける（ランプのつながる所の近くはトンネルにしない）
+      const noTN = new Uint8Array(N), near = [];
+      EDGES.forEach((R2) => { if (R2.hw !== 'ramp') return; for (const id of [R2.a, R2.b]) { const n = NODES[id]; if (n && n.onEdge === EDGES.indexOf(E)) { near.push([n.x, n.z]); for (const v of R2.via) near.push([v[0], v[1]]); } } });
+      if (E.endGround) near.push([B.x, B.z]);
+      for (let i = 0; i < N; i++) for (const [px, pz] of near) if (Math.hypot(X[i] - px, Z[i] - pz) < 90) { noTN[i] = 1; break; }
+      const Lw = Float32Array.from(top); sm1(Lw, 150, 2, loop);
+      for (let i = 0; i < N; i++) if (!noTN[i] && req[i] > Lw[i] + 7.2 + 8) req[i] = Lw[i] + 7.2 + 8;
       const at = (i) => loop ? ((i % (N - 1)) + (N - 1)) % (N - 1) : i;
       const cone = (Y) => {   // 坂が GR より急にならないよう、高い所から下へ広げる
         const rounds = loop ? 2 : 1;
@@ -1337,9 +1362,17 @@ const roadNet = (() => {
         const end = B.y;
         for (let i = 0; i < N; i++) Y[i] = Math.min(Y[i], end + 0.05 * Math.max(0, L - S[i] - B.plaza));
         sm1(Y, 12, 2, false, (i) => L - S[i] < B.plaza);
-        for (let i = 0; i < N; i++) if (L - S[i] < B.plaza + 5) Y[i] = end;
+        for (let i = 0; i < N; i++) Y[i] = end + (Y[i] - end) * ss(B.plaza, B.plaza + 60, L - S[i]);
       }
       if (loop) Y[N - 1] = Y[0];
+      // トンネル：上の土が 9m 以上ある所（短すぎるものはなし）
+      const TN = new Uint8Array(N);
+      for (let i = 0; i < N; i++) { let c = Math.max(base[i], 0); for (const o of [-1, 1]) c = Math.min(c, rawHeight0(X[i] + NX[i] * o * (E.w / 2 + 2), Z[i] + NZ[i] * o * (E.w / 2 + 2))); TN[i] = !noTN[i] && c - Y[i] > 9 ? 1 : 0; }
+      for (let pass = 0; pass < 2; pass++) {   // 短いすき間はつなぐ、短いトンネルはやめる
+        let i = 0;
+        while (i < N) { let j = i; while (j < N && TN[j] === TN[i]) j++; const len = j - i; if ((pass === 0 && !TN[i] && i > 0 && j < N && len < 25) || (pass === 1 && TN[i] && len < 40)) TN.fill(pass === 0 ? 1 : 0, i, j); i = j; }
+      }
+      E._tn = TN;
       A.y = Y[0]; if (!loop) { if (!B.plaza) B.y = Y[N - 1]; }
       return;
     }
@@ -1350,7 +1383,7 @@ const roadNet = (() => {
       const m = E.hmode[k]; if (!m) return;
       let bi = 0, bd = Infinity; for (let i = 0; i < N; i++) { const d = (X[i] - p[0]) ** 2 + (Z[i] - p[1]) ** 2; if (d < bd) { bd = d; bi = i; } }
       if (k === 0) bi = 0; if (k === pts.length - 1) bi = N - 1;
-      const v = m === 'n' ? (k === 0 ? A.y : B.y) : m === 'd' ? (k === 0 ? A.y : k === pts.length - 1 ? B.y : deckDatum(p[0], p[1])) : m === 'h' ? deckDatum(p[0], p[1]) + HW_LIFT : null;
+      const v = m === 'n' ? (k === 0 ? A.y : B.y) : m === 'd' ? (k === 0 ? A.y : k === pts.length - 1 ? B.y : (mainAt(p[0], p[1]) || { y: deckDatum(p[0], p[1]) }).y) : m === 'h' ? deckDatum(p[0], p[1]) + HW_LIFT : m === 'g' && (A.lot || B.lot) ? (A.lot ? A.y : B.y) : null;   // PA のランプは駐車場の高さへなめらかに
       ctl.push({ i: bi, s: S[bi], v, m });
     });
     ctl.sort((a, b) => a.s - b.s);
@@ -1364,16 +1397,42 @@ const roadNet = (() => {
       Y[i] = val(a, i) * (1 - w) + val(b, i) * w;
     }
     sm1(Y, 5, 2, false, (i) => i < 3 || i > N - 4);
-    for (const P of [A, B]) if (P.plaza || P.lot) {   // 広場・駐車場の中は平らに
-      const r = P.plaza || 0;
-      for (let i = 0; i < N; i++) { const d = Math.hypot(X[i] - P.x, Z[i] - P.z); Y[i] = P.y + (Y[i] - P.y) * ss(r, r + 25, d); }
-    }
-    const inFlat = (i) => [A, B].some((P) => (P.plaza || P.lot) && Math.hypot(X[i] - P.x, Z[i] - P.z) < (P.plaza || 0) + 25);
     // 本線とつながる側（最後の d の点から本線まで）は本線の高さに合わせる。本線が切り通しで地面より低い所でも、ランプだけ丘の上に残らないように
     const dIn = ctl.filter((c) => c.m === 'd' && c.i > 0 && c.i < N - 1);
-    const sA = A.onEdge != null && dIn.length ? dIn[0].s : -1, sB = B.onEdge != null && dIn.length ? dIn[dIn.length - 1].s : Infinity;
+    let sA = -1, sB = Infinity;   // 本線の端から続く d の点の列だけ（JCT のループなどが、とちゅうで本線の高さにされないように）
+    if (A.onEdge != null) for (let k = 1; k < ctl.length - 1 && ctl[k].m === 'd'; k++) sA = ctl[k].s;
+    if (B.onEdge != null) for (let k = ctl.length - 2; k > 0 && ctl[k].m === 'd'; k--) sB = ctl[k].s;
+    {   // 本線から離れきるまで（ランプのはばが本線の床と重なっているあいだ）は本線の高さ
+      const OV0 = HW_W / 2 + RAMP_W / 2 + 1;
+      if (sA >= 0) for (let i = 0; i < N && S[i] < sA + 300; i++) { if (S[i] <= sA) continue; const m = mainAt(X[i], Z[i]); if (!m || m.d > OV0) break; sA = S[i]; }
+      if (sB < Infinity) for (let i = N - 1; i >= 0 && S[i] > sB - 300; i--) { if (S[i] >= sB) continue; const m = mainAt(X[i], Z[i]); if (!m || m.d > OV0) break; sB = S[i]; }
+    }
     const onMain = (i) => S[i] <= sA || S[i] >= sB;
-    for (let i = 0; i < N; i++) if (!inFlat(i) && !onMain(i)) Y[i] = Math.max(Y[i], G[i] - 0.05);   // 広場・駐車場の近くは広場の高さのまま（地面に合わせて浮かない）
+    for (let i = 0; i < N; i++) if (!A.lot && !B.lot && !onMain(i)) Y[i] = Math.max(Y[i], G[i] - 0.05);   // 地面より下にはしない（PA のランプは切り通しでよい）
+    const flatR = new Map();
+    for (const P of [A, B]) if (P.plaza || P.lot) {   // 広場・駐車場の中は平らに。高さの差が大きいときは長い坂でつなぐ（坂 8% ほどまで）
+      const r = P.plaza || 0;
+      let dy = 0; for (let i = 0; i < N; i++) { const d = Math.hypot(X[i] - P.x, Z[i] - P.z); if (d > r && d < r + 120) dy = Math.max(dy, Math.abs(Y[i] - P.y)); }
+      const Lb = Math.min(220, Math.max(25, dy * 18)); flatR.set(P, r + Lb);
+      for (let i = 0; i < N; i++) { const d = Math.hypot(X[i] - P.x, Z[i] - P.z); Y[i] = P.y + (Y[i] - P.y) * ss(r, r + Lb, d); }
+    }
+    // 本線と重なる所（合流・分かれ目）は本線の路面の高さそのもの。段差ができないように（本線をまたぐ・くぐるランプはそのまま）
+    const OV = HW_W / 2 + RAMP_W / 2;
+    const Y0 = Float32Array.from(Y);
+    for (let i = 0; i < N; i++) if (onMain(i)) { const m = mainAt(X[i], Z[i]); if (m) { const w = 1 - ss(OV - 2, OV + 4, m.d); Y[i] += (m.y - Y[i]) * w; } }
+    {   // 本線の高さにした所の先は、なだらかに元の坂へもどす
+      let iA = -1, iB = N; for (let i = 0; i < N; i++) { if (S[i] <= sA) iA = i; if (S[i] >= sB && iB === N) iB = i; }
+      if (iA >= 0 && iA < N - 1) { const D = Y[iA] - Y0[iA], Lr = Math.max(40, Math.abs(D) * 25); for (let i = iA + 1; i < N && S[i] < sA + Lr; i++) Y[i] += D * (1 - ss(sA, sA + Lr, S[i])); }
+      if (iB < N && iB > 0) { const D = Y[iB] - Y0[iB], Lr = Math.max(40, Math.abs(D) * 25); for (let i = iB - 1; i >= 0 && S[i] > sB - Lr; i--) Y[i] += D * (1 - ss(sB, sB - Lr, S[i])); }
+    }
+    // 本線の下をくぐる所は、本線の床から 5.5m 以上下に（まわりもなだらかに下げる）
+    const cut = new Float32Array(N);
+    for (let i = 0; i < N; i++) if (!onMain(i)) { const m = mainAt(X[i], Z[i]); if (m && m.d < HW_W / 2 && Y[i] < m.y - 1 && Y[i] > m.y - 5.5) cut[i] = Y[i] - (m.y - 5.5); }
+    if (cut.some((c) => c > 0)) {
+      const c2 = Float32Array.from(cut);
+      for (let i = 0; i < N; i++) for (let k = Math.max(0, i - 40); k <= Math.min(N - 1, i + 40); k++) if (cut[k] > 0) c2[i] = Math.max(c2[i], cut[k] * (1 - ss(0, 80, Math.abs(S[i] - S[k]))));
+      for (let i = 0; i < N; i++) if (!onMain(i)) Y[i] -= c2[i];
+    }
   }
   const built = [];
   const edges = EDGES.map((E, ei) => {
@@ -1396,7 +1455,7 @@ const roadNet = (() => {
     if (E.hw) {   // 高速道路：高架の高さ
       hwProfile(E, A, B, X, Z, S, base, NX, NZ, Y);
       EL = new Uint8Array(N);
-      for (let i = 0; i < N; i++) EL[i] = Y[i] - Math.max(base[i], 0) > 2.2 ? 1 : 0;
+      for (let i = 0; i < N; i++) EL[i] = Y[i] - Math.max(base[i], 0) > 2.2 || (E._tn && E._tn[i]) ? 1 : 0;
       BR.set(EL);
     } else {
       for (let i = 0; i < N; i++) Y[i] = Math.max(base[i], base[i] < -2 ? 30 : 2.4);   // 海の上は船がくぐれる高さ
@@ -1416,7 +1475,7 @@ const roadNet = (() => {
     }
     A.deg++; B.deg++;
     const e = { id: ei, a: A, b: B, w: E.w, N, X, Z, Y, W, WB: Float32Array.from(W), S, L: S[N - 1], NX, NZ, BR, base, sea: !!E.sea, inPlaza: !!E.inPlaza,
-      hw: E.hw || null, EL, loop: E.a === E.b, name: E.name || '', gate: E.gate || null, ic: E.ic || '', pa: E.pa || '', jct: E.jct || '' };
+      hw: E.hw || null, EL, TN: E._tn || null, loop: E.a === E.b, name: E.name || '', gate: E.gate || null, ic: E.ic || '', pa: E.pa || '', jct: E.jct || '' };
     A.ends.push({ e, end: 0 }); B.ends.push({ e, end: 1 });
     built[ei] = e;
     return e;
@@ -1497,16 +1556,32 @@ const HW_LOTS = HWY.pas.map((pa) => {
 });
 const lotUV = (L, x, z) => { const dx = x - L.f.x, dz = z - L.f.z; return [dx * L.f.tx + dz * L.f.tz, dx * L.f.nx + dz * L.f.nz]; };
 function roadGround(x, z, h) {
+  { const ty = inTunnelFoot(x, z); if (ty != null) return Math.min(h, ty - 2); }   // トンネルの所の地面は路面の下へ（山の形は覆いで描く）
   for (const L of HW_LOTS) {
     if (x < L.x0 || x > L.x1 || z < L.z0 || z > L.z1) continue;
     const [u, v] = lotUV(L, x, z), d = Math.hypot(Math.max(0, Math.abs(u) - 95), Math.max(0, 58 - v, v - 152));
-    if (d < 20) { const r0 = roadGround0(x, z, h); return r0 + (L.y - 0.1 - r0) * (1 - ss(1, 20, d)); }
+    if (d < 20) { if (d > 0) { const q = roadSurf(x, z); if (q && q.d < q.w / 2 + 1.5) return roadGround0(x, z, h); } const r0 = roadGround0(x, z, h); return r0 + (L.y - 0.1 - r0) * (1 - ss(1, 20, d)); }
   }
   for (const n of roadNet.plazas) {   // 広場（バスターミナル）のまわりは平らに（道の上は道の高さ）
     const d = Math.hypot(x - n.x, z - n.z);
     if (d < n.jr + 24 && h > 0.8) { const q = roadSurf(x, z); if (d > n.jr && q && q.d < q.w / 2 + 1.5) return roadGround0(x, z, h); const r0 = roadGround0(x, z, h); return r0 + (n.y - 0.12 - r0) * (1 - ss(n.jr + 1, n.jr + 24, d)); }
   }
   return roadGround0(x, z, h);
+}
+// トンネルの真上か（トンネルのはば＋2m）。そうなら路面の高さ。地面はトンネルの下まで下げ、山は「山の覆い」で描く
+function inTunnelFoot(x, z) {
+  const R = roadNet, a = R.gridEL.get(Math.floor(x / R.G) * 65536 + Math.floor(z / R.G));
+  if (!a) return null;
+  for (const code of a) {
+    const e = R.edges[code >> 16], i = code & 65535;
+    if (!e.TN || !(e.TN[i] && e.TN[i + 1])) continue;
+    const ex = e.X[i + 1] - e.X[i], ez = e.Z[i + 1] - e.Z[i], l2 = ex * ex + ez * ez || 1;
+    const t0 = ((x - e.X[i]) * ex + (z - e.Z[i]) * ez) / l2;
+    if (t0 < -0.05 || t0 > 1.05) continue;   // 入口より外は入れない
+    const t = Math.min(1, Math.max(0, t0));
+    if (Math.hypot(x - e.X[i] - ex * t, z - e.Z[i] - ez * t) < e.W[i] / 2 + 2) return e.Y[i] + (e.Y[i + 1] - e.Y[i]) * t;
+  }
+  return null;
 }
 // 地面をならすときの道：中心がいちばん近い道ではなく、はしからいちばん近い（中に入っている）道。IC の近くで一般道とランプが並ぶ所など
 const surfQ = { d: 0, y: 0, w: 0, e: null };
@@ -1538,31 +1613,61 @@ function deckAt(x, z, y = Infinity) {
   const q = roadNear(x, z);
   let best = q && q.br && q.d < q.w / 2 + 0.6 && q.y < y + 1.3 ? q.y : -Infinity;
   const k = deckNear(x, z, y);
+  deckAt.tn = !!(k && k.y > best && k.tn);
   return k && k.y > best ? k.y : best;
 }
 // 高架（高速道路）の床：y（足もとの高さ）から 1.3m 上までにある、いちばん高い床。{ y, e, i, d：中心からの距離（左が＋） }
 const deckQ = { y: 0, e: null, i: 0, d: 0, t: 0 };
+const deckC = [];
 function deckNear(x, z, y = Infinity, margin = 0.6) {
   const R = roadNet, a = R.gridEL.get(Math.floor(x / R.G) * 65536 + Math.floor(z / R.G));
   if (!a) return null;
-  let best = -Infinity;
+  let n = 0;
   for (const code of a) {
     const e = R.edges[code >> 16], i = code & 65535;
+    if (!e.EL[i] && !e.EL[i + 1]) continue;
     const ex = e.X[i + 1] - e.X[i], ez = e.Z[i + 1] - e.Z[i], l2 = ex * ex + ez * ez || 1;
     const t = Math.min(1, Math.max(0, ((x - e.X[i]) * ex + (z - e.Z[i]) * ez) / l2));
     const dx = x - e.X[i] - ex * t, dz = z - e.Z[i] - ez * t, d = Math.hypot(dx, dz);
     if (d > e.W[i] / 2 + margin) continue;
-    const yy = e.Y[i] + (e.Y[i + 1] - e.Y[i]) * t;
-    if (yy > y + 1.3 || yy <= best) continue;
-    if (!e.EL[i] && !e.EL[i + 1]) continue;
-    best = yy; deckQ.y = yy; deckQ.e = e; deckQ.i = i; deckQ.t = t; deckQ.d = dx * e.NX[i] + dz * e.NZ[i];
+    const c = deckC[n] || (deckC[n] = {}); n++;
+    c.e = e; c.i = i; c.t = t; c.d = d; c.dx = dx; c.dz = dz; c.y = e.Y[i] + (e.Y[i + 1] - e.Y[i]) * t;
   }
-  return best > -Infinity ? deckQ : null;
+  // 同じ道の近くの区間どうしは、いちばん近い区間だけ（広い本線で、少し先の区間の高さを拾わないように）。そのうえで、足もとより下のいちばん高い床
+  let best = null;
+  for (let k = 0; k < n; k++) {
+    const c = deckC[k];
+    if (c.y > y + 1.3 || (best && c.y <= best.y)) continue;
+    let near = false;
+    for (let m = 0; m < n && !near; m++) {
+      const o = deckC[m]; if (m === k || o.e !== c.e || o.d >= c.d) continue;
+      let di = Math.abs(o.i - c.i); if (c.e.loop) di = Math.min(di, c.e.N - 1 - di);
+      if (di <= 20) near = true;
+    }
+    if (!near) best = c;
+  }
+  if (!best) return null;
+  const e = best.e, i = best.i;
+  deckQ.y = best.y; deckQ.e = e; deckQ.i = i; deckQ.t = best.t; deckQ.d = best.dx * e.NX[i] + best.dz * e.NZ[i]; deckQ.tn = !!(e.TN && (e.TN[i] || e.TN[i + 1]));
+  return deckQ;
 }
 // 歩く・走る地面：橋の上にいれば橋、下（川の中）にいれば川底
 function groundAt(x, z, y) {
   const h = heightAt(x, z), d = deckAt(x, z, y);
-  return d > h && y > d - 1.3 ? d : h;
+  return (d > h || deckAt.tn) && y > d - 1.3 ? d : h;   // トンネルの中は、上の山ではなく路面
+}
+// カメラ：見ている所（tp）がトンネルの中なら、カメラ（cp）もトンネルの中（床から 0.5〜5.5m）に入れる。true ならトンネルの中
+function camTunnel(tp, cp) {
+  const k = deckNear(tp.x, tp.z, tp.y);
+  if (!k || !k.tn) return false;
+  const ky = k.y;
+  for (let s = 1; s > 0.04; s *= 0.75) {
+    const x = tp.x + (cp.x - tp.x) * s, z = tp.z + (cp.z - tp.z) * s, y = tp.y + (cp.y - tp.y) * s;
+    const q = deckNear(x, z, ky + 1);
+    if ((q && q.tn && Math.abs(q.y - ky) < 4) || (!q && heightAt(x, z) < y - 0.5)) { cp.x = x; cp.z = z; cp.y = q ? Math.min(q.y + 5.5, Math.max(q.y + 0.5, y)) : y; return true; }
+  }
+  cp.set(tp.x, ky + 1.5, tp.z);
+  return true;
 }
 /* 建物の敷地：足もとの地面を平らにならす（まわり 5m でなだらかにつなぐ）。だれの画面でも、置いてある建物から同じ形になる */
 const PADS = [], PAD_M = 5;
@@ -2283,7 +2388,7 @@ const hwDraw = (() => {
       const top = bucket(mx, mz, main ? 'main' : 'ramp');
       const v0 = e.S[i] / 20, v1 = e.S[j] / 20, a = P(i, 1, 0.04), b = P(i, -1, 0.04), c = P(j, 1, 0.04), d = P(j, -1, 0.04);
       top.push([...a, 0, v0], [...b, 1, v0], [...c, 0, v1], [...b, 1, v0], [...d, 1, v1], [...c, 0, v1]);
-      const el = e.EL[i] && e.EL[j];
+      const tn = e.TN && (e.TN[i] || e.TN[j]), el = e.EL[i] && e.EL[j] && !tn;   // トンネルの中は高架の側面・欄干・橋脚・照明なし
       if (el) {
         const cc = bucket(mx, mz, 'conc');
         for (const side of [1, -1]) { const a0 = P(i, side, -1.2), a1 = P(i, side, 0.02), b0 = P(j, side, -1.2), b1 = P(j, side, 0.02); cc.push(a0, b0, a1, a1, b0, b1); }
@@ -2307,7 +2412,7 @@ const hwDraw = (() => {
         if (!low && !onRoad) piers.push([e, i]);
       }
       // 照明：本線は中央分離帯に 60m ごと（両側に腕）、ランプは 40m ごと
-      if (main ? i % 30 === 0 : i % 20 === 10) lamps.push({ e, i, main });
+      if (!tn && (main ? i % 30 === 0 : i % 20 === 10)) lamps.push({ e, i, main });
     }
   }
   const meshes = [];
@@ -2369,6 +2474,142 @@ const hwDraw = (() => {
     streetLamps.hwPools = pm;
   }
   return { meshes, piers: piers.length, lamps: lamps.length };
+})();
+/* ================= トンネル（2026-11-01） =================
+   高速道路が山を越えずに抜ける所。コンクリートの筒、オレンジのナトリウム灯、天井の換気用ジェットファン、入口の坑門と名前の板 */
+const hwTunnels = (() => {
+  const R = roadNet, list = [];
+  for (const e of R.edges) if (e.TN) {
+    let i = 0;
+    while (i < e.N) { if (!e.TN[i]) { i++; continue; } let j = i; while (j < e.N && e.TN[j]) j++; list.push({ e, i0: i, i1: j - 1 }); i = j; }
+  }
+  if (!list.length) return { list };
+  const wallM = new THREE.MeshLambertMaterial({ color: 0xa39d90, emissive: 0x2a1806, side: THREE.DoubleSide });
+  const portalM = new THREE.MeshLambertMaterial({ color: 0xbdb7aa, side: THREE.DoubleSide }), roofM = new THREE.MeshLambertMaterial({ color: 0x7cc35a, flatShading: true, side: THREE.DoubleSide });
+  const lampM = new THREE.MeshBasicMaterial({ color: 0xffa53c });
+  const glowM = new THREE.MeshBasicMaterial({ color: 0xff8a20, transparent: true, opacity: 0.35, blending: THREE.AdditiveBlending, depthWrite: false });
+  const fanM = new THREE.MeshLambertMaterial({ color: 0x7d8288 });
+  const lamps = [], fans = [];
+  for (const T of list) {
+    const e = T.e, hw = e.w / 2 + 0.4;
+    // 断面（左が -u）：かべ 4.6m、上はアーチで 7.8m
+    const prof = [[-hw, -0.3], [-hw, 4.6], [-hw * 0.82, 6.5], [-hw * 0.45, 7.5], [0, 7.8], [hw * 0.45, 7.5], [hw * 0.82, 6.5], [hw, 4.6], [hw, -0.3]];
+    const a = Math.max(0, T.i0 - 3), b = Math.min(e.N - 1, T.i1 + 3), pos = [], glow = [];
+    const P = (k, u, v) => [e.X[k] - e.NX[k] * u, e.Y[k] + v, e.Z[k] - e.NZ[k] * u];
+    for (let k = a; k < b; k += 2) {
+      const k2 = Math.min(b, k + 2);
+      for (let q = 0; q < prof.length - 1; q++) {
+        const p0 = P(k, ...prof[q]), p1 = P(k, ...prof[q + 1]), p2 = P(k2, ...prof[q]), p3 = P(k2, ...prof[q + 1]);
+        pos.push(...p0, ...p2, ...p1, ...p1, ...p2, ...p3);
+      }
+      const g0 = P(k, -hw, 0.15), g1 = P(k, hw, 0.15), g2 = P(k2, -hw, 0.15), g3 = P(k2, hw, 0.15);
+      glow.push(...g0, ...g2, ...g1, ...g1, ...g2, ...g3);
+      if ((k - a) % 2 === 0) for (const s of [-1, 1]) lamps.push(P(k, s * (hw - 0.3), 4.3).concat([Math.atan2(e.NX[k], e.NZ[k])]));
+      if ((k - a) % 50 === 24) for (const s of [-1, 1]) fans.push(P(k, s * 3.2, 6.6).concat([Math.atan2(e.X[k2] - e.X[k], e.Z[k2] - e.Z[k])]));
+    }
+    const geo = (arr) => { const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(arr, 3)); g.computeVertexNormals(); return g; };
+    const tube = new THREE.Mesh(geo(pos), wallM); tube.castShadow = true; tube.receiveShadow = true; scene.add(tube);
+    const gl = new THREE.Mesh(geo(glow), glowM); gl.renderOrder = 2; scene.add(gl);
+    // 山の覆い：トンネルの上の山の形（地面はトンネルの所だけ下げてあるので、そのかわり）
+    const roofY = (k, u) => { const q = P(k, u, 0); return Math.max(rawHeight0(q[0], q[2]), e.Y[k] + 8.3); };
+    const UW = hw + 3.2, US = [-UW, -hw, -hw * 0.5, 0, hw * 0.5, hw, UW], rp = [];
+    for (let k = a; k < b; k += 2) {
+      const k2 = Math.min(b, k + 2);
+      for (let c = 0; c < US.length - 1; c++) {
+        const A0 = P(k, US[c], 0), A1 = P(k, US[c + 1], 0), B0 = P(k2, US[c], 0), B1 = P(k2, US[c + 1], 0);
+        A0[1] = roofY(k, US[c]); A1[1] = roofY(k, US[c + 1]); B0[1] = roofY(k2, US[c]); B1[1] = roofY(k2, US[c + 1]);
+        rp.push(...A0, ...A1, ...B0, ...B0, ...A1, ...B1);
+      }
+    }
+    const roof = new THREE.Mesh(geo(rp), roofM); roof.receiveShadow = true; scene.add(roof);
+    // 坑門（入口と出口）：アーチのまわりから山の覆いまでのかべ、上の帯、名前の板
+    const pl = placeAt(e.X[(T.i0 + T.i1) >> 1], e.Z[(T.i0 + T.i1) >> 1]);
+    T.name = (pl.name || pl.city || 'はじめ').replace(/(町|市|村)$/, '') + 'トンネル';
+    const c = document.createElement('canvas'); c.width = 512; c.height = 96; const g2 = c.getContext('2d');
+    g2.fillStyle = '#e9e4d6'; g2.fillRect(0, 0, 512, 96); g2.fillStyle = '#222'; g2.font = '900 60px sans-serif'; g2.textAlign = 'center'; g2.textBaseline = 'middle'; g2.fillText(T.name, 256, 50, 490);
+    const nameTex = new THREE.CanvasTexture(c); nameTex.colorSpace = THREE.SRGBColorSpace;
+    const fp = [];
+    for (const k of [a, b]) {
+      const outline = [[-UW, -0.5], [-hw, -0.5], ...prof.slice(1, -1), [hw, -0.5], [UW, -0.5]];
+      for (let q2 = 0; q2 < outline.length - 1; q2++) {
+        const [u0, v0] = outline[q2], [u1, v1] = outline[q2 + 1];
+        const a0 = P(k, u0, v0), a1 = P(k, u1, v1), t0 = P(k, u0, 0), t1 = P(k, u1, 0);
+        t0[1] = Math.max(roofY(k, u0), e.Y[k] + v0 + 0.1) + 0.6; t1[1] = Math.max(roofY(k, u1), e.Y[k] + v1 + 0.1) + 0.6;
+        fp.push(...a0, ...a1, ...t0, ...t0, ...a1, ...t1);
+      }
+      const nb = new THREE.Mesh(new THREE.PlaneGeometry(9, 1.6), new THREE.MeshBasicMaterial({ map: nameTex, side: THREE.DoubleSide }));
+      const o = k === a ? -0.15 : 0.15, tx = e.X[Math.min(e.N - 1, k + 1)] - e.X[Math.max(0, k - 1)], tz = e.Z[Math.min(e.N - 1, k + 1)] - e.Z[Math.max(0, k - 1)], tl = Math.hypot(tx, tz) || 1;
+      nb.position.set(e.X[k] + tx / tl * o, e.Y[k] + 8.6, e.Z[k] + tz / tl * o); nb.rotation.y = Math.atan2(tx, tz) + (k === a ? Math.PI : 0); scene.add(nb);
+    }
+    const pm = new THREE.Mesh(geo(fp), portalM); pm.castShadow = true; scene.add(pm);
+  }
+  const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), s1 = new THREE.Vector3(1, 1, 1), p = new THREE.Vector3(), up = new THREE.Vector3(0, 1, 0);
+  const lg = new THREE.BoxGeometry(0.5, 0.35, 2.2), lm = new THREE.InstancedMesh(lg, lampM, lamps.length);
+  lamps.forEach((L, k) => { q.setFromAxisAngle(up, L[3]); lm.setMatrixAt(k, m4.compose(p.set(L[0], L[1], L[2]), q, s1)); });
+  lm.computeBoundingSphere(); scene.add(lm);
+  const fg = new THREE.CylinderGeometry(0.65, 0.65, 4.2, 12); fg.rotateX(Math.PI / 2);
+  const fm = new THREE.InstancedMesh(fg, fanM, fans.length);
+  fans.forEach((F, k) => { q.setFromAxisAngle(up, F[3]); fm.setMatrixAt(k, m4.compose(p.set(F[0], F[1], F[2]), q, s1)); });
+  fm.castShadow = true; fm.computeBoundingSphere(); scene.add(fm);
+  return { list, lamps: lamps.length, fans: fans.length };
+})();
+/* ================= 高速道路の案内標識（2026-11-01） =================
+   出口・PA・JCT・終点の 1km 手前、500m 手前、分かれ目に、緑の標識（道の左はしの柱から、車線の上へ腕を出す） */
+const hwSigns = (() => {
+  const R = roadNet, mains = R.edges.filter((e) => e.hw === 'main'), out = [];
+  const attach = (main, x, z) => {   // 本線の上の点：どちら向きの車線の、どこ（es：その向きに進んだ道のり）
+    let bi = 0, bd = Infinity; for (let i = 0; i < main.N; i++) { const d = (main.X[i] - x) ** 2 + (main.Z[i] - z) ** 2; if (d < bd) { bd = d; bi = i; } }
+    const lat = (x - main.X[bi]) * main.NX[bi] + (z - main.Z[bi]) * main.NZ[bi], d = lat > 0 ? 1 : -1;
+    return { d, es: d > 0 ? main.S[bi] : main.L - main.S[bi] };
+  };
+  const items = [];
+  for (const r of R.edges) {
+    if (r.hw !== 'ramp' || r.a.onEdge == null) continue;
+    const main = R.edges[r.a.onEdge]; if (!main || main.hw !== 'main') continue;
+    const at = attach(main, r.X[0], r.Z[0]);
+    let name, sub;
+    if (r.ic) { name = r.ic; sub = '出口'; }
+    else if (r.pa) { name = r.pa.replace(/（.*）/, ''); sub = ''; }
+    else if (r.jct) {
+      if (main.loop) { name = r.jct; sub = '西山線'; }
+      else { name = 'はじめ環状線'; sub = '外回り・内回り'; if (items.some((q) => q.main === main && q.name === name)) continue; }
+    } else continue;
+    items.push({ main, d: at.d, es: at.es, name, sub });
+  }
+  { const sp = R.edges[HWY.spur]; items.push({ main: sp, d: 1, es: sp.L - 80, name: '西山町IC', sub: '終点' }); }
+  const texCache = new Map();
+  const tex = (name, line2) => {
+    const key = name + '|' + line2; if (texCache.has(key)) return texCache.get(key);
+    const c = document.createElement('canvas'); c.width = 512; c.height = 224; const g = c.getContext('2d');
+    g.fillStyle = '#1d7a3e'; g.fillRect(0, 0, 512, 224); g.strokeStyle = '#ffffff'; g.lineWidth = 6; g.strokeRect(8, 8, 496, 208);
+    g.fillStyle = '#fff'; g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.font = '900 76px sans-serif'; g.fillText(name, 256, 78, 470);
+    g.font = '800 58px sans-serif'; g.fillText(line2, 256, 162, 470);
+    const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4; texCache.set(key, t); return t;
+  };
+  const placed = [];
+  const poleM = new THREE.MeshLambertMaterial({ color: 0x8d949a }), backM = new THREE.MeshLambertMaterial({ color: 0x6d7378 });
+  for (const dist of [0, 500, 1000]) for (const it of items) {
+    const m = it.main; let es = it.es - (dist ? dist : 40);
+    if (m.loop) es = ((es % m.L) + m.L) % m.L; else if (es < 30 || es > m.L - 30) continue;
+    if (placed.some((p) => { if (p.m !== m || p.d !== it.d) return false; let dd = Math.abs(p.es - es); if (m.loop) dd = Math.min(dd, m.L - dd); return dd < 70; })) continue;   // 近くにもう標識がある
+    const s = it.d > 0 ? es : m.L - es; let i = 0; while (i < m.N - 2 && m.S[i] < s) i++;
+    if (m.TN && m.TN[i]) continue;   // トンネルの中には立てない
+    placed.push({ m, d: it.d, es });
+    const line2 = dist ? `${it.sub ? it.sub + ' ' : ''}${dist >= 1000 ? dist / 1000 + 'km' : dist + 'm'}` : (it.sub === '出口' || !it.sub ? '← 出口' : it.sub);
+    const tx = (m.X[i + 1] - m.X[i]) * it.d, tz = (m.Z[i + 1] - m.Z[i]) * it.d, tl = Math.hypot(tx, tz) || 1;
+    const nx = m.NX[i] * it.d, nz = m.NZ[i] * it.d, y = m.Y[i];
+    const g = new THREE.Group(); g.position.set(m.X[i] + nx * 12.2, y, m.Z[i] + nz * 12.2); g.rotation.y = Math.atan2(-tx / tl, -tz / tl);   // 中の z：来る車のほう、x：…
+    const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.26, 8.4, 8), poleM); pole.position.y = 4.2; pole.castShadow = true; g.add(pole);
+    // 腕と板：道の中へ（左はしから 7m）
+    const inward = new THREE.Vector3(-nx, 0, -nz).applyAxisAngle(new THREE.Vector3(0, 1, 0), -g.rotation.y);
+    const arm = new THREE.Mesh(new THREE.BoxGeometry(0.25, 0.25, 9), poleM); arm.position.copy(inward.clone().multiplyScalar(4.5)).setY(8.1); arm.rotation.y = Math.atan2(inward.x, inward.z); g.add(arm);
+    const board = new THREE.Mesh(new THREE.PlaneGeometry(7.2, 3.15), new THREE.MeshBasicMaterial({ map: tex(it.name, line2) }));
+    board.position.copy(inward.clone().multiplyScalar(6.6)).setY(6.6); board.position.z += 0.08; g.add(board);
+    const back = new THREE.Mesh(new THREE.BoxGeometry(7.3, 3.25, 0.12), backM); back.position.copy(board.position); back.position.z -= 0.08; back.castShadow = true; g.add(back);
+    scene.add(g); out.push({ name: it.name, line2, x: Math.round(g.position.x), z: Math.round(g.position.z) });
+  }
+  return out;
 })();
 /* ================= 高速道路の PA（駐車場とお店）と料金所（ETC） =================
    PA は高速道路の中だけからはいれる（外の道や地面からは入れない）。料金所はバーが上がって通れる */
@@ -6305,10 +6546,12 @@ function updateCamera(dt) {
   const dist = driving ? Math.max(camDist, vtype(ride) === 'plane' ? 13 : isBoat(ride) ? Math.max(10, ride.item.def.vehicle.halfLength * 1.6) : 7.5) : camDist;
   camera.far = Math.max(VIEW_R + 200, dist * 6);
   camPos.set(Math.sin(camYaw) * Math.cos(camPitch), Math.sin(camPitch), Math.cos(camYaw) * Math.cos(camPitch)).multiplyScalar(dist).add(camTarget);
-  camPos.y = Math.max(heightAt(camPos.x, camPos.z) + 0.4, camPos.y);   // 地面の中にカメラを入れない
+  const inTn = camTunnel(camTarget, camPos);   // トンネルの中：カメラもトンネルの中に
+  if (!inTn) camPos.y = Math.max(heightAt(camPos.x, camPos.z) + 0.4, camPos.y);   // 地面の中にカメラを入れない
   if (blds.length) { bldCamClip(camTarget, camPos); if (camPos.distanceTo(camTarget) < dist * 0.6) camera.position.copy(camPos); }   // 建物の中では壁の手前まで寄せる
   camera.position.lerp(camPos, 1 - Math.exp(-14 * dt));
-  camera.position.y = Math.max(heightAt(camera.position.x, camera.position.z) + 0.3, camera.position.y);
+  if (inTn) camTunnel(camTarget, camera.position);
+  else camera.position.y = Math.max(heightAt(camera.position.x, camera.position.z) + 0.3, camera.position.y);
   camera.lookAt(camTarget);
 
   // 水の中は青くかすむ（色は updateAtmosphere で、深いほど暗く）
@@ -8615,7 +8858,7 @@ window.__world = {
   set camYaw(v) { camYaw = v; }, set camPitch(v) { camPitch = v; }, set camDist(v) { camDist = v; }, get camDist() { return camDist; },
   keys, touch, toggleRide, loadItem, ITEM_DEFS, heightAt, player, net, syncPeers,
   addPropFromBuffer, wallet, addPoints, PG, touch, insideB: () => insideBld(), setCamYaw: (v) => { camYaw = v; }, bgmState: () => ({ name: bgm.name, vol: +bgm.vol.toFixed(2), playing: !!(bgm.el && !bgm.el.paused), t: bgm.el ? +bgm.el.currentTime.toFixed(1) : 0 }), blds, bldFloor, bldPush, roadNear, nearBldAction, placeAt, get bldSeat() { return bldSeat; }, get dayLight() { return dayLight; },
-  HWY, hwExtra, hwZone, TOLL, HW_LOTS, stepHwRules, hwDraw, HWT, scene, THREE, get rinfo() { return { calls: renderer.info.render.calls, tris: renderer.info.render.triangles }; },
+  HWY, groundAt, deckNear, roadSurf, hwExtra, hwSigns, hwTunnels, hwZone, TOLL, HW_LOTS, stepHwRules, hwDraw, HWT, scene, THREE, get rinfo() { return { calls: renderer.info.render.calls, tris: renderer.info.render.triangles }; },
   get aboard() { return aboard; }, get ride() { return ride; }, buses, get busRide() { return busRide; }, nearBusDoor, traffic, roadNet, worldHour, setHourOffset(h) { hourOffset = h; },
   hullGround, findWaterSpot, rescueBoat, get periscope() { return periscope; }, toggleLight, setPeriscope,
   teleport(x, z, y) { player.pos.set(x, y ?? heightAt(x, z), z); player.vy = 0; },
