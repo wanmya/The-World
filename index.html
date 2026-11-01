@@ -110,7 +110,7 @@ body.mapOn #msg { top: max(145px, 30vh); }
 #autoPanel button { font: 800 12px var(--font-ui); color: var(--ink); background: #fff; border: 1px solid var(--line); border-radius: 999px; padding: 6px 9px; cursor: pointer; white-space: nowrap; }
 #autoPanel button[aria-pressed="true"] { background: #e8650a; color: #fff; border-color: #e8650a; }
 #autoPanel #apSpd { min-width: 64px; }
-@media (pointer: coarse) { #autoPanel { bottom: calc(14px + env(safe-area-inset-bottom, 0px)); } }
+@media (pointer: coarse) { #autoPanel { bottom: calc(108px + env(safe-area-inset-bottom, 0px)); } #autoPanel button { padding: 6px 8px; } }
 #wmapCv { cursor: crosshair; }
 #wmapNote { margin: 0; font: 500 12px var(--font-ui); color: var(--ink-dim); }
 #prompt { position: fixed; left: 50%; bottom: calc(96px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%);
@@ -8166,6 +8166,7 @@ function stopAuto(msg) {
   if (msg) showMsg(msg);
 }
 // 自動運転中の操作：速さ（10km/h ずつ、まん中のボタンでおまかせ）・車線変更・つぎの交差点で右左折
+const AUTO_GEN_MAX = 70 / 3.6;   // 一般道で自動運転が出す速さの上限
 function autoSpeed(d) {
   if (!AUTO.on) return;
   const V = ride.item.def.vehicle, top = Math.floor(V.maxSpeed * 0.85 * 3.6 / 10) * 10;
@@ -8173,7 +8174,7 @@ function autoSpeed(d) {
   const now = AUTO.vset ? Math.round(AUTO.vset * 3.6) : (AUTO.route.P.hw[AUTO.k] ? 100 : 50);
   const k = Math.min(top, Math.max(10, Math.round(now / 10) * 10 + d * 10));
   AUTO.vset = k / 3.6;
-  showMsg(`速さ：${k}km/h まで（カーブ・信号・前の車ではゆっくり）`);
+  showMsg(`速さ：${k}km/h まで${k > 70 ? '（一般道では 70km/h まで）' : ''}（カーブ・信号・前の車ではゆっくり）`);
 }
 function autoLaneReq(dir) {   // dir：+1 左・-1 右
   if (!AUTO.on) return;
@@ -8303,7 +8304,7 @@ function autoDrive(car, dt) {
   const al = wrapA(Math.atan2(autoTp.x - car.pos.x, autoTp.z - car.pos.y) - car.h);
   const steer = Math.min(V.maxSteer, Math.max(-V.maxSteer, Math.atan2(2 * V.wheelbase * Math.sin(al), Ld)));
   // 速さ：カーブ・行き先・信号・前のじゃまな物
-  let vt = Math.min(V.maxSpeed * 0.85, AUTO.vset ? Math.min(AUTO.vset, P.capC[bi]) : P.capV[bi]), why = '';
+  let vt = Math.min(V.maxSpeed * 0.85, AUTO.vset ? Math.min(AUTO.vset, P.hw[bi] ? Infinity : AUTO_GEN_MAX, P.capC[bi]) : P.capV[bi]), why = '';   // 一般道は 70km/h まで
   vt = Math.min(vt, Math.sqrt(2 * AUTO_T.dec * Math.max(0, left - 0.5)));
   if (Math.abs(al) > 1.1) vt = Math.min(vt, 3);   // 向きが大きくちがう（Ｕターンなど）：ゆっくり
   const tNow = Date.now() / 1000;
@@ -8582,6 +8583,9 @@ el('apTurnR').addEventListener('click', () => autoTurnReq(-1));
 setInterval(() => {
   const show = !!(AUTO.on && driving && ride);
   if (el('autoPanel').hidden === show) el('autoPanel').hidden = !show;
+  // 「降りる」などの案内（#prompt）は、操作パネルの上へずらす（重ならないように）
+  const pr = el('prompt'), want = show ? `${Math.round(window.innerHeight - el('autoPanel').getBoundingClientRect().top + 8)}px` : '';
+  if (pr.style.bottom !== want) pr.style.bottom = want;
   if (!show) return;
   const t = AUTO.vset ? `${Math.round(AUTO.vset * 3.6)}km/h` : 'おまかせ';
   if (el('apSpd').textContent !== t) el('apSpd').textContent = t;
