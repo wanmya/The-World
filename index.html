@@ -118,7 +118,9 @@ body.mapOn #msg { top: max(145px, 30vh); }
 body.apMinOn #autoPanel > :not(#apMax) { display: none !important; }
 body.apMinOn #prompt, body.apMinOn #hint { display: none !important; }
 @media (pointer: coarse) { #autoPanel { bottom: calc(108px + env(safe-area-inset-bottom, 0px)); gap: 4px; } #autoPanel button { padding: 6px 7px; } }
-#wmapCv { cursor: crosshair; }
+#wmapCv { cursor: crosshair; touch-action: none; }
+#wmapZoom { position: absolute; right: 8px; top: 8px; display: grid; gap: 6px; }
+#wmapZoom button { width: 40px; height: 40px; font: 800 22px/1 var(--font-ui); color: var(--ink); background: rgba(255,255,255,.94); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 2px 8px rgba(0,0,0,.2); cursor: pointer; padding: 0; }
 #wmapNote { margin: 0; font: 500 12px var(--font-ui); color: var(--ink-dim); }
 #prompt { position: fixed; left: 50%; bottom: calc(96px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%);
   display: flex; align-items: center; gap: 10px; padding: 8px 8px 8px 14px; background: var(--panel); border: 1px solid var(--line); border-radius: 999px; font-weight: 800; white-space: nowrap; }
@@ -342,7 +344,7 @@ body.helmOn .subbtns { flex-wrap: wrap; justify-content: flex-end; max-width: ca
     <button type="button" id="homeBtn">🏖️ 砂浜に戻る</button>
     <button type="button" id="wmapClose" aria-label="閉じる">✕</button>
   </div>
-  <div class="wbody"><canvas id="wmapCv"></canvas><div id="wmapLegend" hidden></div><div id="wmapGoBox" hidden><div id="wmapToll" hidden></div><div class="gos"><button type="button" id="wmapGo">自動運転で行く</button><button type="button" id="wmapGoLocal" hidden>一般道で行く</button></div></div></div>
+  <div class="wbody"><canvas id="wmapCv"></canvas><div id="wmapZoom"><button type="button" data-z="1" aria-label="拡大">＋</button><button type="button" data-z="-1" aria-label="縮小">−</button></div><div id="wmapLegend" hidden></div><div id="wmapGoBox" hidden><div id="wmapToll" hidden></div><div class="gos"><button type="button" id="wmapGo">自動運転で行く</button><button type="button" id="wmapGoLocal" hidden>一般道で行く</button></div></div></div>
   <p id="wmapNote"></p>
 </div>
 <div id="pingWarn" hidden role="alert">ピンガーが打たれました</div>
@@ -9064,40 +9066,69 @@ function autoDrive(car, dt) {
 /* ================= 地図（☰ の「地図」と、バス停の「路線図」） =================
    上が北（-z）。「全体」は道路のある所ぜんぶ、「近く」は自分のまわり 1.2km。道路・バス停・路線・走っているバスと車・自分の位置 */
 const wmapEl = el('wmap'), wmapCv = el('wmapCv'), wmapCx = wmapCv.getContext('2d');
-const WMAP = { mode: 'all', routes: false, img: { all: null, near: null }, build: null, open: false };
+// 拡大縮小：WMAP.mpp（画面 1 ドットが何 m か）と、まん中（cx, cz）。「近く」は自分について動く。ドラッグ・ピンチ・ホイール・＋−で変えられる
+const WMAP = { mode: 'all', routes: false, img: { all: null, det: null }, build: { all: null, det: null }, open: false, mpp: 0, cx: 0, cz: 0 };
 const WMAP_ALL = { x0: -5000, x1: 5000, z0: -5000, z1: 5000, m: 20 };   // 全体：ワールドぜんぶ、20m で 1 ドット
-function wmapView() {
-  if (WMAP.mode === 'all') return WMAP_ALL;
-  const me = myPose(), cx = Math.round(me.x / 100) * 100, cz = Math.round(me.z / 100) * 100;   // 車・バス・船に乗っているときは、その位置
-  const asp = wmapCv.height / Math.max(1, wmapCv.width), hx = asp > 1 ? 600 : Math.round(600 / asp / 100) * 100, hz = asp > 1 ? Math.round(600 * asp / 100) * 100 : 600;   // 画面の形に合わせる
-  return { x0: cx - hx, x1: cx + hx, z0: cz - hz, z1: cz + hz, m: 5, cx, cz };
+const wmapFitMpp = () => Math.max(10000 / Math.max(1, wmapCv.width), 10000 / Math.max(1, wmapCv.height));   // ワールドぜんぶが入る
+const wmapNearMpp = () => 1200 / Math.max(1, Math.min(wmapCv.width, wmapCv.height));   // 近く：短いほうが 1.2km
+const wmapMinMpp = () => 0.35 / Math.min(window.devicePixelRatio || 1, 2);   // いちばん大きく：1 ドット 35cm くらい
+function wmapSetMode(m) {
+  WMAP.mode = m;
+  if (m === 'all') { WMAP.mpp = wmapFitMpp(); WMAP.cx = 0; WMAP.cz = 0; }
+  if (m === 'near') WMAP.mpp = wmapNearMpp();
 }
-function stepWmapImage() {
-  const V = wmapView(), key = `${V.x0},${V.z0},${V.m}`, have = WMAP.img[WMAP.mode];
+function wmapClamp() {
+  WMAP.mpp = Math.min(wmapFitMpp() * 1.2, Math.max(wmapMinMpp(), WMAP.mpp || wmapFitMpp()));
+  WMAP.cx = Math.min(5000, Math.max(-5000, WMAP.cx)); WMAP.cz = Math.min(5000, Math.max(-5000, WMAP.cz));
+}
+// いま見えている範囲（世界の座標）
+function wmapVis() {
+  if (WMAP.mode === 'near') { const me = myPose(); WMAP.cx = me.x; WMAP.cz = me.z; }
+  wmapClamp();
+  const hw = wmapCv.width * WMAP.mpp / 2, hh = wmapCv.height * WMAP.mpp / 2;
+  return { x0: WMAP.cx - hw, x1: WMAP.cx + hw, z0: WMAP.cz - hh, z1: WMAP.cz + hh };
+}
+// くわしい地図：見えている範囲が 3.6km より小さいとき、そのまわりだけ細かく作る
+function wmapDetView(Vis) {
+  const span = Math.max(Vis.x1 - Vis.x0, Vis.z1 - Vis.z0);
+  if (span > 3600) return null;
+  const area = (Vis.x1 - Vis.x0 + 200) * (Vis.z1 - Vis.z0 + 200), m = [2.5, 5, 10].find((q) => area / (q * q) <= 70000) || 10;   // 1 枚 7 万点まで
+  const I = WMAP.img.det;   // 前に作ったのが見えている所をぜんぶおおっていれば、それを使う
+  if (I && I.V.m === m && I.V.x0 <= Vis.x0 && I.V.x1 >= Vis.x1 && I.V.z0 <= Vis.z0 && I.V.z1 >= Vis.z1) return I.V;
+  const cx = Math.round(WMAP.cx / 100) * 100, cz = Math.round(WMAP.cz / 100) * 100;
+  const hx = Math.ceil(((Vis.x1 - Vis.x0) / 2 + 100) / 100) * 100, hz = Math.ceil(((Vis.z1 - Vis.z0) / 2 + 100) / 100) * 100;
+  return { x0: cx - hx, x1: cx + hx, z0: cz - hz, z1: cz + hz, m };
+}
+function stepWmapImage(slot, V) {
+  const key = `${V.x0},${V.z0},${V.x1},${V.z1},${V.m}`, have = WMAP.img[slot];
   if (have && have.key === key) return true;
-  if (!WMAP.build || WMAP.build.key !== key) {
+  if (!WMAP.build[slot] || WMAP.build[slot].key !== key) {
     const w = Math.round((V.x1 - V.x0) / V.m), h = Math.round((V.z1 - V.z0) / V.m), c = document.createElement('canvas');
     c.width = w; c.height = h;
-    WMAP.build = { key, V, c, g: c.getContext('2d'), im: c.getContext('2d').createImageData(w, h), row: 0, w, h, mode: WMAP.mode };
+    WMAP.build[slot] = { key, V, c, g: c.getContext('2d'), im: c.getContext('2d').createImageData(w, h), row: 0, w, h };
   }
-  const B = WMAP.build, end = Math.min(B.h, B.row + Math.max(4, Math.round(6000 / B.w)));   // 1 コマで約 6000 点
+  const B = WMAP.build[slot], end = Math.min(B.h, B.row + Math.max(4, Math.round(6000 / B.w)));   // 1 コマで約 6000 点
   for (; B.row < end; B.row++) for (let i = 0; i < B.w; i++) {
     const x = B.V.x0 + (i + 0.5) * B.V.m, z = B.V.z0 + (B.row + 0.5) * B.V.m;
     mapColor(outsideBox(x, z) ? -100 : rawHeight0(x, z), x, z, B.im.data, (B.row * B.w + i) * 4);
   }
-  if (B.row >= B.h) { B.g.putImageData(B.im, 0, 0); WMAP.img[B.mode] = { key, c: B.c, V: B.V }; WMAP.build = null; return true; }
+  if (B.row >= B.h) { B.g.putImageData(B.im, 0, 0); WMAP.img[slot] = { key, c: B.c, V: B.V }; WMAP.build[slot] = null; return true; }
   return false;
 }
 function drawWmap() {
-  const g = wmapCx, W = wmapCv.width, H = wmapCv.height, V = wmapView();
-  const ready = stepWmapImage(), im = WMAP.img[WMAP.mode];
-  const sc = Math.min(W / (V.x1 - V.x0), H / (V.z1 - V.z0)), ox = (W - (V.x1 - V.x0) * sc) / 2, oy = (H - (V.z1 - V.z0) * sc) / 2;
-  const P = (x, z) => [ox + (x - V.x0) * sc, oy + (z - V.z0) * sc];
+  const g = wmapCx, W = wmapCv.width, H = wmapCv.height, V = wmapVis();
+  const sc = 1 / WMAP.mpp, ox = 0, oy = 0, span = Math.min(V.x1 - V.x0, V.z1 - V.z0);
+  const det = span <= 2000, wide = span >= 4000;   // det：くわしく（目じるし・車・バス停の名前）、wide：市の名前
+  const P = (x, z) => [(x - V.x0) * sc, (z - V.z0) * sc];
   WMAP.tf = { V, sc, ox, oy };
+  // 地面：くわしい地図がいるときはそれを先に作る。全体の地図はいつも下にしく
+  const DV = wmapDetView(V), detReady = DV ? stepWmapImage('det', DV) : true;
+  const ready = (DV && !detReady) ? !!WMAP.img.all : stepWmapImage('all', WMAP_ALL);
   g.fillStyle = '#2d5f86'; g.fillRect(0, 0, W, H);
-  if (im && im.key === `${V.x0},${V.z0},${V.m}`) g.drawImage(im.c, ox, oy, (V.x1 - V.x0) * sc, (V.z1 - V.z0) * sc);
-  else if (im && im.V.m === V.m) g.drawImage(im.c, ox + (im.V.x0 - V.x0) * sc, oy + (im.V.z0 - V.z0) * sc, (im.V.x1 - im.V.x0) * sc, (im.V.z1 - im.V.z0) * sc);   // 動いている間は、前の地図をずらして出しておく
-  else { g.fillStyle = '#fff'; g.font = '800 16px ' + getComputedStyle(document.body).fontFamily; g.textAlign = 'center'; g.fillText('地図を作っています…', W / 2, H / 2); }
+  const blit = (im) => { const [x, y] = P(im.V.x0, im.V.z0); g.drawImage(im.c, x, y, (im.V.x1 - im.V.x0) * sc, (im.V.z1 - im.V.z0) * sc); };
+  if (WMAP.img.all) { g.imageSmoothingEnabled = true; blit(WMAP.img.all); }
+  if (DV && WMAP.img.det) blit(WMAP.img.det);   // 動いている間は、前のくわしい地図をずらして出しておく
+  if (!WMAP.img.all && !(DV && WMAP.img.det)) { g.fillStyle = '#fff'; g.font = '800 16px ' + getComputedStyle(document.body).fontFamily; g.textAlign = 'center'; g.fillText('地図を作っています…', W / 2, H / 2); }
   g.lineCap = g.lineJoin = 'round';
   // 道路
   const mapEdges = [...roadNet.edges.filter((e) => !e.hw), ...roadNet.edges.filter((e) => e.hw === 'ramp'), ...roadNet.edges.filter((e) => e.hw === 'main')];   // 高速道路は上に
@@ -9110,7 +9141,7 @@ function drawWmap() {
     g.stroke();
   }
   // 高速道路の IC・PA・JCT の名前
-  g.font = `800 ${WMAP.mode === 'all' ? 11 : 13}px ` + getComputedStyle(document.body).fontFamily; g.textAlign = 'left'; g.textBaseline = 'middle';
+  g.font = `800 ${det ? 13 : 11}px ` + getComputedStyle(document.body).fontFamily; g.textAlign = 'left'; g.textBaseline = 'middle';
   const hwLabel = (t, x, z) => { const [X, Y] = P(x, z); if (X < -50 || Y < -20 || X > W + 50 || Y > H + 20) return; g.fillStyle = '#1f6b3a'; g.beginPath(); g.arc(X, Y, 4, 0, 7); g.fill(); g.lineWidth = 3; g.strokeStyle = 'rgba(255,255,255,.9)'; g.strokeText(t, X + 6, Y); g.fillText(t, X + 6, Y); };
   for (const ic of HWY.ics) { const n = roadNet.nodeOf[ic.node]; hwLabel(ic.name, n.x, n.z); }
   for (const pa of HWY.pas) if (!pa.name.includes('内回り')) hwLabel(pa.name.replace(/（.*）/, ''), pa.f.x, pa.f.z);
@@ -9120,15 +9151,15 @@ function drawWmap() {
     const seen = new Set();
     LINES.forEach((ln) => {
       if (seen.has(ln.no)) return; seen.add(ln.no);
-      const bus = buses.find((b) => b.line === ln), Pth = bus.path, off = (ln.express ? 2.5 : ln.no - 2) * Math.max(2.5, 5 * sc);
+      const bus = buses.find((b) => b.line === ln), Pth = bus.path, off = (ln.express ? 2.5 : ln.no - 2) * Math.min(7, Math.max(2.5, 5 * sc));
       g.beginPath();
       for (let i = 0; i <= Pth.N; i += 2) {
         const k = i % Pth.N, j = (k + 2) % Pth.N, dx = Pth.X[j] - Pth.X[k], dz = Pth.Z[j] - Pth.Z[k], l = Math.hypot(dx, dz) || 1;
         const [x, y] = P(Pth.X[k], Pth.Z[k]), nx = -dz / l, ny = dx / l;
         const X = x + nx * off, Y = y + ny * off; i ? g.lineTo(X, Y) : g.moveTo(X, Y);
       }
-      if (ln.express) { g.strokeStyle = '#222'; g.lineWidth = Math.max(5, 6 * sc * 4); g.globalAlpha = 0.85; g.stroke(); }   // 高速バスは白い線を黒でふちどる
-      g.strokeStyle = ln.color; g.lineWidth = Math.max(3, 4 * sc * 4); g.globalAlpha = 0.85; g.stroke(); g.globalAlpha = 1;
+      if (ln.express) { g.strokeStyle = '#222'; g.lineWidth = Math.min(16, Math.max(5, 6 * sc * 4)); g.globalAlpha = 0.85; g.stroke(); }   // 高速バスは白い線を黒でふちどる
+      g.strokeStyle = ln.color; g.lineWidth = Math.min(11, Math.max(3, 4 * sc * 4)); g.globalAlpha = 0.85; g.stroke(); g.globalAlpha = 1;
     });
   }
   // 自動運転の道順（えらんでいる道順、または走っている道順の残り）と行き先の旗
@@ -9157,13 +9188,13 @@ function drawWmap() {
     g.font = `800 ${px}px ` + fam; if (stroke) { g.lineWidth = 3; g.strokeStyle = stroke; g.strokeText(txt, X, Y); } g.fillStyle = fill; g.fillText(txt, X, Y); };
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
   for (const s of SEAS) nameAt(s.name, s.x, s.z, 12 * dpr, 'rgba(230,245,255,.85)', null);
-  if (WMAP.mode === 'all') { nameAt('みなと市', -1000, -2250, 17 * dpr, '#fff', 'rgba(15,40,60,.8)'); nameAt('はじめ市', -2300, -450, 17 * dpr, '#fff', 'rgba(15,40,60,.8)'); }
-  if (!WMAP.routes) for (const p of PLACES) nameAt(p.name, p.lx, p.lz, (WMAP.mode === 'all' ? 11 : 15) * dpr, '#1b2a22', 'rgba(255,255,255,.9)');
-  if (WMAP.mode === 'near') for (const m of LANDMARKS) if (!NEAR_SKIP.has(m.name)) nameAt((m.kind === '山' ? '▲' : '') + m.name, m.x, m.z, 11 * dpr, '#3a2a10', 'rgba(255,255,255,.85)');
+  if (wide) { nameAt('みなと市', -1000, -2250, 17 * dpr, '#fff', 'rgba(15,40,60,.8)'); nameAt('はじめ市', -2300, -450, 17 * dpr, '#fff', 'rgba(15,40,60,.8)'); }
+  if (!WMAP.routes) for (const p of PLACES) nameAt(p.name, p.lx, p.lz, (det ? 15 : 11) * dpr, '#1b2a22', 'rgba(255,255,255,.9)');
+  if (det) for (const m of LANDMARKS) if (!NEAR_SKIP.has(m.name)) nameAt((m.kind === '山' ? '▲' : '') + m.name, m.x, m.z, 11 * dpr, '#3a2a10', 'rgba(255,255,255,.85)');
   g.textBaseline = 'alphabetic';
   // バス停
-  const showNames = WMAP.routes || WMAP.mode === 'near';
-  g.font = `800 ${WMAP.mode === 'near' ? 13 : 11}px ` + getComputedStyle(document.body).fontFamily; g.textAlign = 'left';
+  const showNames = WMAP.routes || det;
+  g.font = `800 ${det ? 13 : 11}px ` + getComputedStyle(document.body).fontFamily; g.textAlign = 'left';
   for (const st of roadNet.stops) {
     const [x, y] = P(st.e.X[st.i], st.e.Z[st.i]);
     if (x < -20 || y < -20 || x > W + 20 || y > H + 20) continue;
@@ -9174,7 +9205,7 @@ function drawWmap() {
   for (const v of traffic) {
     const [x, y] = P(v.x, v.z);
     if (v.kind === 'bus') { g.fillStyle = v.line.color; g.strokeStyle = v.line.express ? '#111' : '#fff'; g.lineWidth = 1.5; g.fillRect(x - 4, y - 4, 8, 8); g.strokeRect(x - 4, y - 4, 8, 8); }
-    else if (WMAP.mode === 'near') { g.fillStyle = '#555'; g.beginPath(); g.arc(x, y, 2.5, 0, 7); g.fill(); }
+    else if (det) { g.fillStyle = '#555'; g.beginPath(); g.arc(x, y, 2.5, 0, 7); g.fill(); }
   }
   // ほかの人と自分
   for (const o of net.others.values()) { const [x, y] = P(o.pos.x, o.pos.z); g.fillStyle = o.col || '#888'; g.strokeStyle = '#fff'; g.lineWidth = 2; g.beginPath(); g.arc(x, y, 5, 0, 7); g.fill(); g.stroke(); }
@@ -9186,16 +9217,23 @@ function drawWmap() {
   g.restore();
   // 凡例
   el('wmapLegend').hidden = !WMAP.routes;
-  el('wmapNote').textContent = ready ? `${WMAP.mode === 'all' ? '全体' : 'まわり 1.2km'}　上が北・赤い矢印が自分${canAuto() ? '・タップで行き先（自動運転）' : ''}` : '地図を作っています…';
+  const wkm = (V.x1 - V.x0) / 1000;
+  el('wmapNote').textContent = ready ? `横 ${wkm >= 2 ? Math.round(wkm) + 'km' : Math.round(wkm * 1000 / 10) * 10 + 'm'}　上が北・赤い矢印が自分・ピンチ／ホイール／＋−で拡大縮小、ドラッグで動かす${canAuto() ? '・タップで行き先（自動運転）' : ''}` : '地図を作っています…';
 }
 function openWmap(routes) {
   WMAP.routes = !!routes; WMAP.open = true;
   if (routes) WMAP.mode = 'all';
   wmapEl.hidden = false;
   const r = wmapEl.querySelector('.wbody').getBoundingClientRect(), d = Math.min(window.devicePixelRatio || 1, 2);
+  const ow = wmapCv.width, oh = wmapCv.height;
   wmapCv.width = Math.round(r.width * d); wmapCv.height = Math.round(r.height * d);
-  for (const b of wmapEl.querySelectorAll('[data-wm]')) b.setAttribute('aria-pressed', String(b.dataset.wm === WMAP.mode || (b.dataset.wm === 'routes' && WMAP.routes)));
+  if (routes || !WMAP.mpp || WMAP.mode !== 'free') wmapSetMode(WMAP.mode === 'free' ? 'all' : WMAP.mode);   // 前に動かしていたときは、そのまま（大きさが変わったら合わせる）
+  else if (ow && oh) WMAP.mpp *= Math.max(ow, oh) / Math.max(wmapCv.width, wmapCv.height);
+  wmapPressed();
   drawWmap();
+}
+function wmapPressed() {
+  for (const b of wmapEl.querySelectorAll('[data-wm]')) b.setAttribute('aria-pressed', String(b.dataset.wm === WMAP.mode || (b.dataset.wm === 'routes' && WMAP.routes)));
 }
 function myPose() { return ride ? { x: ride.pos.x, z: ride.pos.y, h: visYaw(ride) } : busRide ? { x: busRide.b.x, z: busRide.b.z, h: busRide.b.h } : { x: player.pos.x, z: player.pos.z, h: player.face }; }
 // 左上の時計の横に、いまいる地名を出す
@@ -9339,12 +9377,66 @@ setInterval(() => {
 wmapEl.addEventListener('click', (e) => {
   const b = e.target.closest('button'); if (!b) return;
   if (b.id === 'wmapClose') { closeWmap(); return; }
+  if (b.dataset.z) { wmapZoom(b.dataset.z === '1' ? 1 / 1.6 : 1.6); return; }
   const m = b.dataset.wm;
-  if (m === 'routes') WMAP.routes = !WMAP.routes; else if (m) WMAP.mode = m;
-  for (const x of wmapEl.querySelectorAll('[data-wm]')) x.setAttribute('aria-pressed', String(x.dataset.wm === WMAP.mode || (x.dataset.wm === 'routes' && WMAP.routes)));
+  if (m === 'routes') WMAP.routes = !WMAP.routes; else if (m) wmapSetMode(m);
+  wmapPressed();
   drawWmap();
 });
-document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && WMAP.open) closeWmap(); if (e.code === 'KeyM' && e.target.tagName !== 'INPUT') { if (WMAP.open) closeWmap(); else openWmap(false); } });
+// 拡大縮小と、動かす。k < 1 で大きく。(px, py) はキャンバスのドット（その点を動かさずに拡大）。「近く」のときは自分を中心に
+let wmapRaf = 0;
+function wmapRedraw() { if (!wmapRaf) wmapRaf = requestAnimationFrame(() => { wmapRaf = 0; if (WMAP.open) drawWmap(); }); }
+function wmapZoom(k, px, py) {
+  wmapVis();
+  const old = WMAP.mpp;
+  WMAP.mpp *= k; wmapClamp();
+  if (WMAP.mode !== 'near' && px != null) {
+    WMAP.cx += (px - wmapCv.width / 2) * (old - WMAP.mpp); WMAP.cz += (py - wmapCv.height / 2) * (old - WMAP.mpp);
+  }
+  if (WMAP.mode === 'all') WMAP.mode = 'free';
+  wmapClamp(); wmapPressed(); wmapRedraw();
+}
+function wmapPan(dx, dy) {   // キャンバスのドットで
+  wmapVis();
+  WMAP.cx -= dx * WMAP.mpp; WMAP.cz -= dy * WMAP.mpp;
+  if (WMAP.mode !== 'free') { WMAP.mode = 'free'; wmapPressed(); }
+  wmapClamp(); wmapRedraw();
+}
+{
+  const ptrs = new Map();   // ドラッグ・ピンチ中の指（マウス）
+  let moved = 0, pinch = null;
+  const cvXY = (e) => { const r = wmapCv.getBoundingClientRect(); return [(e.clientX - r.left) * (wmapCv.width / r.width), (e.clientY - r.top) * (wmapCv.height / r.height)]; };
+  wmapCv.addEventListener('pointerdown', (e) => {
+    if (e.button && e.pointerType === 'mouse') return;
+    ptrs.set(e.pointerId, cvXY(e)); if (ptrs.size === 1) moved = 0;
+    try { wmapCv.setPointerCapture(e.pointerId); } catch (er) {}
+    if (ptrs.size === 2) { const [a, b] = [...ptrs.values()]; pinch = Math.hypot(a[0] - b[0], a[1] - b[1]); }
+  });
+  wmapCv.addEventListener('pointermove', (e) => {
+    const was = ptrs.get(e.pointerId); if (!was) return;
+    const now = cvXY(e); ptrs.set(e.pointerId, now);
+    if (ptrs.size >= 2) {
+      const [a, b] = [...ptrs.values()], d = Math.hypot(a[0] - b[0], a[1] - b[1]);
+      if (pinch && d > 0) wmapZoom(pinch / d, (a[0] + b[0]) / 2, (a[1] + b[1]) / 2);
+      if (WMAP.mode !== 'near') wmapPan((now[0] - was[0]) / 2, (now[1] - was[1]) / 2);   // 2 本の指のまん中が動いた分
+      pinch = d; moved = 99; return;
+    }
+    const dx = now[0] - was[0], dy = now[1] - was[1];
+    moved += Math.abs(dx) + Math.abs(dy);
+    if (moved > 8 * Math.min(window.devicePixelRatio || 1, 2)) wmapPan(dx, dy);
+  });
+  const up = (e) => { ptrs.delete(e.pointerId); if (ptrs.size < 2) pinch = null; };
+  wmapCv.addEventListener('pointerup', up); wmapCv.addEventListener('pointercancel', up);
+  // ドラッグ・ピンチのあとの「タップ」は行き先にしない
+  wmapCv.addEventListener('click', (e) => { if (moved > 8 * Math.min(window.devicePixelRatio || 1, 2)) { e.stopImmediatePropagation(); moved = 0; } }, true);
+  wmapCv.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    const [x, y] = cvXY(e), dy = e.deltaMode === 1 ? e.deltaY * 40 : e.deltaY;
+    wmapZoom(Math.exp(Math.max(-300, Math.min(300, dy)) * 0.0022), x, y);
+  }, { passive: false });
+}
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && WMAP.open) closeWmap();
+  if (WMAP.open && e.target.tagName !== 'INPUT' && (e.key === '+' || e.key === '=' || e.key === ';' || e.key === '-')) wmapZoom(e.key === '-' ? 1.6 : 1 / 1.6); if (e.code === 'KeyM' && e.target.tagName !== 'INPUT') { if (WMAP.open) closeWmap(); else openWmap(false); } });
 {
   const lg = el('wmapLegend'), seen = new Set();
   for (const ln of LINES) {
