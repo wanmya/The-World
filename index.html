@@ -2282,7 +2282,8 @@ const busStopObjs = [];
     }
   }
 }
-// 信号機：入ってくる道の左はしに柱、腕の先に 3 つの灯（左から青・黄・赤）。灯の色は交差点ごと・組ごとに共有
+// 信号機：交差点を渡りきった向こう側の左はしに柱、腕の先に 3 つの灯（左から青・黄・赤）。灯の色は交差点ごと・組ごとに共有。
+//   向こう側に道があれば（まっすぐ ±45°）その道の左はし（停止線と同じ距離）、なければ（T 字路のつき当たり）交差点の先の道ばた
 const signalHeads = [];
 {
   const poleMat = new THREE.MeshLambertMaterial({ color: 0x9aa0a6 }), boxMat = new THREE.MeshLambertMaterial({ color: 0x3a3d40 });
@@ -2290,16 +2291,27 @@ const signalHeads = [];
     if (!n.signal) continue;
     n.lamps = [0, 1].map(() => [0x1fd17a, 0xffc21a, 0xff3322].map((c) => new THREE.MeshBasicMaterial({ color: 0x222222 })));
     for (const q of n.ends) {
-      const e = q.e, s = q.stopS ?? 0;
-      let i = 0; while (i < e.N - 2 && e.S[i + 1] < s) i++;
-      const side = q.end ? 1 : -1, off = (e.W[i] / 2 + 0.6) * side;
-      const x = e.X[i] + e.NX[i] * off, z = e.Z[i] + e.NZ[i] * off, y = e.Y[i];
+      let q2 = null, bd = Math.PI / 4;
+      for (const o of n.ends) { if (o === q || o.e.hw) continue; const d = Math.abs(wrapA(o.ang - q.ang - Math.PI)); if (d < bd) { bd = d; q2 = o; } }
+      let x, z, y, inX, inZ, wb;
+      const ds = n.jr + 1.2;
+      if (q2) {   // 向こうの道（出ていく向き）の左はし
+        const e = q2.e, s = q2.end ? e.L - ds : ds;
+        let i = 0; while (i < e.N - 2 && e.S[i + 1] < s) i++;
+        const side = q2.end ? -1 : 1, off = (e.W[i] / 2 + 0.6) * side;
+        x = e.X[i] + e.NX[i] * off; z = e.Z[i] + e.NZ[i] * off; y = e.Y[i]; inX = -e.NX[i] * side; inZ = -e.NZ[i] * side; wb = e.WB[i];
+      } else {     // つき当たり：交差点の先、来た道の左の延長
+        const e = q.e, s = q.end ? e.L - ds : ds;
+        let i = 0; while (i < e.N - 2 && e.S[i + 1] < s) i++;
+        const hx = -Math.sin(q.ang), hz = -Math.cos(q.ang), lx = hz, lz = -hx, off = e.W[i] / 2 + 0.6;
+        x = n.x + hx * (ds + 1) + lx * off; z = n.z + hz * (ds + 1) + lz * off; y = n.y; inX = -lx; inZ = -lz; wb = e.WB[i];
+      }
       const g = new THREE.Group(); g.position.set(x, y, z);
-      g.rotation.y = q.ang;   // ローカル +z が来る車のほう
+      g.rotation.y = q.ang;   // ローカル +z が来る車のほう（交差点の向こうから見て）
       const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.12, 5.6, 8), poleMat); pole.position.y = 2.8;
-      const armLen = Math.min(5, e.WB[i] / 2 + 0.6);
+      const armLen = Math.min(5, wb / 2 + 0.6);
       const arm = new THREE.Mesh(new THREE.BoxGeometry(armLen, 0.12, 0.12), poleMat);
-      const dirIn = -side * Math.sign(e.NX[i] * Math.cos(q.ang) - e.NZ[i] * Math.sin(q.ang)) || 1;   // ローカル x で道のまん中がある向き
+      const dirIn = Math.sign(inX * Math.cos(q.ang) - inZ * Math.sin(q.ang)) || 1;   // ローカル x で道のまん中がある向き
       arm.position.set(dirIn * armLen / 2, 5.4, 0);
       const head = new THREE.Group(); head.position.set(dirIn * (armLen - 0.6), 5.4, 0);
       const box = new THREE.Mesh(new THREE.BoxGeometry(1.25, 0.42, 0.25), boxMat); head.add(box);
@@ -2314,6 +2326,153 @@ const signalHeads = [];
     }
   }
 }
+/* ================= 一般道の案内標識（2026-11-01） =================
+   3 本以上の道が集まる交差点の手前 45m に、青い方面案内（まっすぐ・左・右の矢印と行き先の町、緑の枠は高速道路の IC）。
+   行き先は道のつながりから自動で決める（いちばん近い道のりで、どの道へ出るか）。IC の手前 70m には緑の「高速入口」。
+   あとから道・IC を足しても、ここが自動で標識を立てる */
+const roadSigns = (() => {
+  const R = roadNet, out = [];
+  const gen = (e) => !e.hw && !e.inPlaza;
+  const townAt = (x, z) => { for (const p of PLACES) if (!p.sea && inPoly(x, z, p.poly)) return p; return null; };
+  const other = (q) => q.end ? q.e.a : q.e.b;
+  // 町ごとの代表点：町の名前の場所にいちばん近い一般道の上の点
+  const towns = [];
+  for (const p of PLACES) {
+    if (p.sea) continue;
+    let best = null, bd = 1500 * 1500;
+    for (const e of R.edges) if (gen(e)) for (let i = 0; i < e.N; i += 4) {
+      if (!inPoly(e.X[i], e.Z[i], p.poly)) continue;
+      const d = (e.X[i] - p.lx) ** 2 + (e.Z[i] - p.lz) ** 2; if (d < bd) { bd = d; best = { e, s: e.S[i] }; }
+    }
+    if (best) towns.push({ p, ...best });
+  }
+  const ics = R.nodes.filter((n) => n.ic);
+  // n から一般道だけを通るいちばん短い道のり（first：n からどの道へ出たか）
+  const route = (n) => {
+    const dist = new Map([[n, 0]]), first = new Map(), done = new Set();
+    for (const q of n.ends) if (gen(q.e)) { const o = other(q); if (o === n) continue; if (!(dist.get(o) <= q.e.L)) { dist.set(o, q.e.L); first.set(o, q); } }
+    for (;;) {
+      let u = null, du = Infinity; for (const [k, d] of dist) if (!done.has(k) && d < du) { du = d; u = k; }
+      if (!u) break; done.add(u); if (u === n) continue;
+      for (const q of u.ends) if (gen(q.e)) { const o = other(q), d = du + q.e.L; if (o !== n && !(dist.get(o) <= d)) { dist.set(o, d); first.set(o, first.get(u)); } }
+    }
+    const via = (e, s) => {   // 道の上の点 (e, s) へ：{ d, q }
+      let b = { d: Infinity, q: null };
+      const tryEnd = (nd, len, endIdx) => {
+        if (nd === n) { const q = n.ends.find((o) => o.e === e && o.end === endIdx); if (q && len < b.d) b = { d: len, q }; }
+        else if (first.has(nd) && dist.get(nd) + len < b.d) b = { d: dist.get(nd) + len, q: first.get(nd) };
+      };
+      tryEnd(e.a, s, 0); tryEnd(e.b, e.L - s, 1);
+      return b;
+    };
+    return { dist, first, via };
+  };
+  // 標識の絵（512×352）：下から上への矢印と、左・まっすぐ・右の行き先
+  const texCache = new Map();
+  const boardTex = (dirs) => {
+    const key = JSON.stringify(dirs); if (texCache.has(key)) return texCache.get(key);
+    const c = document.createElement('canvas'); c.width = 512; c.height = 352; const g = c.getContext('2d');
+    g.fillStyle = '#1c4fa0'; g.fillRect(0, 0, 512, 352); g.strokeStyle = '#fff'; g.lineWidth = 6; g.strokeRect(7, 7, 498, 338);
+    g.strokeStyle = g.fillStyle = '#fff'; g.lineWidth = 22; g.lineCap = 'butt';
+    const cx = 256, cy = 212, line = (x0, y0, x1, y1) => { g.beginPath(); g.moveTo(x0, y0); g.lineTo(x1, y1); g.stroke(); };
+    const headAt = (x, y, ang) => { g.save(); g.translate(x, y); g.rotate(ang); g.beginPath(); g.moveTo(0, -30); g.lineTo(26, 6); g.lineTo(-26, 6); g.closePath(); g.fill(); g.restore(); };
+    line(cx, 336, cx, cy - 11);
+    if (dirs.S) { line(cx, cy, cx, 152); headAt(cx, 146, 0); }
+    if (dirs.L) { line(cx + 11, cy, 128, cy); headAt(122, cy, -Math.PI / 2); }
+    if (dirs.R) { line(cx - 11, cy, 384, cy); headAt(390, cy, Math.PI / 2); }
+    g.textAlign = 'center'; g.textBaseline = 'middle';
+    const box = (txt, x, y, w) => {   // 緑の IC の枠（上はし y）
+      g.font = '800 27px sans-serif'; const tw = Math.min(w, g.measureText(txt).width + 22);
+      g.fillStyle = '#1d7a3e'; g.fillRect(x - tw / 2, y, tw, 35); g.strokeStyle = '#fff'; g.lineWidth = 3; g.strokeRect(x - tw / 2, y, tw, 35);
+      g.fillStyle = '#fff'; g.fillText(txt, x, y + 19, w - 12);
+    };
+    if (dirs.S) {   // まっすぐ：上に 1 行
+      const t = dirs.S.names.join('・'); g.fillStyle = '#fff'; g.font = `900 ${t.length > 8 ? 34 : 40}px sans-serif`; g.fillText(t, cx, 40, 440);
+      if (dirs.S.ic) box(dirs.S.ic, cx, 62, 300);
+    }
+    for (const [d, x] of [[dirs.L, 118], [dirs.R, 394]]) {   // 左右：矢印の下に縦にならべる
+      if (!d) continue;
+      let y = 246;
+      for (const nm of d.names) { g.fillStyle = '#fff'; g.font = `900 ${nm.length > 4 ? 32 : 38}px sans-serif`; g.fillText(nm, x, y, 214); y += 36; }
+      if (d.ic) box(d.ic, x, y - 16, 214);
+    }
+    const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4; texCache.set(key, t); return t;
+  };
+  const icTex = (name) => {
+    const k = 'IC|' + name; if (texCache.has(k)) return texCache.get(k);
+    const c = document.createElement('canvas'); c.width = 512; c.height = 256; const g = c.getContext('2d');
+    g.fillStyle = '#1d7a3e'; g.fillRect(0, 0, 512, 256); g.strokeStyle = '#fff'; g.lineWidth = 6; g.strokeRect(7, 7, 498, 242);
+    g.fillStyle = '#fff'; g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.font = '900 72px sans-serif'; g.fillText(name, 256, 84, 470);
+    g.font = '800 54px sans-serif'; g.fillText('高速入口 この先', 256, 180, 470);
+    const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4; texCache.set(k, t); return t;
+  };
+  const poleM = new THREE.MeshLambertMaterial({ color: 0x8d949a }), backM = new THREE.MeshLambertMaterial({ color: 0x6d7378 });
+  // 来る道 q の、交差点（広場）から dn の所の左はしに柱、腕を出して車線の上に板（bw × bh m）
+  const place = (q, dn, tex, bw, bh, info) => {
+    const e = q.e, far = other(q), L = e.L;
+    if (dn > L - (far.jr || 0) - 20) dn = Math.max((q.end ? e.b : e.a).jr + 18, L * 0.5);
+    if (dn > L - (far.jr || 0) - 10) return;   // 道が短すぎる
+    for (let k = 0; k < 4 && R.stops.some((st) => st.e === e && Math.abs(st.s - (q.end ? L - dn : dn)) < 28); k++) dn += 25;   // バス停をよける
+    const s = q.end ? L - dn : dn;
+    let i = 0; while (i < e.N - 2 && e.S[i + 1] < s) i++;
+    if (e.BR[i]) return;   // 橋の上には立てない
+    const side = q.end ? 1 : -1, w = e.W[i];
+    const tx = (e.X[i + 1] - e.X[i]) * side, tz = (e.Z[i + 1] - e.Z[i]) * side, tl = Math.hypot(tx, tz) || 1;   // 進む向き
+    const g = new THREE.Group(), off = (w / 2 + 0.9) * side;
+    g.position.set(e.X[i] + e.NX[i] * off, e.Y[i], e.Z[i] + e.NZ[i] * off);
+    const ry = Math.atan2(-tx / tl, -tz / tl); g.rotation.y = ry;   // ローカル +z が来る車のほう
+    const inX = -e.NX[i] * side, inZ = -e.NZ[i] * side, dirIn = Math.sign(inX * Math.cos(ry) - inZ * Math.sin(ry)) || 1;
+    const bx = Math.max(bw / 2 + 0.3, e.WB[i] / 4 + 0.9), top = 4.9 + bh;
+    const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.17, top + 0.3, 8), poleM); pole.position.y = (top + 0.3) / 2; pole.castShadow = true;
+    const arm = new THREE.Mesh(new THREE.BoxGeometry(bx + bw / 2, 0.16, 0.16), poleM); arm.position.set(dirIn * (bx + bw / 2) / 2, top + 0.1, -0.12);
+    const board = new THREE.Mesh(new THREE.PlaneGeometry(bw, bh), new THREE.MeshBasicMaterial({ map: tex })); board.position.set(dirIn * bx, top - bh / 2, 0.02);
+    const back = new THREE.Mesh(new THREE.BoxGeometry(bw + 0.1, bh + 0.1, 0.1), backM); back.position.set(dirIn * bx, top - bh / 2, -0.05); back.castShadow = true;
+    g.add(pole, arm, board, back); scene.add(g);
+    out.push({ ...info, x: Math.round(g.position.x), z: Math.round(g.position.z) });
+  };
+  for (const n of R.nodes) {
+    if (n.hw || n.plaza || n.inPlazaOf) continue;
+    const ends = n.ends.filter((q) => gen(q.e));
+    if (ends.length < 3) continue;
+    const here = townAt(n.x, n.z), rt = route(n), byExit = new Map();
+    const add = (q, kind, v) => { if (!q) return; if (!byExit.has(q)) byExit.set(q, { towns: [], city: null, ic: null }); const b = byExit.get(q); if (kind === 'ic') { if (!b.ic || v.d < b.ic.d) b.ic = v; } else b.towns.push(v); };
+    for (const t of towns) { if (here && t.p === here) continue; const v = rt.via(t.e, t.s); if (v.q) add(v.q, 'town', { name: t.p.name, city: t.p.city, d: v.d }); }
+    for (const ic of ics) { const d = rt.dist.get(ic); if (d != null && d < 5000 && rt.first.has(ic)) add(rt.first.get(ic), 'ic', { name: ic.name, d }); }
+    // 町の名前がない出口（同じ町の中だけの道）は、その先の交差点・道ばたの名前
+    for (const q of ends) if (!byExit.has(q)) {
+      const e = q.e, mid = townAt(e.X[e.N >> 1], e.Z[e.N >> 1]), o = other(q);
+      if (mid && mid !== here) add(q, 'town', { name: mid.name, city: mid.city, d: e.L / 2 });
+      else if (o !== n && townAt(o.x, o.z) && townAt(o.x, o.z) !== here) add(q, 'town', { name: townAt(o.x, o.z).name, city: townAt(o.x, o.z).city, d: e.L });
+      else if (o !== n && !o.ic && o.name) add(q, 'town', { name: o.name.replace(/^.*バスターミナル$/, 'バスターミナル'), city: '', d: e.L });
+    }
+    for (const q of ends) {   // q：来る道
+      const h = q.ang + Math.PI, dirs = {};
+      for (const [q2, b] of byExit) {
+        if (q2 === q) continue;
+        const rel = wrapA(q2.ang - h);   // 0：まっすぐ。左右は「進む向きの左」との内積で
+        const hx = Math.sin(h), hz = Math.cos(h), dx = Math.sin(q2.ang), dz = Math.cos(q2.ang), left = dx * hz - dz * hx;
+        const k = Math.abs(rel) < Math.PI / 4 ? 'S' : Math.abs(rel) > Math.PI * 0.8 ? null : left > 0 ? 'L' : 'R';
+        if (!k || (dirs[k] && dirs[k].score <= Math.abs(Math.abs(rel) - (k === 'S' ? 0 : Math.PI / 2)))) continue;
+        b.towns.sort((u, v) => u.d - v.d);
+        const t0 = b.towns[0], names = t0 ? [t0.name] : [];
+        const farCity = b.towns.find((t) => here && t.city && t.city !== here.city);   // 別の市へ行く道なら、市の名前も
+        if (t0 && farCity === t0) names.unshift(t0.city);
+        else if (farCity) names.push(farCity.city);
+        else if (b.towns[1] && b.towns[1].d < t0.d * 3) names.push(b.towns[1].name);
+        if (!names.length && !b.ic) continue;
+        dirs[k] = { names, ic: b.ic ? b.ic.name : '', score: Math.abs(Math.abs(rel) - (k === 'S' ? 0 : Math.PI / 2)) };
+      }
+      if (!Object.keys(dirs).length) continue;
+      for (const k in dirs) delete dirs[k].score;
+      place(q, n.jr + 45, boardTex(dirs), 4.4, 3.0, { at: n.name, dirs });
+    }
+  }
+  // IC の手前：緑の「〇〇IC 高速入口」
+  for (const n of ics) for (const q of n.ends) if (gen(q.e)) place(q, n.jr + 70, icTex(n.name), 4.2, 2.1, { at: n.name, ic: true });
+  return out;
+})();
+window.__roadSigns = () => roadSigns;
 // 街灯：どの道にも一定の間隔（PC 32m・スマホ 40m）で、左右交互に立てる。夜は灯がともり、足もとの道が丸く明るくなる。
 // roadNet の道を全部見て立てるので、あとから足した道にも自動で立つ。柱・灯・光の輪はそれぞれ 1 つの InstancedMesh（スマホでも軽い）
 const streetLamps = (() => {
