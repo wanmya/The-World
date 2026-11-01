@@ -1023,6 +1023,9 @@ const EDGES = [
   { a: 'GMW', b: 'IC:西山町IC', w: 7, via: [[-2100, 1150, 80]] },
   { a: 'IC:西山町IC', b: 'WST', w: 7, via: [[-2650, 1500, 120]] },
   { a: 'GE1', b: 'ETW', w: 7, via: [[3800, 1150, 150]] },
+  // みなと環状線の IC の広場から（2026-11-01）
+  { a: 'IC:西大通りIC', b: 'CJ', w: 7, via: [] },
+  { a: 'IC:北大通りIC', b: 'EJ', w: 7, via: [] },
 ];
 // バス停：何番の道の、どのあたり（0〜1）か。道の両側にある（one：片側だけ）。
 //   bay：寄せる幅、r0／r1：広げる長さ（ロータリーは 1 周が短いので短く）
@@ -1204,10 +1207,15 @@ function polyPts(pts) {
    ランプ（IC・JCT・PA への道）は一方通行。高さは、とちゅうの点ごとに d（本線の高さ）・h（本線の 8m 上をまたぐ）・g（地面）・n（広場の高さ）で決める */
 const HW_W = 23.5, HW_LANE = [3.5, 7.0], RAMP_W = 6.5, HW_LIFT = 8, HW_V = 120 / 3.6;
 const HWY = (() => {
-  const ringPts = [[1550, 330, 0], [3150, 330, 350], [3150, 3450, 350], [0, 3450, 350], [0, 330, 400], [1550, 330, 0]];
-  const spurPts = [[-750, 1500, 0], [-2100, 1500, 0]];
-  const AL = { ring: polyPts(ringPts), spur: polyPts(spurPts) };
-  const out = { ics: [], pas: [], jcts: [], gates: [], ring: -1, spur: -1, names: [] };
+  // 環状線のつぎ目（はじめの点）は西の辺の北のほう（JCT や IC のない所）
+  const ringPts = [[0, 950, 0], [0, 330, 400], [3150, 330, 350], [3150, 3450, 350], [0, 3450, 350], [0, 950, 0]];
+  const spurPts = [[-450, 1500, 0], [-2100, 1500, 0]];
+  // みなと線（2026-11-01）：はじめ町JCT（環状線の北の辺）から北へ、なか海を橋でわたって、みなと環状線のみなとJCT へ
+  const extPts = [[1565, -120, 0], [1565, -1500, 800], [1400, -2100, 800], [1400, -2600, 0]];
+  // みなと環状線：みなと市の中を 1 周する（地図で時計回りが外回り）
+  const mringPts = [[-1250, -3425, 0], [-1250, -3800, 300], [2100, -3800, 300], [2100, -3050, 300], [-1250, -3050, 300], [-1250, -3425, 0]];
+  const AL = { ring: polyPts(ringPts), spur: polyPts(spurPts), ext: polyPts(extPts), mring: polyPts(mringPts) };
+  const out = { ics: [], pas: [], jcts: [], gates: [], ring: -1, spur: -1, ext: -1, mring: -1, names: [] };
   let k = 0;
   const node = (x, z, extra) => { const id = 'H' + (k++); NODES[id] = Object.assign({ x, z, hw: true }, extra); return id; };
   // 道の上のある場所での向き（sg = -1 なら逆向き）。u：進む向き、v：左
@@ -1228,55 +1236,74 @@ const HWY = (() => {
     EDGES.push(E);
     return EDGES.length - 1;
   };
-  // 本線：環状線（a と b が同じ点の輪）と西山線
-  NODES.HR = { x: 1550, z: 330, hw: true };
+  // 本線：環状線（a と b が同じ点の輪）と西山線、みなと線、みなと環状線
+  NODES.HR = { x: ringPts[0][0], z: ringPts[0][1], hw: true };
   EDGES.push({ a: 'HR', b: 'HR', w: HW_W, hw: 'main', via: ringPts.slice(1, -1), name: 'はじめ環状線' }); out.ring = EDGES.length - 1;
-  NODES.HSJ = { x: -750, z: 1500, hw: true };
+  NODES.HSJ = { x: spurPts[0][0], z: spurPts[0][1], hw: true };
   NODES['IC:西山町IC'] = { x: -2100, z: 1500, plaza: 30, name: '西山町IC', hw: true, ic: true, hwEnd: true };
   EDGES.push({ a: 'HSJ', b: 'IC:西山町IC', w: HW_W, hw: 'main', via: [], name: '西山線', endGround: true }); out.spur = EDGES.length - 1;
   out.ics.push({ name: '西山町IC', node: 'IC:西山町IC', terminal: true });
-  // IC：sg = +1 は本線（a→b）の左に料金所の広場。広場の向こう側から一般道が出る
-  const ic = (al, x, z, sg, name) => {
+  NODES.HM = { x: mringPts[0][0], z: mringPts[0][1], hw: true };
+  EDGES.push({ a: 'HM', b: 'HM', w: HW_W, hw: 'main', via: mringPts.slice(1, -1), name: 'みなと環状線' }); out.mring = EDGES.length - 1;
+  NODES.HXA = { x: extPts[0][0], z: extPts[0][1], hw: true }; NODES.HXB = { x: extPts[3][0], z: extPts[3][1], hw: true };
+  EDGES.push({ a: 'HXA', b: 'HXB', w: HW_W, hw: 'main', via: extPts.slice(1, -1), name: 'みなと線' }); out.ext = EDGES.length - 1;
+  // IC：sg = +1 は本線（a→b）の左に料金所の広場。広場の向こう側から一般道が出る。k：本線にそった長さの倍率（すきまが少ない所は短く）
+  const ic = (al, x, z, sg, name, k = 1) => {
     const f = frame(al, x, z, sg), on = al;
     const P = 'IC:' + name; NODES[P] = { x: W(f, 0, 110)[0], z: W(f, 0, 110)[1], hw: true, plaza: 26, name, ic: true };
     const r = [
-      ramp(f, { u: -440, v: HW_LANE[1], on }, [[-300, 13, 0, 'd'], [-100, 62, 70, 'g']], { id: P }, { gate: 'out', ic: name }),
-      ramp(f, { id: P }, [[100, 62, 70, 'g'], [300, 13, 0, 'd']], { u: 440, v: HW_LANE[1], on }, { gate: 'in', ic: name }),
-      ramp(f, { u: 440, v: -HW_LANE[1], on }, [[300, -13, 0, 'd'], [14, -75, 45, 'g'], [14, 84, 0, 'g']], { id: P }, { gate: 'out', ic: name }),
-      ramp(f, { id: P }, [[-14, 84, 0, 'g'], [-14, -75, 45, 'g'], [-300, -13, 0, 'd']], { u: -440, v: -HW_LANE[1], on }, { gate: 'in', ic: name }),
+      ramp(f, { u: -440 * k, v: HW_LANE[1], on }, [[-300 * k, 13, 0, 'd'], [-100 * k, 62, 70, 'g']], { id: P }, { gate: 'out', ic: name }),
+      ramp(f, { id: P }, [[100 * k, 62, 70, 'g'], [300 * k, 13, 0, 'd']], { u: 440 * k, v: HW_LANE[1], on }, { gate: 'in', ic: name }),
+      ramp(f, { u: 440 * k, v: -HW_LANE[1], on }, [[300 * k, -13, 0, 'd'], [14, -75, 45, 'g'], [14, 84, 0, 'g']], { id: P }, { gate: 'out', ic: name }),
+      ramp(f, { id: P }, [[-14, 84, 0, 'g'], [-14, -75, 45, 'g'], [-300 * k, -13, 0, 'd']], { u: -440 * k, v: -HW_LANE[1], on }, { gate: 'in', ic: name }),
     ];
     out.ics.push({ name, node: P, ramps: r, f });
   };
-  ic('ring', 900, 330, -1, 'はじめ町IC');
-  ic('ring', 2200, 330, -1, '東山IC');
+  // はじめ環状線：北の辺に はじめ町IC・はじめ町JCT・東山IC、東の辺に 東浜IC・東山PA・みずうみ町IC、西の辺に ひろ野JCT・ひろ野PA・ひろ野IC
+  ic('ring', 880, 330, -1, 'はじめ町IC', 0.75);
+  ic('ring', 2250, 330, -1, '東山IC', 0.75);
   ic('ring', 3150, 1150, 1, '東浜IC');
   ic('ring', 3150, 2650, 1, 'みずうみ町IC');
   ic('ring', 900, 3450, 1, '輪の里IC');
-  ic('ring', 0, 2650, 1, 'ひろ野IC');
+  ic('ring', 0, 2750, 1, 'ひろ野IC', 0.75);
   ic('spur', -1250, 1500, -1, 'みどり台IC');
-  // PA：dir = +1 は本線の a→b 向き（外回り）の車が入る。駐車場は進む向きの左
-  const pa = (al, x, z, dir, name) => {
+  // みなと環状線：南の辺に 西大通りIC、北の辺に 北大通りIC（広場は輪の内側。外側には一般道が近い）
+  ic('mring', 40, -3050, -1, '西大通りIC', 0.75);
+  ic('mring', 1400, -3800, -1, '北大通りIC', 0.75);
+  // PA：dir = +1 は本線の a→b 向き（外回り）の車が入る。駐車場は進む向きの左。div：本線から分かれる所、dd：ランプが本線の高さを離れる所（すきまが少ない所は短く）
+  const pa = (al, x, z, dir, name, div = 420, dd = 300) => {
     const f = frame(al, x, z, dir), on = al;
     const y = (() => { let s = 0, c = 0; for (let u = -90; u <= 90; u += 15) for (let v = 62; v <= 150; v += 11) { s += rawHeight0(...W(f, u, v)); c++; } return Math.max(2.6, s / c); })();
     const L1 = node(...W(f, -90, 70), { y, fixY: true, lot: true }), L2 = node(...W(f, 90, 70), { y, fixY: true, lot: true });
-    const rin = ramp(f, { u: -420, v: HW_LANE[1], on }, [[-300, 13, 0, 'd'], [-135, 50, 50, 'g']], { id: L1 }, { pa: name });
-    const rout = ramp(f, { id: L2 }, [[135, 50, 50, 'g'], [300, 13, 0, 'd']], { u: 420, v: HW_LANE[1], on }, { pa: name });
-    out.pas.push({ name, f, y, dir, rin, rout, L1, L2 });
+    const rin = ramp(f, { u: -div, v: HW_LANE[1], on }, [[-dd, 13, 0, 'd'], [-135, 50, 50, 'g']], { id: L1 }, { pa: name });
+    const rout = ramp(f, { id: L2 }, [[135, 50, 50, 'g'], [dd, 13, 0, 'd']], { u: div, v: HW_LANE[1], on }, { pa: name });
+    out.pas.push({ name, f, y, dir, rin, rout, L1, L2, raise: div < 420 });
   };
-  pa('ring', 2000, 3450, 1, 'みずうみPA（外回り）');
-  pa('ring', 2000, 3450, -1, 'みずうみPA（内回り）');
-  // ひろ野JCT：環状線（西の辺、外回りは北向き）から西山線が西へ。u：北、v：西
-  {
-    const f = frame('ring', 0, 1500, 1), on = 'ring', sA = { id: 'HSJ' };
-    // 西山線のはしの車線の点（西山線の a 側）。外回り→西山線は内側の車線、内回り→西山線は外側の車線に入る
-    const spurLane = (u) => node(...W(f, u, 750), { onEdge: out.spur, laneOf: 'HSJ' });
-    const o1 = spurLane(-HW_LANE[0]), o2 = spurLane(-HW_LANE[1]), i1 = spurLane(HW_LANE[0]), i2 = spurLane(HW_LANE[1]);
-    const r1 = ramp(f, { u: -520, v: HW_LANE[1], on }, [[-400, 13, 0, 'd'], [-3.5, 13, 250, 'd']], { id: o1 }, { jct: 'ひろ野JCT' });
-    const r3 = ramp(f, { id: i2 }, [[16, 650, 0, 'd'], [16, 13, 250, 'd'], [400, 13, 0, 'd']], { u: 520, v: HW_LANE[1], on }, { jct: 'ひろ野JCT' });
-    const f1 = ramp(f, { u: 440, v: -HW_LANE[1], on }, [[300, -13, 0, 'd'], [150, -13, 60, null], [150, -133, 60, null], [270, -133, 60, 'g'], [270, 350, 60, 'g'], [-45, 350, 60, 'g']], { id: o2 }, { jct: 'ひろ野JCT' });
-    const f2 = ramp(f, { id: i1 }, [[3.5, 520, 0, 'h'], [-60, 300, 150, 'h'], [-230, -40, 200, 'h'], [-430, -13, 0, 'd']], { u: -580, v: -HW_LANE[1], on }, { jct: 'ひろ野JCT' });
-    out.jcts.push({ name: 'ひろ野JCT', f, ramps: [r1, r3, f1, f2], lanes: { o1, o2, i1, i2 } });
+  for (const [al, x, z, name, div, dd] of [['ring', 2000, 3450, 'みずうみPA'], ['ring', 3150, 1900, '東山PA', 240, 200], ['ring', 0, 2140, 'ひろ野PA', 240, 200],
+    ['mring', 670, -3050, '港町PA', 240, 200], ['mring', 100, -3800, '北浜PA', 240, 200]]) {
+    pa(al, x, z, 1, name + '（外回り）', div, dd);
+    pa(al, x, z, -1, name + '（内回り）', div, dd);
   }
+  // JCT：環状線（al）の (x, z) から、本線 spur が外へのびる（環状線の外回りの左）。spur のはし（a か b）は環状線から 750k m の所。
+  // k：大きさの倍率。ランプ：外回り→spur（r1）、spur→外回り（r3）、内回り→spur（f1：ループ）、spur→内回り（f2：上をまたぐ）
+  const jct = (al, x, z, spur, k, name, spurName, ringName) => {
+    const f = frame(al, x, z, 1), on = al;
+    const U = (c) => Math.abs(c) > 20 ? c * k : c, R = (r) => r > 100 ? r * k : r;
+    const pt = (q) => [U(q[0]), U(q[1]), R(q[2] || 0), q[3]];
+    // spur のはしの車線の点。外回り→spur は内側の車線、内回り→spur は外側の車線に入る
+    const spurLane = (u) => node(...W(f, u, 750 * k), { onEdge: out[spur] });
+    const o1 = spurLane(-HW_LANE[0]), o2 = spurLane(-HW_LANE[1]), i1 = spurLane(HW_LANE[0]), i2 = spurLane(HW_LANE[1]);
+    const toS = { jct: name, jto: spurName }, toR = { jct: name, jto: ringName };
+    const r1 = ramp(f, { u: -520 * k, v: HW_LANE[1], on }, [[-400, 13, 0, 'd'], [-3.5, 13, 250, 'd']].map(pt), { id: o1 }, toS);
+    const r3 = ramp(f, { id: i2 }, [[16, 650, 0, 'd'], [16, 13, 250, 'd'], [400, 13, 0, 'd']].map(pt), { u: 520 * k, v: HW_LANE[1], on }, toR);
+    const f1 = ramp(f, { u: 440 * k, v: -HW_LANE[1], on }, [[300, -13, 0, 'd'], [150, -22, 60, null], [150, -133, 60, null], [270, -133, 60, 'l'], [270, 350, 60, 'l'], [-45, 350, 60, 'l']].map(pt), { id: o2 }, toS);
+    const f2 = ramp(f, { id: i1 }, [[3.5, 520, 0, 'h'], [-60, 300, 150, 'h'], [-230, -40, 200, 'h'], [-430, -13, 0, 'd']].map(pt), { u: -580 * k, v: -HW_LANE[1], on }, toR);
+    out.jcts.push({ name, f, ramps: [r1, r3, f1, f2], lanes: { o1, o2, i1, i2 }, spur });
+  };
+  // ひろ野JCT：環状線（西の辺、外回りは北向き）から西山線が西へ。はじめ町JCT：北の辺から みなと線が北へ。みなとJCT：みなと環状線の南の辺から みなと線が南へ
+  jct('ring', 0, 1500, 'spur', 0.6, 'ひろ野JCT', '西山線', 'はじめ環状線');
+  jct('ring', 1565, 330, 'ext', 0.6, 'はじめ町JCT', 'みなと線', 'はじめ環状線');
+  jct('mring', 1400, -3050, 'ext', 0.6, 'みなとJCT', 'みなと線', 'みなと環状線');
   out.AL = AL; out.frame = frame; out.W = W;
   return out;
 })();
@@ -1365,6 +1392,13 @@ const roadNet = (() => {
       for (let i = 0; i < N; i++) for (const [px, pz] of near) if (Math.hypot(X[i] - px, Z[i] - pz) < 90) { noTN[i] = 1; break; }
       const Lw = Float32Array.from(top); sm1(Lw, 150, 2, loop);
       for (let i = 0; i < N; i++) if (!noTN[i] && req[i] > Lw[i] + 7.2 + 8) req[i] = Lw[i] + 7.2 + 8;
+      if (!loop) for (const P of [A, B]) {   // JCT でほかの本線とつながる端：その本線の高さに近く（ランプの坂がきつくならないように）
+        if (P.plaza) continue;
+        let bd = Infinity, y0 = 0;
+        for (const o of built) if (o && o.hw === 'main') for (let i = 0; i < o.N; i += 2) { const d = Math.hypot(o.X[i] - P.x, o.Z[i] - P.z); if (d < bd) { bd = d; y0 = o.Y[i]; } }
+        if (bd < 900) for (let i = 0; i < N; i++) req[i] = Math.max(req[i], y0 - 3 - 0.035 * (P === A ? S[i] : L - S[i]));
+      }
+      for (let i = 0; i < N; i++) if (Math.min(base[i], rawHeight0(X[i] + NX[i] * 15, Z[i] + NZ[i] * 15), rawHeight0(X[i] - NX[i] * 15, Z[i] - NZ[i] * 15)) < -2) req[i] = Math.max(req[i], 30);   // 海の上：船がくぐれる高さ（一般道の橋と同じ）
       const at = (i) => loop ? ((i % (N - 1)) + (N - 1)) % (N - 1) : i;
       const cone = (Y) => {   // 坂が GR より急にならないよう、高い所から下へ広げる
         const rounds = loop ? 2 : 1;
@@ -1403,7 +1437,7 @@ const roadNet = (() => {
       const m = E.hmode[k]; if (!m) return;
       let bi = 0, bd = Infinity; for (let i = 0; i < N; i++) { const d = (X[i] - p[0]) ** 2 + (Z[i] - p[1]) ** 2; if (d < bd) { bd = d; bi = i; } }
       if (k === 0) bi = 0; if (k === pts.length - 1) bi = N - 1;
-      const v = m === 'n' ? (k === 0 ? A.y : B.y) : m === 'd' ? (k === 0 ? A.y : k === pts.length - 1 ? B.y : (mainAt(p[0], p[1]) || { y: deckDatum(p[0], p[1]) }).y) : m === 'h' ? deckDatum(p[0], p[1]) + HW_LIFT : m === 'g' && (A.lot || B.lot) ? (A.lot ? A.y : B.y) : null;   // PA のランプは駐車場の高さへなめらかに
+      const v = m === 'n' ? (k === 0 ? A.y : B.y) : m === 'd' ? (k === 0 ? A.y : k === pts.length - 1 ? B.y : (mainAt(p[0], p[1]) || { y: deckDatum(p[0], p[1]) }).y) : m === 'h' ? deckDatum(p[0], p[1]) + HW_LIFT : m === 'l' ? deckDatum(p[0], p[1]) - 7.5 : m === 'g' && (A.lot || B.lot) ? (A.lot ? A.y : B.y) : null;   // PA のランプは駐車場の高さへなめらかに
       ctl.push({ i: bi, s: S[bi], v, m });
     });
     ctl.sort((a, b) => a.s - b.s);
@@ -1433,7 +1467,9 @@ const roadNet = (() => {
     for (const P of [A, B]) if (P.plaza || P.lot) {   // 広場・駐車場の中は平らに。高さの差が大きいときは長い坂でつなぐ（坂 8% ほどまで）
       const r = P.plaza || 0;
       let dy = 0; for (let i = 0; i < N; i++) { const d = Math.hypot(X[i] - P.x, Z[i] - P.z); if (d > r && d < r + 120) dy = Math.max(dy, Math.abs(Y[i] - P.y)); }
-      const Lb = Math.min(220, Math.max(25, dy * 18)); flatR.set(P, r + Lb);
+      let Lb = Math.min(220, Math.max(25, dy * 18));
+      { const room = P === A ? (sB < Infinity ? sB : L) : (sA >= 0 ? L - sA : L); Lb = Math.max(15, Math.min(Lb, room - r - 15)); }   // 本線の高さにする所までに、坂を終える（とちゅうで段差にならないように）
+      flatR.set(P, r + Lb);
       for (let i = 0; i < N; i++) { const d = Math.hypot(X[i] - P.x, Z[i] - P.z); Y[i] = P.y + (Y[i] - P.y) * ss(r, r + Lb, d); }
     }
     // 本線と重なる所（合流・分かれ目）は本線の路面の高さそのもの。段差ができないように（本線をまたぐ・くぐるランプはそのまま）
@@ -1457,6 +1493,10 @@ const roadNet = (() => {
   const built = [];
   const edges = EDGES.map((E, ei) => {
     const A = nodeOf[E.a], B = nodeOf[E.b];
+    for (const Q of [A, B]) if (Q.lot && !Q.lotFix) {   // PA の駐車場：本線から 9m より低くしない（ランプが急にならないように。低い所は盛り土）
+      const pa = HWY.pas.find((p) => p.L1 === Q.id || p.L2 === Q.id), y = pa.raise ? Math.max(pa.y, deckDatum(Q.x, Q.z) - 9) : pa.y;
+      pa.y = y; for (const id of [pa.L1, pa.L2]) { nodeOf[id].y = y; nodeOf[id].lotFix = true; }
+    }
     for (const Q of [A, B]) if (Q.onEdge != null && built[Q.onEdge]) {   // ほかの道の上の点：その道の高さに合わせる
       const o = built[Q.onEdge]; let bi = 0, bd = Infinity;
       for (let i = 0; i < o.N; i++) { const d = (o.X[i] - Q.x) ** 2 + (o.Z[i] - Q.z) ** 2; if (d < bd) { bd = d; bi = i; } }
@@ -1496,7 +1536,7 @@ const roadNet = (() => {
     }
     A.deg++; B.deg++;
     const e = { id: ei, a: A, b: B, w: E.w, N, X, Z, Y, W, WB: Float32Array.from(W), S, L: S[N - 1], NX, NZ, BR, base, sea: !!E.sea, inPlaza: !!E.inPlaza,
-      hw: E.hw || null, EL, TN: E._tn || null, loop: E.a === E.b, name: E.name || '', gate: E.gate || null, ic: E.ic || '', pa: E.pa || '', jct: E.jct || '' };
+      hw: E.hw || null, EL, TN: E._tn || null, loop: E.a === E.b, name: E.name || '', gate: E.gate || null, ic: E.ic || '', pa: E.pa || '', jct: E.jct || '', jto: E.jto || '' };
     A.ends.push({ e, end: 0 }); B.ends.push({ e, end: 1 });
     built[ei] = e;
     return e;
@@ -2629,8 +2669,8 @@ const hwSigns = (() => {
     if (r.ic) { name = r.ic; sub = '出口'; }
     else if (r.pa) { name = r.pa.replace(/（.*）/, ''); sub = ''; }
     else if (r.jct) {
-      if (main.loop) { name = r.jct; sub = '西山線'; }
-      else { name = 'はじめ環状線'; sub = '外回り・内回り'; if (items.some((q) => q.main === main && q.name === name)) continue; }
+      if (main.loop) { name = r.jct; sub = r.jto; }
+      else { name = r.jto; sub = '外回り・内回り'; if (items.some((q) => q.main === main && q.name === name && Math.abs(q.es - at.es) < 300)) continue; }
     } else continue;
     items.push({ main, d: at.d, es: at.es, name, sub });
   }
@@ -4555,6 +4595,7 @@ const HWT = { pieces: [], vs: [], ready: false };
   // PA ごとの線
   const LOT = [];
   for (const pa of HWY.pas) {
+    if (pa.f.al !== 'ring') continue;   // いまは はじめ環状線の PA の車だけ
     const D = pa.dir, f = pa.f, W2 = (u, v) => HWY.W(f, u, v);
     const rin = R.edges[pa.rin], rout = R.edges[pa.rout];
     const div = attachEs(ring, rin.X[0], rin.Z[0]), mrg = attachEs(ring, rout.X[rout.N - 1], rout.Z[rout.N - 1]);
@@ -4594,7 +4635,7 @@ const HWT = { pieces: [], vs: [], ready: false };
     { c: 'bus', w: 0.10, v: [86, 92], lane: 0, types: ['coach'] },
   ];
   const COLORS = [0xd8dde3, 0x23272e, 0xb8312f, 0xf2f2f2, 0x2a4f8f, 0x6d7a88, 0x3b8f5a, 0xe3a32b, 0x8f2a52, 0x3c9db8, 0xc9c2b0, 0x5b3f8f, 0xa8a8a8, 0x1f1f24];
-  const PER = 32;
+  const PER = Math.round(64 * 1.3 / LOT.length);   // PA がふえても、全部で 80 台ほど（計算の時間をふやしすぎない）
   LOT.forEach((lot, li) => {
     const lapLen = lot.pcs.m1.L + lot.pcs.m2.L + lot.pcs.m3.L + lot.pcs.m4.L;
     for (let n = 0; n < PER; n++) {
@@ -8913,7 +8954,7 @@ function drawWmap() {
   g.font = `800 ${WMAP.mode === 'all' ? 11 : 13}px ` + getComputedStyle(document.body).fontFamily; g.textAlign = 'left'; g.textBaseline = 'middle';
   const hwLabel = (t, x, z) => { const [X, Y] = P(x, z); if (X < -50 || Y < -20 || X > W + 50 || Y > H + 20) return; g.fillStyle = '#1f6b3a'; g.beginPath(); g.arc(X, Y, 4, 0, 7); g.fill(); g.lineWidth = 3; g.strokeStyle = 'rgba(255,255,255,.9)'; g.strokeText(t, X + 6, Y); g.fillText(t, X + 6, Y); };
   for (const ic of HWY.ics) { const n = roadNet.nodeOf[ic.node]; hwLabel(ic.name, n.x, n.z); }
-  hwLabel('みずうみPA', HWY.pas[0].f.x, HWY.pas[0].f.z);
+  for (const pa of HWY.pas) if (!pa.name.includes('内回り')) hwLabel(pa.name.replace(/（.*）/, ''), pa.f.x, pa.f.z);
   for (const j of HWY.jcts) hwLabel(j.name, j.f.x, j.f.z);
   // 路線（路線図のとき）
   if (WMAP.routes) {
