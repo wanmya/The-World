@@ -1887,6 +1887,67 @@ const signalHeads = [];
     }
   }
 }
+// 街灯：どの道にも一定の間隔（PC 32m・スマホ 40m）で、左右交互に立てる。夜は灯がともり、足もとの道が丸く明るくなる。
+// roadNet の道を全部見て立てるので、あとから足した道にも自動で立つ。柱・灯・光の輪はそれぞれ 1 つの InstancedMesh（スマホでも軽い）
+const streetLamps = (() => {
+  const GAP = coarse ? 40 : 32, H = 7, ARM = 1.6, spots = [];
+  const nearJ = (e, s) => s < e.a.jr + 5 || s > e.L - e.b.jr - 5;
+  for (const e of roadNet.edges) {
+    if (e.inPlaza) continue;
+    let side = e.id % 2 ? 1 : -1;
+    for (let s = GAP / 2; s < e.L; s += GAP, side = -side) {
+      if (nearJ(e, s) || roadNet.stops.some((st) => st.e === e && Math.abs(st.s - s) < 12)) continue;
+      let i = 0; while (i < e.N - 2 && e.S[i + 1] < s) i++;
+      const off = (e.W[i] / 2 + 0.5) * side, x = e.X[i] + e.NX[i] * off, z = e.Z[i] + e.NZ[i] * off;
+      spots.push({ x, z, y: e.Y[i], ix: -e.NX[i] * side, iz: -e.NZ[i] * side, br: e.BR[i] });   // ix, iz：道のまん中への向き
+    }
+  }
+  const N = spots.length;
+  const poleG = new THREE.CylinderGeometry(0.07, 0.1, H, 6); poleG.translate(0, H / 2, 0);
+  const armG = new THREE.BoxGeometry(0.08, 0.08, ARM); armG.translate(0, H - 0.05, ARM / 2);
+  const capG = new THREE.BoxGeometry(0.34, 0.12, 0.6); capG.translate(0, H - 0.08, ARM);
+  const poles = new THREE.InstancedMesh(mergeGeometries([poleG, armG, capG]), new THREE.MeshLambertMaterial({ color: 0x8d949a }), N);
+  const bulbG = new THREE.PlaneGeometry(0.28, 0.5); bulbG.rotateX(Math.PI / 2); bulbG.translate(0, H - 0.15, ARM);
+  const bulbMat = new THREE.MeshBasicMaterial({ color: 0x777064, side: THREE.DoubleSide });
+  const bulbs = new THREE.InstancedMesh(bulbG, bulbMat, N);
+  // 光の輪：まん中が明るく外へうすくなる丸を、道の上に足し算で重ねる
+  const c = document.createElement('canvas'); c.width = c.height = 64; const g = c.getContext('2d');
+  const gr = g.createRadialGradient(32, 32, 0, 32, 32, 32); gr.addColorStop(0, 'rgba(255,200,120,1)'); gr.addColorStop(0.45, 'rgba(255,185,100,0.45)'); gr.addColorStop(1, 'rgba(255,180,90,0)');
+  g.fillStyle = gr; g.fillRect(0, 0, 64, 64);
+  const poolMat = new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(c), transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false,
+    polygonOffset: true, polygonOffsetFactor: -6, polygonOffsetUnits: -12 });
+  const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), one = new THREE.Vector3(1, 1, 1), p = new THREE.Vector3(), up = new THREE.Vector3(0, 1, 0);
+  // 光の輪は道の坂やかたむきに沿わせる（5×5 の格子の高さを道の高さに合わせて、全部で 1 つの形）
+  const pos = [], uv = [], idx = [], R = 8, K = 4;
+  spots.forEach((L, k) => {
+    q.setFromAxisAngle(up, Math.atan2(L.ix, L.iz));   // ローカル +z（腕の向き）を道のまん中へ
+    p.set(L.x, L.y, L.z); m4.compose(p, q, one); poles.setMatrixAt(k, m4); bulbs.setMatrixAt(k, m4);
+    const cx = L.x + L.ix * (ARM + 1.5), cz = L.z + L.iz * (ARM + 1.5), b = pos.length / 3;
+    for (let a = 0; a <= K; a++) for (let c2 = 0; c2 <= K; c2++) {
+      const x = cx + (a / K * 2 - 1) * R, z = cz + (c2 / K * 2 - 1) * R, rq = roadNear(x, z);
+      const y = rq && rq.d < rq.w / 2 + 1 ? rq.y + 0.06 : L.y + 0.06;
+      pos.push(x, y, z); uv.push(a / K, c2 / K);
+    }
+    for (let a = 0; a < K; a++) for (let c2 = 0; c2 < K; c2++) { const i0 = b + a * (K + 1) + c2, i1 = i0 + K + 1; idx.push(i0, i0 + 1, i1, i1, i0 + 1, i1 + 1); }
+  });
+  const poolG = new THREE.BufferGeometry();
+  poolG.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); poolG.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); poolG.setIndex(idx);
+  poolMat.side = THREE.DoubleSide;
+  const pools = new THREE.Mesh(poolG, poolMat);
+  poles.castShadow = true; pools.renderOrder = 2; pools.visible = false; pools.frustumCulled = false;
+  for (const m of [poles, bulbs]) m.computeBoundingSphere();
+  scene.add(poles, bulbs, pools);
+  return { N, bulbMat, poolMat, pools, on: -1 };
+})();
+const LAMP_OFF = new THREE.Color(0x777064), LAMP_ON = new THREE.Color(0xffe2a0);
+window.__lampCount = () => streetLamps.N;
+function stepStreetLamps() {   // 暗くなるとだんだん点く（dayLight：1＝昼、0＝夜）
+  const on = Math.round((1 - ss(0.3, 0.55, dayLight)) * 20) / 20;
+  if (on === streetLamps.on) return;
+  streetLamps.on = on;
+  streetLamps.bulbMat.color.copy(LAMP_OFF).lerp(LAMP_ON, on);
+  streetLamps.poolMat.opacity = 0.55 * on; streetLamps.pools.visible = on > 0;
+}
 const SIG_ON = [0x1fd17a, 0xffc21a, 0xff3322], SIG_OFF = [0x1b2a22, 0x2a2610, 0x2a1512];
 function stepSignals() {
   const t = Date.now() / 1000, cx = camera.position.x, cz = camera.position.z;
@@ -2899,7 +2960,7 @@ function sideText(text, color) {
 }
 const COACH_MATS = {
   paint: new THREE.MeshLambertMaterial({ color: 0xf7f7f5 }),
-  glass: new THREE.MeshLambertMaterial({ color: 0x33424c, transparent: true, opacity: 0.5, side: THREE.DoubleSide, depthWrite: false }),
+  glass: new THREE.MeshLambertMaterial({ color: 0x9db8c4, transparent: true, opacity: 0.2, side: THREE.DoubleSide, depthWrite: false }),   // うすい色で、中から外がよく見える
   seat: new THREE.MeshLambertMaterial({ color: 0x3b3f6e }),
 };
 // D：車体の形の数字（BUS_DIM か COACH_DIM）。opt.text：横に書く字
@@ -6625,6 +6686,7 @@ function frame() {
   if (aboard && !vehicles.includes(aboard.v)) getOff();
   stepTraffic(dt);
   stepSignals();
+  stepStreetLamps();
   if (busRide) stepBusRider(dt);
   else if (pod && pod.mine && !pod.landed) followPod(); else if (!driving && !aboard) stepPlayer(dt);
   stepPods(dt);
