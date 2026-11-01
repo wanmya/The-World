@@ -131,6 +131,7 @@ body.mapOn #msg { top: max(145px, 30vh); }
 #chat input { flex: 1; min-width: 0; font: 500 16px var(--font-ui); color: var(--ink); background: #fff; border: 1px solid var(--line); border-radius: 999px; padding: 8px 14px; -webkit-user-select: text; user-select: text; }
 #chat input:focus-visible { outline: 3px solid var(--accent); outline-offset: 1px; }
 #chat button { font: 800 14px var(--font-ui); color: #fff; background: var(--go); border: 0; border-radius: 999px; padding: 8px 16px; }
+#prompt #busViewBtn { background: #3d6f9e; }
 #prompt kbd { font-family: var(--font-mono); font-size: 12px; border: 1px solid var(--line); border-radius: 4px; padding: 1px 6px; background: #fff; }
 #prompt button { font: 800 14px var(--font-ui); color: #fff; background: var(--go); border: 0; border-radius: 999px; padding: 8px 16px; cursor: pointer; }
 
@@ -362,7 +363,7 @@ body.helmOn .subbtns { flex-wrap: wrap; justify-content: flex-end; max-width: ca
     <div class="pgrow"><button type="button" id="pgLend">玉を借りる（500P＝125玉）</button><button type="button" id="pgQuit">精算して立つ</button></div>
   </div>
 </div>
-<div id="prompt" hidden><span><kbd>E</kbd> <span id="promptText">がっち号に</span></span><button id="promptBtn" type="button">乗る</button></div>
+<div id="prompt" hidden><span><kbd>E</kbd> <span id="promptText">がっち号に</span></span><button id="busViewBtn" type="button" hidden>車外視点</button><button id="promptBtn" type="button">乗る</button></div>
 
 <div class="keys" id="keys">
   <span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd>移動</span>
@@ -373,7 +374,7 @@ body.helmOn .subbtns { flex-wrap: wrap; justify-content: flex-end; max-width: ca
   <span>.glb をドロップで置ける</span>
 </div>
 
-<div class="hint" id="hint">左側をなぞって移動、右側をなぞって視点、2 本指でズーム</div>
+<div class="hint" id="hint">下半分をなぞって移動、上半分をなぞって視点、2 本指でズーム</div>
 <div id="scope" hidden></div><div id="scopeDir" hidden></div>
 <div id="helm" hidden>
   <div class="htabs"><button type="button" data-tab="nav" aria-pressed="true">操艦</button><button type="button" data-tab="torp" aria-pressed="false">魚雷</button><button type="button" data-q="mini" class="minibtn" aria-label="たたむ／ひろげる">－</button></div>
@@ -2651,6 +2652,7 @@ document.addEventListener('keydown', (e) => {
   if (e.code === 'KeyL') toggleLight();
   if (e.code === 'KeyR') rescueBoat();
   if (e.code === 'KeyP') setPeriscope(!periscope);
+  if (e.code === 'KeyV') toggleBusView();
   if (e.code === 'KeyG') fireTorpedo();
   if (e.code === 'KeyB') loadTubes();
   if (e.code === 'KeyN') sendPing();
@@ -2661,6 +2663,8 @@ document.addEventListener('keydown', (e) => {
 document.addEventListener('keyup', (e) => { keys[e.code] = false; });
 window.addEventListener('blur', () => { for (const k in keys) keys[k] = false; });
 
+// 画面ぜんぶで見回すとき（スティックを出さない）：自動運転中・バスの車外視点
+const freeLook = () => (driving && AUTO.on) || (!!busRide && busRide.out);
 const touch = { stickId: null, sx: 0, sy: 0, x: 0, y: 0, act: false, dive: false };
 const camDrag = { id: null, lx: 0, ly: 0, last: -10 };
 const stickEl = document.getElementById('stick'), knobEl = document.getElementById('knob');
@@ -2673,7 +2677,7 @@ let pinchD = 0;
 const pinchDist = () => { const [a, b] = [...camPts.values()]; return Math.hypot(a.x - b.x, a.y - b.y); };
 cv.addEventListener('pointerdown', (e) => {
   cv.focus();
-  const stickHere = e.pointerType === 'touch' && e.clientX < window.innerWidth * 0.45 && touch.stickId === null && !helmShip();
+  const stickHere = e.pointerType === 'touch' && e.clientY > window.innerHeight * 0.5 && touch.stickId === null && !helmShip() && !freeLook();
   if (!stickHere) {
     camPts.set(e.pointerId, { x: e.clientX, y: e.clientY });
     if (camPts.size === 2) { pinchD = pinchDist(); camDrag.id = null; }
@@ -2739,6 +2743,7 @@ function holdButton(btn, field) {
 const tAct = document.getElementById('tAct'), tDive = document.getElementById('tDive');
 holdButton(tAct, 'act'); holdButton(tDive, 'dive');
 document.getElementById('promptBtn').addEventListener('click', toggleRide);
+document.getElementById('busViewBtn').addEventListener('click', () => { toggleBusView(); cv.focus(); });
 document.getElementById('lightBtn').addEventListener('click', () => { toggleLight(); cv.focus(); });
 document.getElementById('rescueBtn').addEventListener('click', () => { rescueBoat(); cv.focus(); });
 document.getElementById('scopeBtn').addEventListener('click', () => { setPeriscope(!periscope); cv.focus(); });
@@ -3448,7 +3453,7 @@ function trafficObstacles() {
   return out;
 }
 // 前にあるじゃまな物：走る線にそって前を見て、いちばん近い物（車体の幅に重なるもの）
-function obstacleAhead(v, obs, look, side) {
+function obstacleAhead(v, obs, look, side, all) {
   const P = v.path, hl = v.T.hl, hw = v.T.hw;
   let best = null;
   for (const o of obs) {
@@ -3469,12 +3474,15 @@ function obstacleAhead(v, obs, look, side) {
     if (o.kind === 'traffic' && gap < 0.3) continue;   // もう重なっている車同士は、おたがいに待たない（止まったままにならないように）
     const m = o.kind === 'traffic' ? 0.3 : 0.5;
     if (l + el < side - hw - m || l - el > side + hw + m) continue;   // 横にずれていて当たらない
-    if (!best || gap < best.gap) best = { o, gap, l, el, bi, endS: v.s + gap + 2 * ea + 2 * hl + 4 };
+    const hit = { o, gap, l, el, ea, bi, endS: v.s + gap + 2 * ea + 2 * hl + 4 };
+    if (all) all.push(hit);
+    if (!best || gap < best.gap) best = hit;
   }
   return best;
 }
 // よけられるか：対向車線や路肩に入っても、ほかの車とぶつからない
-function canSwerve(v, side, dist) {
+//   passT：よけ終わるまでの時間の見こみ。そのあいだに近づいてくる対向車も見る
+function canSwerve(v, side, dist, passT = 0) {
   const P = v.path, i = pathIndex(P, ((v.s % P.L) + P.L) % P.L), hw = v.T.hw;
   const o = P.Off[i], rw = P.RW[i];
   if (side > rw - o - hw - 0.2 || side < -(rw + o) + hw + 0.2) return false;   // 道からはみ出す
@@ -3482,13 +3490,43 @@ function canSwerve(v, side, dist) {
   for (const u of traffic) {
     if (u === v || Math.abs(u.y - v.y) > 3.5) continue;
     const dx = u.x - v.x, dz = u.z - v.z, ahead = dx * hx + dz * hz, lat = dx * nx + dz * nz;
-    if (ahead < -v.T.hl - 12 || ahead > dist + 70) continue;
+    const toward = Math.cos(u.h - v.h) < -0.5 ? Math.max(0, u.speed) * passT : 0;   // 対向車：よけているあいだに近づく分
+    if (ahead < -v.T.hl - 12 || ahead > dist + 70 + toward) continue;
     if (Math.abs(lat - side) < hw + u.T.hw + 0.6) return false;   // よける先の帯にほかの車（対向車・並んでいる車）
   }
   return true;
 }
+// 道のわきに止まったまま動かない車（追いこしてよい）：しばらく止まっていて、予定よりかなり遅れている
+const stalled = (u) => !!u && u.stopT > 3 && u.lag > 2;
+// 追いこし：止まっている車（と、その前に続けて止まっている車や物）を、対向車線へはみ出して追いこす。
+//   交差点の手前・中ではしない（信号待ちの列は追いこさない）。対向車が来ないときだけ
+function tryPass(v, obs, ob, schedV) {
+  const hw = v.T.hw, hl = v.T.hl, P = v.path, L = P.L;
+  const list = []; obstacleAhead(v, obs, 90, v.side, list); list.sort((a, b) => a.gap - b.gap);
+  let end = ob.gap + 2 * ob.ea, right = ob.l - ob.el;
+  for (const h of list) {
+    if (h.gap <= ob.gap) continue;
+    if (h.gap > end + 14) break;   // あいだが空いていれば、そこで列にもどれる
+    if (h.o.kind === 'person' || (h.o.kind === 'traffic' && !stalled(h.o.ref))) return false;   // 動いている車・人の列は追いこさない
+    end = Math.max(end, h.gap + 2 * h.ea); right = Math.min(right, h.l - h.el);
+  }
+  const passLen = end + 2 * hl + 6;
+  if (passLen > 90) return false;
+  const ls = ((v.s % L) + L) % L;
+  for (const j of v.marks.junc) {   // 交差点の近くでは追いこさない
+    let d = j.stopS - ls; if (d < -L / 2) d += L; else if (d > L / 2) d -= L;
+    if (d > -(j.node.jr + 12) && d < passLen + 20) return false;
+  }
+  const side = right - hw - 0.9;   // 右（対向車線のほう）へ
+  if (Math.abs(side) > 4.5) return false;
+  const passT = Math.sqrt(2 * passLen / 1.5) + 4;   // 止まった所から加速して追いこす時間の見こみ
+  if (!canSwerve(v, side, passLen, passT)) return false;
+  v.avoid = { endS: v.s + passLen, startS: v.s, besideS: v.s + Math.max(0, ob.gap - 2), pass: true }; v.sideT = side;
+  return true;
+}
 function avoidObstacles(v, obs, dt, near, schedV) {
   v.xfl = 0;
+  v.stopT = schedV * (v.rate == null ? 1 : v.rate) < 0.3 ? (v.stopT || 0) + dt : 0;
   v.noTraffic = Math.max(0, (v.noTraffic || 0) - dt);
   if (!near) {   // 遠くの車は見えないので、すぐ予定にもどす
     v.lag = Math.max(0, v.lag - dt * 5); v.rate = 1; v.side = v.sideT = 0; v.avoid = null; return;
@@ -3502,8 +3540,10 @@ function avoidObstacles(v, obs, dt, near, schedV) {
     const m = ob.o.kind === 'person' ? 1.0 : 0.6;
     const right = ob.l - ob.el - hw - m, left = ob.l + ob.el + hw + m;
     const cand = [right, left].filter((x) => Math.abs(x) < 4.5).sort((a, b) => Math.abs(a) - Math.abs(b));
-    for (const side of cand) if (canSwerve(v, side, ob.gap + 2 * v.T.hl + 2 * ob.el + 10)) { v.avoid = { endS: ob.endS, startS: v.s }; v.sideT = side; break; }
+    for (const side of cand) if (canSwerve(v, side, ob.gap + 2 * v.T.hl + 2 * ob.el + 10, 3)) { v.avoid = { endS: ob.endS, startS: v.s }; v.sideT = side; break; }
   }
+  if (ob && !v.avoid && ob.o.kind === 'traffic' && stalled(ob.o.ref) && schedV > 0.5 && ob.gap < 25) tryPass(v, obs, ob, schedV);
+  if (v.avoid && v.avoid.pass && v.s < v.avoid.besideS && !canSwerve(v, v.sideT, v.avoid.endS - v.s, 2)) { v.avoid = null; v.sideT = 0; }   // まだ横に並ぶ前に対向車が来たら、追いこしをやめて車線にもどる
   if (v.avoid) {   // よけている途中：よけた先で当たる物と、いまの位置ですぐ前に当たる物
     const a = obstacleAhead(v, obs, look, v.sideT), b = obstacleAhead(v, obs, 10, v.side);
     ob = a && b ? (a.gap < b.gap ? a : b) : a || b;
@@ -3576,6 +3616,7 @@ function stepTraffic(dt) {
       const legLen = roadNet.edges[P.legs[P.legOf[i]][0]].L;
       for (const kk of k0 === k1 ? [k0, k2] : [k0, k1, k2]) for (const u of laneNow.get(kk) || []) {
         if (u === v || ((u.fl & 32) && v.kind === 'bus')) continue;
+        if (Math.abs((u.side || 0) - (v.side || 0)) > u.T.hw + v.T.hw + 0.3) continue;   // 横にずれている（追いこし中・よけている）車は前の車ではない
         let g = Infinity;
         if ((kk >> 1) === (k0 >> 1)) { if (u.laneEs > es) g = u.laneEs - es; } else if (kk === k2) g = legLen - es + u.laneEs;
         g -= u.T.hl + v.T.hl;
@@ -4006,6 +4047,14 @@ function leaveBus(force) {
   player.pos.set(p.x, Math.max(groundAt(p.x, p.z, b.y + 1), b.y - 0.5), p.z);
   player.vy = 0; player.face = b.h + Math.PI / 2;
   camPitch = 0.35; avatar.visible = true;
+}
+// バスの車内視点（一人称）と車外視点（バスのまわりを自由に見回す）を切りかえる
+function toggleBusView() {
+  const r = busRide; if (!r) return;
+  r.out = !r.out;
+  if (r.out) { r.inPitch = camPitch; camPitch = 0.3; if (touch.stickId !== null) { touch.stickId = null; touch.x = touch.y = 0; stickEl.hidden = true; } }
+  else camPitch = r.inPitch != null ? r.inPitch : 0.05;
+  lastUi = '';
 }
 // 座る・立つ（近くの空いている座席）
 function nearSeat(r) {
@@ -5072,7 +5121,7 @@ let underwater = false;
 let camBoatYaw = null;
 let fpView = false, fpYaw = 0;   // 建物の中の一人称
 function updateCamera(dt) {
-  if (!(driving && ride && isBoat(ride))) camBoatYaw = null;
+  if (!(driving && ride && (isBoat(ride) || AUTO.on))) camBoatYaw = null;
   if (periscope && !subRide()) setPeriscope(false);
   if (periscope) {
     // 潜望鏡のいちばん上から、潜望鏡の向きに見る
@@ -5093,6 +5142,21 @@ function updateCamera(dt) {
     const fx = v.pos.x, fy = v.y, fz = v.pos.y;
     sun.target.position.set(fx, fy, fz);
     sun.position.set(fx + SUN_DIR.x, fy + SUN_DIR.y, fz + SUN_DIR.z);
+    return;
+  }
+  if (busRide && busRide.out) {   // バスの車外視点：バスのまわりを回って見る（バスが曲がると、いっしょに回る）
+    const b = busRide.b, dist = Math.max(camDist, b.D.hl * 1.8 + 3);
+    if (camera.near !== 0.1) { camera.near = 0.1; camera.updateProjectionMatrix(); }
+    camera.far = Math.max(VIEW_R + 200, dist * 6);
+    camTarget.set(b.x, b.y + 2, b.z);
+    camPos.set(Math.sin(camYaw) * Math.cos(camPitch), Math.sin(camPitch), Math.cos(camYaw) * Math.cos(camPitch)).multiplyScalar(dist).add(camTarget);
+    camPos.y = Math.max(heightAt(camPos.x, camPos.z) + 0.4, camPos.y);
+    camera.position.lerp(camPos, 1 - Math.exp(-14 * dt));
+    camera.position.y = Math.max(heightAt(camera.position.x, camera.position.z) + 0.3, camera.position.y);
+    camera.lookAt(camTarget);
+    underwater = false;
+    sun.target.position.set(b.x, b.y, b.z);
+    sun.position.set(b.x + SUN_DIR.x, b.y + SUN_DIR.y, b.z + SUN_DIR.z);
     return;
   }
   if (busRide) {   // バスの中は一人称：目の高さから、見ている向きへ
@@ -5124,7 +5188,7 @@ function updateCamera(dt) {
   if (driving) {
     const car = ride;
     camTarget.set(car.pos.x, car.y + 1.1, car.pos.y);
-    if (isBoat(car)) {   // 船・潜水艦：カメラは艦といっしょに回るだけ（後ろへ戻さない）。横や斜めから見つづけられる
+    if (isBoat(car) || AUTO.on) {   // 船・潜水艦・自動運転中：カメラは乗り物といっしょに回るだけ（後ろへ戻さない）。横や斜めから見つづけられる
       if (camBoatYaw != null) camYaw += wrapA(visYaw(car) - camBoatYaw);
       camBoatYaw = visYaw(car);
     } else if (clock.elapsedTime - camDrag.last > 1.2 && Math.abs(car.vF) > 1) {
@@ -5168,26 +5232,28 @@ const KEYS_HTML = {
   sub: K(['←', '→'], '進路') + K(['↑', '↓'], '速力') + K(['Space'], '浅く') + K(['C'], '深く') + K(['B'], '装填') + K(['G'], '発射（艦首の向き）') + K(['N'], 'ピンガー') + K(['L'], 'ライト') + K(['P'], '潜望鏡') + K(['Z', 'X'], '潜望鏡を回す') + K(['R'], '救出') + K(['E'], '降りる'),
   plane: K(['W'], '出力を上げる') + K(['S'], '下げる・ブレーキ') + K(['A', 'D'], '曲がる') + K(['Space'], '上昇') + K(['C'], '下降') + K(['E'], '降りる'),
   ride: K(['E'], '降りる') + '<span>ドラッグで視点・ホイールで距離</span>',
-  bus: K(['W'], '前へ') + K(['S'], '後ろへ') + K(['A', 'D'], '見回す') + K(['Shift'], '急ぐ') + K(['Space'], '座る・立つ') + K(['E'], '降りる（止まってドアがあいたら）') + '<span>ドラッグで見回す</span>',
+  bus: K(['W'], '前へ') + K(['S'], '後ろへ') + K(['A', 'D'], '見回す') + K(['Shift'], '急ぐ') + K(['Space'], '座る・立つ') + K(['V'], '車内・車外視点') + K(['E'], '降りる（止まってドアがあいたら）') + '<span>ドラッグで見回す</span>',
   robot: K(['W'], '加速') + K(['S'], 'ブレーキ／バック') + K(['A', 'D'], '向き') + K(['Space'], 'ブレーキ') + K(['X'], '脱出') + K(['E'], '降りる') + '<span>ドラッグで視点</span>',
   aegis: K(['←', '→'], '進路') + K(['↑', '↓'], '速力') + K(['R'], '救出') + K(['E'], '降りる') + '<span>ドラッグで視点・ホイールで距離</span>',
   wet: K(['W'], '前へ') + K(['A', 'D'], '向きを変える') + K(['Space'], 'うく') + K(['C'], 'もぐる') + '<span>ドラッグで視点・ホイールで遠く／近く</span>',
   walk: K(['W'], '前へ') + K(['S'], '後ろへ') + K(['A', 'D'], '向きを変える') + K(['Shift'], '走る') + K(['Space'], 'ジャンプ') + K(['E'], '乗る') + K(['T'], 'ひとこと') + '<span>ドラッグで視点・ホイールで遠く／近く</span><span>.glb をドロップで置ける</span>',
 };
 const HINT = {
-  car: '左側をなぞって運転（上でアクセル・下でブレーキ）',
-  ship: '左側をなぞって操縦（上で前へ・下で後ろへ）',
+  car: '下半分をなぞって運転（上でアクセル・下でブレーキ）、上半分をなぞって視点',
+  ship: '下半分をなぞって操縦（上で前へ・下で後ろへ）、上半分をなぞって視点',
   sub: '左下の板で進路・速力・深度を指示。「魚雷」で方位と深度を決めて発射。潜望鏡は画面をなぞって回す',
-  plane: '左側を上になぞると出力アップ、下でダウン。「上昇」「下降」で高さ',
-  ride: '相乗り中。右側をなぞって見回せます',
-  bus: '左側をなぞって車内を歩く、右側をなぞって見回す。座席の近くで「座る」。止まってドアがあいたら「降りる」',
-  robot: '左側をなぞって操縦（上で加速・下でブレーキ）。足のスキーですべって進む。「脱出」でコックピットごと飛び出す',
-  wet: '左側をなぞって泳ぐ。「もぐる」で下へ、「うく」で上へ。2 本指でズーム',
-  walk: '左側をなぞって移動、右側をなぞって視点、2 本指でズーム',
+  plane: '下半分を上になぞると出力アップ、下でダウン。「上昇」「下降」で高さ',
+  ride: '相乗り中。画面をなぞって見回せます',
+  bus: '下半分をなぞって車内を歩く、上半分をなぞって見回す。「車外視点」で外から見る。座席の近くで「座る」。止まってドアがあいたら「降りる」',
+  robot: '下半分をなぞって操縦（上で加速・下でブレーキ）。足のスキーですべって進む。「脱出」でコックピットごと飛び出す',
+  wet: '下半分をなぞって泳ぐ。「もぐる」で下へ、「うく」で上へ。2 本指でズーム',
+  walk: '下半分をなぞって移動、上半分をなぞって視点、2 本指でズーム',
+  auto: '自動運転中。画面をなぞって見回す、2 本指でズーム。やめるときは ☰「自動運転をやめる」',
+  busOut: '車外視点。画面をなぞって見回す、2 本指でズーム。「車内視点」で車内にもどる',
 };
 function updateUi() {
   if (busRide || (!ride && !aboard && nearBusDoor())) { busUi(); return; }
-  if (lastUi.startsWith('bus|')) { el('navLine').hidden = true; el('speedBox').hidden = true; }
+  if (lastUi.startsWith('bus|')) { el('navLine').hidden = true; el('speedBox').hidden = true; el('busViewBtn').hidden = true; }
   const nv = !ride && !aboard ? nearCar() : null;
   const near = !!nv;
   const ba = !ride && !aboard && !nv && blds.length ? nearBldAction() : null;   // ドア・スイッチ・イス
@@ -5230,7 +5296,7 @@ function updateUi() {
   tDive.hidden = !(wet || vt === 'plane');
   tDive.textContent = vt === 'plane' ? '下降' : 'もぐる';
   const kind = ride && ride.item.def.vehicle.aegis ? 'aegis' : vt || (aboard ? 'ride' : wet ? 'wet' : 'walk');
-  el('hint').textContent = HINT[kind] || HINT.ship;
+  el('hint').textContent = driving && AUTO.on ? HINT.auto : HINT[kind] || HINT.ship;
   el('subBtns').hidden = vt !== 'sub' && vt !== 'ship' && vt !== 'robot';
   el('ejectBtn').hidden = vt !== 'robot';
   el('lightBtn').hidden = el('scopeBtn').hidden = el('pingBtn').hidden = vt !== 'sub';
@@ -5245,7 +5311,7 @@ function busUi() {
   const kmh = Math.round(b.speed * 3.6);
   const next = b.stopName ? `${b.stopName}に停車中` : `次は ${b.nextName}`;
   const sit = !!(r && r.seat);
-  const key = ['bus', !!r, kmh, next, b.open > 0.8, sit, b.id].join('|');
+  const key = ['bus', !!r, kmh, next, b.open > 0.8, sit, b.id, !!(r && r.out)].join('|');
   if (key === lastUi) return;
   lastUi = key;
   el('state').textContent = r ? `${lineLabel(b.line)}${sit ? '（座席）' : ''}` : `${lineLabel(b.line)} が来ています`;
@@ -5257,7 +5323,8 @@ function busUi() {
   el('promptText').textContent = r ? 'バスから' : `${lineShort(b.line)}${b.line.express ? '' : 'のバス'}に`;
   el('promptBtn').textContent = r ? '降りる' : '乗る';
   tAct.hidden = false; tAct.textContent = r ? (sit ? '立つ' : '座る') : 'ジャンプ'; tDive.hidden = true;
-  el('hint').textContent = r ? HINT.bus : HINT.walk;
+  el('hint').textContent = r ? (r.out ? HINT.busOut : HINT.bus) : HINT.walk;
+  el('busViewBtn').hidden = !r; el('busViewBtn').textContent = r && r.out ? '車内視点' : '車外視点';
   el('subBtns').hidden = true; el('ejectBtn').hidden = true;
   el('keys').innerHTML = r ? KEYS_HTML.bus : KEYS_HTML.walk;
 }
