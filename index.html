@@ -8421,7 +8421,7 @@ function frame() {
   netTick += dt;
   if (netTick > 0.25) { netTick = 0; sendPresence(); }
   if (window.__camOverride) { const c = window.__camOverride; camera.position.set(c.x, c.y, c.z); camera.lookAt(c.tx, c.ty, c.tz); camera.far = 3000; camera.updateProjectionMatrix(); }   // テスト用
-  renderer.render(scene, camera);
+  if (!WMAP.open) renderer.render(scene, camera);   // 地図を開いている間は、うしろの 3D は描かない（見えないのに重いので）。動きの計算はつづける
   requestAnimationFrame(frame);
 }
 window.addEventListener('resize', () => {
@@ -9110,8 +9110,8 @@ function stepWmapImage(slot, V) {
     c.width = w; c.height = h;
     WMAP.build[slot] = { key, V, c, g: c.getContext('2d'), im: c.getContext('2d').createImageData(w, h), row: 0, w, h };
   }
-  const B = WMAP.build[slot], end = Math.min(B.h, B.row + Math.max(4, Math.round(6000 / B.w)));   // 1 コマで約 6000 点
-  for (; B.row < end; B.row++) for (let i = 0; i < B.w; i++) {
+  const B = WMAP.build[slot], t0 = performance.now();   // 1 コマで 8ms まで（少なくとも 4 行）
+  for (let n = 0; B.row < B.h && (n < 4 || performance.now() - t0 < 8); B.row++, n++) for (let i = 0; i < B.w; i++) {
     const x = B.V.x0 + (i + 0.5) * B.V.m, z = B.V.z0 + (B.row + 0.5) * B.V.m;
     mapColor(outsideBox(x, z) ? -100 : rawHeight0(x, z), x, z, B.im.data, (B.row * B.w + i) * 4);
   }
@@ -9300,7 +9300,7 @@ function stepWmap(dt) {
   stepStopInfo(dt);
   if (!WMAP.open) return;
   wmapTick += dt;
-  if (wmapTick < 0.2) return;
+  if (wmapTick < 0.2 && !WMAP.build.all && !WMAP.build.det) return;   // 地図を作っている間は毎コマ進める
   wmapTick = 0; drawWmap();
 }
 el('routeBtn').addEventListener('click', () => openWmap(true));
