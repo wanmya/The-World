@@ -4754,7 +4754,9 @@ const HWT = { pieces: [], vs: [], ready: false };
   // PA ごとの線
   const LOT = [];
   for (const pa of HWY.pas) {
-    if (pa.f.al !== 'ring') continue;   // いまは はじめ環状線の PA の車だけ
+    // はじめ環状線の車はときどき西山線へ。みなと環状線の車は環状線を回るだけ（区切りの点は みなとJCT）
+    const ring = R.edges[HWY[pa.f.al]], onRing = pa.f.al === 'ring';
+    const [r1, r3, f1, f2] = (onRing ? J : HWY.jcts.find((j) => j.name === 'みなとJCT')).ramps.map((k) => R.edges[k]);
     const D = pa.dir, f = pa.f, W2 = (u, v) => HWY.W(f, u, v);
     const rin = R.edges[pa.rin], rout = R.edges[pa.rout];
     const div = attachEs(ring, rin.X[0], rin.Z[0]), mrg = attachEs(ring, rout.X[rout.N - 1], rout.Z[rout.N - 1]);
@@ -4764,7 +4766,7 @@ const HWT = { pieces: [], vs: [], ready: false };
     const m2 = mk(); addMain(m2, ring, D, jd.es, jm.es);
     const m3 = mk(); addMain(m3, ring, D, jm.es, div.es);
     const m4 = mk(); addMain(m4, ring, D, div.es, mrg.es);
-    const pcs = { m1: finish(m1, 'm1'), m2: finish(m2, 'm2'), m3: finish(m3, 'm3'), m4: finish(m4, 'm4'), x: excursion(D) };
+    const pcs = { m1: finish(m1, 'm1'), m2: finish(m2, 'm2'), m3: finish(m3, 'm3'), m4: finish(m4, 'm4'), x: onRing ? excursion(D) : null };
     // 駐車場：通路 A（v=70）から斜めの区画へ入って止まり、そのまま前へ出て通路 B（v=118）、出口へ
     const stalls = [];
     const lotKey = 4000 + LOT.length * 100;
@@ -4783,7 +4785,7 @@ const HWT = { pieces: [], vs: [], ready: false };
       for (let pass = 0; pass < 2; pass++) for (let i = fi.N - 2; i >= 0; i--) fi.vmax[i] = Math.min(fi.vmax[i], Math.sqrt(fi.vmax[i + 1] ** 2 + 2 * 1.0 * (fi.S[i + 1] - fi.S[i])));
       stalls.push({ k, a, in: fi, out: fo });
     }
-    LOT.push({ pa, D, pcs, stalls, div, mrg });
+    LOT.push({ pa, D, pcs, stalls, div, mrg, grp: ring.id });
   }
   HWT.lots = LOT;
   // 車：PA ごとに 32 台。出る時刻は 1 時間に等間隔。種類と速さは決まった乱数（どの端末でも同じ）
@@ -4794,20 +4796,20 @@ const HWT = { pieces: [], vs: [], ready: false };
     { c: 'bus', w: 0.10, v: [86, 92], lane: 0, types: ['coach'] },
   ];
   const COLORS = [0xd8dde3, 0x23272e, 0xb8312f, 0xf2f2f2, 0x2a4f8f, 0x6d7a88, 0x3b8f5a, 0xe3a32b, 0x8f2a52, 0x3c9db8, 0xc9c2b0, 0x5b3f8f, 0xa8a8a8, 0x1f1f24];
-  const PER = Math.round(64 * 1.3 / LOT.length);   // PA がふえても、全部で 80 台ほど（計算の時間をふやしすぎない）
   LOT.forEach((lot, li) => {
+    const PER = lot.pcs.x ? 14 : 8;   // PA 1 つ（片方の向き）あたり：はじめ環状線 14 台、みなと環状線 8 台
     const lapLen = lot.pcs.m1.L + lot.pcs.m2.L + lot.pcs.m3.L + lot.pcs.m4.L;
     for (let n = 0; n < PER; n++) {
       const h = (k) => hash(li * 1000 + n, 700 + k);
       let u = h(1), cl = CLS[0]; for (const c of CLS) { if (u < c.w) { cl = c; break; } u -= c.w; }
       const kmh = cl.v[0] + (cl.v[1] - cl.v[0]) * h(2), cruise = kmh / 3.6;
       const type = cl.types[Math.floor(h(3) * cl.types.length)];
-      const exc = h(4) < 0.35 ? 1 : 0;
+      const exc = lot.pcs.x && h(4) < 0.35 ? 1 : 0;
       // 周回数：休み（PA にいる時間）が 5 分以上になるように
-      const lapT = lapLen / (cruise * 0.94), xT = lot.pcs.x.L / (cruise * 0.6) - (lot.pcs.m2.L / (cruise * 0.94));
+      const lapT = lapLen / (cruise * 0.94), xT = !lot.pcs.x ? 0 : lot.pcs.x.L / (cruise * 0.6) - (lot.pcs.m2.L / (cruise * 0.94));
       let K = 1; while ((K + 1) * lapT + exc * xT + 150 < T_ALL - 330) K++;
       const laps = []; for (let j = 0; j < K; j++) laps.push(j === Math.floor(h(5) * K) && exc ? 1 : 0);
-      HWT.vs.push({ hl: type === 'coach' ? COACH_DIM.hl : VTYPE[type].hl, hw: type === 'coach' ? COACH_DIM.hw : VTYPE[type].hw, li, n, cls: cl.c, pref: cl.lane, cruise, kmh, type, color: COLORS[Math.floor(h(6) * COLORS.length)], dep: ((n + 0.5) / PER * T_ALL + li * 47) % T_ALL, K, laps, estTrip: K * lapT + exc * xT + 150 });
+      HWT.vs.push({ hl: type === 'coach' ? COACH_DIM.hl : VTYPE[type].hl, hw: type === 'coach' ? COACH_DIM.hw : VTYPE[type].hw, li, grp: lot.grp, n, cls: cl.c, pref: cl.lane, cruise, kmh, type, color: COLORS[Math.floor(h(6) * COLORS.length)], dep: ((n + 0.5) / PER * T_ALL + li * 47) % T_ALL, K, laps, estTrip: K * lapT + exc * xT + 150 });
     }
   });
   // 区画の割りあて：休む時間（もどる予定〜次に出る時刻）が重ならないように
@@ -4851,6 +4853,7 @@ function hwSimulate(pieces, vs, T, dt, recDt, loopL) {
       // 先に決まった車の、いまの位置
       others.length = 0;
       for (const o of done) {
+        if (o.grp !== v.grp) continue;   // ちがう環状線の車は見ない
         const ro = Math.floor(((((g - o.dep) % T) + T) % T) / recDt + 1e-6) % NREC, R = o.rec;
         others.push({ key: R.key[ro], es: R.es[ro], lat: R.lat[ro] / 20, sp: R.sp[ro], alt: R.alt[ro], altEs: R.altEs[ro], hl: o.hl, cruise: o.cruise, parked: R.fl[ro] & 32 });
       }
@@ -4942,16 +4945,16 @@ function hwSimulate(pieces, vs, T, dt, recDt, loopL) {
       rec.key[r] = p.key[lo]; rec.es[r] = p.es[lo] + (s - p.S[lo]); rec.sp[r] = sp; rec.alt[r] = p.alt[lo]; rec.altEs[r] = p.altEs[lo] + (s - p.S[lo]);
     }
     out[vi] = rec;
-    done.push({ dep: v.dep, rec, hl: v.hl, cruise: v.cruise });
+    done.push({ dep: v.dep, rec, hl: v.hl, cruise: v.cruise, grp: v.grp });
   }
   return typeof __hwDbg !== 'undefined' ? out : out.map((o) => ({ s: o.s, lat: o.lat, fl: o.fl, arrive: o.arrive }));
 }
 // 計算は Worker で（画面を止めない）。終わるまで高速道路の車は出ない
 {
   const t0 = performance.now();
-  const loopL = {}; { const e = roadNet.edges[HWY.ring]; loopL[e.id * 2] = e.L; loopL[e.id * 2 + 1] = e.L; }
+  const loopL = {}; for (const k of [HWY.ring, HWY.mring]) { const e = roadNet.edges[k]; loopL[e.id * 2] = e.L; loopL[e.id * 2 + 1] = e.L; }
   const pcs = HWT.pieces.map((p) => ({ N: p.N, L: p.L, S: p.S, key: p.key, es: p.es, lanes: p.lanes, rb: p.rb, need: p.need, vmax: p.vmax, alt: p.alt, altEs: p.altEs, entry: p.entry }));
-  const vs = HWT.vs.map((v) => ({ dep: v.dep, seq: v.seq, cruise: v.cruise, pref: v.pref, cls: v.cls, hl: v.hl }));
+  const vs = HWT.vs.map((v) => ({ dep: v.dep, seq: v.seq, cruise: v.cruise, pref: v.pref, cls: v.cls, hl: v.hl, grp: v.grp }));
   const done = (out, how) => {
     out.forEach((o, k) => { const v = HWT.vs[k]; v.rec = o; });
     HWT.ready = true; window.__hwMs = performance.now() - t0; window.__hwHow = how; window.__hwt = HWT; window.__hwSim = () => hwSimulate(pcs, vs, T_ALL, 0.5, REC_DT, loopL);
