@@ -4456,6 +4456,8 @@ function tryPass(v, obs, ob, schedV) {
   const side = right - hw - 0.9;   // 右（対向車線のほう）へ
   if (Math.abs(side) > 4.5) return false;
   const passT = Math.sqrt(2 * passLen / 1.5) + 4;   // 止まった所から加速して追いこす時間の見こみ
+  const ci = pathIndex(P, ls);
+  if (roadNet.edges[P.legs[P.legOf[ci]][0]].hw === 'main' && P.Off[ci] + side < hw + 1) return false;   // 高速道路：中央分離帯をこえない（同じ向きの車線の中だけ）
   if (!canSwerve(v, side, passLen, passT)) return false;
   v.avoid = { endS: v.s + passLen, startS: v.s, besideS: v.s + Math.max(0, ob.gap - 2), pass: true }; v.sideT = side;
   return true;
