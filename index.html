@@ -2390,7 +2390,7 @@ const hwDraw = (() => {
     main: new THREE.MeshLambertMaterial({ map: tex('main'), polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -4 }),
     ramp: new THREE.MeshLambertMaterial({ map: tex('ramp'), polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -2 }),
     conc: new THREE.MeshLambertMaterial({ color: 0xb4b0a6, side: THREE.DoubleSide }),
-    wall: new THREE.MeshLambertMaterial({ color: 0xd2cec4 }),
+    wall: new THREE.MeshLambertMaterial({ color: 0xd2cec4, side: THREE.DoubleSide }),   // 両面（片側から透けないように）
   };
   const CH = 500, groups = new Map();
   const bucket = (x, z, m) => { const key = Math.floor(x / CH) * 1000 + Math.floor(z / CH) + ':' + m; let b = groups.get(key); if (!b) groups.set(key, b = []); return b; };
@@ -8251,6 +8251,32 @@ function autoMainPieces(e, d, es0, lat0, es1, lat1, tap0 = 200, tap1 = 200) {
   if (es0 + span <= L + 0.01) return [mk(es0, Math.min(L, es0 + span), 0)];
   return [mk(es0, L, 0), mk(0, es0 + span - L, L)];
 }
+// PA の駐車場：いまの所から通路（v = 76 か 112）を通って、出口のランプのはじめ（u = 90, v = 70）まで。ランプもつなげる
+const AUTO_LOT_V = 6;   // 駐車場の中は 20km/h くらい
+function autoLotPieces(L, car) {
+  const R = roadNet, pa = L.pa, out = R.edges.find((e) => e.hw === 'ramp' && e.pa === pa.name && e.b.onEdge != null);
+  if (!out) return null;
+  const [uc, vc] = lotUV(L, car.pos.x, car.pos.y), va = vc < 94 ? 76 : 112, wp = [[uc, vc]];
+  if (uc < 78) { if (Math.abs(vc - va) > 2) wp.push([uc, va]); wp.push([82, va]); }
+  wp.push([90, 70]);
+  const X = [], Z = [];
+  for (let k = 0; k < wp.length; k++) {
+    const [u1, v1] = wp[k];
+    if (!k) { const [x, z] = HWY.W(L.f, u1, v1); X.push(x); Z.push(z); continue; }
+    const [u0, v0] = wp[k - 1], n = Math.max(1, Math.ceil(Math.hypot(u1 - u0, v1 - v0) / 2));
+    for (let m = 1; m <= n; m++) { const [x, z] = HWY.W(L.f, u0 + (u1 - u0) * m / n, v0 + (v1 - v0) * m / n); X.push(x); Z.push(z); }
+  }
+  X[X.length - 1] = out.X[0]; Z[Z.length - 1] = out.Z[0];   // ランプのはじめにぴったり
+  const N = X.length, S = new Float32Array(N), NX = new Float32Array(N), NZ = new Float32Array(N);
+  for (let i = 0; i < N; i++) {
+    if (i) S[i] = S[i - 1] + Math.hypot(X[i] - X[i - 1], Z[i] - Z[i - 1]);
+    const a = Math.max(0, i - 1), b = Math.min(N - 1, i + 1), dx = X[b] - X[a], dz = Z[b] - Z[a], l = Math.hypot(dx, dz) || 1;
+    NX[i] = dz / l; NZ[i] = -dx / l;
+  }
+  const e = { id: -1, N, X: Float32Array.from(X), Z: Float32Array.from(Z), Y: new Float32Array(N).fill(L.y), S, NX, NZ, L: S[N - 1], w: 6, a: { id: -1, ends: [] }, b: out.a, hw: 'ramp', pa: pa.name };
+  const lot = { e, dir: 1, s0: 0, s1: e.L, hw: 'ramp', lane: () => 0, vmax: () => AUTO_LOT_V };
+  return { out, len: e.L, pieces: e.L > 1 ? [lot, autoRampPiece(out, 0)] : [autoRampPiece(out, 0)] };
+}
 let autoHwCache = null;
 function autoHwNet() {
   if (autoHwCache) return autoHwCache;
@@ -8258,6 +8284,7 @@ function autoHwNet() {
   const link = (from, l) => { let a = adj.get(from); if (!a) adj.set(from, a = []); a.push(l); };
   const addPt = (main, d, p) => { const k = main.id * 2 + (d > 0 ? 0 : 1); let a = cw.get(k); if (!a) cw.set(k, a = { e: main, d, pts: [] }); a.pts.push(p); };
   for (const e of R.edges) {
+    if (e.hw === 'ramp' && e.pa && e.b.onEdge != null) { const main = R.edges[e.b.onEdge], q = autoMainAt(main, e.b.x, e.b.z); addPt(main, q.d, { id: e.b.id, es: q.es, lat: q.lat }); }   // PA から出たあと本線へ合流する点（PA に寄る道はさがさない）
     if (e.hw !== 'ramp' || e.pa) continue;   // PA には寄らない
     for (const n of [e.a, e.b]) if (n.onEdge != null) { const main = R.edges[n.onEdge], q = autoMainAt(main, n.x, n.z); addPt(main, q.d, { id: n.id, es: q.es, lat: q.lat }); }
     link(e.a.id, { to: e.b.id, c: autoTimeC(e.L, AUTO_RAMP_V) + (e.gate === 'in' ? AUTO_HW_IN : 0), icIn: e.gate === 'in' ? e.ic : '', icOut: e.gate === 'out' ? e.ic : '', pieces: [autoRampPiece(e, 0)] });
@@ -8306,9 +8333,13 @@ function planAutoRoute(car, tx, tz, noHw, forced) {
   const hz = TOLL.on ? hwZone(car.pos.x, car.pos.y, car.y) : null;   // ETC で入っているときだけ（料金所の広場の一般道は一般道）
   if (forced) seeds.push(forced);   // 右左折をえらんだとき：そこまでの道は決まっている
   else if (hz) {   // 高速道路の上から：前へ進んで、つぎのランプの分かれ目（または終点）から
-    if (!hz.hw || hz.pa) return { err: 'PA の中では自動運転を使えません。本線に出てから使ってください' };
     const Hn = autoHwNet();
-    if (hz.hw === 'ramp') {
+    if (!hz.hw) {   // PA の駐車場の中から：通路を通って出口のランプへ、そこから本線
+      const lp = autoLotPieces(hz, car);
+      if (!lp) return { err: 'PA の出口が見つかりません' };
+      seeds.push({ id: lp.out.b.id, c: autoTimeC(lp.len, AUTO_LOT_V) + autoTimeC(lp.out.L, AUTO_RAMP_V), pieces: lp.pieces });
+    } else if (hz.pa && hz.a.onEdge != null) return { err: 'PA の入口です。駐車場に入ってから使ってください' };
+    else if (hz.hw === 'ramp') {
       let bi = 0, bd = Infinity; for (let i = 0; i < hz.N; i++) { const d = (hz.X[i] - car.pos.x) ** 2 + (hz.Z[i] - car.pos.y) ** 2; if (d < bd) { bd = d; bi = i; } }
       seeds.push({ id: hz.b.id, c: autoTimeC(hz.L - hz.S[bi], AUTO_RAMP_V), pieces: [autoRampPiece(hz, hz.S[bi])] });
     } else {
