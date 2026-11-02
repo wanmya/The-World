@@ -96,7 +96,10 @@ body.mapOn #msg { top: max(145px, 30vh); }
 /* 街と経済の画面（2026-11-02） */
 #town { position: fixed; z-index: 8; inset: max(12px, env(safe-area-inset-top, 0px)) max(12px, env(safe-area-inset-right, 0px)) max(12px, env(safe-area-inset-bottom, 0px)) max(12px, env(safe-area-inset-left, 0px));
   display: flex; flex-direction: column; gap: 6px; padding: 8px; background: rgba(255,255,255,.97); border: 1px solid var(--line); border-radius: 14px; box-sizing: border-box; max-width: 760px; margin: 0 auto; }
-#town .wbar { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+#town .wbar { display: flex; flex-wrap: nowrap; gap: 6px; align-items: center; overflow-x: auto; scrollbar-width: none; }
+#town .wbar::-webkit-scrollbar { display: none; }
+#town .wbar button { flex: none; }
+#town #townClose { position: sticky; right: 0; box-shadow: -6px 0 6px rgba(255,255,255,.95); }
 #town .wbar button { font: 800 13px var(--font-ui); color: var(--ink); background: #f3f6f9; border: 1px solid var(--line); border-radius: 999px; padding: 7px 11px; cursor: pointer; }
 #town .wbar button[aria-pressed="true"] { background: var(--ink); color: #fff; }
 #town #townClose { margin-left: auto; }
@@ -144,6 +147,24 @@ body.mapOn #msg { top: max(145px, 30vh); }
 #townBody .trade .buy { background: #d4402f; color: #fff; border-color: #d4402f; }
 #townBody .trade .sell { background: #2f6fd4; color: #fff; border-color: #2f6fd4; }
 #townBody .note { background: #f3f6f9; border-radius: 8px; padding: 6px 8px; font-size: 12px; }
+#townBody details.bz { border: 1px solid var(--line); border-radius: 10px; margin: 6px 0; background: #fff; }
+#townBody details.bz > summary { font-weight: 800; padding: 9px 10px; cursor: pointer; list-style: none; }
+#townBody details.bz > summary::after { content: '▾'; float: right; color: var(--ink-dim); }
+#townBody details.bz[open] > summary { border-bottom: 1px solid var(--line); }
+#townBody details.bz > :not(summary) { margin-left: 10px; margin-right: 10px; }
+#townBody details.bz h4 { margin: 8px 10px 2px; font-size: 13px; }
+#townBody .bzrow { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 4px 8px; padding: 5px 0; border-bottom: 1px dashed var(--line); }
+#townBody .bzrow > span:first-child { flex: 1 1 180px; min-width: 0; }
+#townBody .bzrow small { display: block; color: var(--ink-dim); font-size: 11px; }
+#townBody .bzrow.col { flex-direction: column; align-items: stretch; }
+#townBody .bzgrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; }
+#townBody .bzgrid div { background: #fff; border-radius: 8px; padding: 4px 6px; display: flex; flex-direction: column; }
+#townBody .bzgrid b { font-family: var(--font-mono); font-size: 13px; }
+#townBody .bzopt { display: block; width: 100%; text-align: left; margin: 4px 0; padding: 8px 10px; background: #fff; }
+#townBody .bzopt span { font-weight: 600; font-size: 12px; } #townBody .bzopt small { display: block; font-weight: 500; color: var(--ink-dim); margin-top: 2px; }
+#townBody button.on, #townBody .bzopt.on { border-color: var(--ink); background: #eef3f8; }
+#townBody input#bizName { font: 600 15px var(--font-ui); padding: 7px 9px; border: 1px solid var(--line); border-radius: 8px; width: min(100%, 240px); box-sizing: border-box; }
+#townBody .bzmsg { background: #fff3cd; border: 1px solid #ecd9b0; font-weight: 700; }
 #menu .mi .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); margin-left: 4px; vertical-align: middle; }
 #wmap #homeBtn { background: #fff4dc; border-color: #e8c98a; }
 #wmap .wbar button { font: 800 13px var(--font-ui); color: var(--ink); background: #f3f6f9; border: 1px solid var(--line); border-radius: 999px; padding: 7px 12px; cursor: pointer; }
@@ -354,6 +375,7 @@ body.helmOn .subbtns { flex-wrap: wrap; justify-content: flex-end; max-width: ca
     <button class="mi" id="mapBtn" type="button">🗺️ 地図<small>M</small></button>
     <button class="mi" id="paperBtn" type="button">📰 新聞<span class="dot" id="paperDot" hidden></span></button>
     <button class="mi" id="townBtn" type="button">📈 街と株</button>
+    <button class="mi" id="bizBtn" type="button">🏢 事業</button>
     <button class="mi" id="chatBtn" type="button">💬 ひとこと</button>
     <button class="mi" id="addItem" type="button">📦 glTF を置く</button>
     <button class="mi" id="renameBtn" type="button" hidden>なまえ</button>
@@ -404,7 +426,7 @@ body.helmOn .subbtns { flex-wrap: wrap; justify-content: flex-end; max-width: ca
 </div>
 <div id="pingWarn" hidden role="alert">ピンガーが打たれました</div>
 <div id="town" hidden role="dialog" aria-modal="true" aria-labelledby="townTitle">
-  <div class="wbar"><button type="button" data-tt="paper">📰 新聞</button><button type="button" data-tt="stocks">📈 株</button><button type="button" data-tt="town">🏙️ 街</button><button type="button" data-tt="wx">🌤️ 天気</button><button type="button" data-tt="shop" id="townShopTab" hidden>🛒 お店</button><button type="button" id="townClose" aria-label="閉じる">✕</button></div>
+  <div class="wbar"><button type="button" data-tt="paper">📰 新聞</button><button type="button" data-tt="stocks">📈 株</button><button type="button" data-tt="town">🏙️ 街</button><button type="button" data-tt="wx">🌤️ 天気</button><button type="button" data-tt="biz">🏢 事業</button><button type="button" data-tt="shop" id="townShopTab" hidden>🛒 お店</button><button type="button" id="townClose" aria-label="閉じる">✕</button></div>
   <h2 id="townTitle">みなと経済新聞</h2>
   <div id="townBody"></div>
 </div>
@@ -419,7 +441,7 @@ body.helmOn .subbtns { flex-wrap: wrap; justify-content: flex-end; max-width: ca
     <button type="button" data-go="vehicle" class="pveh"><b>乗り物</b><small>自動車・船舶・航空機</small></button>
   </div>
   <div class="pcats" data-screen="vehicle" hidden>
-    <button type="button" data-go="car" class="pveh"><b>自動車</b><small>ボディ＋タイヤ 2〜6 個</small></button>
+    <button type="button" data-go="car" class="pveh"><b>自動車</b><small>ボディ＋タイヤ 2〜8 個（トラックは＋荷台）</small></button>
     <button type="button" data-go="boat" class="pveh"><b>船舶</b><small>船・潜水艦</small></button>
     <button type="button" data-cat="plane" class="pveh"><b>航空機</b><small>前を +Z に向けた形</small></button>
     <button type="button" data-cat="robot" class="pveh"><b>人型ロボット</b><small>胴体・コックピット・手足（前を +Z）</small></button>
@@ -429,6 +451,7 @@ body.helmOn .subbtns { flex-wrap: wrap; justify-content: flex-end; max-width: ca
     <button type="button" data-cat="car" data-wheels="3" class="pveh"><b>3 輪</b><small>前 1＋後ろ 2、または前 2＋後ろ 1</small></button>
     <button type="button" data-cat="car" data-wheels="4" class="pveh"><b>4 輪</b><small>右前・右後・左前・左後</small></button>
     <button type="button" data-cat="car" data-wheels="6" class="pveh"><b>6 輪</b><small>4 輪＋右中・左中</small></button>
+    <button type="button" data-cat="car" data-wheels="8" class="pveh"><b>8 輪</b><small>6 輪＋右後2・左後2（大きなトラック）</small></button>
   </div>
   <div class="pcats" data-screen="boat" hidden>
     <button type="button" data-cat="ship" class="pveh"><b>船</b><small>海の上を走る・相乗りできる</small></button>
@@ -604,7 +627,8 @@ async function loadItem(def) {
 }
 
 /* ================= 乗り物のルール =================
-   自動車：「ボディ」と、タイヤ 2・3・4・6 個（名前で場所を決める）。1 単位＝1m、上が +Y、車の前が +Z。
+   自動車：「ボディ」と、タイヤ 2・3・4・6・8 個（名前で場所を決める）。1 単位＝1m、上が +Y、車の前が +Z。
+   トラック：自動車に「荷台」という部品をつける。荷台の床の広さ（よこ×たて）で運べる重さが決まる（1㎡ に 400kg、12 トンまで）。事業の画面で自分のトラックとして使える。
    船舶（船・潜水艦）：形だけでよい。上から見て長いほうの向きに進み、短い辺が前か後ろになる。
      ほぼ正方形なら、どの向きにも進める（乗ったときにカメラが向いているほうが前）。
    航空機：形だけでよい。前が +Z。 */
@@ -613,15 +637,18 @@ const WHEEL_DEFS = {
   F: ['タイヤ前', new RegExp(`^(タイヤ前|前タイヤ|(wheel|tire)[ _-]?(f|front)${SIDE})`, 'i')],
   R: ['タイヤ後', new RegExp(`^(タイヤ後|後タイヤ|(wheel|tire)[ _-]?(r|rear|b|back)${SIDE})`, 'i')],
   FR: ['タイヤ右前', /^(タイヤ右前|右前タイヤ|(wheel|tire)[ _-]?(fr|front[ _-]?right|right[ _-]?front))/i],
-  RR: ['タイヤ右後', /^(タイヤ右後|右後タイヤ|(wheel|tire)[ _-]?(rr|br|rear[ _-]?right|right[ _-]?rear|back[ _-]?right))/i],
+  RR: ['タイヤ右後', /^(タイヤ右後(?!2)|右後タイヤ|(wheel|tire)[ _-]?(rr|br|rear[ _-]?right|right[ _-]?rear|back[ _-]?right)(?![ _-]?2))/i],
   FL: ['タイヤ左前', /^(タイヤ左前|左前タイヤ|(wheel|tire)[ _-]?(fl|front[ _-]?left|left[ _-]?front))/i],
-  RL: ['タイヤ左後', /^(タイヤ左後|左後タイヤ|(wheel|tire)[ _-]?(rl|bl|rear[ _-]?left|left[ _-]?rear|back[ _-]?left))/i],
+  RL: ['タイヤ左後', /^(タイヤ左後(?!2)|左後タイヤ|(wheel|tire)[ _-]?(rl|bl|rear[ _-]?left|left[ _-]?rear|back[ _-]?left)(?![ _-]?2))/i],
   MR: ['タイヤ右中', /^(タイヤ右中|右中タイヤ|(wheel|tire)[ _-]?(mr|cr|middle[ _-]?right|right[ _-]?middle|center[ _-]?right))/i],
   ML: ['タイヤ左中', /^(タイヤ左中|左中タイヤ|(wheel|tire)[ _-]?(ml|cl|middle[ _-]?left|left[ _-]?middle|center[ _-]?left))/i],
+  R2R: ['タイヤ右後2', /^(タイヤ右後2|右後2タイヤ|(wheel|tire)[ _-]?(rr|br|rear[ _-]?right|right[ _-]?rear)[ _-]?2)/i],
+  R2L: ['タイヤ左後2', /^(タイヤ左後2|左後2タイヤ|(wheel|tire)[ _-]?(rl|bl|rear[ _-]?left|left[ _-]?rear)[ _-]?2)/i],
 };
-const LAYOUTS = { 2: [['F', 'R']], 3: [['F', 'RR', 'RL'], ['FR', 'FL', 'R']], 4: [['FR', 'RR', 'FL', 'RL']], 6: [['FR', 'MR', 'RR', 'FL', 'ML', 'RL']] };
-const FRONT_W = new Set(['F', 'FR', 'FL']), REAR_W = new Set(['R', 'RR', 'RL']);
-const CAR_LIMITS = { length: 7, width: 3.5, height: 4, rMin: 0.1, rMax: 1.0 };
+const LAYOUTS = { 2: [['F', 'R']], 3: [['F', 'RR', 'RL'], ['FR', 'FL', 'R']], 4: [['FR', 'RR', 'FL', 'RL']], 6: [['FR', 'MR', 'RR', 'FL', 'ML', 'RL']], 8: [['FR', 'MR', 'RR', 'R2R', 'FL', 'ML', 'RL', 'R2L']] };
+const FRONT_W = new Set(['F', 'FR', 'FL']), REAR_W = new Set(['R', 'RR', 'RL', 'R2R', 'R2L']);
+const CAR_LIMITS = { length: 7, width: 3.5, height: 4, rMin: 0.1, rMax: 1.0 }, TRUCK_LIMITS = { length: 12.5, width: 3.5, height: 4.2 };
+const BED_RE = /^(荷台|cargo|truck[ _-]?bed|bed)/i;
 class RuleError extends Error { constructor(kind, reasons) { super(reasons.join(' / ')); this.kind = kind; this.reasons = reasons; } }
 const extrasOf = (gltf) => Object.assign({}, gltf.scene.userData, gltf.scene.children.length === 1 ? gltf.scene.children[0].userData : {});
 const kmhOf = (ex, d, lo, hi) => (typeof ex.max_speed_kmh === 'number' ? THREE.MathUtils.clamp(ex.max_speed_kmh, lo, hi) : d);
@@ -632,7 +659,7 @@ function rigAutoCar(item, root, model, gltf, def) {
   model.traverse((o) => { for (const k in WHEEL_DEFS) if (!found[k] && WHEEL_DEFS[k][1].test(o.name || '')) found[k] = o; });
   // 選んだタイヤの数のならべ方（読み込み直すときは、名前から多い順に見つける）
   let lay = null;
-  for (const n of def.wheels ? [def.wheels] : [6, 4, 3, 2]) for (const l of LAYOUTS[n] || []) if (!lay && l.every((k) => found[k])) lay = l;
+  for (const n of def.wheels ? [def.wheels] : [8, 6, 4, 3, 2]) for (const l of LAYOUTS[n] || []) if (!lay && l.every((k) => found[k])) lay = l;
   if (!lay) {
     const n = def.wheels || 4;
     if (n === 3) reasons.push('3 輪は「タイヤ前・タイヤ右後・タイヤ左後」か「タイヤ右前・タイヤ左前・タイヤ後」という名前の部品が必要です');
@@ -666,9 +693,14 @@ function rigAutoCar(item, root, model, gltf, def) {
   model.position.set(model.position.x - mx, model.position.y - ground, model.position.z - mz);
   w = measure();
   const all = modelBox(root, model), size = all.getSize(new THREE.Vector3());
-  if (size.z > CAR_LIMITS.length) reasons.push(`全長が ${size.z.toFixed(1)}m です（${CAR_LIMITS.length}m まで）`);
-  if (size.x > CAR_LIMITS.width) reasons.push(`全幅が ${size.x.toFixed(1)}m です（${CAR_LIMITS.width}m まで）`);
-  if (size.y > CAR_LIMITS.height) reasons.push(`高さが ${size.y.toFixed(1)}m です（${CAR_LIMITS.height}m まで）`);
+  // 荷台があればトラック：大きくてもよい。荷台の床の広さで運べる重さ
+  let bed = null; model.traverse((o) => { if (!bed && BED_RE.test(o.name || '')) bed = o; });
+  const LIM = bed ? TRUCK_LIMITS : CAR_LIMITS;
+  if (size.z > LIM.length) reasons.push(`全長が ${size.z.toFixed(1)}m です（${LIM.length}m まで${bed ? '' : '。荷台のあるトラックは 12.5m まで'}）`);
+  if (size.x > LIM.width) reasons.push(`全幅が ${size.x.toFixed(1)}m です（${LIM.width}m まで）`);
+  if (size.y > LIM.height) reasons.push(`高さが ${size.y.toFixed(1)}m です（${LIM.height}m まで）`);
+  let cargo = null;
+  if (bed) { const bs = new THREE.Box3().setFromObject(bed).getSize(new THREE.Vector3()); if (bs.x > 0.3 && bs.z > 0.3) cargo = { w: Math.round(bs.x * 10) / 10, l: Math.round(bs.z * 10) / 10, kg: Math.min(12000, Math.max(200, Math.round(bs.x * bs.z * 400 / 100) * 100)) }; }
   if (reasons.length) throw new RuleError('car', reasons);
   // タイヤを「ハンドルで曲がる箱」と「転がる箱」に入れる（タイヤの中心を軸にする）。曲がるのは前のタイヤだけ
   for (const k of lay) {
@@ -682,7 +714,7 @@ function rigAutoCar(item, root, model, gltf, def) {
   const kmh = kmhOf(extrasOf(gltf), 60, 20, 90);
   const halfWidth = Math.max(0.3, Math.abs(all.min.x), all.max.x), halfLength = size.z / 2, centerZ = (all.max.z + all.min.z) / 2;
   item.def.vehicle = {
-    type: 'car', wheels: lay.length,
+    type: 'car', wheels: lay.length, cargo,
     wheelRadius: lay.reduce((a, k) => a + radius[k], 0) / lay.length, wheelbase: frontZ - rearZ,
     halfWidth, halfLength, centerZ, height: size.y,
     maxSpeed: kmh / 3.6, accel: 7, brake: 16, reverseMax: 6, maxSteer: 0.6,
@@ -9097,6 +9129,9 @@ const COMPANIES = [
   { code: 9722, ad: '東山温泉 ゆけむり', ind: '観光', sub: '日帰り温泉・宿', at: [2500, 700], b: 'onsen', staff: 70, shares: 300000, p0: 1530 },
   { code: 9680, ad: 'みさき水族館', ind: '観光', sub: '水族館', at: [2640, -3730], b: 'aquarium', staff: 85, shares: 400000, p0: 1720 },
   { code: 9681, ad: 'みずうみ遊園地', ind: '観光', sub: '遊園地', at: [3400, 3480], b: 'park', staff: 130, shares: 600000, p0: 1390 },
+  { code: 7201, name: 'はじめ自動車', ind: '小売', sub: '自動車・トラックの販売と整備', at: [1250, 900], b: 'garage', staff: 50, shares: 300000, p0: 1350, col: ['#c8102e', '#ffffff'], copy: 'はたらく車も おまかせ' },
+  { code: 8591, name: 'みなとリース', ind: 'リース', sub: 'トラック・機械のリース', at: [-600, -3300], b: 'office', staff: 30, shares: 300000, p0: 1250, col: ['#00838f', '#ffffff'], copy: '買わずに 借りる' },
+  { code: 1801, name: 'はじめ建設', ind: '建設', sub: '建物・道路の工事', at: [-900, 1150], b: 'warehouse', staff: 90, shares: 400000, p0: 1100, col: ['#f2c12e', '#2a2a2a'], copy: '街を つくる 仕事' },
   { code: 2429, ad: '北浜スポーツクラブ', ind: 'サービス', sub: 'スポーツクラブ', at: [-1200, -4100], b: 'gym', staff: 40, shares: 200000, p0: 760 },
 ];
 for (const c of COMPANIES) {
@@ -9319,8 +9354,30 @@ const TOWN = (() => {
       }
     }
   }
-  console.log(`街：家 ${homes.filter((o) => o.kind === 'house').length}・マンション ${homes.filter((o) => o.kind === 'apt').length}・住人 ${N}・世帯 ${hh.length}・畑 ${fields.length}・会社の建物 ${companies.length}（${Math.round(performance.now() - t0)}ms）`);
-  return { homes, companies, fields, hh, ages, home, hhOf, job, emp, given, FAM, GIVEN, JOBS, jobN, N, occ, OCC };
+  /* ---- 空き地（2026-11-02）：みなと不動産が売る・貸す土地。道路に面した平らな所。いなかは畑用（広い） ---- */
+  const lots = [];
+  alongRoads(14, (e, i, s) => {
+    const x0 = e.X[i], z0 = e.Z[i], dist = districtAt(x0, z0); if (!dist) return;
+    const zone = TOWN_ZONE[dist.name] || 'rural';
+    for (const side of [1, -1]) {
+      const hs = hash(Math.round(x0 * 3 + side * 5), Math.round(z0 * 11) + 77);
+      if (hs > (zone === 'rural' ? 0.35 : 0.6)) continue;
+      const k = lots.length, farm = zone === 'rural' || (zone === 'village' && hs < 0.06), big = !farm && hash(k, 91) < 0.4;
+      const w = farm ? 40 : big ? 30 : 22, d = farm ? 32 : big ? 24 : 18;
+      let x, z, ok = null; const rot = Math.atan2(-e.NX[i] * side, -e.NZ[i] * side);
+      for (let row = 0; row < (farm ? 3 : 1) && !ok; row++) {   // 畑は道路から少しはなれていてもよい
+        const off = e.W[i] / 2 + 4 + d / 2 + row * 14; x = x0 + e.NX[i] * off * side; z = z0 + e.NZ[i] * off * side;
+        if (!free(x, z, Math.hypot(w, d) / 2 + 2)) continue;
+        ok = siteOk(x, z, rot, w + 2, d + 2, farm ? 6 : 3.2, 1.0);
+      }
+      if (!ok) continue;
+      const dd = districtAt(x, z) || dist, zz = TOWN_ZONE[dd.name] || zone;
+      const o = { kind: 'lot', id: lots.length, x, z, rot, w, d, farm, zone: zz, dist: dd, y: Math.max(e.Y[i] - 0.12, SEA + 0.4), area: Math.round(w * d), road: Math.round(e.w), value: landValue(x, z, zz, dd, e.w, 0, ok.hi - ok.lo) };
+      take(o); lots.push(o);
+    }
+  });
+  console.log(`街：家 ${homes.filter((o) => o.kind === 'house').length}・マンション ${homes.filter((o) => o.kind === 'apt').length}・住人 ${N}・世帯 ${hh.length}・畑 ${fields.length}・会社の建物 ${companies.length}・空き地 ${lots.length}（${Math.round(performance.now() - t0)}ms）`);
+  return { homes, companies, fields, lots, hh, ages, home, hhOf, job, emp, given, FAM, GIVEN, JOBS, jobN, N, occ, OCC };
 })();
 /* ---- 街を描く：家・マンション・屋根・畑はそれぞれ 1 つの InstancedMesh（カメラの近く 1km だけ入れなおす）。窓はシェーダーで描き、夜は明かりがつく ---- */
 const TOWN_U = { uNight: { value: 0 } };
@@ -9631,7 +9688,7 @@ function townPush(p, R) {
   for (let gx = Math.floor((p.x - 50) / G); gx <= Math.floor((p.x + 50) / G); gx++) for (let gz = Math.floor((p.z - 50) / G); gz <= Math.floor((p.z + 50) / G); gz++) {
     const a = occ.get(gx * 65536 + gz); if (!a) continue;
     for (const o of a) {
-      if (o.kind === 'field' || o.hidden || o.kind === 'park') continue;
+      if (o.kind === 'field' || o.kind === 'lot' || o.hidden || o.kind === 'park') continue;
       const dx = p.x - o.x, dz = p.z - o.z; if (dx * dx + dz * dz > (o.r + R + 1) * (o.r + R + 1)) continue;
       const y = o.g ? o.y : (o.yy != null ? o.yy : townMeshes.yOf(o)); if (p.y > y + o.h + 1 || p.y < y - 3) continue;
       const c = Math.cos(o.rot), s = Math.sin(o.rot), u = dx * c - dz * s, v = dx * s + dz * c, hw = o.w / 2 + R, hd = o.d / 2 + R;
@@ -9691,6 +9748,9 @@ const ECON_CO = {
   9680: { m: 0.1, visit: (x) => 1000 * (x.rainF > 0.2 ? 1.4 : 1) * (x.hol ? 1.8 : 1) * (x.c.m === 7 || x.c.m === 8 ? 1.3 : 1) * (x.storm ? 0.25 : 1), price: 2100 },
   9681: { m: 0.12, visit: (x) => x.storm ? 0 : 1800 * Math.max(0.25, 1 - 2 * x.rainF) * (x.hol ? 2.0 : 1) * ([4, 5, 10, 11].includes(x.c.m) ? 1.2 : [12, 1, 2].includes(x.c.m) ? 0.7 : 1) * (x.snow ? 0.3 : 1), price: 3600 },
   2429: { m: 0.1, rev: (x) => x.gym * 270 + 60000 * (x.hol ? 1.3 : 1) },
+  7201: { m: 0.05, rev: (x) => 1200000 * (0.8 + 0.4 * x.mood) * (x.hol ? 1.3 : 1) * (x.storm ? 0.5 : 1) + 300000 * (x.snow ? 1.4 : 1) },   // 車の販売・整備（雪の日は整備がふえる）
+  8591: { m: 0.18, rev: (x) => 700000 * (0.95 + 0.1 * x.mood) },   // リース料（景気にあまり左右されない）
+  1801: { m: 0.06, rev: (x) => 1500000 * (0.85 + 0.3 * x.mood) * x.lpi * (x.storm ? 0.7 : x.snow ? 0.8 : 1) + (hash(x.n, 1801) < 0.05 ? 2500000 : 0) },   // 工事（大きな注文がときどき）
 };
 for (const k in ECON_CO) { const E = ECON_CO[k]; if (E.visit) E.rev = (x) => Math.round(E.visit(x)) * E.price; }
 const POP_N = 10000;
@@ -9719,7 +9779,7 @@ const ECON = (() => {
       farmInc: Math.round(vKg * vPrice * 0.72 / Math.max(1, farmers)), fishInc: Math.round(fKg * fPrice * 0.7 / Math.max(1, fishers)),
       pa, store: 1 - pa - 0.1, vegIdx: vPrice / VEG_PRICE[mi], mood: S.mood, fuel: S.fuel, feed: S.feed, dep: S.dep, lpi: S.lpi, rentU, gym: S.gym };
   }
-  const startState = () => ({ d: -1, dry: 0, mood: 0.5, fuel: 1, feed: 1, dep: 80e9, lpi: 1, gym: 2400, co: {}, hist: [], index: 1000 });
+  const startState = () => ({ xs: new Map(), d: -1, dry: 0, mood: 0.5, fuel: 1, feed: 1, dep: 80e9, lpi: 1, gym: 2400, co: {}, hist: [], index: 1000 });
   // ふつうの売り上げ（B）：はじめの 1 年（48 日）の平均。利益率 m になるように費用を決める
   const B = {};
   { const S = startState(); const sum = {}; for (let n = 0; n < CAL_YEAR; n++) { const x = ctx(n, S); for (const k in ECON_CO) sum[k] = (sum[k] || 0) + ECON_CO[k].rev(x); } for (const k in ECON_CO) B[k] = sum[k] / CAL_YEAR; }
@@ -9768,6 +9828,7 @@ const ECON = (() => {
     const prevIdx = S.index; S.index = Math.round(ps / p0s * 100000) / 100;
     Object.assign(day, { index: S.index, prevIdx, econ: Math.round(ratio * 1000) / 10, lpi: S.lpi, dep: S.dep, gym: S.gym, dry: S.dry, mood: S.mood });
     S.hist.push(day); if (S.hist.length > 20) S.hist.shift();
+    S.xs.set(n, x); if (S.xs.size > 700) S.xs.delete(S.xs.keys().next().value);   // その日のようす（プレイヤーの事業の決算に使う）
     S.d = n;
   }
   // n 日目の終わりまで計算する（今日のぶんの終値も前もって計算しておく。昼の株価は前の日の終値から今日の終値へ動く）
@@ -9844,6 +9905,7 @@ function makePaper(n) {
     add(30 + Math.abs(ip) * 6, `みなと株価指数　${yen(y.index)}（${ip >= 0 ? '+' : ''}${ip.toFixed(2)}%）`, `${COMPANIES.length}社の株価をまとめた「みなと株価指数」は${y.index.toFixed(2)}。${ip >= 0 ? '値上がり' : '値下がり'}した会社が${COMPANIES.filter((co) => (y.co[co.code].price - y.co[co.code].prev) * (ip >= 0 ? 1 : -1) > 0).length}社ありました。景気の指数は${y.econ.toFixed(1)}です。`, null);
     if (c.d === 1) add(55, `${c.m}月がはじまる　地価指数は${(y.lpi * 100).toFixed(1)}`, `みなと不動産によると、街の地価指数は${(y.lpi * 100).toFixed(1)}（はじめを100として）。銀行と信用金庫にあずけられたお金は合わせて${man(y.dep)}になりました。`, 8801);
   }
+  bizPaper(n, add);
   if (!stories.length) add(50, '「みなと経済新聞」創刊', 'はじめ市とみなと市の経済ニュースを、毎朝6時にお届けします。株価、野菜や魚の値段、天気予報ものっています。', null);
   stories.sort((a, b) => b.pri - a.pri);
   const top = stories[0], rest = stories.slice(1, 5);
@@ -9968,6 +10030,8 @@ function shopHtml(a) {
     if (c.ind === '銀行') body += goods('金利', [['ふつう預金', '年0.05%'], ['住宅ローン', '年1.8%'], ['街の預金の合計', man(y ? y.dep : ECON.S.dep)]]);
     if (c.code === 8801) body += goods('物件', [['地価指数', ((y ? y.lpi : 1) * 100).toFixed(1)], ['空き家・空き部屋のある建物', `${TOWN.homes.filter((h) => !h.hh.length).length}`], ['家賃（2LDK）', `${yen(Math.round(70000 * (y ? y.lpi : 1) / 100) * 100)}円/月`]]);
     if (c.code === 2429) body += goods('会員', [['会員数', `${yen(ECON.S.gym)}人`], ['月会費', '8,000円']]);
+    if (c.code === 1801) body += goods('工事', [['きのうの売り上げ', y ? man(y.co[1801].rev) : '-'], ['店（プレハブ）', man(BIZ_BLD.prefab.cost)], ['小さな店', man(BIZ_BLD.shop.cost)]]);
+    body += bizShopHtml(c);
   }
   return body;
 }
@@ -9984,12 +10048,13 @@ function renderTown() {
     TP.lastPaper = Math.max(TP.lastPaper, now); try { localStorage.setItem('world.paperRead', String(TP.lastPaper)); } catch (e) {}
   } else if (TP.tab === 'stocks') { el('townTitle').textContent = `株（${COMPANIES.length}社）`; box.innerHTML = stocksHtml(); }
   else if (TP.tab === 'town') { el('townTitle').textContent = '街のようす'; box.innerHTML = townHtml(); }
+  else if (TP.tab === 'biz') { el('townTitle').textContent = BIZ ? BIZ.name : '事業をはじめる'; box.innerHTML = bizHtml(); }
   else { el('townTitle').textContent = '天気と季節'; box.innerHTML = wxHtml(); }
 }
-function openTown(tab, shop) { TP.open = true; TP.shop = shop || null; TP.tab = shop ? 'shop' : tab; el('town').hidden = false; renderTown(); el('townBody').scrollTop = 0; }
+function openTown(tab, shop) { if (shop && shop.kind === 'biz') { tab = 'biz'; shop = null; } TP.bizMsg = ''; TP.open = true; TP.shop = shop || null; TP.tab = shop ? 'shop' : tab; el('town').hidden = false; renderTown(); el('townBody').scrollTop = 0; }
 function closeTown() { TP.open = false; el('town').hidden = true; }
 el('townClose').addEventListener('click', closeTown);
-for (const b of document.querySelectorAll('#town [data-tt]')) b.addEventListener('click', () => { TP.tab = b.dataset.tt; renderTown(); el('townBody').scrollTop = 0; });
+for (const b of document.querySelectorAll('#town [data-tt]')) b.addEventListener('click', () => { TP.tab = b.dataset.tt; TP.bizMsg = ''; renderTown(); el('townBody').scrollTop = 0; });
 el('townBody').addEventListener('click', (e) => {
   const t = e.target.closest('button'); if (!t) return;
   if (t.dataset.pn) { TP.paperN += +t.dataset.pn; renderTown(); el('townBody').scrollTop = 0; }
@@ -9997,9 +10062,18 @@ el('townBody').addEventListener('click', (e) => {
   else if (t.dataset.q) { TP.qty = Math.max(1, Math.min(9999, (TP.qty || 1) + +t.dataset.q)); renderTown(); }
   else if (t.dataset.trade) trade(t.dataset.trade, TP.sel);
   else if (t.id === 'tPick') { TP.pick = (TP.pick || 0) + 1; renderTown(); }
+  else if (t.dataset.bgo) { TP.tab = 'biz'; TP.bizOpen = TP.bizOpen || new Set(); TP.bizOpen.add(t.dataset.bgo); renderTown(); el('townBody').scrollTop = 0; }
+  else if (t.dataset.b) {
+    const a = t.dataset.b, v = t.dataset.v, st = el('townBody').scrollTop;
+    if (a === 'lotF') { TP.lotF = v; TP.lotMore = 6; } else if (a === 'lotMore') TP.lotMore = (TP.lotMore || 6) + 6; else if (a === 'seekMore') TP.seekMore = (TP.seekMore || 5) + 5;
+    else bizAct(a, v);
+    renderTown(); el('townBody').scrollTop = a === 'register' ? 0 : st;
+  }
 });
 el('paperBtn').addEventListener('click', () => { setMenu(false); openTown('paper'); });
 el('townBtn').addEventListener('click', () => { setMenu(false); openTown('stocks'); });
+el('bizBtn').addEventListener('click', () => { setMenu(false); openTown('biz'); });
+el('townBody').addEventListener('toggle', (e) => { const d = e.target; if (!d.dataset || !d.dataset.sec) return; TP.bizOpen = TP.bizOpen || new Set(); if (d.open) TP.bizOpen.add(d.dataset.sec); else TP.bizOpen.delete(d.dataset.sec); }, true);
 // 株の画面は、取引中は 2 秒ごとに書きなおす
 setInterval(() => { if (TP.open && TP.tab === 'stocks' && ECON.marketOpen() && !document.querySelector('#town .trade:hover')) renderTown(); }, 2000);
 // 新しい朝刊が出たら知らせる
@@ -10012,6 +10086,7 @@ function stepPaper() {
 }
 // お店・PA の前で「のぞく」
 function townNearAction() {
+  const bz = bizNearAction(); if (bz) return bz;
   const p = player.pos;
   for (const o of TOWN.companies) {
     if (Math.abs(o.x - p.x) > 60 || Math.abs(o.z - p.z) > 60) continue;
@@ -10039,6 +10114,505 @@ function drawTownOnMap(g, P, sc, det) {
     const t = o.c.short + (o.label && o.label !== '本社' && o.label !== '本店' ? '' : ''); g.lineWidth = 3; g.strokeStyle = 'rgba(255,255,255,.9)'; g.strokeText(t, X + 8, Y); g.fillStyle = '#1b2b3c'; g.fillText(t, X + 8, Y);
   }
 }
+/* ================= プレイヤーの事業（2026-11-02 わんみゃさんの案） =================
+   事業者登録（個人事業主・合同会社・株式会社）→ 銀行で融資 → みなと不動産で土地を買う／借りる → はじめ建設に店をたのむ →
+   ファーム・水産などと仕入れ契約 → はじめ運輸（または自分のトラック）で運ぶ → 自分の店・飲食店で売る／マートや PA に卸す。
+   畑・運送業・アパートの家賃でも、もうけられる。毎日 0 時に決算（その日の天気・野菜や魚の値段は街の経済と同じ）。
+   いまはこの端末に覚える（localStorage 'world.biz'）。ほかの人の画面には出ない */
+const BIZ_KEY = 'world.biz';
+const BIZ_FORMS = {
+  sole: { name: '個人事業主', fee: 0, tax: 0.2, base: 5e6, staffMax: 5, fixed: 0, note: '届けを出すだけ（0P）。事業のお金と手持ちのPを自由に出し入れできる。借金は自分の責任（倒産したら手持ちのPでも返す）' },
+  llc: { name: '合同会社', fee: 60000, tax: 0.25, base: 15e6, staffMax: 30, fixed: 500, note: '登録 60,000P。会社のお金は別。借りられる額が大きい。会社がつぶれても手持ちのPは守られる。お金は役員報酬でうけとる' },
+  kk: { name: '株式会社', fee: 200000, tax: 0.25, base: 40e6, staffMax: 999, fixed: 1000, note: '登録 200,000P。株を出して（増資）街の人からお金を集められる。配当も出せる。銀行の金利が少し安い' },
+};
+const BIZ_BANKS = [{ code: 8301, rate: 0.024, term: 480, cap: Infinity }, { code: 8350, rate: 0.02, term: 240, cap: 8e6 }];
+// はじめ建設が建てる物。cap：お店は 1 日のお客さんの数、飲食店は食事の数、倉庫は置ける kg、アパートは部屋の数。need：いる人数
+const BIZ_BLD = {
+  prefab: { name: 'プレハブの店', icon: '🏪', cost: 2.0e6, days: 0.25, kind: 'shop', cap: 160, need: 1, util: 2500, w: 10, d: 7, h: 3.6 },
+  shop: { name: '小さな店', icon: '🏪', cost: 5.5e6, days: 0.5, kind: 'shop', cap: 450, need: 2, util: 6000, w: 18, d: 12, h: 5.5 },
+  super: { name: '大きな店（スーパー）', icon: '🏬', cost: 15e6, days: 1, kind: 'shop', cap: 1300, need: 5, util: 15000, w: 24, d: 16, h: 7, big: true },
+  diner: { name: '飲食店', icon: '🍛', cost: 6.5e6, days: 0.5, kind: 'diner', cap: 220, need: 2, util: 7000, w: 13, d: 10, h: 5 },
+  ware: { name: '倉庫', icon: '📦', cost: 3.5e6, days: 0.25, kind: 'ware', cap: 3000, need: 1, util: 2500, w: 16, d: 12, h: 7 },
+  apt: { name: 'アパート（8部屋）', icon: '🏢', cost: 12e6, days: 1, kind: 'apt', cap: 8, need: 0, util: 3000, w: 16, d: 10, h: 9.6 },
+  farm: { name: '畑（土づくり）', icon: '🌾', cost: 3e5, days: 0.25, kind: 'farm', cap: 0, need: 1, util: 500, farmOnly: true },
+};
+const BIZ_G = {   // 品物。basket：お店のお客さん 1 人が買う kg、carry：売れ残りの次の日まで持つ割合（倉庫があると多い）
+  veg: { name: '野菜', basket: 0.7, carry: 0.5, carryW: 0.85 }, fish: { name: '魚', basket: 0.25, carry: 0, carryW: 0.3 },
+  milk: { name: '牛乳', basket: 0.4, carry: 0.5, carryW: 0.7 }, proc: { name: '干物・かまぼこ', basket: 0.15, carry: 0.85, carryW: 0.95 },
+};
+// 市場の値段（円/kg）：その日の街の経済から
+const bizMkt = (g, x) => g === 'veg' ? x.veg.price : g === 'fish' ? x.fish.price : g === 'milk' ? Math.round(165 * x.feed) : Math.round(1000 * (0.85 + 0.15 * x.fishIdx));
+// 仕入れ先：市場の値段の 1.03 倍。不作・不漁の日は約束の量がそろわない
+const BIZ_SUP = [
+  { code: 1301, g: 'veg', avail: (x) => Math.min(1, x.veg.kg / x.veg.norm * 1.05) },
+  { code: 1332, g: 'fish', avail: (x) => x.fish.out ? Math.min(1, x.fish.kg / x.fish.norm * 1.1) : 0 },
+  { code: 2264, g: 'milk', avail: () => 1 },
+  { code: 2877, g: 'proc', avail: () => 1 },
+];
+const BIZ_SUP_KG = [0, 30, 60, 100, 200, 300, 500, 800, 1200, 2000];
+// 卸す先：[市場の値段の何倍で買うか, 1 日に買う kg の上限]。k はその日の上限の倍率
+const BIZ_BUY = [
+  { code: 3091, g: { fish: [1.18, 200], veg: [1.15, 300], proc: [1.15, 150] }, k: (x, g) => x.travel * (g === 'fish' ? 1 + Math.max(0, x.fish.kg / x.fish.norm - 1.05) * 2 : 1), why: 'PAの売店。休日・晴れ・大漁の日はたくさん買う' },
+  { code: 7611, g: { veg: [1.15, 120], fish: [1.12, 50] }, why: 'カレーの材料' },
+  { code: 2212, g: { milk: [1.12, 150] }, why: 'パンの材料' },
+  { code: 8201, g: { veg: [1.10, 800], fish: [1.08, 300], milk: [1.06, 500], proc: [1.08, 200] }, k: (x) => x.hol ? 1.15 : 1, why: 'スーパー。いちばんたくさん買う' },
+  { code: 2877, g: { fish: [1.05, 600] }, why: '干物・かまぼこの原料' },
+  { code: 1301, g: { veg: [0.86, 1e9] }, free: true, why: '畑まで取りに来る（送料なし）。いくらでも引き取る' },
+];
+// 人を集める力（その施設のまわり 600m の店に立ちよる人）
+const BIZ_DRAW = { park: 70, aquarium: 60, onsen: 45, super: 40, store: 35, diner: 15, gym: 20, shop: 20, tower: 25, bank: 12, office: 18 };
+const BIZ_SPEND = { park: 1800, aquarium: 1200, onsen: 900, super: 800, store: 800, diner: 900, gym: 500, shop: 2500, tower: 600, bank: 0, office: 600 };
+// トラック：はじめ自動車で買う／みなとリースで借りる（リース料に整備・保険がふくまれる）／自分の glTF のトラック（荷台の広さで運べる重さ。買わなくてよい）
+const BIZ_TRUCKS = { t2: { name: '2トン車', kg: 2000, price: 1.5e6, lease: 4500, keep: 1500 }, t4: { name: '4トン車', kg: 4000, price: 3.2e6, lease: 9000, keep: 2200 }, t10: { name: '10トン車', kg: 10000, price: 7.5e6, lease: 20000, keep: 4000 } };
+const BIZ_GLTF_KEEP = 800;
+const fleetKg = (b) => b.fleet.reduce((s, f) => s + f.kg, 0);
+// 自分が置いた glTF のトラック（荷台のある車）
+const myGltfTrucks = () => vehicles.filter((v) => v.mine && v.item && v.item.def.vehicle && v.item.def.vehicle.cargo);
+const truckKey = (v) => v.id || v.name;
+// その人がはたらいてもよい給料（仕事をさがしている人は安くても来る。ほかの仕事の人は高くないと来ない）
+const bizMinWage = (p) => Math.round((TOWN.job[p] === 7 ? 8000 + hash(p, 813) * 5000 : 11000 + hash(p, 813) * 9000) / 500) * 500;
+let BIZ = null;
+try { BIZ = JSON.parse(localStorage.getItem(BIZ_KEY) || 'null'); if (BIZ) { BIZ.fleet = BIZ.fleet || []; BIZ.wage = BIZ.wage || 11000; } } catch (e) { BIZ = null; }
+const saveBiz = () => { try { if (BIZ) localStorage.setItem(BIZ_KEY, JSON.stringify(BIZ)); else localStorage.removeItem(BIZ_KEY); } catch (e) {} };
+const bizLot = (id) => TOWN.lots[id];
+const bizDist = (a, b) => a && b ? Math.hypot(a.x - b.x, a.z - b.z) / 1000 : 3;   // km
+const coAt = (code) => { const c = companyBy(code); return c && c.hq; };
+// 土地の値段（いまの地価指数で）。畑用の土地は宅地の 2 割
+const bizLandPrice = (L, lpi) => Math.round(L.value * L.area * (lpi || ECON.S.lpi) * (L.farm ? 0.2 : 1) / 1000) * 1000;
+const bizRent = (L) => Math.round(bizLandPrice(L) * (L.farm ? 0.0005 : 0.0004) / 10) * 10;   // 1 日の地代
+// 土地のまわり 900m に住む人
+const bizNearPop = (() => { const memo = new Map(); return (L) => { if (memo.has(L.id)) return memo.get(L.id); let n = 0; for (const h of TOWN.hh) { const o = TOWN.homes[h.home]; if (Math.abs(o.x - L.x) < 900 && Math.abs(o.z - L.z) < 900 && Math.hypot(o.x - L.x, o.z - L.z) < 900) n += h.members.length; } memo.set(L.id, n); return n; }; })();
+// まわりのライバル（みなとマート・はじめ電気などのお店、飲食店）
+const bizRivals = (L, ind) => { let n = 0; for (const o of TOWN.companies) if ((ind === 'diner' ? o.kind === 'diner' : o.c.ind === '小売' && o.kind !== 'office') && Math.hypot(o.x - L.x, o.z - L.z) < 700) n++; return n; };
+const bizNow = () => gameDayF();
+function bizNew(form, name) {
+  const n = gameDayN();
+  return { v: 1, form, name, cash: 0, capital: 0, start: n, lastN: n - 1, lots: [], loans: [], sup: {}, buy: {}, trucks: 0, staff: [], inv: { veg: 0, fish: 0, milk: 0, proc: 0 },
+    markup: 1.3, meal: 950, pay: 0, wage: 11000, fleet: [], lossCarry: 0, shares: form === 'kk' ? 1000 : 0, own: form === 'kk' ? 1000 : 0, ledger: [], events: [], cum: { rev: 0, prof: 0, tax: 0 }, lastIssue: -1 };
+}
+// 会社の値うち（純資産）：現金 ＋ 自分の土地 ＋ 建物（古くなると下がる）＋ トラック ＋ 在庫 − 借金
+function bizBook(b, x) {
+  const n = gameDayF(); let land = 0, bld = 0;
+  for (const m of b.lots) { if (m.own) land += bizLandPrice(bizLot(m.id)); if (m.bld) bld += BIZ_BLD[m.bld.t].cost * Math.max(0.3, 1 - (n - m.bld.at) / 480); }
+  let inv = 0; if (x) for (const g in b.inv) inv += b.inv[g] * bizMkt(g, x);
+  const debt = b.loans.reduce((s, l) => s + l.amt, 0), trucks = b.fleet.reduce((s, f) => s + (f.src === 'buy' ? BIZ_TRUCKS[f.t].price * 0.6 : 0), 0);
+  return { land, bld, inv, debt, trucks, eq: b.cash + land + bld + inv + trucks - debt };
+}
+// 借りられる額：形の基本 ＋ 土地の 7 割 ＋ 建物の 5 割 − いまの借金
+function bizCredit(b) { const k = bizBook(b); return Math.max(0, Math.round((BIZ_FORMS[b.form].base + k.land * 0.7 + k.bld * 0.5 - k.debt) / 1e5) * 1e5); }
+/* ---- 1 日の決算。b は書きかえる（見込みは写しで計算する） ---- */
+function bizDay(b, n, x) {
+  const F = BIZ_FORMS[b.form], R = { n, rev: {}, cost: {}, kg: {}, notes: [] };
+  const aR = (k, v) => { if (v) R.rev[k] = (R.rev[k] || 0) + Math.round(v); }, aC = (k, v) => { if (v) R.cost[k] = (R.cost[k] || 0) + Math.round(v); };
+  const aK = (k, v) => { R.kg[k] = (R.kg[k] || 0) + Math.round(v); };
+  const live = b.lots.filter((m) => m.bld && m.bld.done <= n), kindOf = (m) => BIZ_BLD[m.bld.t].kind;
+  const shops = live.filter((m) => kindOf(m) === 'shop'), diners = live.filter((m) => kindOf(m) === 'diner'), wares = live.filter((m) => kindOf(m) === 'ware');
+  const farms = live.filter((m) => kindOf(m) === 'farm'), apts = live.filter((m) => kindOf(m) === 'apt');
+  const base = (shops[0] || diners[0] || wares[0] || farms[0]) || null, baseL = base && bizLot(base.id);
+  // 人手：建物ごとにいる人数＋トラックの運転手＋卸の荷さばき（1500kg に 1 人）。社長（自分）も 1 人に数える
+  let supKg = 0; for (const s of BIZ_SUP) supKg += b.sup[s.code] || 0;
+  let need = b.fleet.length; for (const m of live) need += BIZ_BLD[m.bld.t].need;
+  if (!shops.length && !diners.length) need += supKg / 1500;
+  const have = b.staff.length + 1, sf = need > 0 ? Math.min(1, have / need) : 1;
+  R.need = Math.round(need * 10) / 10; R.have = have; R.sf = sf;
+  aC('給料', b.staff.length * b.wage);
+  if (b.pay && b.form !== 'sole') aC('役員報酬', b.pay);
+  const inv = b.inv; let moves = [];   // 運んだ荷物 [kg, km, 自分の畑からか]
+  // 仕入れ
+  for (const s of BIZ_SUP) {
+    const want = b.sup[s.code] || 0; if (!want) continue;
+    const kg = Math.round(want * s.avail(x)), p = bizMkt(s.g, x) * 1.03;
+    if (kg < want) R.notes.push(`${companyBy(s.code).short}：${BIZ_G[s.g].name}が${want - kg}kg 足りなかった${s.g === 'fish' && !x.fish.out ? '（漁に出られない日）' : ''}`);
+    inv[s.g] += kg; aC('仕入れ', kg * p); aK('仕入れ', kg);
+    const firstBuy = BIZ_BUY.find((q) => b.buy[q.code] && !q.free);
+    moves.push([kg, bizDist(coAt(s.code), baseL || coAt(firstBuy ? firstBuy.code : s.code))]);
+  }
+  // 畑：広さ × 季節 × 天気（ファームの畑と同じ）
+  for (const m of farms) { const L = bizLot(m.id), kg = L.area * 0.05 * VEG_SEASON[x.c.m - 1] * x.veg.wf * sf; inv.veg += kg; aK('収穫', kg); }
+  const wx = x.storm ? 0.45 : x.snow ? 0.7 : x.rainF > 0.3 ? 0.85 : 1, mood = 0.9 + 0.2 * x.mood;
+  // 人が集まる効果：近くの会社の施設（遊園地・水族館・スーパー・会社など）と、自分のほかの店に来た人が立ちよる
+  const crowd = (L) => { let v = 0; for (const o of TOWN.companies) { const d = Math.hypot(o.x - L.x, o.z - L.z); if (d < 600) v += (BIZ_DRAW[o.kind] || 15) * (1 - d / 900); } return v; };
+  const own0 = new Map();   // 自分の店・飲食店の「もとの」人数（まわりへの立ちより用）
+  for (const m of [...shops, ...diners]) { const L = bizLot(m.id); own0.set(m, (kindOf(m) === 'shop' ? bizNearPop(L) * 0.1 + (L.road >= 14 ? 120 : 45) : bizNearPop(L) * 0.035 + (L.road >= 14 ? 80 : 30)) * wx); }
+  const spillIn = (m) => { const L = bizLot(m.id); let v = 0; for (const [m2, w] of own0) if (m2 !== m) { const L2 = bizLot(m2.id), d = Math.hypot(L2.x - L.x, L2.z - L.z); if (d < 500) v += w * 0.15 * (1 - d / 700); } return v; };
+  const near = {};   // まわりの会社へ流れた人
+  const spillOut = (L, people) => { for (const o of TOWN.companies) { const d = Math.hypot(o.x - L.x, o.z - L.z); if (d < 500 && BIZ_DRAW[o.kind]) { const k = o.c.code; near[k] = (near[k] || 0) + people * 0.2 * (1 - d / 700); } } };
+  // 自分のお店
+  for (const m of shops) {
+    const L = bizLot(m.id), B = BIZ_BLD[m.bld.t];
+    const att = 1 + (inv.veg > 20 ? 0.25 : 0) + (inv.fish > 10 ? 0.2 : 0) + (inv.milk > 10 ? 0.1 : 0) + (inv.proc > 5 ? 0.1 : 0);
+    const priceF = Math.pow(1.3 / b.markup, 2.5), comp = 1 / (1 + 0.35 * bizRivals(L, 'shop'));
+    const draw = (crowd(L) + spillIn(m)) * wx * (x.hol ? 1.3 : 1);
+    const want = ((bizNearPop(L) * 0.1 + (L.road >= 14 ? 120 : 45)) * comp * wx * (x.hol ? 1.15 : 1) * att * (B.big ? 2.4 : 1) + draw) * mood * priceF;
+    const cust = Math.round(Math.min(want, B.cap * sf)); R.cust = (R.cust || 0) + cust; R.draw = (R.draw || 0) + Math.round(Math.min(draw, cust)); spillOut(L, cust);
+    if (want > B.cap * sf * 1.05) R.notes.push(`${B.name}：お客さんが入りきらない（人手か、大きい店を）`);
+    aR('お店（日用品）', cust * 1000); aC('日用品の仕入れ', cust * 750);
+    for (const g in BIZ_G) { const kg = Math.min(inv[g], cust * BIZ_G[g].basket); inv[g] -= kg; aR(`お店（${BIZ_G[g].name}）`, kg * bizMkt(g, x) * b.markup); aK('お店で売った', kg); }
+  }
+  // 飲食店
+  for (const m of diners) {
+    const L = bizLot(m.id), B = BIZ_BLD[m.bld.t];
+    const priceF = Math.pow(950 / b.meal, 2), comp = Math.pow(0.75, bizRivals(L, 'diner'));
+    const draw = (crowd(L) + spillIn(m)) * 0.6 * wx * (x.hol ? 1.3 : 1);
+    const want = ((bizNearPop(L) * 0.035 + (L.road >= 14 ? 80 : 30)) * comp * wx * (x.hol ? 1.25 : 1) + draw) * mood * priceF;
+    const meals = Math.round(Math.min(want, B.cap * sf)); R.meals = (R.meals || 0) + meals; R.draw = (R.draw || 0) + Math.round(Math.min(draw, meals)); spillOut(L, meals);
+    aR('飲食店', meals * b.meal); aC('材料（米・調味料など）', meals * 260);
+    for (const [g, per] of [['veg', 0.15], ['fish', 0.06]]) { const kg = meals * per, use = Math.min(inv[g], kg); inv[g] -= use; if (kg > use) aC('材料をマートで買い足し', (kg - use) * bizMkt(g, x) * 1.25); }
+  }
+  R.spill = Object.entries(near).map(([k, v]) => [+k, Math.round(v)]).filter((a) => a[1] > 0).sort((a, c) => c[1] - a[1]);
+  // 卸す（高く買ってくれる所から）
+  const offers = [];
+  for (const q of BIZ_BUY) if (b.buy[q.code]) for (const g in q.g) offers.push({ q, g, mul: q.g[g][0], cap: q.g[g][1] * (q.k ? q.k(x, g) : 1) });
+  offers.sort((a, c) => c.mul - a.mul);
+  for (const o of offers) {
+    const kg = Math.floor(Math.min(inv[o.g], o.cap)); if (kg <= 0) continue;
+    inv[o.g] -= kg; aR(`卸（${companyBy(o.q.code).short}）`, kg * bizMkt(o.g, x) * o.mul); aK('卸した', kg);
+    if (!o.q.free) moves.push([kg, baseL ? bizDist(baseL, coAt(o.q.code)) : 0]);
+  }
+  // 売れ残り：次の日まで持つのは一部（倉庫があれば多く、置ける量もふえる）
+  let room = 300 + wares.length * BIZ_BLD.ware.cap * sf, lost = 0;
+  for (const g in BIZ_G) {
+    const keep = Math.min(inv[g] * (wares.length ? BIZ_G[g].carryW : BIZ_G[g].carry), room); room -= keep;
+    lost += (inv[g] - keep) * bizMkt(g, x); inv[g] = Math.round(keep);
+  }
+  if (lost > 0) R.lost = Math.round(lost);
+  // 運送：自分のトラックで運べるだけ運び、残りははじめ運輸に（1kg 8円 ＋ 1km 1.5円）
+  let cap = fleetKg(b) * Math.min(1, sf * 1.0001) * (x.snow || x.storm ? 0.7 : 1), own = 0, out = 0;
+  for (const [kg, km] of moves) { const a = Math.min(kg, cap); cap -= a; own += a * (1 + 0.6 * km * x.fuel); out += (kg - a) * (8 + 1.5 * km); }
+  aC('燃料（自分のトラック）', own); aC('はじめ運輸へ', out);
+  if (b.fleet.length) {
+    for (const f of b.fleet) if (f.src === 'buy') aC('トラックの整備・保険', BIZ_TRUCKS[f.t].keep); else if (f.src === 'lease') aC('リース料（みなとリース）', BIZ_TRUCKS[f.t].lease); else aC('トラックの整備・保険', BIZ_GLTF_KEEP);
+    const sub = cap * (0.45 + 0.3 * x.mood) * (x.storm ? 0.5 : 1);   // あいているトラックははじめ運輸の下うけ
+    if (sub > 50) { aR('運送（はじめ運輸の下うけ）', sub * 15); aC('燃料（自分のトラック）', sub * 2.5 * x.fuel); aK('下うけで運んだ', sub); }
+  }
+  // アパート
+  for (const m of apts) {
+    const L = bizLot(m.id), zf = { urban: 1.4, suburb: 1, village: 0.8, rural: 0.6 }[L.zone] || 1;
+    const occ = Math.min(1, 0.55 + 0.3 * x.mood + (L.zone === 'urban' ? 0.1 : 0) + (bizNearPop(L) > 2500 ? 0.05 : 0)), rooms = Math.round(8 * occ);
+    aR('家賃（アパート）', rooms * 5500 * zf * x.lpi); aC('管理費', rooms * 5500 * zf * x.lpi * 0.05); R.rooms = (R.rooms || 0) + rooms;
+  }
+  // 土地と建物
+  for (const m of b.lots) {
+    const L = bizLot(m.id), P = bizLandPrice(L, x.lpi);
+    if (m.own) aC('固定資産税', P * 0.0002); else aC('地代（みなと不動産）', P * (L.farm ? 0.0005 : 0.0004));
+    if (m.bld && m.bld.done <= n) { const B = BIZ_BLD[m.bld.t]; aC('電気・水道', B.util); aC('建物の修理', B.cost * 0.0002); }
+  }
+  // 借金：利息は費用、元金の返済は現金だけ減る
+  let principal = 0;
+  for (const l of b.loans) { aC('利息', l.amt * l.rate / 48); const p = Math.min(l.amt, Math.round(l.orig / l.term)); l.amt -= p; principal += p; }
+  b.loans = b.loans.filter((l) => l.amt > 0);
+  if (F.fixed) aC('住民税（均等割）', F.fixed);
+  const rev = Object.values(R.rev).reduce((s, v) => s + v, 0), cost = Object.values(R.cost).reduce((s, v) => s + v, 0), prof = rev - cost;
+  // 税金：もうけ（前の赤字を引いて）× 税率
+  let taxable = prof - b.lossCarry; if (prof < 0) { b.lossCarry += -prof; taxable = 0; } else { b.lossCarry = Math.max(0, b.lossCarry - prof); }
+  const tax = Math.round(Math.max(0, taxable) * F.tax);
+  b.cash += rev - cost - principal - tax;
+  if (b.pay && b.form !== 'sole') R.payOut = Math.round(b.pay * 0.9);   // 役員報酬は手持ちの P へ（1 割は所得税）
+  Object.assign(R, { revT: rev, costT: cost, prof, tax, principal, cash: Math.round(b.cash) });
+  return R;
+}
+// お金が足りない：つなぎ融資（みなと銀行・年 8%）。それも無理なら倒産
+function bizRescue(b, n) {
+  if (b.cash >= 0) return null;
+  const need = Math.max(1e5, Math.ceil(-b.cash / 1e5) * 1e5);
+  if (bizCredit(b) >= need) { b.loans.push({ bank: 8301, orig: need, amt: need, rate: 0.08, term: 96, at: n, tsunagi: true }); b.cash += need; return `お金が足りず、みなと銀行から つなぎ融資 ${man(need)}（年8%）を受けました`; }
+  return 'bankrupt';
+}
+// 決算（終わった日のぶん）
+function bizSettle() {
+  const b = BIZ; if (!b) return;
+  const today = gameDayN(); if (b.lastN >= today - 1) return;
+  ECON.upTo(today);
+  let k = 0;
+  while (BIZ && b.lastN < today - 1 && k < 600) {
+    const n = b.lastN + 1, x = ECON.S.xs.get(n) || ECON.ctx(n, ECON.S);
+    const R = bizDay(b, n, x); b.lastN = n; k++;
+    const quit = b.staff.filter((p) => bizMinWage(p) > b.wage); if (quit.length) { b.staff = b.staff.filter((p) => !quit.includes(p)); R.notes.push(`給料が安いので${quit.map(resName).join('・')}さんがやめました`); }
+    b.cum.rev += R.revT; b.cum.prof += R.prof; b.cum.tax += R.tax;
+    if (R.payOut) addPoints(R.payOut);
+    b.ledger.push(R); if (b.ledger.length > 30) b.ledger.shift();
+    const res = bizRescue(b, n);
+    if (res === 'bankrupt') { bizClose(true); return; }
+    if (res) { b.events.push({ n, t: res }); showMsg('🏢 ' + res); }
+  }
+  if (BIZ && k) { saveBiz(); if (k === 1) { const R = b.ledger[b.ledger.length - 1]; showMsg(`🏢 ${b.name}の決算：売り上げ ${man(R.revT)}・利益 ${man(R.prof)}`); } else showMsg(`🏢 ${b.name}：${k}日ぶんの決算をしました（☰ → 事業）`); }
+}
+// 廃業・倒産：土地を売り、建物をこわし、借金を返す。残りを手持ちへ（会社は持ち株の割合）
+function bizClose(bankrupt) {
+  const b = BIZ; if (!b) return;
+  const k = bizBook(b), f = bankrupt ? 0.7 : 0.9;
+  let cash = b.cash + k.land * f + k.trucks * (bankrupt ? 0.67 : 1) - b.fleet.reduce((s, q) => s + (q.src === 'lease' ? BIZ_TRUCKS[q.t].lease * 4 : 0), 0);
+  for (const m of b.lots) if (m.bld) cash += m.own && BIZ_BLD[m.bld.t].kind !== 'farm' ? BIZ_BLD[m.bld.t].cost * Math.max(0.3, 1 - (gameDayF() - m.bld.at) / 480) * 0.5 : -BIZ_BLD[m.bld.t].cost * 0.05;
+  for (const g in b.inv) cash += b.inv[g] * 50;
+  cash -= k.debt;
+  let msg;
+  if (cash >= 0) { const mine = b.form === 'kk' ? cash * b.own / b.shares : cash; const got = Math.round(b.form === 'sole' ? mine : mine * 0.8); addPoints(got); msg = `${b.name}を${bankrupt ? '倒産で' : ''}たたみました。手もとに ${yen(got)}P もどりました`; }
+  else if (b.form === 'sole') { const pay = Math.min(wallet.p, -cash); addPoints(-pay); msg = `${b.name}${bankrupt ? 'は倒産しました' : 'を廃業しました'}。個人事業主なので、売っても のこった借金 ${yen(-cash)}円のうち ${yen(pay)}P を手持ちから返しました`; }
+  else msg = `${b.name}${bankrupt ? 'は倒産しました' : 'を廃業しました'}。のこった借金 ${yen(-cash)}円は会社の分なので、手持ちのPは守られました`;
+  for (const m of b.lots) bizUnbuild(m);
+  BIZ = null; saveBiz(); TP.bizMsg = msg; showMsg('🏢 ' + msg);
+  if (TP.open) renderTown();
+}
+/* ---- 手続き ---- */
+function bizAct(a, v) {
+  const b = BIZ, n = gameDayN(), say = (t) => { TP.bizMsg = t; };
+  TP.bizMsg = '';
+  if (a === 'form') { TP.bizForm = v; }
+  else if (a === 'register') {
+    const F = BIZ_FORMS[TP.bizForm || 'sole'], nm = (el('bizName') && el('bizName').value.trim().slice(0, 16)) || '';
+    if (!nm) return say('お店・会社の名前を入れてください');
+    if (wallet.p < F.fee) return say(`登録に ${yen(F.fee)}P いります（手持ち ${fmtP(wallet.p)}）`);
+    addPoints(-F.fee); BIZ = bizNew(TP.bizForm || 'sole', nm); BIZ.events.push({ n, t: `${F.name}「${nm}」を登録` }); saveBiz();
+    say(`${F.name}「${nm}」を登録しました。まずは銀行でお金を借りて、土地をさがしましょう`); TP.bizOpen = new Set(['money', 'loan']);
+  }
+  if (!b) return;
+  const ensure = (amt) => { if (b.cash >= amt) return true; say(`事業のお金が足りません（${man(amt)} いります・いま ${man(b.cash)}）。融資を受けるか、お金を入れてください`); return false; };
+  switch (a) {
+    case 'in': { const amt = v === 'all' ? wallet.p : +v; if (amt <= 0 || wallet.p < amt) return say('手持ちのPが足りません'); addPoints(-amt); b.cash += amt; if (b.form !== 'sole') { b.capital += amt; if (b.form === 'kk') { const k = bizBook(b), pps = Math.max(1000, (k.eq - amt) / b.shares); const ns = Math.round(amt / pps); b.shares += ns; b.own += ns; } } say(`${yen(amt)}P を${b.form === 'sole' ? '事業に入れました' : '出資しました'}`); break; }
+    case 'out': { if (b.form !== 'sole') return; const amt = Math.min(+v || b.cash, b.cash); if (amt <= 0) return say('事業のお金がありません'); b.cash -= amt; addPoints(amt); say(`${yen(amt)}P を手持ちに移しました`); break; }
+    case 'pay': b.pay = +v; say(`役員報酬を1日 ${yen(b.pay)}円にしました（1割は所得税）`); break;
+    case 'div': { const k = bizBook(b), D = +v, room = k.eq - b.capital; if (D > room) return say(`配当は もうけた分（${man(Math.max(0, room))}）までです`); if (!ensure(D)) return; b.cash -= D; const got = Math.round(D * b.own / b.shares * 0.8); addPoints(got); say(`配当 ${man(D)} を出しました。あなたの分（${(b.own / b.shares * 100).toFixed(0)}%・2割は税金）${yen(got)}P`); break; }
+    case 'issue': {
+      if (b.form !== 'kk') return; if (b.lastIssue === n) return say('増資は1日に1回までです');
+      const k = bizBook(b), last = b.ledger.slice(-5), avg = last.length ? last.reduce((s, r) => s + r.prof, 0) / last.length : 0;
+      if (k.eq <= 0 || (avg < 0 && n - b.start > 3)) return say('赤字つづきなので、株を買ってくれる人がいません');
+      const pps = Math.max(1000, k.eq / b.shares * (avg > 0 ? 1 + Math.min(1, avg * 48 / Math.max(1, k.eq)) : 1)), amt = +v, ns = Math.round(amt / pps);
+      b.shares += ns; b.cash += ns * pps; b.capital += ns * pps; b.lastIssue = n;
+      say(`新しい株を${yen(ns)}株（1株 ${yen(pps)}円）出して、${man(ns * pps)} 集めました。あなたの持ち分は ${(b.own / b.shares * 100).toFixed(1)}%`); break; }
+    case 'borrow': { const [code, amt] = v.split(':').map(Number), bank = BIZ_BANKS.find((q) => q.code === code), cr = bizCredit(b);
+      const used = b.loans.filter((l) => l.bank === code).reduce((s, l) => s + l.amt, 0);
+      if (amt > cr) return say(`${companyBy(code).short}：あと ${man(cr)} までしか貸せません（土地や建物を持つと、たくさん借りられます）`);
+      if (used + amt > bank.cap) return say(`${companyBy(code).short}は 1社に ${man(bank.cap)} までです`);
+      const rate = bank.rate - (b.form === 'kk' ? 0.003 : 0);
+      b.loans.push({ bank: code, orig: amt, amt, rate, term: bank.term, at: n }); b.cash += amt;
+      say(`${companyBy(code).name}から ${man(amt)} 借りました（年${(rate * 100).toFixed(1)}%・${bank.term}日で返す＝毎日 ${man(amt / bank.term)}）`); break; }
+    case 'repay': { const l = b.loans[+v]; if (!l || !ensure(l.amt)) return; b.cash -= l.amt; b.loans.splice(+v, 1); say(`${companyBy(l.bank).short}の借金 ${man(l.amt)} を返しました`); break; }
+    case 'buyLot': case 'rentLot': {
+      const L = bizLot(+v); if (!L || bizLotTaken(L.id)) return; const P = bizLandPrice(L);
+      if (a === 'buyLot') { if (!ensure(P)) return; b.cash -= P; }
+      else if (!ensure(bizRent(L) * 4)) return; else b.cash -= bizRent(L) * 4;   // 借りるときは 4 日分（1 か月）の敷金
+      b.lots.push({ id: L.id, own: a === 'buyLot', price: P, at: gameDayF(), bld: null, dep: a === 'buyLot' ? 0 : bizRent(L) * 4 });
+      say(`${L.dist.name}の土地（${L.area}㎡）を${a === 'buyLot' ? `${man(P)}で買いました` : `1日 ${yen(bizRent(L))}円で借りました（敷金 ${yen(bizRent(L) * 4)}円）`}。つぎは はじめ建設に たのみましょう`);
+      TP.bizOpen.add('build'); break; }
+    case 'build': { const [id, t] = v.split(':'), m = b.lots.find((q) => q.id === +id), B = BIZ_BLD[t], L = bizLot(+id); if (!m || m.bld) return;
+      if (B.farmOnly && !L.farm) return say('畑は いなかの広い土地だけです'); if (B.big && L.area < 600) return say('大きな店は 600㎡ 以上の土地がいります');
+      if (!ensure(B.cost)) return; b.cash -= B.cost; m.bld = { t, at: gameDayF(), done: gameDayF() + B.days }; if (t === 'farm') b.buy[1301] = 1;   // 畑の野菜はふだんファームが引き取る
+      bizBuild(m); say(`はじめ建設に「${B.name}」をたのみました（${man(B.cost)}）。${B.days < 1 ? `${Math.round(B.days * 24)}時間` : `${B.days}日`}でできます`); break; }
+    case 'demolish': { const m = b.lots.find((q) => q.id === +v); if (!m || !m.bld) return; const B = BIZ_BLD[m.bld.t], c = Math.round(B.cost * 0.05); if (!ensure(c)) return; b.cash -= c; bizUnbuild(m); m.bld = null; say(`${B.name}をこわしました（${man(c)}）`); break; }
+    case 'sellLot': { const i = b.lots.findIndex((q) => q.id === +v); if (i < 0) return; const m = b.lots[i], L = bizLot(m.id);
+      let got = m.own ? Math.round(bizLandPrice(L) * 0.95) : m.dep || 0;
+      if (m.bld) got += m.own && BIZ_BLD[m.bld.t].kind !== 'farm' ? Math.round(BIZ_BLD[m.bld.t].cost * Math.max(0.3, 1 - (gameDayF() - m.bld.at) / 480) * 0.5) : -Math.round(BIZ_BLD[m.bld.t].cost * 0.05);
+      bizUnbuild(m); b.lots.splice(i, 1); b.cash += got; say(m.own ? `土地を みなと不動産に売りました（${man(got)}）` : `土地をかえしました（${got >= 0 ? `敷金など ${man(got)} がもどりました` : `こわす費用 ${man(-got)}`}）`); break; }
+    case 'sup': { const [code, d] = v.split(':').map(Number); const i = BIZ_SUP_KG.indexOf(b.sup[code] || 0), j = Math.max(0, Math.min(BIZ_SUP_KG.length - 1, i + d)); b.sup[code] = BIZ_SUP_KG[j]; if (!b.sup[code]) delete b.sup[code]; break; }
+    case 'buy': { const code = +v; if (b.buy[code]) delete b.buy[code]; else b.buy[code] = 1; say(b.buy[code] ? `${companyBy(code).name}と卸の契約をしました` : `${companyBy(code).name}との契約をやめました`); break; }
+    case 'truckBuy': { const T = BIZ_TRUCKS[v]; if (!ensure(T.price)) return; b.cash -= T.price; b.fleet.push({ src: 'buy', t: v, kg: T.kg, name: T.name, at: n }); say(`はじめ自動車で${T.name}を買いました（${man(T.price)}）。運転手が1人いります（社長が運転してもよい）`); break; }
+    case 'truckLease': { const T = BIZ_TRUCKS[v]; b.fleet.push({ src: 'lease', t: v, kg: T.kg, name: T.name, at: n }); say(`みなとリースで${T.name}を借りました（1日 ${yen(T.lease)}円・整備と保険こみ）`); break; }
+    case 'truckGltf': { const tv = myGltfTrucks().find((q) => truckKey(q) === v); if (!tv || b.fleet.some((f) => f.vid === v)) return; const c = tv.item.def.vehicle.cargo; b.fleet.push({ src: 'gltf', vid: v, kg: c.kg, name: tv.name || 'トラック', at: n }); say(`自分のトラック「${tv.name || 'トラック'}」（荷台 ${c.w}×${c.l}m・${yen(c.kg)}kg）を事業につかいます。買わなくてよいので、そのぶん安くはじめられます`); break; }
+    case 'truckDrop': { const f = b.fleet[+v]; if (!f) return; let got = 0; if (f.src === 'buy') got = BIZ_TRUCKS[f.t].price * 0.6; if (f.src === 'lease') got = -BIZ_TRUCKS[f.t].lease * 4;
+      b.fleet.splice(+v, 1); b.cash += got; say(f.src === 'buy' ? `${f.name}を はじめ自動車に売りました（${man(got)}）` : f.src === 'lease' ? `リースをやめました（解約金 ${man(-got)}）` : `「${f.name}」を事業からはずしました`); break; }
+    case 'wage': b.wage = Math.max(8000, Math.min(25000, b.wage + +v)); say(`求人の給料を1日 ${yen(b.wage)}円にしました。${b.staff.filter((p) => bizMinWage(p) > b.wage).length ? 'いまの給料ではやめたい人がいます（つぎの決算でやめます）' : ''}`); break;
+    case 'hire': { if (bizMinWage(+v) > b.wage) return say('この給料では来てくれません'); if (b.staff.length + 1 >= BIZ_FORMS[b.form].staffMax) return say(`${BIZ_FORMS[b.form].name}は ${BIZ_FORMS[b.form].staffMax}人まで（社長をふくむ）。会社にすると たくさん雇えます`); b.staff.push(+v); say(`${resName(+v)}さんを雇いました（1日 ${yen(b.wage)}円）`); break; }
+    case 'fire': b.staff = b.staff.filter((p) => p !== +v); say(`${resName(+v)}さんがやめました`); break;
+    case 'markup': b.markup = Math.max(1.1, Math.min(1.8, Math.round((b.markup + +v) * 100) / 100)); break;
+    case 'meal': b.meal = Math.max(600, Math.min(2000, b.meal + +v)); break;
+    case 'upgrade': { const F = BIZ_FORMS[v], fee = v === 'kk' && b.form === 'llc' ? 140000 : F.fee; if (wallet.p < fee) return say(`${yen(fee)}P いります`); addPoints(-fee); b.form = v; if (v === 'kk' && !b.shares) { b.shares = 1000; b.own = 1000; } b.capital = Math.max(b.capital, Math.max(0, b.cash)); b.events.push({ n, t: `${F.name}になりました` }); say(`${F.name}になりました（法人成り）`); break; }
+    case 'close': if (TP.bizSure) { TP.bizSure = false; bizClose(false); return; } TP.bizSure = true; say('もう一度おすと、ほんとうに廃業します（土地は 9 割の値段で売り、借金を返します）'); return;
+  }
+  TP.bizSure = false; saveBiz();
+}
+const bizLotTaken = (id) => !!(BIZ && BIZ.lots.some((m) => m.id === id));
+/* ---- 3D：自分の建物 ---- */
+const bizG = new Map();   // lot id → { g, ob }
+let bizAptMat = null;
+function bizBuild(m) {
+  bizUnbuild(m); if (!m.bld) return;
+  const L = bizLot(m.id), B = BIZ_BLD[m.bld.t], M = townBlds.M, g = new THREE.Group(), done = gameDayF() >= m.bld.done;
+  const add = (geo, mat, x, y, z) => { const o = new THREE.Mesh(geo, mat); o.position.set(x, y, z); o.castShadow = o.receiveShadow = true; g.add(o); return o; };
+  const boxM = (mat, w, h, d, x, y, z) => add(new THREE.BoxGeometry(w, h, d).translate(0, h / 2, 0), mat, x, y, z);
+  const name = BIZ ? BIZ.name : '';
+  if (B.kind === 'farm') {
+    boxM(new THREE.MeshLambertMaterial({ color: 0x7a5a3a }), L.w - 2, 0.12, L.d - 2, 0, -0.04, 0);
+    if (done) { const st = new THREE.MeshLambertMaterial({ color: 0x5f9a3a }); for (let k = 0; k < Math.floor((L.w - 4) / 3); k++) boxM(st, 1.2, 0.5, L.d - 5, -L.w / 2 + 3 + k * 3, 0, 0); }
+  } else {
+    boxM(M.lot, L.w - 1, 0.08, L.d - 1, 0, -0.03, 0);
+    const w = B.big ? Math.min(B.w, L.w - 4) : B.w, d = B.big ? Math.min(B.d, L.d - 7) : B.d, h = B.h, z = -(L.d / 2 - d / 2 - 1.5);
+    if (!done) {
+      const sc = boxM(new THREE.MeshLambertMaterial({ color: 0x9aa3ad, transparent: true, opacity: 0.55 }), w + 1, h + 1, d + 1, 0, 0, z);
+      const tex = townSignTex('工事中', 'はじめ建設', '#f2c12e', '#2a2a2a'); const s = new THREE.Mesh(new THREE.PlaneGeometry(6, 1.5), new THREE.MeshBasicMaterial({ map: tex })); s.position.set(0, 2, z + d / 2 + 0.7); g.add(s);
+      boxM(M.metal, 0.5, h + 8, 0.5, w / 2 + 2, 0, z); boxM(M.metal, 12, 0.5, 0.5, w / 2 - 4, h + 8, z);   // クレーン
+      m.w = w; m.d = d; m.h = h + 1; m.z = z;
+    } else {
+      const tex = townSignTex(name, B.name.replace(/（.*）/, ''), '#2e6b4a', '#ffffff');
+      if (B.kind === 'apt') {
+        bizAptMat = bizAptMat || townWallMat(3.2, 3.2, 0.5, true, '0.6');
+        const im = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1).translate(0, 0.5, 0), bizAptMat, 1); im.setMatrixAt(0, new THREE.Matrix4().compose(new THREE.Vector3(0, 0, z), new THREE.Quaternion(), new THREE.Vector3(w, h, d))); im.setColorAt(0, new THREE.Color(0xe9e2d4)); im.frustumCulled = false; im.castShadow = true; g.add(im);
+        boxM(M.roof, w + 0.8, 0.5, d + 0.8, 0, h, z);
+      } else {
+        boxM(M.shopW, w, h, d, 0, 0, z).material = new THREE.MeshLambertMaterial({ color: B.kind === 'ware' ? 0xd9d6cc : 0xf4efe4 });
+        if (B.kind !== 'ware') boxM(M.glass, w * 0.7, Math.min(2.6, h * 0.5), 0.12, 0, 0.1, z + d / 2 + 0.03);
+        else for (let k = -1; k <= 1; k += 2) boxM(M.metal, w / 4, h * 0.6, 0.12, k * w / 4, 0, z + d / 2 + 0.03);
+        boxM(B.kind === 'diner' ? new THREE.MeshLambertMaterial({ color: 0xa63a2c }) : M.roof, w + 1, 0.45, d + 1, 0, h, z);
+        if (B.kind === 'shop' || B.kind === 'diner') boxM(new THREE.MeshLambertMaterial({ color: 0x2e6b4a }), w * 0.8, 0.25, 2.4, 0, 3, z + d / 2 + 1.2);
+      }
+      const sw = Math.min(w * 0.8, 12), sh = sw / 4, s = new THREE.Mesh(new THREE.PlaneGeometry(sw, sh), new THREE.MeshBasicMaterial({ map: tex }));   // 看板は屋根の上の正面
+      s.position.set(0, h + 0.45 + sh / 2, z + d / 2 - 0.3); g.add(s); boxM(M.dark, sw, sh, 0.2, 0, h + 0.45, z + d / 2 - 0.45);
+      m.w = w; m.d = d; m.h = h; m.z = z;
+    }
+  }
+  g.position.set(L.x, L.y, L.z); g.rotation.y = L.rot; scene.add(g);
+  // 地面をならす（道路の高さ）・ぶつかる
+  const c = Math.cos(L.rot), sn = Math.sin(L.rot), pad = { x: L.x, z: L.z, c, s: sn, lu: 0, lv: 0, hw: L.w / 2, hd: L.d / 2, y: L.y, base: 0 };
+  const RR = Math.hypot(pad.hw, pad.hd) + PAD_M; Object.assign(pad, { x0: L.x - RR, x1: L.x + RR, z0: L.z - RR, z1: L.z + RR }); PADS.push(pad); refreshPadArea(pad);
+  let ob = null;
+  if (B.kind !== 'farm') {
+    ob = { kind: 'bizbld', x: L.x + sn * m.z, z: L.z + c * m.z, rot: L.rot, w: m.w, d: m.d, h: m.h, y: L.y, g }; ob.r = Math.hypot(ob.w, ob.d) / 2;
+    const k = Math.floor(ob.x / TOWN.OCC) * 65536 + Math.floor(ob.z / TOWN.OCC); let a = TOWN.occ.get(k); if (!a) TOWN.occ.set(k, a = []); a.push(ob);
+  }
+  bizG.set(m.id, { g, ob, pad, done });
+}
+function bizUnbuild(m) {
+  const e = bizG.get(m.id); if (!e) return;
+  scene.remove(e.g); e.g.traverse((o) => { if (o.geometry) o.geometry.dispose(); });
+  const i = PADS.indexOf(e.pad); if (i >= 0) { PADS.splice(i, 1); refreshPadArea(e.pad); }
+  if (e.ob) for (const a of TOWN.occ.values()) { const j = a.indexOf(e.ob); if (j >= 0) a.splice(j, 1); }
+  bizG.delete(m.id);
+}
+if (BIZ) for (const m of BIZ.lots) if (m.bld) bizBuild(m);
+let bizT = 0;
+function stepBiz() {
+  if (!BIZ || performance.now() - bizT < 1000) return; bizT = performance.now();
+  bizSettle(); if (!BIZ) return;
+  const f = gameDayF(), cx = camera.position.x, cz = camera.position.z;
+  for (const m of BIZ.lots) {
+    const e = bizG.get(m.id); if (!e) continue;
+    if (!e.done && m.bld && f >= m.bld.done) { bizBuild(m); showMsg(`🏗️ はじめ建設：「${BIZ_BLD[m.bld.t].name}」ができました`); if (!BIZ.events.some((q) => q.open)) BIZ.events.push({ n: Math.floor(f), t: `${BIZ_BLD[m.bld.t].name}が開店`, open: true }); saveBiz(); }
+    const L = bizLot(m.id); e.g.visible = Math.abs(L.x - cx) < 1200 && Math.abs(L.z - cz) < 1200;
+  }
+}
+/* ---- 画面 ---- */
+function bizHtml() {
+  const b = BIZ, n = gameDayN(), msg = TP.bizMsg ? `<p class="note bzmsg">${escH(TP.bizMsg)}</p>` : '';
+  TP.bizOpen = TP.bizOpen || new Set(['money']);
+  if (!b) {
+    const f = TP.bizForm || 'sole';
+    return `${msg}<section class="card"><h3>🏢 事業をはじめる</h3><p>店や会社をつくって、街の会社と取り引きしてもうけましょう。たとえば小売なら：<b>みなと銀行</b>でお金を借りる → <b>みなと不動産</b>で土地を買う／借りる → <b>はじめ建設</b>で店を建てる → <b>はじめファーム</b>などと仕入れの契約 → <b>はじめ運輸</b>で運んで売る。</p>
+      <p>店を持たずに<b>みなとマートやPAに卸す</b>、<b>畑</b>をやって売る、<b>トラック</b>で運送業、<b>アパート</b>で家賃、などのやり方もあります。毎日0時に決算します（ゲームの1日＝実際の1時間）。</p></section>
+      <section><h3>事業の形をえらぶ</h3>${Object.entries(BIZ_FORMS).map(([k, F]) => `<button type="button" class="bzopt${f === k ? ' on' : ''}" data-b="form" data-v="${k}"><b>${F.name}</b>　<span>${F.fee ? yen(F.fee) + 'P' : '0P'}・税 ${F.tax * 100}%・借りられる額 ${man(F.base)}〜・${F.staffMax > 100 ? '人数の上限なし' : `${F.staffMax}人まで`}</span><small>${F.note}</small></button>`).join('')}</section>
+      <section><h3>名前</h3><input id="bizName" maxlength="16" placeholder="${f === 'sole' ? 'わんみゃ商店' : f === 'llc' ? 'わんみゃ合同会社' : '株式会社わんみゃ'}" autocomplete="off"> <button type="button" class="buy" data-b="register">登録する</button><p class="small">手持ち ${fmtP(wallet.p)}。事業はこの端末に覚えます。</p></section>`;
+  }
+  const F = BIZ_FORMS[b.form], k = bizBook(b), x = ECON.S.xs.get(n) || ECON.ctx(n, ECON.S);
+  const pv = bizDay(structuredClone(b), n, x), last = b.ledger[b.ledger.length - 1];
+  const det = (id, title, body) => `<details class="bz" data-sec="${id}"${TP.bizOpen.has(id) ? ' open' : ''}><summary>${title}</summary>${body}</details>`;
+  const btn = (a, v, t, cls = '', dis = false) => `<button type="button" class="${cls}" data-b="${a}" data-v="${v}"${dis ? ' disabled' : ''}>${t}</button>`;
+  const head = `<section class="card"><h3>${escH(b.name)} <small>${F.name}・${n - b.start + 1}日目</small></h3>
+    <div class="bzgrid"><div><small>${b.form === 'sole' ? '事業のお金' : '会社の口座'}</small><b>${man(b.cash)}</b></div><div><small>借金</small><b>${man(k.debt)}</b></div><div><small>純資産</small><b>${man(k.eq)}</b></div>
+    <div><small>きのうの利益</small><b class="${last && last.prof < 0 ? 'dn' : 'up'}">${last ? man(last.prof) : '-'}</b></div><div><small>きょうの見込み</small><b class="${pv.prof < 0 ? 'dn' : 'up'}">${man(pv.prof)}</b></div><div><small>人手</small><b>${pv.have}/${Math.ceil(pv.need) || 0}人</b></div></div>
+    ${pv.sf < 1 ? '<p class="small dn">人手が足りません（👥 従業員で雇いましょう）。お店や畑の力が落ちています</p>' : ''}${b.lots.length ? '' : '<p class="small">まだ土地がありません。🏦 融資 → 🗺️ 土地 の順にすすめましょう（店を持たずに 🤝 仕入れ ＋ 📦 卸 でもできます）</p>'}</section>`;
+  // お金の出し入れ
+  const money = b.form === 'sole'
+    ? `<p>手持ち ${fmtP(wallet.p)}。個人事業主は自由に出し入れできます。</p><div class="trade">入れる ${[10000, 100000, 1000000].map((a) => btn('in', a, man(a), '', wallet.p < a)).join('')}${btn('in', 'all', '全部')}</div><div class="trade">手持ちへ ${[10000, 100000, 1000000].map((a) => btn('out', a, man(a), '', b.cash < a)).join('')}</div>`
+    : `<p>手持ち ${fmtP(wallet.p)}。会社のお金は別です。出資すると資本金（いま ${man(b.capital)}）がふえます。</p><div class="trade">出資する ${[10000, 100000, 1000000].map((a) => btn('in', a, man(a), '', wallet.p < a)).join('')}</div>
+      <p>役員報酬（1日・毎日 手持ちへ）：</p><div class="trade">${[0, 5000, 10000, 30000, 100000].map((a) => btn('pay', a, a ? yen(a) + '円' : 'なし', b.pay === a ? 'on' : '')).join('')}</div>`;
+  // 融資
+  const cr = bizCredit(b);
+  const loan = `<p>あと借りられる額 <b>${man(cr)}</b>（${F.name}の基本 ${man(F.base)} ＋ 自分の土地の7割 ＋ 建物の5割 − 借金）</p>
+    ${BIZ_BANKS.map((q) => `<div class="bzrow"><span><b>${companyBy(q.code).name}</b><small>年${((q.rate - (b.form === 'kk' ? 0.003 : 0)) * 100).toFixed(1)}%・${q.term}日で返す${q.cap < Infinity ? `・1社 ${man(q.cap)} まで` : ''}</small></span><span class="trade">${[1e6, 3e6, 1e7].map((a) => btn('borrow', `${q.code}:${a}`, man(a), '', a > cr)).join('')}</span></div>`).join('')}
+    ${b.loans.length ? `<table class="mtab"><tr><th>借りた所</th><th>のこり</th><th>毎日</th><th></th></tr>${b.loans.map((l, i) => `<tr><td>${companyBy(l.bank).short}${l.tsunagi ? '（つなぎ）' : ''}<small>年${(l.rate * 100).toFixed(1)}%</small></td><td class="num">${man(l.amt)}</td><td class="num">${man(l.orig / l.term + l.amt * l.rate / 48)}</td><td>${btn('repay', i, '返す', '', b.cash < l.amt)}</td></tr>`).join('')}</table>` : ''}`;
+  // 土地
+  const pp = player.pos, flt = TP.lotF || 'shop';
+  const cand = TOWN.lots.filter((L) => !bizLotTaken(L.id) && (flt === 'farm' ? L.farm : !L.farm)).map((L) => [Math.hypot(L.x - pp.x, L.z - pp.z), L]).sort((a, c) => a[0] - c[0]).slice(0, TP.lotMore || 6);
+  const myLots = b.lots.map((m) => { const L = bizLot(m.id), B = m.bld && BIZ_BLD[m.bld.t], f = gameDayF();
+    return `<div class="bzrow"><span><b>${escH(L.dist.name)}・${L.area}㎡${L.farm ? '（畑用）' : ''}</b><small>${m.own ? `自分の土地（${man(bizLandPrice(L))}）` : `借りている（1日 ${yen(bizRent(L))}円）`}・${B ? (f < m.bld.done ? `🏗️ ${B.name} 工事中（あと${Math.max(1, Math.round((m.bld.done - f) * 24 * 60))}分）` : `${B.icon} ${B.name}`) : '空き地'}・ここから${(Math.hypot(L.x - pp.x, L.z - pp.z) / 1000).toFixed(1)}km</small></span>${btn('sellLot', L.id, m.own ? '売る' : 'かえす')}</div>`; }).join('');
+  const land = `${myLots ? `<h4>自分の土地</h4>${myLots}` : ''}<h4>みなと不動産の物件（近い順）</h4><div class="trade">${btn('lotF', 'shop', '🏪 店・倉庫・アパート用', flt === 'shop' ? 'on' : '')}${btn('lotF', 'farm', '🌾 畑用（いなか）', flt === 'farm' ? 'on' : '')}</div>
+    ${cand.map(([d, L]) => `<div class="bzrow"><span><b>${escH(L.dist.city)} ${escH(L.dist.name)}・${L.area}㎡</b><small>${(d / 1000).toFixed(1)}km・地価 ${yen(L.value * ECON.S.lpi)}円/㎡${L.farm ? '（畑は2割）' : ''}・道はば${L.road}m・まわりに${yen(bizNearPop(L))}人${!L.farm && bizRivals(L, 'shop') ? `・近くに店${bizRivals(L, 'shop')}` : ''}</small></span><span class="trade">${btn('buyLot', L.id, `買う ${man(bizLandPrice(L))}`, '', b.cash < bizLandPrice(L))}${btn('rentLot', L.id, `借りる 1日${yen(bizRent(L))}円`)}</span></div>`).join('')}
+    ${btn('lotMore', '', 'もっと見る')}<p class="small">地図（M）で自分の土地は金色に出ます。お店はまわりに住む人が多く、道が広く、ライバルが少ない所がよく売れます。</p>`;
+  // 建設
+  const free = b.lots.filter((m) => !m.bld);
+  const build = free.length ? free.map((m) => { const L = bizLot(m.id); return `<div class="bzrow col"><span><b>${escH(L.dist.name)}・${L.area}㎡</b></span><span class="trade">${Object.entries(BIZ_BLD).filter(([t, B]) => (L.farm || !B.farmOnly) && (!B.big || L.area >= 600)).map(([t, B]) => btn('build', `${m.id}:${t}`, `${B.icon} ${B.name} ${man(B.cost)}`, '', b.cash < B.cost)).join('')}</span></div>`; }).join('')
+    : '<p>建てられる空き地がありません（🗺️ 土地で買うか借りる）。</p>';
+  const builtL = b.lots.filter((m) => m.bld).map((m) => `<div class="bzrow"><span>${BIZ_BLD[m.bld.t].icon} ${BIZ_BLD[m.bld.t].name}<small>${escH(bizLot(m.id).dist.name)}</small></span>${btn('demolish', m.id, 'こわす')}</div>`).join('');
+  const bld = `<p>はじめ建設（株価 ${yen(ECON.priceNow(1801))}円）が建てます。お金ははじめにはらいます。</p>${build}${builtL ? `<h4>建てた物</h4>${builtL}` : ''}
+    <table class="mtab"><tr><th>建物</th><th>1日に</th><th>人</th></tr>${Object.values(BIZ_BLD).map((B) => `<tr><td>${B.icon} ${B.name}</td><td>${B.kind === 'shop' ? `お客さん${B.cap}人まで` : B.kind === 'diner' ? `食事${B.cap}食まで` : B.kind === 'ware' ? `${B.cap}kg置ける・売れ残りが長もち` : B.kind === 'apt' ? '家賃（8部屋）' : '野菜（広さ×季節×天気）'}</td><td class="num">${B.need}</td></tr>`).join('')}</table>`;
+  // 仕入れ
+  const sup = `<p>市場の値段の1.03倍で、毎日とどきます。不作・不漁の日は量がそろいません。</p>${BIZ_SUP.map((s) => { const c = companyBy(s.code), kg = b.sup[s.code] || 0;
+    return `<div class="bzrow"><span><b>${c.name}</b><small>${BIZ_G[s.g].name}・きょう ${yen(bizMkt(s.g, x) * 1.03)}円/kg・とどく ${Math.round(s.avail(x) * 100)}%</small></span><span class="trade">${btn('sup', `${s.code}:-1`, '−', '', !kg)}<b>${kg}kg</b>${btn('sup', `${s.code}:1`, '＋')}</span></div>`; }).join('')}
+    <p class="small">在庫：${Object.keys(BIZ_G).map((g) => `${BIZ_G[g].name} ${yen(b.inv[g])}kg`).join('・')}</p>`;
+  // 卸す
+  const buy = `<p>店がなくても、仕入れた物や畑の野菜を会社に売れます（高く買ってくれる所から順に）。</p>${BIZ_BUY.map((q) => { const c = companyBy(q.code);
+    return `<div class="bzrow"><span><b>${c.name}</b><small>${Object.entries(q.g).map(([g, [mul, cap]]) => `${BIZ_G[g].name} ×${mul.toFixed(2)}${cap < 1e8 ? `・${cap}kgまで` : ''}`).join('／')}　${q.why}</small></span>${btn('buy', q.code, b.buy[q.code] ? '契約中 ✓' : '契約する', b.buy[q.code] ? 'on' : '')}</div>`; }).join('')}`;
+  // 運送
+  const gl = myGltfTrucks(), present = new Set(gl.map(truckKey));
+  const truck = `<p>荷物は ふだん <b>はじめ運輸</b> が運びます（1kg 8円＋1kmごとに1.5円）。自分のトラックなら燃料代だけ。トラック1台に運転手が1人いります（社長が運転してもよい・足りなければ 👥 で求人）。あいているトラックは はじめ運輸の下うけで運送料（1kg 15円）をかせぎます＝運送業。</p>
+    <h4>持っているトラック（${b.fleet.length}台・${yen(fleetKg(b))}kg/日）</h4>
+    ${b.fleet.map((f, i) => `<div class="bzrow"><span><b>${escH(f.name)}</b><small>${f.src === 'buy' ? `買った・整備と保険 1日${yen(BIZ_TRUCKS[f.t].keep)}円` : f.src === 'lease' ? `みなとリース・1日${yen(BIZ_TRUCKS[f.t].lease)}円` : `自分の glTF・保険 1日${yen(BIZ_GLTF_KEEP)}円${present.has(f.vid) ? '' : '（世界に見つかりません）'}`}・${yen(f.kg)}kg</small></span>${btn('truckDrop', i, f.src === 'buy' ? '売る' : f.src === 'lease' ? '返す' : 'はずす')}</div>`).join('') || '<p class="small">まだありません</p>'}
+    <h4>はじめ自動車で買う</h4>${Object.entries(BIZ_TRUCKS).map(([t, T]) => `<div class="bzrow"><span><b>${T.name}</b><small>${yen(T.kg)}kg/日・整備と保険 1日${yen(T.keep)}円</small></span>${btn('truckBuy', t, `買う ${man(T.price)}`, '', b.cash < T.price)}</div>`).join('')}
+    <h4>みなとリースで借りる（はじめのお金がいらない）</h4>${Object.entries(BIZ_TRUCKS).map(([t, T]) => `<div class="bzrow"><span><b>${T.name}</b><small>${yen(T.kg)}kg/日・整備と保険こみ・返すときは4日分</small></span>${btn('truckLease', t, `1日 ${yen(T.lease)}円`)}</div>`).join('')}
+    <h4>自分の glTF のトラック（無料）</h4>${gl.length ? gl.map((q) => { const c = q.item.def.vehicle.cargo, used = b.fleet.some((f) => f.vid === truckKey(q)); return `<div class="bzrow"><span><b>${escH(q.name || 'トラック')}</b><small>荷台 ${c.w}×${c.l}m → ${yen(c.kg)}kg/日</small></span>${btn('truckGltf', truckKey(q), used ? 'つかっている ✓' : '事業につかう', used ? 'on' : '', used)}</div>`; }).join('') : ''}
+    <p class="small">☰ →「glTF を置く」→ 乗り物 → 自動車 で、ボディ＋タイヤ（4・6・8輪）＋「荷台」という名前の部品の車を置くと、自分のトラックになります。荷台の床（よこ×たて）1㎡で 400kg 運べます（12トンまで）。</p>`;
+  // 人
+  const seekAll = bizSeekers().filter((p) => !b.staff.includes(p) && bizMinWage(p) <= b.wage), seek = seekAll.slice(0, TP.seekMore || 5);
+  const staff = `<p>社長（あなた）＋${b.staff.length}人。いる人数：${Math.ceil(pv.need)}人${b.form !== 'kk' ? `（${F.name}は ${F.staffMax}人まで）` : ''}。給料は${b.form === 'sole' ? '事業' : '会社の口座'}のお金からはらいます。</p>
+    <div class="bzrow"><span><b>求人の給料 1日 ${yen(b.wage)}円</b><small>高くすると、ほかの仕事をしている人も来てくれます（応募 ${yen(seekAll.length)}人）。下げると、やめる人が出ます</small></span><span class="trade">${btn('wage', -1000, '−1000')}${btn('wage', 1000, '＋1000')}</span></div>
+    ${b.staff.map((p) => `<div class="bzrow"><span>${escH(resName(p))}さん（${TOWN.ages[p]}）<small>${escH(TOWN.homes[TOWN.home[p]].dist.name)}</small></span>${btn('fire', p, 'やめてもらう')}</div>`).join('')}
+    <h4>応募してきた人</h4>${seek.map((p) => `<div class="bzrow"><span>${escH(resName(p))}さん（${TOWN.ages[p]}）<small>${escH(TOWN.homes[TOWN.home[p]].dist.name)}・${TOWN.job[p] === 7 ? '仕事をさがしている' : 'いまは ほかの仕事'}・${yen(bizMinWage(p))}円から</small></span>${btn('hire', p, '雇う')}</div>`).join('') || '<p class="small">この給料では応募がありません</p>'}${btn('seekMore', '', 'もっと見る')}`;
+  // 売り方
+  const price = `<div class="bzrow"><span><b>お店の値段</b><small>市場の値段の ${b.markup.toFixed(2)}倍（高いとお客さんが減る）</small></span><span class="trade">${btn('markup', -0.05, '−')}${btn('markup', 0.05, '＋')}</span></div>
+    <div class="bzrow"><span><b>飲食店の1食</b><small>${yen(b.meal)}円</small></span><span class="trade">${btn('meal', -50, '−')}${btn('meal', 50, '＋')}</span></div>`;
+  // 帳簿
+  const rows = (o) => Object.entries(o).sort((a, c) => c[1] - a[1]).map(([kk, v]) => `<tr><td>${escH(kk)}</td><td class="num">${yen(v)}</td></tr>`).join('');
+  const dayT = (R, title) => `<h4>${title}</h4><table class="mtab"><tr><th colspan="2">売り上げ ${man(R.revT)}</th></tr>${rows(R.rev) || '<tr><td colspan="2">なし</td></tr>'}<tr><th colspan="2">費用 ${man(R.costT)}</th></tr>${rows(R.cost)}<tr><th>利益</th><th class="num ${R.prof < 0 ? 'dn' : 'up'}">${yen(R.prof)}</th></tr>${R.tax ? `<tr><td>税金</td><td class="num">${yen(R.tax)}</td></tr>` : ''}${R.principal ? `<tr><td>借金の返済（元金）</td><td class="num">${yen(R.principal)}</td></tr>` : ''}</table>
+    <p class="small">${[R.cust ? `お客さん ${yen(R.cust)}人` : '', R.meals ? `食事 ${yen(R.meals)}食` : '', R.rooms ? `入居 ${R.rooms}部屋` : '', ...Object.entries(R.kg).map(([kk, v]) => `${kk} ${yen(v)}kg`), R.lost ? `売れ残りをすてた ${man(R.lost)}` : ''].filter(Boolean).join('・')}</p>${bizSpillHtml(R)}${R.notes.length ? `<p class="small">${R.notes.map(escH).join('<br>')}</p>` : ''}`;
+  const hist = b.ledger.slice(-8).reverse().map((R) => { const c = calOf(R.n); return `<tr><td>${c.m}/${c.d}</td><td class="num">${man(R.revT)}</td><td class="num ${R.prof < 0 ? 'dn' : 'up'}">${man(R.prof)}</td><td class="num">${man(R.cash)}</td></tr>`; }).join('');
+  const book = `${dayT(pv, `きょうの見込み（${x.c.m}/${x.c.d}・0時に決算）`)}${last ? dayT(last, `きのうの決算（${calOf(last.n).m}/${calOf(last.n).d}）`) : ''}
+    ${hist ? `<h4>これまで</h4><table class="mtab"><tr><th>日</th><th>売り上げ</th><th>利益</th><th>お金</th></tr>${hist}</table>` : ''}
+    <p class="small">合計：売り上げ ${man(b.cum.rev)}・利益 ${man(b.cum.prof)}・税金 ${man(b.cum.tax)}${b.lossCarry ? `・くりこした赤字 ${man(b.lossCarry)}` : ''}</p>`;
+  // 会社の形
+  let corp = '';
+  if (b.form === 'kk') corp = `<p>株 ${yen(b.shares)}株のうち、あなたは ${yen(b.own)}株（${(b.own / b.shares * 100).toFixed(1)}%）。資本金 ${man(b.capital)}。</p>
+    <div class="trade">増資（街の人に株を売る）${[1e6, 5e6, 2e7].map((a) => btn('issue', a, man(a))).join('')}</div><div class="trade">配当を出す ${[1e5, 1e6, 5e6].map((a) => btn('div', a, man(a), '', b.cash < a)).join('')}</div><p class="small">もうかっている会社ほど高い値段で株が売れます。持ち分が50%より下がると、ほかの株主の声が大きくなります。</p>`;
+  const up = Object.entries(BIZ_FORMS).filter(([kk]) => (b.form === 'sole' && kk !== 'sole') || (b.form === 'llc' && kk === 'kk')).map(([kk, FF]) => btn('upgrade', kk, `${FF.name}にする（${yen(kk === 'kk' && b.form === 'llc' ? 140000 : FF.fee)}P）`)).join('');
+  corp += `${up ? `<div class="trade">法人成り：${up}</div>` : ''}<div class="trade">${btn('close', '', TP.bizSure ? 'ほんとうに廃業する' : '廃業する', 'sell')}</div>
+    <p class="small">${b.events.slice(-6).reverse().map((e) => `${calOf(e.n).m}/${calOf(e.n).d} ${escH(e.t)}`).join('<br>')}</p>`;
+  return msg + head + det('money', '💰 お金', money) + det('loan', `🏦 融資（みなと銀行・はじめ信用金庫）`, loan) + det('land', `🗺️ 土地（みなと不動産）`, land) + det('build', '🏗️ 建てる（はじめ建設）', bld)
+    + det('sup', '🤝 仕入れ（ファーム・水産・牛乳・水産加工）', sup) + det('buy', '📦 卸す（マート・PA・お店）', buy) + det('truck', `🚚 トラック・運送（${b.fleet.length}台）`, truck)
+    + det('staff', `👥 従業員（${b.staff.length}人）`, staff) + det('price', '🏷️ 値段', price) + det('book', '📒 帳簿', book) + det('corp', `📜 ${F.name}`, corp);
+}
+// まわりへの経済効果：自分の店に来た人が、近くの会社のお店や施設にも立ちよる（それぞれの会社でつかうお金のめやす）
+function bizSpillHtml(R) {
+  if (!R.spill || !R.spill.length) return R.draw ? `<p class="small">近くの施設から立ちよったお客さん ${yen(R.draw)}人</p>` : '';
+  const t = R.spill.slice(0, 5).map(([k, v]) => { const c = companyBy(k), o = c.hq; const sp = BIZ_SPEND[(TOWN.companies.find((q) => q.c === c && BIZ_DRAW[q.kind]) || o || {}).kind] || 600; return `<tr><td>${escH(c.short)}</td><td class="num">${yen(v)}人</td><td class="num">${man(v * sp)}</td></tr>`; }).join('');
+  return `<p class="small">${R.draw ? `近くの施設や自分のほかの店から立ちよったお客さん ${yen(R.draw)}人。` : ''}あなたの店に来た人は、まわりのお店・施設にも立ちよります：</p><table class="mtab"><tr><th>まわりの会社</th><th>立ちより</th><th>つかうお金</th></tr>${t}</table>`;
+}
+// 仕事をさがしている人（＋そのほかの仕事の人の一部）。地元の人から
+const bizSeekers = (() => { let list = null; return () => { if (!list) { list = []; for (let p = 0; p < TOWN.N; p++) if ((TOWN.job[p] === 7 || (TOWN.job[p] === 6 && hash(p, 811) < 0.15)) && TOWN.ages[p] >= 18 && TOWN.ages[p] < 70) list.push(p); } const b = BIZ, L = b && b.lots[0] && bizLot(b.lots[0].id), o = L || player.pos; return list.map((p) => { const h = TOWN.homes[TOWN.home[p]]; return [Math.hypot(h.x - o.x, h.z - o.z) * (0.6 + 0.8 * hash(p, 812)), p]; }).sort((a, c) => a[0] - c[0]).map((a) => a[1]); }; })();
+// 地図に自分の土地（金色）・売っている土地（うすい）
+function drawBizOnMap(g, P, sc, det) {
+  if (det && sc > 0.25) { g.strokeStyle = 'rgba(107,63,160,.55)'; g.lineWidth = 1; for (const L of TOWN.lots) { if (bizLotTaken(L.id)) continue; const [X, Y] = P(L.x, L.z); g.strokeRect(X - L.w * sc / 2, Y - L.d * sc / 2, L.w * sc, L.d * sc); } }
+  if (!BIZ) return;
+  for (const m of BIZ.lots) { const L = bizLot(m.id), [X, Y] = P(L.x, L.z), s = Math.max(7, L.w * sc); g.fillStyle = '#f2c12e'; g.strokeStyle = '#5a4300'; g.lineWidth = 2; g.fillRect(X - s / 2, Y - s / 2, s, s); g.strokeRect(X - s / 2, Y - s / 2, s, s);
+    if (det) { g.font = '800 11px ' + getComputedStyle(document.body).fontFamily; g.textAlign = 'left'; g.textBaseline = 'middle'; const t = BIZ.name + (m.bld ? ' ' + BIZ_BLD[m.bld.t].icon : ''); g.lineWidth = 3; g.strokeStyle = 'rgba(255,255,255,.9)'; g.strokeText(t, X + s / 2 + 3, Y); g.fillStyle = '#5a4300'; g.fillText(t, X + s / 2 + 3, Y); } }
+}
+// 自分の店の前で「のぞく」
+function bizNearAction() {
+  if (!BIZ) return null; const p = player.pos;
+  for (const m of BIZ.lots) { const L = bizLot(m.id); if (Math.abs(L.x - p.x) < L.w && Math.abs(L.z - p.z) < L.w && Math.hypot(L.x - p.x, L.z - p.z) < Math.max(L.w, L.d) / 2 + 3) return { kind: 'biz', text: BIZ.name + (m.bld ? ' ' + BIZ_BLD[m.bld.t].name : ' の土地'), btn: 'のぞく' }; }
+  return null;
+}
+// 新聞：自分の事業の記事
+function bizPaper(n, add) {
+  const b = BIZ; if (!b) return;
+  const ev = b.events.filter((e) => e.n === n - 1);
+  for (const e of ev) add(48, `${b.name}　${e.t}`, `${BIZ_FORMS[b.form].name}「${b.name}」は${e.t.replace(/を登録$/, 'として登録しました')}。${e.open ? 'さっそくお客さんがおとずれています。' : ''}`, null);
+  const R = b.ledger.find((r) => r.n === n - 1);
+  if (R && R.revT > 0) add(40 + Math.min(20, Math.abs(R.prof) / 20000), `${b.name}　売り上げ${man(R.revT)}・利益${man(R.prof)}`, `${b.name}のきのうの売り上げは${man(R.revT)}、利益は${man(R.prof)}でした。${R.cust ? `お店には${yen(R.cust)}人のお客さんが来ました。` : ''}${R.kg['卸した'] ? `マートやPAなどに${yen(R.kg['卸した'])}kgを卸しました。` : ''}${R.spill && R.spill.length ? `近くの${companyBy(R.spill[0][0]).short}にも${yen(R.spill[0][1])}人が立ちより、まわりのにぎわいにつながっています。` : ''}`, null);
+}
+// 会社の売り場で「あなたとの取り引き」
+function bizShopHtml(c) {
+  const map = { 8301: 'loan', 8350: 'loan', 8801: 'land', 1801: 'build', 1301: 'sup', 1332: 'sup', 2264: 'sup', 2877: 'sup', 8201: 'buy', 3091: 'buy', 7611: 'buy', 2212: 'buy', 9064: 'truck', 7201: 'truck', 8591: 'truck' };
+  const sec = map[c.code]; if (!sec) return '';
+  const t = { loan: 'お金を借りる（融資）', land: '土地を買う・借りる', build: '店や倉庫を建ててもらう', sup: '仕入れの契約をする', buy: '卸の契約をする', truck: c.code === 7201 ? 'トラックを買う' : c.code === 8591 ? 'トラックを借りる（リース）' : '荷物を運んでもらう' }[sec];
+  return `<section class="card"><h3>あなたとの取り引き</h3><p>${BIZ ? `${escH(BIZ.name)}として、${t}ことができます。` : `事業者登録をすると、${t}ことができます。`}</p><button type="button" data-bgo="${sec}">🏢 事業の画面へ</button></section>`;
+}
 /* ================= ループ ================= */
 const clock = new THREE.Clock();
 let netTick = 0, firstFrame = true;
@@ -10058,6 +10632,7 @@ function frame() {
   stepBuildings(dt);
   stepTown();
   stepPaper();
+  stepBiz();
   if (aboard) { player.pos.copy(seatWorld(aboard.v, aboard.seat)); player.vy = 0; player.face = visYaw(aboard.v); player.mode = 'walk'; }
   avatar.visible = camera.position.distanceTo(camTarget) > 0.9 && !driving && !busRide && !(aboard && vtype(aboard.v) === 'sub') && !(pod && pod.mine && !pod.landed);
   avatar.position.copy(player.pos);
@@ -10862,6 +11437,7 @@ function drawWmap() {
     g.stroke();
   }
   drawTownOnMap(g, P, sc, det);   // 家・畑・会社（2026-11-02）
+  drawBizOnMap(g, P, sc, det);   // 自分の土地・売っている土地
   // 高速道路の IC・PA・JCT の名前
   g.font = `800 ${det ? 13 : 11}px ` + getComputedStyle(document.body).fontFamily; g.textAlign = 'left'; g.textBaseline = 'middle';
   const hwLabel = (t, x, z) => { const [X, Y] = P(x, z); if (X < -50 || Y < -20 || X > W + 50 || Y > H + 20) return; g.fillStyle = '#1f6b3a'; g.beginPath(); g.arc(X, Y, 4, 0, 7); g.fill(); g.lineWidth = 3; g.strokeStyle = 'rgba(255,255,255,.9)'; g.strokeText(t, X + 6, Y); g.fillText(t, X + 6, Y); };
@@ -11191,7 +11767,7 @@ window.__world = {
   hullGround, findWaterSpot, rescueBoat, get periscope() { return periscope; }, toggleLight, setPeriscope,
   teleport(x, z, y) { player.pos.set(x, y ?? heightAt(x, z), z); player.vy = 0; },
   torps, tube, ord, booms, get clockT() { return clock.elapsedTime; },
-  TOWN, COMPANIES, ECON, makePaper, openTown, closeTown, townNearAction, get myStocks() { return myStocks; }, weatherAt, wxDay, calOf, gameDayN, setDayOffset(d) { dayOffset = d; }, setGameTime(n, hr) { dayOffset = 0; const real = (Date.now() % DAY_MS) / DAY_MS * 24; hourOffset = ((hr - real) % 24 + 24) % 24; dayOffset = n - Math.floor(gameDayF()); }, townMeshes, townBlds, townBoats, fieldStage,
+  get BIZ() { return BIZ; }, bizAct, bizDay, bizSettle, bizHtml, drawBizOnMap, TOWN, COMPANIES, ECON, makePaper, openTown, closeTown, townNearAction, get myStocks() { return myStocks; }, weatherAt, wxDay, calOf, gameDayN, setDayOffset(d) { dayOffset = d; }, setGameTime(n, hr) { dayOffset = 0; const real = (Date.now() % DAY_MS) / DAY_MS * 24; hourOffset = ((hr - real) % 24 + 24) % 24; dayOffset = n - Math.floor(gameDayF()); }, townMeshes, townBlds, townBoats, fieldStage,
   AUTO, SEMI, semiGo, semiHalt, setSemi, semiTurnReq, semiTurnCand, semiNext, setApMin, startAuto, stopAuto, planAuto, stepHwTraffic, autoSpeed, autoLaneReq, autoTurnReq, get myCar() { return myCar; }, stepTraffic, stepVehicle, camera, signalState,
 };
 
