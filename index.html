@@ -5875,8 +5875,9 @@ function stepHwTraffic(dt) {
 const OBS_NEAR = 260;   // カメラからこの距離までの車だけ、じゃまな物を見る
 function trafficObstacles() {
   const out = [], cx = camera.position.x, cz = camera.position.z;
-  const add = (x, z, y, hx, hz, kind, ref) => { if (Math.abs(x - cx) < OBS_NEAR + 80 && Math.abs(z - cz) < OBS_NEAR + 80) out.push({ x, z, y, hx, hz, kind, ref }); };
-  const rect = (x, z, y, hw, hl, h, kind, ref) => { const s = Math.abs(Math.sin(h)), c = Math.abs(Math.cos(h)); add(x, z, y, hw * c + hl * s, hw * s + hl * c, kind, ref); };
+  const add = (x, z, y, hx, hz, kind, ref, R) => { if (Math.abs(x - cx) < OBS_NEAR + 80 && Math.abs(z - cz) < OBS_NEAR + 80) out.push({ x, z, y, hx, hz, kind, ref, R }); };
+  // 車は向きつきの四角のまま持つ（ななめの道で四角を大きく見て、対向車線の車にまで止まらないように）
+  const rect = (x, z, y, hw, hl, h, kind, ref) => { const s = Math.abs(Math.sin(h)), c = Math.abs(Math.cos(h)); add(x, z, y, hw * c + hl * s, hw * s + hl * c, kind, ref, { h, hw, hl }); };
   if (!busRide && !driving) add(player.pos.x, player.pos.z, player.pos.y, 0.35, 0.35, 'person', null);
   for (const o of net.others.values()) {
     if (o.t && o.t.m === 'bus') continue;
@@ -5887,6 +5888,13 @@ function trafficObstacles() {
   for (const pr of props) { const b = pr.box; add((b.min.x + b.max.x) / 2, (b.min.z + b.max.z) / 2, b.min.y, (b.max.x - b.min.x) / 2, (b.max.z - b.min.z) / 2, 'thing', null); }
   for (const v of traffic) if (v.lag > 0.05 || Math.abs(v.side) > 0.2) rect(v.x, v.z, v.y, v.T.hw, v.T.hl, v.h, 'traffic', v);   // 予定より遅れている・よけている車だけ（ふだんの流れは計算ずみ）
   return out;
+}
+// じゃまな物の、向き (dx, dz) にそった半分の長さ。車は向きつきの四角、ほかは東西南北にそった四角
+function rectExt(o, dx, dz) {
+  const R = o.R;
+  if (!R) return o.hx * Math.abs(dx) + o.hz * Math.abs(dz);
+  const s = Math.sin(R.h), c = Math.cos(R.h);
+  return R.hl * Math.abs(dx * s + dz * c) + R.hw * Math.abs(dx * c - dz * s);
 }
 // 前にあるじゃまな物：走る線にそって前を見て、いちばん近い物（車体の幅に重なるもの）
 function obstacleAhead(v, obs, look, side, all) {
@@ -5903,7 +5911,7 @@ function obstacleAhead(v, obs, look, side, all) {
     const nx = tz, nz = -tx;   // 左（路肩）向き
     const dx = o.x - P.X[bi], dz = o.z - P.Z[bi];
     const a = dx * tx + dz * tz, l = dx * nx + dz * nz;
-    const ea = o.hx * Math.abs(tx) + o.hz * Math.abs(tz), el = o.hx * Math.abs(nx) + o.hz * Math.abs(nz);
+    const ea = rectExt(o, tx, tz), el = rectExt(o, nx, nz);
     let sk = P.S[bi] - (((v.s - hl) % P.L + P.L) % P.L); if (sk < -P.L / 2) sk += P.L;
     const gap = sk - 2 * hl + a - ea;   // 前のバンパーからの距離
     if (gap > look || a + ea + sk < 0.5) continue;   // 遠い・もう横か後ろ
@@ -11585,21 +11593,21 @@ function autoObstacle(car, P, look) {
   const V = car.item.def.vehicle, hw = V.halfWidth || 0.9, front = (V.halfLength || 2) + (V.centerZ || 0);
   const cx = car.pos.x, cz = car.pos.y;
   let best = null;
-  const test = (x, z, y, hx, hz, kind, u) => {
+  const test = (x, z, y, hx, hz, kind, u, R) => {
     if (Math.abs(y - car.y) > 3.5 || Math.hypot(x - cx, z - cz) > look + 20 + Math.max(hx, hz)) return;
     let bi = -1, bd = Infinity;
     for (let i = AUTO.k; i < P.N && P.S[i] < AUTO.s + look + 10; i++) { const d = (P.X[i] - x) ** 2 + (P.Z[i] - z) ** 2; if (d < bd) { bd = d; bi = i; } }
     if (bi < 0) return;
     const j = Math.min(P.N - 1, bi + 1), i0 = j === bi ? bi - 1 : bi, tx0 = P.X[j] - P.X[i0], tz0 = P.Z[j] - P.Z[i0], tl = Math.hypot(tx0, tz0) || 1, tx = tx0 / tl, tz = tz0 / tl;
     const dx = x - P.X[bi], dz = z - P.Z[bi], a = dx * tx + dz * tz, l = dx * tz - dz * tx;
-    const ea = hx * Math.abs(tx) + hz * Math.abs(tz), el = hx * Math.abs(tz) + hz * Math.abs(tx);
+    const o = { hx, hz, R }, ea = rectExt(o, tx, tz), el = rectExt(o, tz, -tx);
     if (Math.abs(l - AUTO.lat) - el > hw + 0.4) return;   // 横にずれていて当たらない（対向車・となりの車線の車など）
     const gap = P.S[bi] + a - ea - AUTO.s - front;
     if (gap > look || P.S[bi] + a + ea < AUTO.s) return;   // 遠い・もう横か後ろ
     if (kind === 'traffic' && gap < 0.3) return;   // もう重なっている車は待たない（止まったままにならないように）
     if (!best || gap < best.gap) best = { gap, kind, u };
   };
-  const rect = (x, z, y, w, l, h, kind, u) => { const s = Math.abs(Math.sin(h)), c = Math.abs(Math.cos(h)); test(x, z, y, w * c + l * s, w * s + l * c, kind, u); };
+  const rect = (x, z, y, w, l, h, kind, u) => { const s = Math.abs(Math.sin(h)), c = Math.abs(Math.cos(h)); test(x, z, y, w * c + l * s, w * s + l * c, kind, u, { h, hw: w, hl: l }); };
   if (AUTO.ignoreT <= 0) for (const v of traffic) if (v.root.visible) rect(v.x, v.z, v.y, v.T.hw, v.T.hl, v.h, 'traffic', Math.max(0, v.speed * Math.cos(v.h - car.h)));
   if (AUTO.ignoreT <= 0 && HWT.ready) for (const v of HWT.vs) if (v.root.visible) rect(v.x, v.z, v.y, v.T.hw, v.T.hl, v.h, 'traffic', Math.max(0, v.speed * Math.cos(v.h - car.h)));   // 高速道路の車
   for (const o of net.others.values()) {
