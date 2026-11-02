@@ -727,7 +727,7 @@ function rigAutoCar(item, root, model, gltf, def) {
     type: 'car', wheels: lay.length, cargo,
     wheelRadius: lay.reduce((a, k) => a + radius[k], 0) / lay.length, wheelbase: frontZ - rearZ,
     halfWidth, halfLength, centerZ, height: size.y,
-    maxSpeed: kmh / 3.6, accel: 7, brake: 16, reverseMax: 6, maxSteer: 0.6,
+    maxSpeed: kmh / 3.6, accel: 7, brake: 16, reverseMax: 6, maxSteer: 0.6, pw: 3, drag: 0.0001,   // がっち号と同じ：最高速度までちゃんと出る（前は空気の抵抗で 60km/h の車が 53km/h どまりだった）
     exit: [-(halfWidth + 0.6), centerZ],
   };
   item.size = size;
