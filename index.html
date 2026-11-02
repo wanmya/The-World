@@ -92,6 +92,59 @@ body.mapOn #msg { top: max(145px, 30vh); }
 #wmap { position: fixed; z-index: 8; inset: max(12px, env(safe-area-inset-top, 0px)) max(12px, env(safe-area-inset-right, 0px)) max(12px, env(safe-area-inset-bottom, 0px)) max(12px, env(safe-area-inset-left, 0px));
   display: flex; flex-direction: column; gap: 6px; padding: 8px; background: rgba(255,255,255,.94); border: 1px solid var(--line); border-radius: 14px; box-sizing: border-box; }
 #wmap .wbar { display: flex; flex-wrap: wrap; gap: 6px; }
+
+/* 街と経済の画面（2026-11-02） */
+#town { position: fixed; z-index: 8; inset: max(12px, env(safe-area-inset-top, 0px)) max(12px, env(safe-area-inset-right, 0px)) max(12px, env(safe-area-inset-bottom, 0px)) max(12px, env(safe-area-inset-left, 0px));
+  display: flex; flex-direction: column; gap: 6px; padding: 8px; background: rgba(255,255,255,.97); border: 1px solid var(--line); border-radius: 14px; box-sizing: border-box; max-width: 760px; margin: 0 auto; }
+#town .wbar { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+#town .wbar button { font: 800 13px var(--font-ui); color: var(--ink); background: #f3f6f9; border: 1px solid var(--line); border-radius: 999px; padding: 7px 11px; cursor: pointer; }
+#town .wbar button[aria-pressed="true"] { background: var(--ink); color: #fff; }
+#town #townClose { margin-left: auto; }
+#town h2#townTitle { margin: 2px 4px; font-size: 15px; }
+#townBody { flex: 1; min-height: 0; overflow-y: auto; touch-action: pan-y; -webkit-user-select: text; user-select: text; font-size: 13px; line-height: 1.55; padding: 0 4px 8px; overscroll-behavior: contain; }
+#townBody section { margin: 8px 0; }
+#townBody h3 { margin: 10px 0 4px; font-size: 14px; display: flex; align-items: center; gap: 8px; }
+#townBody p { margin: 4px 0; }
+#townBody .small, #townBody small { font-size: 11px; color: var(--ink-dim); }
+#townBody .num { text-align: right; font-family: var(--font-mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
+#townBody .up { color: #d4402f; } #townBody .dn { color: #2f6fd4; }
+#townBody table { width: 100%; border-collapse: collapse; }
+#townBody td, #townBody th { padding: 3px 4px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+#townBody td small { display: block; }
+#townBody th { background: #f3f6f9; font-size: 12px; }
+#townBody .big { font-size: 22px; font-weight: 800; }
+#townBody .hours { display: grid; grid-template-columns: repeat(auto-fit, minmax(54px, 1fr)); gap: 4px; }
+#townBody .hours div { display: flex; flex-direction: column; align-items: center; background: #f3f6f9; border-radius: 8px; padding: 4px 2px; }
+#townBody .hours b { font-size: 20px; }
+#townBody .bar { display: grid; grid-template-columns: 9em 1fr auto; align-items: center; gap: 6px; font-size: 12px; }
+#townBody .bar i { display: block; height: 10px; background: var(--go); border-radius: 4px; max-width: 100%; }
+#townBody .card { background: #fff8ea; border: 1px solid #ecd9b0; border-radius: 10px; padding: 6px 10px; }
+#townBody button { font: 800 12px var(--font-ui); color: var(--ink); background: #f3f6f9; border: 1px solid var(--line); border-radius: 8px; padding: 5px 10px; cursor: pointer; }
+#townBody button:disabled { opacity: .4; cursor: default; }
+#townBody .pnav { display: flex; justify-content: space-between; align-items: center; gap: 6px; }
+.paper { background: #fbf8f1; border: 1px solid #ddd2bd; border-radius: 6px; padding: 8px 10px; margin-top: 6px; font-family: "Hiragino Mincho ProN", "Yu Mincho", "Noto Serif JP", serif; color: #1d1d1d; }
+.paper header { display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap; gap: 4px; border-bottom: 3px double #333; padding-bottom: 4px; }
+.paper header b { font-size: 22px; letter-spacing: .08em; }
+.paper header span { font-size: 11px; }
+.paper h2 { font-size: 20px; margin: 8px 0 4px; line-height: 1.35; }
+.paper h3 { font-size: 14px !important; border-bottom: 1px solid #bbb; padding-bottom: 2px; }
+.paper .lead { font-size: 14px; }
+.paper .voice { background: #fff; border-left: 4px solid #c9a24b; padding: 4px 8px; font-size: 13px; }
+.paper .voice small { display: inline; margin-left: 4px; }
+.paper .cols, .paper .cols2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 0 14px; }
+.paper .mtab td { font-size: 12px; padding: 2px 4px; }
+.paper .adbox { display: flex; flex-direction: column; align-items: center; border-radius: 6px; padding: 8px; font-family: var(--font-ui); }
+.paper .adbox b { font-size: 18px; } .paper .adbox small { color: inherit; opacity: .7; }
+#townBody .srow { display: grid; grid-template-columns: 1fr auto auto; align-items: center; gap: 8px; width: 100%; text-align: left; margin-top: 4px; padding: 6px 8px; background: #fff; }
+#townBody .srow.on { border-color: var(--ink); background: #eef3f8; }
+#townBody .sname small, #townBody .sprice small { display: block; font-weight: 500; }
+#townBody .sprice { text-align: right; font-family: var(--font-mono); }
+#townBody .sdet { background: #eef3f8; border-radius: 0 0 10px 10px; padding: 6px 10px; margin-top: -2px; }
+#townBody .trade { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 4px; }
+#townBody .trade .buy { background: #d4402f; color: #fff; border-color: #d4402f; }
+#townBody .trade .sell { background: #2f6fd4; color: #fff; border-color: #2f6fd4; }
+#townBody .note { background: #f3f6f9; border-radius: 8px; padding: 6px 8px; font-size: 12px; }
+#menu .mi .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); margin-left: 4px; vertical-align: middle; }
 #wmap #homeBtn { background: #fff4dc; border-color: #e8c98a; }
 #wmap .wbar button { font: 800 13px var(--font-ui); color: var(--ink); background: #f3f6f9; border: 1px solid var(--line); border-radius: 999px; padding: 7px 12px; cursor: pointer; }
 #wmap .wbar button[aria-pressed="true"] { background: var(--ink); color: #fff; }
@@ -299,6 +352,8 @@ body.helmOn .subbtns { flex-wrap: wrap; justify-content: flex-end; max-width: ca
   <p class="who" id="who" aria-live="polite">ひとりで遊んでいます</p>
   <div class="mgrid">
     <button class="mi" id="mapBtn" type="button">🗺️ 地図<small>M</small></button>
+    <button class="mi" id="paperBtn" type="button">📰 新聞<span class="dot" id="paperDot" hidden></span></button>
+    <button class="mi" id="townBtn" type="button">📈 街と株</button>
     <button class="mi" id="chatBtn" type="button">💬 ひとこと</button>
     <button class="mi" id="addItem" type="button">📦 glTF を置く</button>
     <button class="mi" id="renameBtn" type="button" hidden>なまえ</button>
@@ -348,6 +403,11 @@ body.helmOn .subbtns { flex-wrap: wrap; justify-content: flex-end; max-width: ca
   <p id="wmapNote"></p>
 </div>
 <div id="pingWarn" hidden role="alert">ピンガーが打たれました</div>
+<div id="town" hidden role="dialog" aria-modal="true" aria-labelledby="townTitle">
+  <div class="wbar"><button type="button" data-tt="paper">📰 新聞</button><button type="button" data-tt="stocks">📈 株</button><button type="button" data-tt="town">🏙️ 街</button><button type="button" data-tt="wx">🌤️ 天気</button><button type="button" data-tt="shop" id="townShopTab" hidden>🛒 お店</button><button type="button" id="townClose" aria-label="閉じる">✕</button></div>
+  <h2 id="townTitle">みなと経済新聞</h2>
+  <div id="townBody"></div>
+</div>
 <input type="file" id="file" accept=".glb,.gltf,model/gltf-binary" hidden>
 
 <div id="place" role="dialog" aria-modal="true" aria-labelledby="placeTitle" hidden>
@@ -1943,6 +2003,9 @@ function updateAtmosphere() {
   let sunI = up ? 2.6 * day + 0.2 : 0.35, hemiI = 0.28 + 1.32 * day;
   starMat.opacity = Math.max(0, 1 - day * 1.6);
   cloudMat.color.setScalar(0.3 + 0.7 * day).lerp(SKYC.sunDusk, dusk * 0.25);
+  // 天気（くもり・雨・雪・霧）と季節（2026-11-02）
+  const WXa = applyWeather(day, !underwater && blds.length ? !!insideBld() : false);
+  sunI *= WXa.sunMul; hemiI *= WXa.hemiMul;
   // 水の中：深いほど暗く、見通しも悪くなる
   if (underwater) {
     // 透き通る海：自分（乗っている潜水艦）のまわりはよく見え、遠くほど段階的に暗く青くなる
@@ -1955,7 +2018,7 @@ function updateAtmosphere() {
     scene.background = scene.fog.color;
     sunI *= 1 - depth * 0.55; hemiI *= 1 - depth * 0.45;
   } else {
-    scene.fog.color.copy(skyBot); scene.fog.near = FOG_NEAR + camDist; scene.fog.far = FOG_FAR + camDist;   // 500m まではくっきり、その先はだんだん霞む
+    const fm = Math.max(0.1, WXa.fogMul); scene.fog.color.copy(skyBot); scene.fog.near = FOG_NEAR * fm + camDist; scene.fog.far = FOG_FAR * Math.max(0.22, fm) + camDist;   // 500m まではくっきり、その先はだんだん霞む
     scene.background = null;
   }
   sky.visible = clouds.visible = !underwater;
@@ -1965,7 +2028,7 @@ function updateAtmosphere() {
   sun.intensity = sunI; hemi.intensity = hemiI;
   renderer.toneMappingExposure = 0.9 + 0.2 * day;
   const hh = Math.floor(hr), mm = Math.floor((hr - hh) * 60);
-  const text = `${hh}:${String(mm).padStart(2, '0')} ${hr >= 5 && hr < 8 ? '朝' : hr >= 8 && hr < 17 ? '昼' : hr >= 17 && hr < 19 ? '夕方' : '夜'}`;
+  const text = `${hh}:${String(mm).padStart(2, '0')} ${hr >= 5 && hr < 8 ? '朝' : hr >= 8 && hr < 17 ? '昼' : hr >= 17 && hr < 19 ? '夕方' : '夜'} ${wxLabel()}`;
   if (text !== lastClock) { lastClock = text; document.getElementById('stateLabel').textContent = text; }
 }
 
@@ -1994,6 +2057,157 @@ function surfaceColor(cx, cy, cz, ny, out) {
 /* ---- 地形を描く：カメラのまわりの区画だけ。近いほど細かく（2m）、遠いほど粗く（4・8・16m）。
    区画のふちに下へのびる「すそ」をつけて、細かさのちがう区画のすき間を隠す ---- */
 const TERRAIN_MAT = new THREE.MeshLambertMaterial({ vertexColors: true });
+/* ================= こよみと天気（2026-11-02） =================
+   ゲームの 1 日 = 実際の 1 時間。ひと月 = 4 日、1 年 = 12 か月 = 48 日（実際の 2 日）。1 年目は 11 月からはじまる。
+   天気は「決まった種のノイズ」から時刻で決まるので、だれの画面でも同じ。経済の計算にも使う（足し算・かけ算だけで、どの端末でも同じ答え） */
+const CAL_DPM = 4, CAL_YEAR = 48;
+const ECON_EPOCH = Math.floor(Date.UTC(2026, 10, 2, 12) / DAY_MS);   // 1 年 11 月 1 日 = 2026-11-02 21:00（日本時間）からの 1 時間
+let dayOffset = 0;   // 確認用（ふだんは 0）
+const gameDayF = () => Date.now() / DAY_MS + hourOffset / 24 + dayOffset - ECON_EPOCH;   // 1 年 11 月 1 日 0:00 からの日数（小数つき）
+const gameDayN = () => Math.max(0, Math.floor(gameDayF()));
+const WEEK = ['日', '月', '火', '水', '木', '金', '土'];
+function calOf(n) {   // n 日目の日付
+  const mIdx = Math.floor(n / CAL_DPM) + 10, m = mIdx % 12 + 1, d = n % CAL_DPM + 1, w = (n + 1) % 7;   // 1 日目は 1 年 11 月 1 日（月曜）
+  return { n, year: Math.floor(mIdx / 12) + 1, m, d, w, week: WEEK[w], season: m >= 3 && m <= 5 ? '春' : m >= 6 && m <= 8 ? '夏' : m >= 9 && m <= 11 ? '秋' : '冬', holiday: w === 0 || w === 6 };
+}
+const calText = (c) => `${c.year}年${c.m}月${c.d}日（${c.week}）`;
+// 月の平均気温（1〜12 月）と、雨の降りやすさ。月のまん中から次の月のまん中へ直線でつなぐ
+const MONTH_T = [2, 3, 7, 13, 18, 22, 26, 27, 23, 17, 10, 4];
+const MONTH_WET = [-0.06, -0.04, 0, 0.02, 0.02, 0.16, 0.04, -0.02, 0.06, 0.0, -0.04, -0.06];
+// 時刻 T（1 年 11 月 1 日 0:00 からのゲームの時間。小数も可）→ 月（0〜12 の小数。0.5 が 1 月のまん中）
+function monthF(T) { const r = (((T / 24) % CAL_YEAR) + CAL_YEAR) % CAL_YEAR; return (10 + r / CAL_DPM) % 12; }
+function monthLerp(A, mf) { const a = mf - 0.5, i = Math.floor(a), f = a - i; const i0 = (i + 12) % 12, i1 = (i + 13) % 12; return A[i0] + (A[i1] - A[i0]) * f; }
+function vn1(t, seed) { const i = Math.floor(t), f = t - i, u = f * f * (3 - 2 * f), a = hash(i, seed), b = hash(i + 1, seed); return a + (b - a) * u; }
+function tri(h, a, b) { return h < a ? 0 : h > b ? 0 : 1 - Math.abs((h - a) / (b - a) * 2 - 1); }
+const WX_KIND = { sun: ['☀️', '晴れ'], pcloud: ['🌤️', '晴れ時々くもり'], cloud: ['☁️', 'くもり'], fog: ['🌫️', '霧'], rain: ['🌧️', '雨'], heavy: ['🌧️', '大雨'], thunder: ['⛈️', '雷雨'], snow: ['❄️', '雪'], storm: ['🌀', '台風'] };
+// 天気：{ cloud 0〜1, rain 0〜1（降る強さ）, snow（雪なら 1）, fog 0〜1, wind m/s, temp ℃, storm, kind }
+function weatherAt(T) {
+  const n = Math.floor(T / 24), hr = T - n * 24, mf = monthF(T), m = Math.floor(mf) + 1;
+  let x = 0.6 * vn1(T / 9, 4101) + 0.4 * vn1(T / 3.5, 4102) + monthLerp(MONTH_WET, mf);
+  // 台風（8〜10 月のたまに）：その日の昼すぎをまん中に、大雨と強い風
+  const storm = (m >= 8 && m <= 10 && hash(n, 4103) < 0.08) ? tri(hr, 2, 26) : 0;
+  // 夏の夕立：午後
+  const thunder = (m >= 7 && m <= 8 && hash(n, 4104) < 0.3) ? tri(hr, 13, 19) : 0;
+  x = Math.max(x, storm > 0 ? 0.55 + storm * 0.6 : 0, thunder > 0 ? 0.5 + thunder * 0.4 : 0);
+  const cloud = ss(0.36, 0.6, x), rain = ss(0.65, 0.88, x);
+  // 気温：月の平均 ＋ 1 日の上がり下がり（朝 5 時がいちばん低く、14 時がいちばん高い）− くもり
+  const dI = hr < 5 ? 4 - (hr + 10) / 15 * 8 : hr < 14 ? -4 + (hr - 5) / 9 * 8 : 4 - (hr - 14) / 15 * 8;
+  const temp = monthLerp(MONTH_T, mf) + dI * (1 - 0.6 * cloud) - 1.5 * rain;
+  const fog = (hr > 3 && hr < 9 && cloud < 0.55 && hash(n, 4105) < 0.22) ? tri(hr, 3, 9) : 0;
+  const wind = 2 + 6 * vn1(T / 5, 4106) + storm * 18 + rain * 4;
+  const snow = rain > 0.05 && temp <= 2.5 ? 1 : 0;
+  const kind = storm > 0.3 ? 'storm' : rain > 0.05 ? (snow ? 'snow' : thunder > 0.2 ? 'thunder' : rain > 0.6 ? 'heavy' : 'rain') : fog > 0.4 ? 'fog' : cloud > 0.65 ? 'cloud' : cloud > 0.25 ? 'pcloud' : 'sun';
+  return { cloud: Math.max(cloud, storm), rain: Math.max(rain, storm * 0.9), snow, fog, wind, temp, storm, thunder, kind, mf };
+}
+const gameHourT = () => gameDayF() * 24;
+// 1 日の天気のまとめ（経済・新聞・天気予報）：24 時間ぶんを 1 時間ごとに見る
+const wxDayCache = new Map();
+function wxDay(n) {
+  let s = wxDayCache.get(n); if (s) return s;
+  s = { n, sun: 0, rainH: 0, rainSum: 0, snowH: 0, stormH: 0, tMax: -99, tMin: 99, tAvg: 0, windMax: 0, kinds: {} };
+  for (let h = 0; h < 24; h++) {
+    const w = weatherAt(n * 24 + h + 0.5);
+    if (w.cloud < 0.4) s.sun++;
+    if (w.rain > 0.05) { s.rainH++; s.rainSum += w.rain; if (w.snow) s.snowH++; }
+    if (w.storm > 0.3) s.stormH++;
+    s.tMax = Math.max(s.tMax, w.temp); s.tMin = Math.min(s.tMin, w.temp); s.tAvg += w.temp / 24; s.windMax = Math.max(s.windMax, w.wind);
+    if (h >= 6 && h < 20) s.kinds[w.kind] = (s.kinds[w.kind] || 0) + 1;
+  }
+  // 昼の天気（いちばん長かったもの。雨・雪・台風は 3 時間以上でそれ）
+  const k = s.kinds, wet = s.stormH >= 3 ? 'storm' : (k.snow || 0) >= 3 ? 'snow' : (k.thunder || 0) >= 2 ? 'thunder' : (k.heavy || 0) >= 3 ? 'heavy' : ((k.rain || 0) + (k.heavy || 0)) >= 3 ? 'rain' : null;
+  s.kind = wet || Object.keys(k).sort((a, b) => k[b] - k[a])[0] || 'sun';
+  s.tMax = Math.round(s.tMax); s.tMin = Math.round(s.tMin);
+  wxDayCache.set(n, s); if (wxDayCache.size > 200) wxDayCache.delete(wxDayCache.keys().next().value);
+  return s;
+}
+// 積もった雪（0〜1）：この 30 時間の雪 − 気温でとける
+function snowCover(T) {
+  let c = 0;
+  for (let k = 30; k >= 0; k -= 2) { const w = weatherAt(T - k); c += w.snow ? w.rain * 0.22 : 0; c -= Math.max(0, w.temp - 1) * 0.02; c = Math.min(1, Math.max(0, c)); }
+  return c;
+}
+// 季節の草の色（かける色）
+const SEASON_TINT = [   // 月のまん中ごとの草の色と、その強さ（1〜12 月）
+  [0x9a8f66, 0.75], [0x9c946a, 0.65], [0x93b05a, 0.4], [0x8fd060, 0.45], [0x6cc04a, 0.25], [0x4fa83a, 0.35],
+  [0x3f9a32, 0.45], [0x4a9a34, 0.45], [0x8aa63e, 0.35], [0xc9a23e, 0.5], [0xc27a36, 0.62], [0xa08a5c, 0.72],
+].map(([c, a]) => [new THREE.Color(c), a]);
+const SEASON_U = { uSeasonCol: { value: new THREE.Color(1, 1, 1) }, uSeasonAmt: { value: 0 }, uSnow: { value: 0 } };
+TERRAIN_MAT.onBeforeCompile = (sh) => {
+  Object.assign(sh.uniforms, SEASON_U);
+  sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform vec3 uSeasonCol; uniform float uSeasonAmt; uniform float uSnow;')
+    .replace('#include <color_fragment>', `#include <color_fragment>
+      float gm = clamp((vColor.g - max(vColor.r, vColor.b)) * 6.0, 0.0, 1.0);
+      diffuseColor.rgb = mix(diffuseColor.rgb, uSeasonCol * clamp(diffuseColor.g / 0.42, 0.6, 1.35), gm * uSeasonAmt);
+      diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.9, 0.93, 0.97), uSnow * (0.35 + 0.65 * gm) * step(0.02, vColor.r + vColor.g));`);
+};
+// 雨（線）と雪（点）：カメラのまわり 70m の箱の中だけ。動きは GPU で計算（1 回の描画）
+const WX_B = 70, WX_H = 40;
+const wxU = { uT: { value: 0 }, uCam: { value: new THREE.Vector3() }, uAmt: { value: 0 }, uWind: { value: new THREE.Vector2() } };
+const rainFx = (() => {
+  const N = coarse ? 900 : 2200, pos = new Float32Array(N * 6), end = new Float32Array(N * 2);
+  for (let i = 0; i < N; i++) { const x = hash(i, 51) * WX_B, y = hash(i, 52) * WX_H, z = hash(i, 53) * WX_B; pos.set([x, y, z, x, y, z], i * 6); end[i * 2 + 1] = 1; }
+  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(pos, 3)); g.setAttribute('aEnd', new THREE.BufferAttribute(end, 1));
+  const m = new THREE.ShaderMaterial({ uniforms: wxU, transparent: true, depthWrite: false,
+    vertexShader: `uniform float uT; uniform vec3 uCam; uniform vec2 uWind; attribute float aEnd; varying float vA;
+      void main(){ vec3 p = position; float y = mod(p.y - uT * 16.0, ${WX_H}.0) + uCam.y - ${WX_H / 2}.0;
+        vec2 xz = uCam.xz + mod(p.xz + uWind * (y - uCam.y) * 0.08 - uCam.xz, ${WX_B}.0) - ${WX_B / 2}.0;
+        vec3 w = vec3(xz.x + uWind.x * aEnd * 0.06, y + aEnd * 0.9, xz.y + uWind.y * aEnd * 0.06);
+        vA = 1.0 - aEnd * 0.6; gl_Position = projectionMatrix * viewMatrix * vec4(w, 1.0); }`,
+    fragmentShader: 'uniform float uAmt; varying float vA; void main(){ gl_FragColor = vec4(0.72, 0.78, 0.88, 0.5 * vA * (0.4 + 0.6 * uAmt)); }' });
+  const L = new THREE.LineSegments(g, m); L.frustumCulled = false; L.visible = false; L.renderOrder = 3; scene.add(L);
+  return { L, g, N };
+})();
+const snowFx = (() => {
+  const N = coarse ? 900 : 2000, pos = new Float32Array(N * 3);
+  for (let i = 0; i < N; i++) pos.set([hash(i, 61) * WX_B, hash(i, 62) * WX_H, hash(i, 63) * WX_B], i * 3);
+  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  const m = new THREE.ShaderMaterial({ uniforms: wxU, transparent: true, depthWrite: false,
+    vertexShader: `uniform float uT; uniform vec3 uCam; uniform vec2 uWind;
+      void main(){ vec3 p = position; float y = mod(p.y - uT * 1.6, ${WX_H}.0) + uCam.y - ${WX_H / 2}.0;
+        vec2 xz = uCam.xz + mod(p.xz + vec2(sin(uT * 0.7 + p.y), cos(uT * 0.6 + p.x)) * 0.8 + uWind * uT * 0.3 - uCam.xz, ${WX_B}.0) - ${WX_B / 2}.0;
+        vec4 mv = viewMatrix * vec4(xz.x, y, xz.y, 1.0); gl_PointSize = clamp(90.0 / -mv.z, 1.5, 9.0); gl_Position = projectionMatrix * mv; }`,
+    fragmentShader: 'uniform float uAmt; void main(){ vec2 c = gl_PointCoord - 0.5; if (dot(c, c) > 0.25) discard; gl_FragColor = vec4(1.0, 1.0, 1.0, 0.85); }' });
+  const P = new THREE.Points(g, m); P.frustumCulled = false; P.visible = false; P.renderOrder = 3; scene.add(P);
+  return { P, g, N };
+})();
+// いまの天気を空・光・霧・雨にあてる（updateAtmosphere から毎コマ）
+const WX = { now: null, at: -1, cover: 0, coverAt: -1, flash: 0, label: '' };
+const GREY = new THREE.Color(0x8b939c), GREY_N = new THREE.Color(0x10131a);
+function weatherNow() {
+  const T = gameHourT();
+  if (!WX.now || Math.abs(T - WX.at) > 0.02) { WX.now = weatherAt(T); WX.at = T; }
+  if (Math.abs(T - WX.coverAt) > 0.25) { WX.cover = snowCover(T); WX.coverAt = T; }
+  return WX.now;
+}
+function applyWeather(day, inside) {
+  const w = weatherNow(), t = clock.elapsedTime;
+  const oc = w.cloud * 0.8;
+  GREY_N.setRGB(0.06, 0.07, 0.09).lerp(GREY, day);
+  skyTop.lerp(GREY_N, oc); skyBot.lerp(GREY_N, oc * 0.7);
+  sky.material.uniforms.top.value.copy(skyTop); sky.material.uniforms.bottom.value.copy(skyBot);
+  starMat.opacity *= 1 - w.cloud;
+  cloudMat.color.multiplyScalar(1 - 0.45 * w.cloud);
+  // 季節の草の色・積もった雪
+  const mf = w.mf, a = mf - 0.5, i = Math.floor(a), f = a - i, A = SEASON_TINT[(i + 12) % 12], B = SEASON_TINT[(i + 13) % 12];
+  SEASON_U.uSeasonCol.value.copy(A[0]).lerp(B[0], f);
+  SEASON_U.uSeasonAmt.value = A[1] + (B[1] - A[1]) * f; SEASON_U.uSnow.value = WX.cover * 0.85;
+  // 雷：ときどき空が光る
+  if ((w.thunder > 0.3 || w.storm > 0.5) && hash(Math.floor(t * 3), 4107) < 0.012) WX.flash = 0.18;
+  WX.flash = Math.max(0, WX.flash - 1 / 60);
+  // 雨・雪
+  const show = w.rain > 0.04 && !underwater && !inside;
+  wxU.uT.value = t; wxU.uCam.value.copy(camera.position); wxU.uAmt.value = w.rain;
+  const ws = Math.min(14, w.wind) * 0.5; wxU.uWind.value.set(ws * 0.8, ws * 0.6);
+  rainFx.L.visible = show && !w.snow; snowFx.P.visible = show && !!w.snow;
+  if (rainFx.L.visible) rainFx.g.setDrawRange(0, 2 * Math.ceil(rainFx.N * Math.min(1, 0.15 + w.rain)));
+  if (snowFx.P.visible) snowFx.g.setDrawRange(0, Math.ceil(snowFx.N * Math.min(1, 0.2 + w.rain)));
+  return { sunMul: (1 - 0.72 * w.cloud) , hemiMul: 1 - 0.3 * w.cloud + WX.flash * 4, fogMul: 1 - 0.72 * w.rain - 0.8 * w.fog, w };
+}
+// 時計の横の天気（アイコンと日付）
+function wxLabel() {
+  const w = weatherNow(), c = calOf(gameDayN());
+  return `${WX_KIND[w.kind][0]} ${c.m}/${c.d}`;
+}
 const LOD_D = coarse ? [100, 300, 600] : [160, 420, 780], VIEW_R = coarse ? 950 : 1100;
 const NCI = (X1 - X0) / CHM, NCJ = (Z1 - Z0) / CHM;
 const tiles = new Map();   // key → { mesh, lod }
@@ -3896,7 +4110,7 @@ document.addEventListener('keydown', (e) => {
     if (e.code === 'Escape') standUp();
     return;
   }
-  if (e.target.tagName === 'INPUT' || !placeEl.hidden) return;
+  if (e.target.tagName === 'INPUT' || !placeEl.hidden || TP.open) return;
   keys[e.code] = true;
   if (e.code === 'KeyE' || e.code === 'KeyF') toggleRide();
   if (e.code === 'Space' && busRide && !e.repeat) toggleSeat();
@@ -4122,7 +4336,7 @@ function toggleRide() {
   if (aboard) { getOff(); return; }
   if (ride) { leaveRide(false); return; }
   const nb = nearBusDoor();
-  if (!nb && !nearCar()) { const ba = nearBldAction(); if (ba) { doBldAction(ba); return; } }
+  if (!nb && !nearCar()) { const ba = nearBldAction(); if (ba) { doBldAction(ba); return; } const ta = townNearAction(); if (ta) { openTown(null, ta); return; } }
   if (nb) { boardBus(nb); return; }
   const v = nearCar();
   if (!v) return;
@@ -6290,6 +6504,7 @@ function stepPlayer(dt) {
     }
   }
   if (blds.length) bldPush(player.pos, P_R);   // 建物の壁とドア
+  townPush(player.pos, P_R);   // 街の家・会社の建物
   if (!hwWalkMove(ox, oz, oy)) { player.pos.x = ox; player.pos.z = oz; if (player.pos.y < oy) { player.pos.y = oy; player.vy = Math.max(0, player.vy); } }   // 高速道路は歩いて出入りできない
   for (const pr of props) {
     if (pr.bld) continue;
@@ -7353,7 +7568,7 @@ function updateUi() {
   if (lastUi.startsWith('bus|')) { el('navLine').hidden = true; el('speedBox').hidden = true; el('busViewBtn').hidden = true; }
   const nv = !ride && !aboard ? nearCar() : null;
   const near = !!nv;
-  const ba = !ride && !aboard && !nv && blds.length ? nearBldAction() : null;   // ドア・スイッチ・イス
+  const ba = !ride && !aboard && !nv ? (blds.length && nearBldAction()) || townNearAction() : null;   // ドア・スイッチ・イス、お店の前
   const vt = ride ? vtype(ride) : null;
   const sea = ride && isBoat(ride);   // 船・潜水艦はノット（1 ノット = 1.852 km/h）
   const kmh = ride ? Math.round(Math.abs(ride.vF) * (sea ? 3.6 / 1.852 : 3.6)) : 0;
@@ -8848,6 +9063,982 @@ async function removeMine(t) {
   } else { if (t.kind === 'v') removeVehicle(o); else removeProp(o); showMsg(`${t.name} を消しました`); }
 }
 
+/* ================= 街：住人 10000 人の家・会社のビル・畑・漁港（2026-11-02 わんみゃさんの案） =================
+   住人は歩きまわらない（データだけ）。家・会社・畑の場所は道路の網から決まった乱数で作るので、だれの画面でも同じ。
+   家は道路に面した所から建てる。地価（道路のはば・バス停の近さ・海の近さ・坂）が高い所から人が住む */
+const TOWN_ZONE = { 中央: 'urban', 港町: 'urban', 西大通り: 'urban', 川向こう: 'urban', 山の上: 'suburb', 北大通り: 'suburb', 東の川: 'suburb', はじめ町: 'suburb', みどり台: 'suburb',
+  みずうみ町: 'suburb', 北浜: 'suburb', 東浜: 'village', 西の丘: 'rural', 東野原: 'rural', みさき: 'village', ひろ野: 'rural', 東山: 'rural', 西山町: 'rural', 輪の里: 'rural' };
+const ZONE_P = {
+  urban: { sp: 17, rows: 3, gap: 22, apt: 0.4, land: 160000 }, suburb: { sp: 19, rows: 2, gap: 19, apt: 0.1, land: 62000 },
+  village: { sp: 23, rows: 2, gap: 19, apt: 0.03, land: 36000 }, rural: { sp: 40, rows: 1, gap: 0, apt: 0, land: 15000 },
+};
+const FARM_P = { ひろ野: 0.55, 輪の里: 0.55, 東野原: 0.5, 西山町: 0.5, 東山: 0.45, 西の丘: 0.4, 東浜: 0.3, みどり台: 0.1, みずうみ町: 0.12 };
+const FISH_P = { みさき: 0.4, 北浜: 0.28, 港町: 0.12, はじめ町: 0.12, 西の丘: 0.1, 東浜: 0.05 };
+function districtAt(x, z) { for (const p of PLACES) if (!p.sea && inPoly(x, z, p.poly)) return p; return null; }
+/* ---- 会社（ラッピングバスの 11 社 ＋ 一次産業・小売・運送・銀行・不動産） ----
+   code：株の番号、ind：業種、ad：ラッピングバスの広告（BUS_ADS の名前）、at：本社のおよその場所、b：建物の形、staff：社員、shares：株の数、p0：はじめの株価（円） */
+const COMPANIES = [
+  { code: 1301, name: 'はじめファーム', ind: '一次産業', sub: '農業（野菜の集荷・直売）', at: [-700, 2300], b: 'farmhq', staff: 60, shares: 400000, p0: 1200, col: ['#3f8f3a', '#ffffff'], copy: 'はじめ市の畑から' },
+  { code: 1332, name: 'なか海水産', ind: '一次産業', sub: '漁業（水あげ・卸）', at: [900, -2480], b: 'fishhq', staff: 45, shares: 300000, p0: 980, col: ['#1d5f99', '#ffffff'], copy: 'とれたて なか海の魚' },
+  { code: 3091, name: 'はじめ高速サービス', ind: '小売', sub: 'PAの売店（鮮魚・野菜・おみやげ）', at: [-300, 2050], b: 'office', staff: 110, shares: 500000, p0: 1300, col: ['#1f6b3a', '#ffffff'], copy: 'PAで とれたてを' },
+  { code: 2877, name: 'みなと水産加工', ind: '食品', sub: '干物・かまぼこ（海産加工品）', at: [1150, -2620], b: 'fishhq', staff: 80, shares: 400000, p0: 1150, col: ['#c2502a', '#ffffff'], copy: '港町の干物と かまぼこ' },
+  { code: 2264, ad: 'はじめ牛乳', ind: '一次産業', sub: '酪農・乳業', at: [-600, 3350], b: 'barn', staff: 70, shares: 500000, p0: 1450 },
+  { code: 8201, name: 'みなとマート', ind: '小売', sub: 'スーパーマーケット', at: [-150, -3420], b: 'super', staff: 320, shares: 1200000, p0: 2100, col: ['#e2442f', '#ffffff'], copy: '毎日やすい 地元の味',
+    stores: [[600, -2860], [-200, 420], [-1250, 1100], [1000, -3250], [3420, 2000], [300, 3880], [600, -4100]] },
+  { code: 3048, ad: 'はじめ電気', ind: '小売', sub: '家電の販売', at: [-100, 300], b: 'shop', staff: 85, shares: 600000, p0: 1650 },
+  { code: 9064, name: 'はじめ運輸', ind: '運送', sub: 'トラック輸送・倉庫', at: [1600, 640], b: 'warehouse', staff: 210, shares: 900000, p0: 1380, col: ['#f08c1a', '#1d2a44'], copy: 'あしたの朝 とどけます' },
+  { code: 9001, ad: '港町タクシー', ind: '運送', sub: 'タクシー', at: [700, -2850], b: 'garage', staff: 95, shares: 300000, p0: 870 },
+  { code: 8301, name: 'みなと銀行', ind: '銀行', sub: '銀行', at: [-450, -3450], b: 'tower', staff: 140, shares: 2000000, p0: 2650, col: ['#173f7a', '#ffffff'], copy: 'みなと市とともに' },
+  { code: 8350, ad: 'はじめ信用金庫', ind: '銀行', sub: '信用金庫', at: [-700, 160], b: 'bank', staff: 60, shares: 500000, p0: 1100 },
+  { code: 8801, name: 'みなと不動産', ind: '不動産', sub: '賃貸・土地の売り買い', at: [-300, -3100], b: 'office', staff: 45, shares: 700000, p0: 1820, col: ['#6b3fa0', '#ffffff'], copy: '住まいさがしは おまかせ' },
+  { code: 7611, ad: 'みなとカレー本舗', ind: '飲食', sub: 'カレー店', at: [1000, -2950], b: 'diner', staff: 65, shares: 300000, p0: 1240 },
+  { code: 2212, ad: 'ひろ野ベーカリー', ind: '飲食', sub: 'パン屋', at: [-700, 1600], b: 'diner', staff: 45, shares: 200000, p0: 960 },
+  { code: 3087, ad: '中央ドーナツ', ind: '飲食', sub: 'ドーナツ店', at: [-300, -3300], b: 'diner', staff: 55, shares: 250000, p0: 1080 },
+  { code: 9722, ad: '東山温泉 ゆけむり', ind: '観光', sub: '日帰り温泉・宿', at: [2500, 700], b: 'onsen', staff: 70, shares: 300000, p0: 1530 },
+  { code: 9680, ad: 'みさき水族館', ind: '観光', sub: '水族館', at: [2640, -3730], b: 'aquarium', staff: 85, shares: 400000, p0: 1720 },
+  { code: 9681, ad: 'みずうみ遊園地', ind: '観光', sub: '遊園地', at: [3400, 3480], b: 'park', staff: 130, shares: 600000, p0: 1390 },
+  { code: 2429, ad: '北浜スポーツクラブ', ind: 'サービス', sub: 'スポーツクラブ', at: [-1200, -4100], b: 'gym', staff: 40, shares: 200000, p0: 760 },
+];
+for (const c of COMPANIES) {
+  const ad = c.ad && BUS_ADS.find((a) => a.name === c.ad);
+  if (ad) { c.name = ad.name; c.col = [ad.base, ad.ink]; c.copy = ad.copy; c.adObj = ad; }
+  c.short = c.name.replace(/ .*/, '');
+}
+const companyBy = (code) => COMPANIES.find((c) => c.code === code);
+// 建物の大きさ（はば w × 奥行き d × 高さ h）
+const BLD_SIZE = { farmhq: [36, 22, 9], fishhq: [34, 18, 8], barn: [22, 14, 9], super: [40, 26, 7], store: [30, 20, 6.5], shop: [22, 16, 8], warehouse: [52, 30, 11], garage: [26, 18, 6.5],
+  tower: [22, 20, 42], bank: [18, 14, 10], office: [18, 14, 21], diner: [15, 12, 6], onsen: [32, 20, 7.5], aquarium: [44, 30, 12], park: [70, 60, 6], gym: [30, 22, 9] };
+const TOWN = (() => {
+  const R = roadNet, t0 = performance.now();
+  // 置いてはいけない所
+  const nodesX = R.nodes.map((n) => [n.x, n.z, (n.jr || 8) + (n.plaza ? 40 : 12)]);
+  const stopsX = R.stops.map((st) => [st.e.X[st.i], st.e.Z[st.i]]);
+  const occ = new Map(), OCC = 24, items = [];
+  const occKey = (gx, gz) => gx * 65536 + gz;
+  function free(x, z, r) {
+    for (let gx = Math.floor((x - r - 40) / OCC); gx <= Math.floor((x + r + 40) / OCC); gx++) for (let gz = Math.floor((z - r - 40) / OCC); gz <= Math.floor((z + r + 40) / OCC); gz++) {
+      const a = occ.get(occKey(gx, gz)); if (!a) continue;
+      for (const o of a) if (Math.hypot(o.x - x, o.z - z) < o.r + r) return false;
+    }
+    return true;
+  }
+  function take(o) { o.r = o.r || Math.hypot(o.w, o.d) / 2; const k = occKey(Math.floor(o.x / OCC), Math.floor(o.z / OCC)); let a = occ.get(k); if (!a) occ.set(k, a = []); a.push(o); }
+  // 敷地 4 すみとまん中：陸か・坂・道路にかからないか
+  function siteOk(x, z, rot, w, d, maxRange, roadM = 1.5) {
+    if (x < -4900 || x > 4900 || z < -4900 || z > 4900) return null;
+    if (Math.abs(x) < 560 && z < 120 && z > -950) return null;   // はじめの浜（前の世界）
+    for (const [nx, nz, r] of nodesX) if (Math.abs(nx - x) < r + 40 && Math.abs(nz - z) < r + 40 && Math.hypot(nx - x, nz - z) < r + Math.max(w, d) / 2) return null;
+    for (const [sx, sz] of stopsX) if (Math.abs(sx - x) < 30 && Math.abs(sz - z) < 30) return null;
+    for (const L of HW_LOTS) if (x > L.x0 - 20 && x < L.x1 + 20 && z > L.z0 - 20 && z < L.z1 + 20) return null;
+    const c = Math.cos(rot), s = Math.sin(rot);
+    let lo = Infinity, hi = -Infinity;
+    for (const [u, v] of [[0, 0], [-0.5, -0.5], [0.5, -0.5], [-0.5, 0.5], [0.5, 0.5], [0, 0.5], [0, -0.5], [0.5, 0], [-0.5, 0]]) {
+      const px = x + u * w * c + v * d * s, pz = z - u * w * s + v * d * c, h = rawHeight0(px, pz);
+      lo = Math.min(lo, h); hi = Math.max(hi, h);
+      if (h < 1.2) return null;
+      const q = roadSurf(px, pz); if (q && q.d - q.w / 2 < roadM) return null;
+    }
+    if (hi - lo > maxRange) return null;
+    if (deckNear(x, z, Infinity, Math.max(w, d) / 2 + 8)) return null;   // 高架・トンネルの下
+    return { lo, hi };
+  }
+  // 道路に沿って候補の場所をならべる：f(e, i, side, x, z, rot)
+  function alongRoads(step, fn) {
+    for (const e of R.edges) {
+      if (e.hw || e.inPlaza) continue;
+      for (let s = step / 2; s < e.L - 4; s += step) {
+        let i = Math.min(e.N - 2, Math.round(s / RD_STEP)); while (i > 0 && e.S[i] > s) i--; while (i < e.N - 2 && e.S[i + 1] < s) i++;
+        if (e.BR[i]) continue;
+        fn(e, i, s);
+      }
+    }
+  }
+  // 地価（円/㎡）
+  function landValue(x, z, zone, dist, wRoad, row, range) {
+    let v = ZONE_P[zone].land * (dist && dist.name === '中央' ? 1.5 : 1);
+    if (wRoad >= 14) v *= 1.25;
+    v *= 1 - 0.13 * row;
+    let sd = Infinity; for (const [sx, sz] of stopsX) sd = Math.min(sd, Math.hypot(sx - x, sz - z));
+    v *= sd < 150 ? 1.25 : sd < 400 ? 1.1 : 1;
+    v *= 1 - Math.min(0.3, range * 0.06);
+    return Math.round(v / 100) * 100;
+  }
+  /* ---- 会社のビル：本社の場所（at）にいちばん近い、道路に面した平らな所 ---- */
+  const companies = [];
+  function placeCompany(c, at, kind, label) {
+    const [w, d, h] = BLD_SIZE[kind];
+    let best = null;
+    for (const e of R.edges) {
+      if (e.hw || e.inPlaza) continue;
+      for (let i = 0; i < e.N - 1; i += 4) {
+        if (Math.abs(e.X[i] - at[0]) > 900 || Math.abs(e.Z[i] - at[1]) > 900 || e.BR[i]) continue;
+        for (const side of [1, -1]) {
+          const off = e.W[i] / 2 + 5 + d / 2, x = e.X[i] + e.NX[i] * off * side, z = e.Z[i] + e.NZ[i] * off * side;
+          const dd = Math.hypot(x - at[0], z - at[1]); if (best && dd > best.dd) continue;
+          const rot = Math.atan2(-e.NX[i] * side, -e.NZ[i] * side);   // 正面（+z）を道路へ
+          if (!free(x, z, Math.hypot(w, d) / 2 + 3)) continue;
+          const ok = siteOk(x, z, rot, w + 4, d + 4, kind === 'park' ? 14 : 9, 1.0); if (!ok) continue;
+          best = { dd, x, z, rot, e, i, y: Math.max(e.Y[i] - 0.12, SEA + 0.4) };
+        }
+      }
+    }
+    if (!best) { console.warn('会社の場所がありません', c.name, label); return null; }
+    const o = { c, kind, label, x: best.x, z: best.z, rot: best.rot, w, d, h, y: best.y, dist: districtAt(best.x, best.z) };
+    take(o); companies.push(o);
+    // 地面を平らに（道路の高さにそろえる）
+    const cc = Math.cos(o.rot), sn = Math.sin(o.rot), pad = { x: o.x, z: o.z, c: cc, s: sn, lu: 0, lv: 0, hw: w / 2 + 2.5, hd: d / 2 + 2.5, y: o.y, base: 0 };
+    const RR = Math.hypot(pad.hw, pad.hd) + PAD_M; Object.assign(pad, { x0: o.x - RR, x1: o.x + RR, z0: o.z - RR, z1: o.z + RR });
+    PADS.push(pad); o.pad = pad;
+    return o;
+  }
+  for (const c of COMPANIES) {
+    c.hq = placeCompany(c, c.at, c.b, '本社');
+    c.shops = [];
+    if (c.stores) c.stores.forEach((at, k) => { const o = placeCompany(c, at, 'store', ''); if (o) { o.label = (o.dist ? o.dist.name : '') + '店'; c.shops.push(o); } });
+    if (c.hq && c.b === 'super') c.hq.label = '本店';
+  }
+  /* ---- 家とマンション ---- */
+  const homes = [];
+  alongRoads(8, (e, i, s) => {
+    const x0 = e.X[i], z0 = e.Z[i], dist = districtAt(x0, z0); if (!dist) return;
+    const zone = TOWN_ZONE[dist.name] || 'rural', P = ZONE_P[zone];
+    if (Math.round(s / 8) % Math.round(P.sp / 8) !== 0) return;   // 町ごとの間かく
+    for (const side of [1, -1]) for (let row = 0; row < P.rows; row++) {
+      const k = homes.length + items.length, hs = hash(Math.round(x0 * 7 + side * 3 + row), Math.round(z0 * 5));
+      const apt = hs < P.apt && row < 2;
+      const w = apt ? 16 + Math.floor(hash(k, 3) * 4) * 2 : 8 + hash(k, 4) * 3, d = apt ? 11 + hash(k, 5) * 4 : 7 + hash(k, 6) * 2.5;
+      const floors = apt ? (zone === 'urban' ? 4 + Math.floor(hash(k, 7) * 7) : 3 + Math.floor(hash(k, 7) * 2)) : 2;
+      const off = e.W[i] / 2 + 4.5 + row * P.gap + d / 2 + hash(k, 8) * 2, jit = (hash(k, 9) - 0.5) * P.sp * 0.3;
+      const tx = (e.X[Math.min(e.N - 1, i + 1)] - x0), tz = (e.Z[Math.min(e.N - 1, i + 1)] - z0), tl = Math.hypot(tx, tz) || 1;
+      const x = x0 + e.NX[i] * off * side + tx / tl * jit, z = z0 + e.NZ[i] * off * side + tz / tl * jit;
+      const rot = Math.atan2(-e.NX[i] * side, -e.NZ[i] * side) + (hash(k, 10) - 0.5) * 0.12;
+      const r = Math.hypot(w, d) / 2 + 2;
+      if (!free(x, z, r)) continue;
+      const ok = siteOk(x, z, rot, w, d, apt ? 2.6 : 3.6); if (!ok) continue;
+      const dd = districtAt(x, z) || dist;
+      const o = { kind: apt ? 'apt' : 'house', x, z, rot, w, d, h: apt ? floors * 3 + 0.6 : 5.4 + hash(k, 11) * 0.6, floors, zone: TOWN_ZONE[dd.name] || zone, dist: dd, row, lo: ok.lo, hi: ok.hi,
+        value: landValue(x, z, zone, dd, e.w, row, ok.hi - ok.lo), cap: apt ? floors * (zone === 'urban' ? 4 : 3) : 1 };
+      take(o); homes.push(o);
+    }
+  });
+  // 海の近く（漁師が住む）：まわり 8 方向の 350m 先に海があるか
+  for (const o of homes) { o.coast = false; for (let a = 0; a < 8 && !o.coast; a++) if (rawHeight0(o.x + Math.cos(a * 0.785) * 350, o.z + Math.sin(a * 0.785) * 350) < -0.5) o.coast = true; if (o.coast) o.value = Math.round(o.value * 1.1 / 100) * 100; }
+  /* ---- 住人：地価の高い所から順に、世帯を入れる（合わせて 10000 人） ---- */
+  const POP = 10000;
+  const FAM = ['佐藤', '鈴木', '高橋', '田中', '伊藤', '渡辺', '山本', '中村', '小林', '加藤', '吉田', '山田', '佐々木', '山口', '松本', '井上', '木村', '林', '斎藤', '清水', '山崎', '森', '池田', '橋本', '阿部', '石川', '山下', '中島', '石井', '小川', '前田', '岡田', '長谷川', '藤田', '後藤', '近藤', '村上', '遠藤', '青木', '坂本', '浜田', '海野', '岬', '湊', '大浜', '野原', '川口', '丘', '北村', '東', '西田', '南', '中川', '輪島', '広野', '湖山', '谷口', '宮本', '小島', '島田'];
+  const GIVEN = ['はると', 'ゆうと', 'そうた', 'みなと', 'りく', 'たいが', 'けんた', 'しょう', 'ひろし', 'まさる', 'たけし', 'おさむ', 'こうき', 'だいち', 'かいと', 'れん', 'あおい', 'ひなた', 'ゆい', 'さくら', 'めい', 'みお', 'はな', 'りん', 'ゆな', 'あかり', 'ことね', 'ゆき', 'なつみ', 'ちあき', 'まゆみ', 'けいこ', 'ようこ', 'かずこ', 'ともこ', 'のぞみ', 'みさき', 'うみ', 'そら', 'あさひ', 'つばさ', 'ひかる', 'まこと', 'しのぶ', 'あきら', 'なぎさ', 'かおる', 'ちひろ'];
+  // 町ごとの人口（合わせて 10000 人）。家は地価の高い所から入れて、残りの 1 割を空き家・空き部屋として残す（ほかはこわす＝建てない）
+  const DIST_POP = { 中央: 1300, 港町: 900, 西大通り: 800, 川向こう: 800, 山の上: 150, 北大通り: 450, 東の川: 350, 北浜: 450, 西の丘: 200, 東野原: 250, みさき: 100,
+    はじめ町: 850, みどり台: 900, ひろ野: 450, 東山: 200, 東浜: 450, みずうみ町: 850, 輪の里: 200, 西山町: 150 };
+  const hh = [];   // 世帯：{ home, fam, members: [人の番号…] }
+  const ages = [], home = [], hhOf = [];
+  let pop = 0;
+  const memb = (k, zone) => {   // 世帯の人の年れい
+    const r = hash(k, 31), a0 = 20 + Math.floor(hash(k, 32) * 60);
+    if (zone === 'urban' && r < 0.38) return [a0];
+    if (r < 0.62) return [a0, Math.max(20, a0 + Math.floor((hash(k, 33) - 0.5) * 8))];
+    const p = 28 + Math.floor(hash(k, 34) * 22), kids = 1 + Math.floor(hash(k, 35) * 3), m = [p, p + Math.floor(hash(k, 36) * 5) - 2];
+    for (let j = 0; j < kids; j++) m.push(Math.max(0, Math.min(22, p - 24 - Math.floor(hash(k, 40 + j) * 12))));
+    if (zone !== 'urban' && hash(k, 37) < 0.35) m.push(p + 26 + Math.floor(hash(k, 38) * 10));
+    return m;
+  };
+  const score = (k) => homes[k].value * (0.75 + 0.5 * hash(k, 21));
+  const fill = (o, limit) => {   // 1 けん（1 むね）に世帯を入れる。入れた人数
+    let added = 0;
+    for (let u = o.hh.length; u < o.cap && added < limit; u++) {
+      if (o.kind === 'apt' && hash(o.id * 31 + u, 22) < 0.12) continue;   // 空き部屋
+      let m = memb(hh.length, o.zone); if (m.length > limit - added) m = m.slice(0, limit - added);
+      const h = { home: o, fam: FAM[Math.floor(hash(hh.length, 23) * FAM.length)], members: [] };
+      for (const a of m) { h.members.push(ages.length); ages.push(a); home.push(o); hhOf.push(hh.length); }
+      o.hh.push(hh.length); hh.push(h); added += m.length;
+    }
+    return added;
+  };
+  homes.forEach((o, k) => { o.id = k; o.hh = []; });
+  const byDist = new Map();
+  for (const k of homes.map((o, k) => k).sort((a, b) => score(b) - score(a))) { const d = homes[k].dist.name; if (!byDist.has(d)) byDist.set(d, []); byDist.get(d).push(homes[k]); }
+  const keep = new Set();
+  let short = 0;
+  for (const [d, list] of byDist) {
+    let need = DIST_POP[d] || 0, used = 0;
+    for (const o of list) { if (need <= 0) break; const a = fill(o, need); need -= a; pop += a; if (o.hh.length) { keep.add(o); used++; } }
+    short += Math.max(0, need);
+    let spare = Math.ceil(used * 0.1);
+    for (const o of list) { if (spare <= 0) break; if (!keep.has(o)) { keep.add(o); spare--; } }
+  }
+  if (short > 0) for (const o of [...homes].sort((a, b) => score(b.id) - score(a.id))) { if (pop >= POP) break; const a = fill(o, POP - pop); pop += a; if (a) keep.add(o); }
+  // 建てない家を、ぶつかりの表から消す
+  homes.splice(0, homes.length, ...homes.filter((o) => keep.has(o)));
+  occ.clear(); for (const o of companies) take(o); for (const o of homes) take(o);
+  homes.forEach((o, k) => { o.id = k; });
+  for (let p = 0; p < home.length; p++) home[p] = home[p].id;
+  for (const h of hh) h.home = h.home.id;
+  const N = ages.length;
+  /* ---- 仕事 ---- JOB：0 子ども・1 学生・2 年金ぐらし・3 会社員（会社）・4 農家・5 漁師・6 そのほかの仕事・7 さがしている */
+  const JOBS = ['子ども', '学生', '年金ぐらし', '会社員', '農家', '漁師', 'そのほかの仕事', '仕事をさがしている'];
+  const job = new Uint8Array(N), emp = new Int16Array(N).fill(-1), given = new Uint8Array(N);
+  for (let p = 0; p < N; p++) {
+    given[p] = Math.floor(hash(p, 24) * GIVEN.length);
+    const a = ages[p], o = homes[home[p]], rr = hash(p, 25), dn = o.dist ? o.dist.name : '';
+    if (a < 6) job[p] = 0;
+    else if (a < 19 || (a < 23 && rr < 0.5)) job[p] = 1;
+    else if (a >= 65 && a < 80 && rr < (FARM_P[dn] || 0) * 0.8 * (o.row ? 1.2 : 1)) job[p] = 4;
+    else if (a >= 65 && a < 75 && o.coast && rr < (FISH_P[dn] || 0) * 0.4) job[p] = 5;
+    else if (a >= 65) job[p] = 2;
+    else if (rr < (FARM_P[dn] || 0)) job[p] = 4;
+    else if (o.coast && rr < (FARM_P[dn] || 0) + (FISH_P[dn] || 0)) job[p] = 5;
+    else job[p] = 6;
+  }
+  // 会社の社員：本社・お店の近くに住む人から順に
+  const cand = []; for (let p = 0; p < N; p++) if (job[p] === 6) cand.push(p);
+  COMPANIES.forEach((c, ci) => {
+    const spots = [c.hq, ...c.shops].filter(Boolean); if (!spots.length) return;
+    const d2 = (p) => { const o = homes[home[p]]; let m = Infinity; for (const s of spots) m = Math.min(m, Math.hypot(o.x - s.x, o.z - s.z)); return m * (0.7 + 0.6 * hash(p, 26 + ci)); };
+    const pool = cand.filter((p) => emp[p] < 0).map((p) => [d2(p), p]).sort((a, b) => a[0] - b[0]);
+    c.staffIds = [];
+    for (let k = 0; k < Math.min(c.staff, pool.length); k++) { const p = pool[k][1]; emp[p] = ci; job[p] = 3; c.staffIds.push(p); }
+  });
+  for (const p of cand) if (job[p] === 6 && hash(p, 27) < 0.035) job[p] = 7;
+  const count = (f) => { let n = 0; for (let p = 0; p < N; p++) if (f(p)) n++; return n; };
+  const jobN = JOBS.map((_, j) => count((p) => job[p] === j));
+  /* ---- 畑：農家の家のうしろ（道路から遠い側） ---- */
+  const fields = [];
+  const farmHomes = homes.filter((o) => o.hh && o.hh.some((h) => hh[h].members.some((p) => job[p] === 4)));
+  for (const [k, o] of farmHomes.entries()) {
+    const nF = 1 + (hash(k, 51) < 0.6 ? 1 : 0) + (hash(k, 52) < 0.3 ? 1 : 0);
+    const c = Math.cos(o.rot), s = Math.sin(o.rot);
+    for (let j = 0; j < nF; j++) {
+      const fw = 22 + Math.floor(hash(k * 3 + j, 53) * 3) * 6, fd = 26 + Math.floor(hash(k * 3 + j, 54) * 3) * 6;
+      for (let tr = 0; tr < 9; tr++) {
+        const u = (j - (nF - 1) / 2) * (fw + 4) + (tr % 3 - 1) * (fw + 6), v = -(o.d / 2 + 6 + fd / 2 + Math.floor(tr / 3) * (fd * 0.6));   // 家のうしろ（-z）
+        const x = o.x + u * c + v * s, z = o.z - u * s + v * c;
+        if (!free(x, z, Math.hypot(fw, fd) / 2 + 1)) continue;
+        const ok = siteOk(x, z, o.rot, fw, fd, 2.6, 3); if (!ok) continue;
+        const f = { kind: 'field', x, z, rot: o.rot, w: fw, d: fd, y: ok.lo, hi: ok.hi, crop: Math.floor(hash(k * 3 + j, 55) * 4), home: homes.indexOf(o) };
+        take(f); fields.push(f); break;
+      }
+    }
+  }
+  console.log(`街：家 ${homes.filter((o) => o.kind === 'house').length}・マンション ${homes.filter((o) => o.kind === 'apt').length}・住人 ${N}・世帯 ${hh.length}・畑 ${fields.length}・会社の建物 ${companies.length}（${Math.round(performance.now() - t0)}ms）`);
+  return { homes, companies, fields, hh, ages, home, hhOf, job, emp, given, FAM, GIVEN, JOBS, jobN, N, occ, OCC };
+})();
+/* ---- 街を描く：家・マンション・屋根・畑はそれぞれ 1 つの InstancedMesh（カメラの近く 1km だけ入れなおす）。窓はシェーダーで描き、夜は明かりがつく ---- */
+const TOWN_U = { uNight: { value: 0 } };
+// 窓のシェーダー：FH 階の高さ、WS 窓の間かく、WW 窓のはば（0〜1）、door 1 なら正面（+z）の 1 階まん中に入口
+function townWallMat(FH, WS, WW, door, glow) {
+  const m = new THREE.MeshLambertMaterial({ color: 0xffffff }); m.userData.win = true;
+  m.customProgramCacheKey = () => `win|${FH}|${WS}|${WW}|${door}|${glow}`;   // 形のちがう窓は別のシェーダー
+  m.onBeforeCompile = (sh) => {
+    Object.assign(sh.uniforms, TOWN_U);
+    sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vLoc; varying vec3 vNo; varying vec3 vSc; varying vec3 vWp;')
+      .replace('#include <begin_vertex>', `#include <begin_vertex>
+        #ifdef USE_INSTANCING
+          vSc = vec3(length(instanceMatrix[0].xyz), length(instanceMatrix[1].xyz), length(instanceMatrix[2].xyz));
+          vWp = (modelMatrix * instanceMatrix * vec4(position, 1.0)).xyz;
+        #else
+          vSc = vec3(1.0); vWp = (modelMatrix * vec4(position, 1.0)).xyz;
+        #endif
+        vLoc = position * vSc; vNo = normal;`);
+    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform float uNight; varying vec3 vLoc; varying vec3 vNo; varying vec3 vSc; varying vec3 vWp;')
+      .replace('#include <color_fragment>', `#include <color_fragment>
+        {
+          float sideF = step(abs(vNo.y), 0.5);
+          bool xs = abs(vNo.x) > 0.5;
+          vec2 fc = xs ? vec2(vLoc.z, vLoc.y) : vec2(vLoc.x, vLoc.y);
+          float hw = xs ? vSc.z * 0.5 : vSc.x * 0.5;
+          float fy = fract(fc.y / ${FH.toFixed(2)}), fl = floor(fc.y / ${FH.toFixed(2)});
+          float cx = fract((fc.x + hw) / ${WS.toFixed(2)});
+          float win = sideF * step(0.4, fc.y) * step(0.3, fy) * step(fy, 0.8) * step(${(0.5 - WW / 2).toFixed(3)}, cx) * step(cx, ${(0.5 + WW / 2).toFixed(3)}) * step(abs(fc.x), hw - 0.8) * step(fc.y, vSc.y - 0.5);
+          float dr = ${door ? '1.0' : '0.0'} * step(0.5, vNo.z) * step(abs(fc.x), 0.75) * step(0.0, fc.y) * step(fc.y, 2.2);
+          win *= 1.0 - dr;
+          diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.5, 0.5, 0.48), step(vLoc.y, 0.02) * sideF);
+          diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.16, 0.22, 0.28), win);
+          diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.35, 0.24, 0.16), dr);
+          float lit = step(${glow}, fract(sin(dot(floor(vWp.xz / 2.7) + fl * 7.13, vec2(12.9898, 78.233))) * 43758.5453));
+          totalEmissiveRadiance += vec3(1.0, 0.8, 0.5) * win * lit * uNight * 0.9;
+        }`);
+  };
+  return m;
+}
+// 三角形の向き（表と裏）を逆にする：[a, b, c] → [a, c, b]
+function flipTris(p) { const q = p.slice(); for (let i = 0; i < q.length; i += 9) for (let k = 0; k < 3; k++) { q[i + 3 + k] = p[i + 6 + k]; q[i + 6 + k] = p[i + 3 + k]; } return q; }
+const townGeo = (() => {
+  // 家：-0.6〜0（基礎）＋ 0〜1（壁）。屋根：切妻（棟は x 方向）
+  const body = new THREE.BoxGeometry(1, 1.6, 1); body.translate(0, 0.2, 0);
+  const roof = (() => {
+    const e = 0.56, top = 1.38, p = [
+      -e, 1, -e, e, 1, -e, e, top, 0, -e, 1, -e, e, top, 0, -e, top, 0,   // 奥の屋根面
+      -e, 1, e, -e, top, 0, e, top, 0, -e, 1, e, e, top, 0, e, 1, e,   // 手前
+      -0.5, 1, -0.5, -0.5, top - 0.02, 0, -0.5, 1, 0.5, 0.5, 1, -0.5, 0.5, 1, 0.5, 0.5, top - 0.02, 0,   // 妻（壁の色にはしないで屋根と同じ）
+    ];
+    const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(flipTris(p), 3)); g.computeVertexNormals(); return g;
+  })();
+  const apt = new THREE.BoxGeometry(1, 1.15, 1); apt.translate(0, 0.425, 0);   // マンション：基礎は少しだけ
+  const aptTop = new THREE.BoxGeometry(1.02, 0.03, 1.02); aptTop.translate(0, 1.0, 0);
+  const field = new THREE.BoxGeometry(1, 1, 1); field.translate(0, -0.5, 0);
+  return { body, roof, apt, aptTop, field };
+})();
+// 畑の模様（うね）：上の面だけ
+const fieldMat = (() => {
+  const c = document.createElement('canvas'); c.width = 16; c.height = 64; const g = c.getContext('2d');
+  g.fillStyle = '#ffffff'; g.fillRect(0, 0, 16, 64); g.fillStyle = '#9b8b7a'; for (let y = 0; y < 64; y += 8) g.fillRect(0, y, 16, 3);
+  const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.colorSpace = THREE.SRGBColorSpace;
+  const m = new THREE.MeshLambertMaterial({ map: t });
+  m.onBeforeCompile = (sh) => {
+    sh.vertexShader = sh.vertexShader.replace('#include <uv_vertex>', `#include <uv_vertex>
+      #ifdef USE_INSTANCING
+        vec3 fSc = vec3(length(instanceMatrix[0].xyz), length(instanceMatrix[1].xyz), length(instanceMatrix[2].xyz));
+        vMapUv = vec2(position.x * fSc.x / 4.0, position.z * fSc.z / 4.0);
+      #endif`);
+  };
+  return m;
+})();
+const townMeshes = (() => {
+  const H = TOWN.homes, F = TOWN.fields;
+  const WALL = [0xf3efe6, 0xe9e0cf, 0xf6f3ee, 0xd9cdb8, 0xc9d3d8, 0xe8d6c4, 0xdedad3, 0xf0e2c8];
+  const ROOF = [0x7a3b30, 0x3b4a63, 0x4d4f52, 0x6b5442, 0x355e4c, 0x8a5a33, 0x2f3b45];
+  const APT = [0xe6e2da, 0xd8d2c6, 0xcfd6dc, 0xeee8dc, 0xc7c0b4, 0xdcd4c8];
+  const mk = (geo, mat, list) => { const m = new THREE.InstancedMesh(geo, mat, Math.max(1, list.length)); m.count = 0; m.frustumCulled = false; m.receiveShadow = true; m.castShadow = !coarse; scene.add(m); return m; };
+  const houses = H.filter((o) => o.kind === 'house'), apts = H.filter((o) => o.kind === 'apt');
+  const mats = {
+    body: townWallMat(2.7, 2.8, 0.42, true, '0.55'), apt: townWallMat(3.0, 3.6, 0.6, true, '0.45'),
+    roof: new THREE.MeshLambertMaterial({ color: 0xffffff }), top: new THREE.MeshLambertMaterial({ color: 0x8e8e8a }),
+  };
+  const sets = [
+    { list: houses, mesh: mk(townGeo.body, mats.body, houses), col: WALL },
+    { list: houses, mesh: mk(townGeo.roof, mats.roof, houses), col: ROOF, seed: 2 },
+    { list: apts, mesh: mk(townGeo.apt, mats.apt, apts), col: APT },
+    { list: apts, mesh: mk(townGeo.aptTop, mats.top, apts) },
+    { list: F, mesh: mk(townGeo.field, fieldMat, F), field: true },
+  ];
+  sets[4].mesh.castShadow = false;
+  // 置く高さ：道路のならしを入れた地面（敷地のいちばん低い所 ＋ 少し。基礎が坂をかくす）
+  const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), up = new THREE.Vector3(0, 1, 0), pv = new THREE.Vector3(), sv = new THREE.Vector3(), cc = new THREE.Color();
+  const yOf = (o) => {
+    if (o.yy != null) return o.yy;
+    const c = Math.cos(o.rot), s = Math.sin(o.rot); let hi = -Infinity, lo = Infinity;
+    for (const [u, v] of [[0, 0], [-0.45, -0.45], [0.45, -0.45], [-0.45, 0.45], [0.45, 0.45]]) { const h = baseHeight(o.x + u * o.w * c + v * o.d * s, o.z - u * o.w * s + v * o.d * c); hi = Math.max(hi, h); lo = Math.min(lo, h); }
+    o.ylo = lo; return (o.yy = o.kind === 'field' ? hi + 0.18 : Math.min(hi + 0.15, lo + 2.2));
+  };
+  for (const S of sets) {
+    S.mat = new Float32Array(S.list.length * 16); S.colA = S.col || S.field ? new Float32Array(S.list.length * 3) : null; S.ready = new Uint8Array(S.list.length);
+    if (S.colA || S.field) S.mesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(Math.max(1, S.list.length) * 3), 3);
+  }
+  function prep(S, k) {   // 近づいたときに高さを計算して、行列を作る
+    const o = S.list[k]; if (S.ready[k]) return; S.ready[k] = 1;
+    const y = yOf(o);
+    q.setFromAxisAngle(up, o.rot); pv.set(o.x, y, o.z);
+    if (S.field) sv.set(o.w, 0.6 + (o.hi - o.ylo), o.d);
+    else sv.set(o.kind === 'house' && S.col === ROOF ? o.w : o.w, o.kind === 'house' ? o.h - 0.15 * 0 : o.h, o.d);
+    if (o.kind === 'house') sv.y = Math.max(o.h * 0.6, o.h);
+    m4.compose(pv, q, sv); m4.toArray(S.mat, k * 16);
+    if (S.col) { cc.setHex(S.col[Math.floor(hash(k, 70 + (S.seed || 0)) * S.col.length)]); cc.toArray(S.colA, k * 3); }
+  }
+  let lastX = Infinity, lastZ = Infinity, lastDay = -1;
+  const RV = coarse ? 900 : 1150;
+  function update(force) {
+    const cx = camera.position.x, cz = camera.position.z;
+    const day = gameDayN();
+    if (!force && Math.hypot(cx - lastX, cz - lastZ) < 40 && day === lastDay) return;
+    const dayChanged = day !== lastDay;
+    lastX = cx; lastZ = cz; lastDay = day;
+    for (const S of sets) {
+      let n = 0; const A = S.mesh.instanceMatrix.array, C = S.mesh.instanceColor ? S.mesh.instanceColor.array : null;
+      for (let k = 0; k < S.list.length; k++) {
+        const o = S.list[k]; if (Math.abs(o.x - cx) > RV || Math.abs(o.z - cz) > RV || o.hidden) continue;
+        prep(S, k);
+        for (let j = 0; j < 16; j++) A[n * 16 + j] = S.mat[k * 16 + j];
+        if (S.field) { fieldColor(o, day, cc); C[n * 3] = cc.r; C[n * 3 + 1] = cc.g; C[n * 3 + 2] = cc.b; }
+        else if (C) { C[n * 3] = S.colA[k * 3]; C[n * 3 + 1] = S.colA[k * 3 + 1]; C[n * 3 + 2] = S.colA[k * 3 + 2]; }
+        n++;
+      }
+      S.mesh.count = n; S.mesh.instanceMatrix.needsUpdate = true; if (S.mesh.instanceColor) S.mesh.instanceColor.needsUpdate = true;
+    }
+    if (dayChanged) townBoatsDay();
+  }
+  return { sets, update, mats, yOf };
+})();
+// 畑の色：作物と育ち具合（季節・その日）
+const CROPS = [   // 植える月 → 取れる月。c：育つと緑、r：取れるころの色
+  { name: 'キャベツ', plant: [3, 9], days: 8, ripe: '#a8cf6a' }, { name: 'トマト', plant: [4], days: 10, ripe: '#d2402f' },
+  { name: 'だいこん', plant: [9, 10], days: 8, ripe: '#dfe8c8' }, { name: 'さつまいも', plant: [5], days: 14, ripe: '#8a5a8a' },
+];
+const SOIL = new THREE.Color(0x7a5a3e), GREEN = new THREE.Color(0x5fa340), FROST = new THREE.Color(0xc9ccc4), TMPC2 = new THREE.Color();
+function fieldStage(f, n) {   // 0：土だけ、0〜1：育っている、1：取りごろ
+  const crop = CROPS[f.crop], c = calOf(n), mi = Math.floor((n + 10 * CAL_DPM) / CAL_DPM);   // 月の通し番号
+  const off = Math.floor(hash(Math.round(f.x), Math.round(f.z)) * 3);   // 畑ごとに少しずらす
+  let best = -1;
+  for (const pm of crop.plant) { for (let y = -1; y <= 0; y++) { const plantDay = ((Math.floor(mi / 12) + y) * 12 + pm - 1 - 10) * CAL_DPM + off; const age = n - plantDay; if (age >= 0 && age <= crop.days + 3) best = Math.max(best, age); } }
+  if (best < 0) return { st: 0, crop };
+  return { st: Math.min(1, best / crop.days), crop, harvest: best >= crop.days };
+}
+function fieldColor(f, n, out) {
+  const { st, crop } = fieldStage(f, n);
+  if (st <= 0) return out.copy(SOIL);
+  out.copy(SOIL).lerp(GREEN, Math.min(1, st * 1.6));
+  if (st > 0.75) out.lerp(TMPC2.set(crop.ripe), (st - 0.75) * 2.4);
+  return out;
+}
+/* ---- 会社のビル：形ごとに作る。看板は会社の色と名前 ---- */
+function townSignTex(text, sub, bg, fg, w = 512, h = 128) {
+  const c = document.createElement('canvas'); c.width = w; c.height = h; const g = c.getContext('2d');
+  g.fillStyle = bg; g.fillRect(0, 0, w, h); g.strokeStyle = fg; g.globalAlpha = 0.5; g.lineWidth = 4; g.strokeRect(6, 6, w - 12, h - 12); g.globalAlpha = 1;
+  g.fillStyle = fg; g.textAlign = 'center'; g.textBaseline = 'middle';
+  fitText(g, text, w / 2, sub ? h * 0.4 : h / 2, w - 30, Math.round(h * (sub ? 0.46 : 0.6)));
+  if (sub) fitText(g, sub, w / 2, h * 0.8, w - 40, Math.round(h * 0.2), 700);
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4; return t;
+}
+const townBlds = (() => {
+  const out = [], M = {
+    wall: townWallMat(3.4, 3.4, 0.55, true, '0.5'), tower: townWallMat(3.6, 2.4, 0.78, true, '0.35'), shopW: townWallMat(7, 4, 0.0, false, '1.0'),
+    roof: new THREE.MeshLambertMaterial({ color: 0x5b6470 }), red: new THREE.MeshLambertMaterial({ color: 0xa63a2c }), white: new THREE.MeshLambertMaterial({ color: 0xf2f0ea }),
+    glass: new THREE.MeshLambertMaterial({ color: 0x5f8db0, emissive: 0x000000 }), dark: new THREE.MeshLambertMaterial({ color: 0x3a3d42 }), tile: new THREE.MeshLambertMaterial({ color: 0x4a4e5a }),
+    wood: new THREE.MeshLambertMaterial({ color: 0x8a6a48 }), metal: new THREE.MeshLambertMaterial({ color: 0xb8bec4 }), dome: new THREE.MeshLambertMaterial({ color: 0x7fc4e8, transparent: true, opacity: 0.85 }),
+    water: new THREE.MeshLambertMaterial({ color: 0x4aa3c9 }), pave: new THREE.MeshLambertMaterial({ color: 0xd8cbb0, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -4 }), lot: new THREE.MeshLambertMaterial({ color: 0x5a5c60, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -4 }),
+  };
+  const box = (g, mat, w, h, d, x = 0, y = 0, z = 0, colr) => {
+    let m;
+    if (mat.userData.win) { m = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1).translate(0, 0.5, 0), mat, 1); m.setMatrixAt(0, new THREE.Matrix4().compose(new THREE.Vector3(x, y, z), new THREE.Quaternion(), new THREE.Vector3(w, h, d))); if (colr) m.setColorAt(0, new THREE.Color(colr)); }
+    else { m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d).translate(0, h / 2, 0), mat); m.position.set(x, y, z); }
+    m.castShadow = m.receiveShadow = true; g.add(m); return m;
+  };
+  const sign = (g, tex, w, h, x, y, z, ry = 0, ds = false) => { const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshBasicMaterial({ map: tex, side: ds ? THREE.DoubleSide : THREE.FrontSide })); m.position.set(x, y, z); m.rotation.y = ry; g.add(m); return m; };
+  const gable = (g, mat, w, d, y, rise) => {   // 切妻屋根（棟は x 方向）
+    const e = 0.6, p = [-w / 2 - e, y, -d / 2 - e, w / 2 + e, y, -d / 2 - e, w / 2 + e, y + rise, 0, -w / 2 - e, y, -d / 2 - e, w / 2 + e, y + rise, 0, -w / 2 - e, y + rise, 0,
+      -w / 2 - e, y, d / 2 + e, -w / 2 - e, y + rise, 0, w / 2 + e, y + rise, 0, -w / 2 - e, y, d / 2 + e, w / 2 + e, y + rise, 0, w / 2 + e, y, d / 2 + e,
+      -w / 2, y, -d / 2, -w / 2, y + rise, 0, -w / 2, y, d / 2, w / 2, y, -d / 2, w / 2, y, d / 2, w / 2, y + rise, 0];
+    const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.Float32BufferAttribute(flipTris(p), 3)); geo.computeVertexNormals();
+    const m = new THREE.Mesh(geo, mat); m.castShadow = true; g.add(m); return m;
+  };
+  for (const o of TOWN.companies) {
+    const c = o.c, g = new THREE.Group(), [bg, fg] = c.col || ['#335', '#fff'], w = o.w, d = o.d, h = o.h, fz = d / 2;
+    const name = c.name + (o.label && o.label !== '本社' ? ' ' + o.label : '');
+    const tex = townSignTex(c.name, o.label === '本社' ? c.sub : o.label, bg, fg);
+    box(g, o.kind === 'park' ? M.pave : M.lot, w + 4, 0.06, d + 4, 0, -0.03, 0);
+    switch (o.kind) {
+      case 'tower': box(g, M.dark, w + 1, 2, d + 1); box(g, M.tower, w, h, d, 0, 0, 0, 0xd5dbe2); box(g, M.dark, w * 0.5, 3, d * 0.5, 0, h); sign(g, tex, w * 0.9, w * 0.22, 0, h - 3, fz + 0.06); sign(g, tex, w * 0.6, w * 0.15, 0, 4.2, fz + 0.06); break;
+      case 'office': box(g, M.wall, w, h, d, 0, 0, 0, 0xe3dccf); box(g, M.dark, w + 0.6, 0.6, d + 0.6, 0, h); sign(g, tex, w * 0.85, w * 0.21, 0, h - 2.6, fz + 0.06); break;
+      case 'bank': box(g, M.wall, w, h, d, 0, 0, 0, 0xf1efe9); box(g, M.white, w + 1, 0.8, d + 1, 0, h); for (const px of [-w / 3, -w / 9, w / 9, w / 3]) box(g, M.white, 0.8, h - 1, 0.8, px, 0, fz + 1.2); sign(g, tex, w * 0.8, w * 0.2, 0, h - 1.6, fz + 1.7); break;
+      case 'super': case 'store': case 'shop': {
+        box(g, M.shopW, w, h, d, 0, 0, 0, o.kind === 'shop' ? 0xf4f2ee : 0xf3eee4); box(g, M.glass, w * 0.7, 2.8, 0.1, 0, 0.1, fz + 0.05); box(g, M.roof, w + 1.5, 0.5, d + 1.5, 0, h);
+        box(g, M.roof, w * 0.8, 0.25, 3, 0, 3.2, fz + 1.5);   // ひさし
+        sign(g, tex, Math.min(w * 0.75, 22), Math.min(w * 0.75, 22) / 4, 0, h - 1.4, fz + 0.07);
+        const pole = box(g, M.metal, 0.4, 9, 0.4, -w / 2 - 1, 0, fz + 6); sign(g, tex, 6, 1.5, -w / 2 - 1, 8.5, fz + 6.25, 0, true);
+        break; }
+      case 'warehouse': case 'farmhq': case 'fishhq': {
+        box(g, M.shopW, w, h * 0.8, d, 0, 0, 0, o.kind === 'fishhq' ? 0xdfe7ee : 0xe4e1d8); gable(g, o.kind === 'farmhq' ? M.red : M.roof, w, d, h * 0.8, h * 0.25);
+        for (let k = -1; k <= 1; k++) box(g, M.metal, w / 5, h * 0.55, 0.15, k * w / 3.2, 0, fz + 0.05);   // シャッター
+        sign(g, tex, Math.min(w * 0.6, 20), Math.min(w * 0.6, 20) / 4, 0, h * 0.8 - 1.4, fz + 0.1);
+        if (o.kind === 'warehouse') for (let k = 0; k < 3; k++) { box(g, M.white, 2.5, 3.2, 8, -w / 3 + k * 5, 0, fz + 9); box(g, new THREE.MeshLambertMaterial({ color: bg }), 2.5, 2.4, 3, -w / 3 + k * 5, 0, fz + 14); }
+        break; }
+      case 'garage': box(g, M.shopW, w, h, d, 0, 0, 0, 0xe8e6e0); box(g, M.dark, w * 0.6, 3.8, 0.1, w * 0.12, 0, fz + 0.05); box(g, M.roof, w + 1, 0.4, d + 1, 0, h); sign(g, tex, w * 0.7, w * 0.17, 0, h - 1.2, fz + 0.06);
+        for (let k = 0; k < 4; k++) { box(g, new THREE.MeshLambertMaterial({ color: bg }), 1.8, 1.4, 4.4, -w / 2 + 2 + k * 3, 0, fz + 7); box(g, new THREE.MeshLambertMaterial({ color: fg }), 0.5, 0.3, 0.8, -w / 2 + 2 + k * 3, 1.4, fz + 7); }
+        break;
+      case 'diner': box(g, M.shopW, w, h, d, 0, 0, 0, 0xf6efe2); box(g, M.glass, w * 0.75, 2.5, 0.1, 0, 0.2, fz + 0.05); gable(g, new THREE.MeshLambertMaterial({ color: bg }), w, d, h, 2.4); sign(g, tex, w * 0.9, w * 0.22, 0, h - 1.5, fz + 0.12); break;
+      case 'onsen': box(g, M.wood, w, h * 0.7, d, 0, 0, 0); gable(g, M.tile, w, d, h * 0.7, h * 0.4); sign(g, tex, w * 0.5, w * 0.12, 0, h * 0.7 - 1.2, fz + 0.08);
+        { const st = new THREE.Mesh(new THREE.SphereGeometry(2.5, 8, 6), new THREE.MeshLambertMaterial({ color: 0xffffff, transparent: true, opacity: 0.45 })); st.position.set(w / 3, h + 3, 0); st.scale.set(1, 1.6, 1); g.add(st); o.steam = st; } break;
+      case 'aquarium': box(g, M.wall, w, h * 0.6, d, 0, 0, 0, 0xe9f3f7); { const dm = new THREE.Mesh(new THREE.SphereGeometry(Math.min(w, d) * 0.42, 20, 10, 0, Math.PI * 2, 0, Math.PI / 2), M.dome); dm.position.set(0, h * 0.6, 0); g.add(dm); }
+        sign(g, tex, w * 0.6, w * 0.15, 0, h * 0.6 - 1.6, fz + 0.06); box(g, M.water, 14, 0.3, 8, -w / 4, 0, fz + 8); break;
+      case 'barn': box(g, M.red, w, h * 0.7, d); gable(g, M.white, w, d, h * 0.7, h * 0.4); sign(g, tex, w * 0.7, w * 0.17, 0, h * 0.7 - 1.2, fz + 0.06);
+        { const s = new THREE.Mesh(new THREE.CylinderGeometry(2.6, 2.6, h * 1.5, 14), M.metal); s.position.set(w / 2 + 3.5, h * 0.75, -d / 4); s.castShadow = true; g.add(s); const top = new THREE.Mesh(new THREE.SphereGeometry(2.6, 14, 6, 0, Math.PI * 2, 0, Math.PI / 2), M.metal); top.position.set(w / 2 + 3.5, h * 1.5, -d / 4); g.add(top); }
+        for (let k = 0; k < 6; k++) { const cow = box(g, M.white, 0.8, 1.2, 2, -w / 2 + 2 + hash(k, 81) * w, 0, fz + 5 + hash(k, 82) * 10); cow.rotation.y = hash(k, 83) * 6; } break;
+      case 'gym': box(g, M.wall, w, h, d, 0, 0, 0, 0xe6e9ee); box(g, M.glass, w * 0.8, h * 0.5, 0.1, 0, 1, fz + 0.05); box(g, new THREE.MeshLambertMaterial({ color: bg }), w + 0.6, 1.2, d + 0.6, 0, h); sign(g, tex, w * 0.7, w * 0.17, 0, h - 2.2, fz + 0.12); break;
+      case 'park': {
+        box(g, M.shopW, 16, 5, 8, -w / 2 + 10, 0, fz - 4, 0xfff6e6); sign(g, tex, 14, 3.5, -w / 2 + 10, 6.5, fz + 0.5, 0, true);
+        const gate = box(g, new THREE.MeshLambertMaterial({ color: bg }), 0.8, 7, 0.8, -6, 0, fz); box(g, new THREE.MeshLambertMaterial({ color: bg }), 0.8, 7, 0.8, 6, 0, fz); box(g, new THREE.MeshLambertMaterial({ color: bg }), 13, 1.2, 1, 0, 7, fz);
+        // 観覧車
+        const fw = new THREE.Group(), R = 15; fw.position.set(w / 4, R + 3, -d / 6);
+        const rim = new THREE.Mesh(new THREE.TorusGeometry(R, 0.35, 6, 48), M.metal); fw.add(rim);
+        const sp = []; for (let k = 0; k < 12; k++) { const a = k / 12 * Math.PI * 2; sp.push(new THREE.BoxGeometry(0.2, R, 0.2).translate(0, R / 2, 0).rotateZ(a)); }
+        fw.add(new THREE.Mesh(mergeGeometries(sp), M.metal));
+        const cars = []; const CC = ['#ff7bac', '#ffd23f', '#5bc0eb', '#7cc66b'];
+        for (let k = 0; k < 12; k++) { const cb = new THREE.Mesh(new THREE.BoxGeometry(1.8, 1.8, 1.8), new THREE.MeshLambertMaterial({ color: CC[k % 4] })); g.add(cb); cars.push(cb); }
+        const legs = []; for (const s of [-1, 1]) for (const zz of [-1.5, 1.5]) legs.push(new THREE.BoxGeometry(0.6, R + 5, 0.6).translate(0, (R + 5) / 2, 0).rotateZ(s * 0.32).translate(s * 3, -R - 3, zz));
+        const lg = new THREE.Mesh(mergeGeometries(legs), M.metal); fw.add(lg);
+        g.add(fw); o.wheel = { fw, cars, R };
+        for (let k = 0; k < 5; k++) { const t = new THREE.Mesh(new THREE.ConeGeometry(2.5, 5, 8), new THREE.MeshLambertMaterial({ color: CC[k % 4] })); t.position.set(-w / 4 + k * 6, 2.5, -d / 3 + hash(k, 84) * 10); g.add(t); }
+        break; }
+    }
+    g.position.set(o.x, o.y, o.z); g.rotation.y = o.rot;
+    g.traverse((m) => { if (m.isInstancedMesh) { m.frustumCulled = false; } });
+    scene.add(g); o.g = g; out.push(o);
+  }
+  // 遠い建物は描かない
+  let lastT = -1;
+  function update(t) {
+    const cx = camera.position.x, cz = camera.position.z, RV = coarse ? 950 : 1200;
+    for (const o of out) {
+      o.g.visible = Math.abs(o.x - cx) < RV && Math.abs(o.z - cz) < RV;
+      if (!o.g.visible) continue;
+      if (o.wheel) { const W = o.wheel, a = t * 0.05; W.fw.rotation.z = a; W.cars.forEach((cb, k) => { const b = a + k / 12 * Math.PI * 2; cb.position.set(W.fw.position.x + Math.sin(b) * W.R, W.fw.position.y - Math.cos(b) * W.R - 1.2, W.fw.position.z); }); }
+      if (o.steam) { o.steam.position.y = o.h + 3 + Math.sin(t * 0.7) * 0.6; o.steam.material.opacity = 0.3 + 0.15 * Math.sin(t * 1.3); }
+    }
+  }
+  return { out, update, M };
+})();
+for (const o of TOWN.companies) if (o.pad) refreshPadArea(o.pad);
+/* ---- 漁船：漁港から朝 4 時に出て、沖で 10 時まで漁をして帰る。台風・大雨の日は港にいる ---- */
+const townBoats = (() => {
+  const ports = [];
+  // 港：なか海水産の本社のそばの海と、港町の海。そこから沖（深い所）への道すじ
+  const findPort = (x0, z0) => {
+    let best = null;
+    for (let r = 40; r < 700 && !best; r += 30) for (let a = 0; a < 24; a++) { const x = x0 + Math.cos(a / 24 * 6.283) * r, z = z0 + Math.sin(a / 24 * 6.283) * r; if (rawHeight0(x, z) < -3) { best = [x, z]; break; } }
+    return best;
+  };
+  const clearLine = (a, b) => { const L = Math.hypot(b[0] - a[0], b[1] - a[1]); for (let s = 0; s <= L; s += 15) { const f = s / L; if (rawHeight0(a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f) > -2) return false; } return true; };
+  const hq = companyBy(1332).hq;
+  for (const at of [hq ? [hq.x, hq.z] : [1000, -2400], [-316, -4159], [1000, -118]]) {
+    const p = findPort(at[0], at[1]); if (!p) continue;
+    const grounds = [];
+    for (let a = 0; a < 32 && grounds.length < 6; a++) { const ang = a / 32 * 6.283; for (const dist of [900, 650, 450]) { const gp = [p[0] + Math.cos(ang) * dist, p[1] + Math.sin(ang) * dist]; if (rawHeight0(gp[0], gp[1]) < -12 && clearLine(p, gp)) { grounds.push(gp); break; } } }
+    if (grounds.length) ports.push({ p, grounds });
+  }
+  const hull = new THREE.BoxGeometry(2.6, 1.2, 8).translate(0, 0.4, 0), cab = new THREE.BoxGeometry(2, 1.6, 2.4).translate(0, 1.8, -1), mast = new THREE.BoxGeometry(0.15, 3, 0.15).translate(0, 2.5, 1.5);
+  const NB = ports.length * 8;
+  const mesh = new THREE.InstancedMesh(mergeGeometries([hull, cab, mast]), new THREE.MeshLambertMaterial({ color: 0xffffff }), Math.max(1, NB));
+  for (let k = 0; k < NB; k++) mesh.setColorAt(k, new THREE.Color([0xf2f2ee, 0x2a5fa8, 0xd94c3c, 0xf2f2ee][k % 4]));
+  mesh.frustumCulled = false; scene.add(mesh);
+  let stay = false;
+  const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), up = new THREE.Vector3(0, 1, 0), pv = new THREE.Vector3(), one = new THREE.Vector3(1, 1, 1);
+  function dayCheck() { const w = wxDay(gameDayN()); stay = w.stormH >= 2 || w.rainSum > 10; }
+  function update() {
+    if (!NB) return;
+    const T = gameHourT(), hr = ((T % 24) + 24) % 24;
+    ports.forEach((P, pi) => {
+      for (let j = 0; j < 8; j++) {
+        const k = pi * 8 + j, gp = P.grounds[j % P.grounds.length], moor = [P.p[0] + (j - 3.5) * 5, P.p[1] + (j % 2) * 4];
+        let x = moor[0], z = moor[1], h = 0;
+        const t0 = 4 + j * 0.1, go = 1.2, back = 10 + j * 0.1;
+        if (!stay && hr > t0 && hr < back + go) {
+          const ang = hash(k, 91) * 6.283 + T * 0.4, ring = [gp[0] + Math.cos(ang) * (30 + j * 12), gp[1] + Math.sin(ang) * (30 + j * 12)];
+          const f = hr < t0 + go ? (hr - t0) / go : hr > back ? 1 - (hr - back) / go : 1;
+          const ff = f * f * (3 - 2 * f);
+          x = moor[0] + (ring[0] - moor[0]) * ff; z = moor[1] + (ring[1] - moor[1]) * ff;
+          h = f < 1 ? Math.atan2(ring[0] - moor[0], ring[1] - moor[1]) + (hr > back ? Math.PI : 0) : ang + Math.PI;
+        } else h = Math.atan2(moor[0] - gp[0], moor[1] - gp[1]);
+        q.setFromAxisAngle(up, h); pv.set(x, SEA + Math.sin(T * 2 + k) * 0.08, z); m4.compose(pv, q, one); mesh.setMatrixAt(k, m4);
+      }
+    });
+    mesh.instanceMatrix.needsUpdate = true;
+  }
+  return { ports, update, dayCheck };
+})();
+function townBoatsDay() { townBoats.dayCheck(); }
+/* ---- ぶつかる：家・マンション・会社の建物（歩く人と、自分で運転している車） ---- */
+function townPush(p, R) {
+  const occ = TOWN.occ, G = TOWN.OCC;
+  for (let gx = Math.floor((p.x - 50) / G); gx <= Math.floor((p.x + 50) / G); gx++) for (let gz = Math.floor((p.z - 50) / G); gz <= Math.floor((p.z + 50) / G); gz++) {
+    const a = occ.get(gx * 65536 + gz); if (!a) continue;
+    for (const o of a) {
+      if (o.kind === 'field' || o.hidden || o.kind === 'park') continue;
+      const dx = p.x - o.x, dz = p.z - o.z; if (dx * dx + dz * dz > (o.r + R + 1) * (o.r + R + 1)) continue;
+      const y = o.g ? o.y : (o.yy != null ? o.yy : townMeshes.yOf(o)); if (p.y > y + o.h + 1 || p.y < y - 3) continue;
+      const c = Math.cos(o.rot), s = Math.sin(o.rot), u = dx * c - dz * s, v = dx * s + dz * c, hw = o.w / 2 + R, hd = o.d / 2 + R;
+      if (Math.abs(u) >= hw || Math.abs(v) >= hd) continue;
+      const pu = hw - Math.abs(u), pvv = hd - Math.abs(v);
+      let nu = u, nv = v;
+      if (pu < pvv) nu = Math.sign(u || 1) * hw; else nv = Math.sign(v || 1) * hd;
+      p.x = o.x + nu * c + nv * s; p.z = o.z - nu * s + nv * c;
+    }
+  }
+}
+// 置いた建物（だれかの glTF）と重なる家はかくす
+function townHideUnder(pad) {
+  let n = 0;
+  for (const o of [...TOWN.homes, ...TOWN.fields]) { if (o.x < pad.x0 - 10 || o.x > pad.x1 + 10 || o.z < pad.z0 - 10 || o.z > pad.z1 + 10) continue; o.hidden = true; n++; }
+  if (n) townMeshes.update(true);
+}
+function stepTown() {
+  townMeshes.update(false);
+  townBlds.update(clock.elapsedTime);
+  townBoats.update();
+  TOWN_U.uNight.value = 1 - ss(0.15, 0.6, dayLight);
+}
+/* ================= 経済（2026-11-02）：住人の畑・漁・お店・会社の売り上げと株価を 1 日ずつ計算する =================
+   1 年 11 月 1 日から今日まで、毎日同じ順番で計算する。乱数は hash（整数の計算）、天気は weatherAt、計算は足し算・かけ算・割り算・sqrt だけなので、
+   どの端末でも同じ株価・同じ新聞になる（サーバーはいらない）。お金の単位は円（1P = 1円で株を買える） */
+const VEG = { 1: ['だいこん', 'はくさい', 'ねぎ'], 2: ['キャベツ', 'ほうれんそう', 'ねぎ'], 3: ['キャベツ', 'たまねぎ', 'いちご'], 4: ['キャベツ', 'たまねぎ', 'いちご'], 5: ['たまねぎ', 'レタス', 'アスパラ'],
+  6: ['トマト', 'きゅうり', 'なす'], 7: ['トマト', 'きゅうり', 'とうもろこし'], 8: ['なす', 'ピーマン', 'えだまめ'], 9: ['さつまいも', 'かぼちゃ', 'なし'], 10: ['さつまいも', 'かぼちゃ', 'きのこ'],
+  11: ['だいこん', 'はくさい', 'りんご'], 12: ['だいこん', 'はくさい', 'ねぎ'] };
+const FISH = { 1: ['ぶり', 'たら', 'かき'], 2: ['たら', 'かき', 'ひらめ'], 3: ['たい', 'しらす', 'さわら'], 4: ['たい', 'しらす', 'あさり'], 5: ['かつお', 'あじ', 'いか'], 6: ['あじ', 'いか', 'あゆ'],
+  7: ['あじ', 'うなぎ', 'たこ'], 8: ['いわし', 'たこ', 'かつお'], 9: ['さんま', 'さば', 'さけ'], 10: ['さんま', 'さば', 'さけ'], 11: ['ぶり', 'さば', 'かに'], 12: ['ぶり', 'たら', 'かに'] };
+const VEG_SEASON = [0.55, 0.5, 0.7, 0.9, 1.0, 1.1, 1.2, 1.2, 1.1, 1.15, 1.0, 0.7];
+const FISH_SEASON = [1.0, 0.9, 1.0, 1.05, 1.1, 1.0, 0.95, 0.9, 1.15, 1.2, 1.1, 1.05];
+const VEG_PRICE = [360, 380, 330, 300, 280, 270, 260, 260, 280, 290, 310, 340];   // 円/kg（ふつうの年）
+const FISH_PRICE = [1150, 1200, 1000, 950, 900, 880, 900, 950, 850, 850, 950, 1100];
+const r100 = (x) => Math.round(x / 100) * 100;
+// 会社ごとの売り上げのもと（x：その日のようす）。M：ふつうの利益率
+const ECON_CO = {
+  1301: { m: 0.08, rev: (x) => x.veg.value * 0.14 },   // 農家から野菜を集めて売る手数料
+  1332: { m: 0.07, rev: (x) => x.fish.value * 0.16 + 120000 },   // 水あげの手数料（漁に出ない日は冷凍の魚だけ）
+  // PA の売店：鮮魚・野菜は多く取れて安い日ほどよく売れる（安いと買う人がふえる）。休日・晴れは旅の人が多い
+  3091: { m: 0.06, rev: (x) => (x.fish.kg * x.fish.price * 1.45 * (1.1 - 0.5 * (x.fishIdx - 1)) + x.veg.kg * x.veg.price * 1.35 * (1.1 - 0.5 * (x.vegIdx - 1))) * x.pa * 0.5 + 900000 * x.travel },
+  // 海産加工：魚が安いと仕入れが安く、利益がふえる。不漁で魚が高いと苦しい
+  2877: { m: 0.08, rev: (x) => 1600000 * Math.min(1.2, 0.75 + 0.25 * x.fish.kg / x.fish.norm) * (0.92 + 0.16 * x.mood), cost: (x) => 0.4 * (x.fishIdx - 1) },
+  2264: { m: 0.06, rev: (x) => 9000 * (x.tMax > 28 ? 1 - 0.025 * (x.tMax - 28) : 1) * 130 * (x.hol ? 1.05 : 1), cost: (x) => 0.12 * (x.feed - 1) },
+  8201: { m: 0.035, rev: (x) => POP_N * 1050 * (x.hol ? 1.15 : 1) * (x.storm ? 0.6 : x.stormNext ? 1.25 : 1) + (x.veg.value + x.fish.value) * x.store * 0.32, cost: (x) => 0.05 * (x.vegIdx - 1) },
+  3048: { m: 0.05, rev: (x) => 1400000 * (x.tMax > 28 ? 1 + 0.07 * (x.tMax - 28) : x.tMin < 3 ? 1.2 : 1) * (x.hol ? 1.35 : 1) * (hash(x.n, 3048) < 0.06 ? 1.8 : 1) * (x.storm ? 0.5 : 1) },
+  9064: { m: 0.06, rev: (x) => (x.veg.kg + x.fish.kg) * 18 + 1600000 * (0.92 + 0.16 * x.mood), cost: (x) => 0.15 * (x.fuel - 1) + (x.snow || x.storm ? 0.08 : 0) },
+  9001: { m: 0.05, rev: (x) => 1100000 * (1 + 1.2 * x.rainF) * (x.hol ? 0.92 : 1) * (x.storm ? 0.6 : 1), cost: (x) => 0.12 * (x.fuel - 1) },
+  8301: { m: 0.25, rev: (x) => x.dep * 0.65 * 0.00006 + 120000 * (0.9 + 0.2 * x.mood) },
+  8350: { m: 0.2, rev: (x) => x.dep * 0.35 * 0.00006 + 40000 * (0.9 + 0.2 * x.mood) },
+  8801: { m: 0.15, rev: (x) => x.rentU * 0.35 * 2300 * x.lpi + (3 + Math.floor(hash(x.n, 8801) * 7)) * 260000 * x.lpi * (0.85 + 0.3 * x.mood) },
+  7611: { m: 0.09, rev: (x) => 900000 * (x.tAvg < 12 ? 1.12 : 1) * (x.rainF > 0.2 ? 1.08 : 1) * (x.hol ? 1.25 : 1) * (x.storm ? 0.5 : 1), cost: (x) => 0.12 * (x.vegIdx - 1) },
+  2212: { m: 0.08, rev: (x) => 550000 * (x.hol ? 1.2 : 1) * (x.sunF > 0.5 ? 1.08 : 1) * (x.storm ? 0.5 : 1), cost: (x) => 0.06 * (x.feed - 1) },
+  3087: { m: 0.1, rev: (x) => 650000 * (x.hol ? 1.35 : 1) * (x.sunF > 0.5 ? 1.1 : 1) * (x.tMax > 30 ? 0.9 : 1) * (x.storm ? 0.4 : 1) },
+  9722: { m: 0.12, visit: (x) => 800 * (x.tAvg < 10 ? 1.35 : x.tAvg > 24 ? 0.8 : 1) * (x.rainF > 0.2 ? 1.1 : 1) * (x.snow ? 1.25 : 1) * (x.hol ? 1.7 : 1) * (x.storm ? 0.3 : 1), price: 1500 },
+  9680: { m: 0.1, visit: (x) => 1000 * (x.rainF > 0.2 ? 1.4 : 1) * (x.hol ? 1.8 : 1) * (x.c.m === 7 || x.c.m === 8 ? 1.3 : 1) * (x.storm ? 0.25 : 1), price: 2100 },
+  9681: { m: 0.12, visit: (x) => x.storm ? 0 : 1800 * Math.max(0.25, 1 - 2 * x.rainF) * (x.hol ? 2.0 : 1) * ([4, 5, 10, 11].includes(x.c.m) ? 1.2 : [12, 1, 2].includes(x.c.m) ? 0.7 : 1) * (x.snow ? 0.3 : 1), price: 3600 },
+  2429: { m: 0.1, rev: (x) => x.gym * 270 + 60000 * (x.hol ? 1.3 : 1) },
+};
+for (const k in ECON_CO) { const E = ECON_CO[k]; if (E.visit) E.rev = (x) => Math.round(E.visit(x)) * E.price; }
+const POP_N = 10000;
+const ECON = (() => {
+  const T = TOWN, farmers = T.jobN[4], fishers = T.jobN[5];
+  let rentU = 0; for (const h of T.hh) { const o = T.homes[h.home]; if (o.kind === 'apt' || hash(h.home, 61) < 0.3) rentU++; }
+  // その日のようす（会社の売り上げを決める）
+  function ctx(n, S) {
+    const c = calOf(n), w = wxDay(n), wn = wxDay(n + 1), mi = c.m - 1;
+    const rainF = w.rainH / 24, sunF = w.sun / 24, storm = w.stormH >= 3, snow = w.snowH >= 3;
+    // 畑：季節 × 天気（日照・雨・霜・台風）× 日照り
+    let wf = 0.85 + 0.03 * Math.min(10, w.sun) - (storm ? 0.45 : 0) - (snow ? 0.3 : 0) - (w.tMin < 0 ? 0.12 : 0);
+    if (S.dry > 4) wf *= Math.max(0.6, 1 - 0.05 * (S.dry - 4));
+    wf = Math.max(0.3, wf);
+    const vNorm = farmers * 40 * VEG_SEASON[mi], vKg = Math.round(vNorm * wf * (0.92 + 0.16 * hash(n, 501)));
+    const vPrice = Math.round(VEG_PRICE[mi] * Math.sqrt(vNorm / Math.max(1, vKg)) * (0.96 + 0.08 * hash(n, 502)));
+    // 漁：台風・大雨の日は船が出ない
+    const out = !(w.stormH >= 2 || w.rainSum > 10);
+    const fNorm = fishers * 28 * FISH_SEASON[mi], luck = 0.6 + 0.8 * vn1(n / 3, 503);
+    const fKg = out ? Math.round(fNorm * luck * (rainF > 0.2 ? 0.8 : 1)) : 0;
+    const fPrice = Math.round(FISH_PRICE[mi] * Math.sqrt(fNorm / Math.max(fNorm * 0.35, fKg)) * (0.96 + 0.08 * hash(n, 504)));
+    const pa = Math.min(0.4, 0.22 * (c.holiday ? 1.4 : 1) * (sunF > 0.5 ? 1.1 : 1) * (storm ? 0.5 : 1));
+    return { n, c, w, rainF, sunF, storm, snow, stormNext: wn.stormH >= 3, hol: c.holiday, tMax: w.tMax, tMin: w.tMin, tAvg: w.tAvg,
+      veg: { kg: vKg, price: vPrice, value: vKg * vPrice, wf, names: VEG[c.m], norm: vNorm }, fish: { kg: fKg, price: fPrice, value: fKg * fPrice, out, names: FISH[c.m], norm: fNorm },
+      fishIdx: fPrice / FISH_PRICE[mi], travel: (c.holiday ? 1.4 : 1) * (sunF > 0.5 ? 1.1 : 1) * (storm ? 0.4 : 1),
+      farmInc: Math.round(vKg * vPrice * 0.72 / Math.max(1, farmers)), fishInc: Math.round(fKg * fPrice * 0.7 / Math.max(1, fishers)),
+      pa, store: 1 - pa - 0.1, vegIdx: vPrice / VEG_PRICE[mi], mood: S.mood, fuel: S.fuel, feed: S.feed, dep: S.dep, lpi: S.lpi, rentU, gym: S.gym };
+  }
+  const startState = () => ({ d: -1, dry: 0, mood: 0.5, fuel: 1, feed: 1, dep: 80e9, lpi: 1, gym: 2400, co: {}, hist: [], index: 1000 });
+  // ふつうの売り上げ（B）：はじめの 1 年（48 日）の平均。利益率 m になるように費用を決める
+  const B = {};
+  { const S = startState(); const sum = {}; for (let n = 0; n < CAL_YEAR; n++) { const x = ctx(n, S); for (const k in ECON_CO) sum[k] = (sum[k] || 0) + ECON_CO[k].rev(x); } for (const k in ECON_CO) B[k] = sum[k] / CAL_YEAR; }
+  const PER = {};
+  for (const c of COMPANIES) PER[c.code] = c.p0 * c.shares / (B[c.code] * ECON_CO[c.code].m * 365);
+  const S = startState();
+  for (const c of COMPANIES) S.co[c.code] = { price: c.p0, prev: c.p0, eq: Math.round(c.p0 * c.shares * 0.7), avgP: B[c.code] * ECON_CO[c.code].m, rev: 0, prof: 0, hist: [c.p0], event: null };
+  const EVENTS = [
+    ['新しい商品が大ヒット', 1], ['テレビで紹介されて人気に', 1], ['新しいお店を出すと発表', 1], ['大きな注文を受けた', 1], ['社長が「売り上げ好調」と話す', 1],
+    ['機械がこわれて一時お休み', -1], ['人手が足りずに営業時間を短く', -1], ['材料の値上がりで利益が減る見通し', -1], ['お客さんの数がのびなやむ', -1],
+  ];
+  // 1 日すすめる
+  function step() {
+    const n = S.d + 1, x = ctx(n, S), day = { n, x, co: {} };
+    let revSum = 0, bSum = 0, lossSum = 0;
+    for (const c of COMPANIES) {
+      const E = ECON_CO[c.code], st = S.co[c.code], b = B[c.code];
+      let rev = Math.round(E.rev(x));
+      const ev = hash(n, c.code + 99) < 0.012 ? EVENTS[Math.floor(hash(n, c.code + 98) * EVENTS.length)] : null;
+      if (ev) rev = Math.round(rev * (1 + 0.15 * ev[1]));
+      const cost = Math.round(b * (1 - E.m) * (0.6 + 0.4 * rev / b) + rev * (E.cost ? E.cost(x) : 0));
+      const prof = rev - cost;
+      st.rev = rev; st.prof = prof; st.eq += prof; st.avgP = st.avgP * 0.9 + prof * 0.1;
+      if (prof < 0) lossSum -= prof;
+      revSum += rev; bSum += b;
+      // 株価：利益から見た値うち（PER）と、もっている財産（純資産）に近づく ＋ 毎日のゆれ ＋ ニュース
+      const earn = Math.max(0.3 * c.p0, st.avgP * 365 * PER[c.code] / c.shares), book = st.eq / c.shares;
+      const fair = earn * 0.85 + book / 0.7 * 0.15;   // 純資産ははじめ株価の 7 割
+      const z = (hash(n, c.code) + hash(n, c.code + 7) + hash(n, c.code + 13)) / 3 - 0.5;
+      let p = st.price + 0.08 * (fair - st.price) + st.price * (0.05 * z + 0.025 * (S.mood - 0.5));
+      if (ev) p *= 1 + ev[1] * (0.05 + 0.06 * hash(n, c.code + 97));
+      st.prev = st.price; st.price = Math.max(1, Math.round(p));
+      st.hist.push(st.price); if (st.hist.length > 60) st.hist.shift();
+      st.event = ev ? ev[0] : null; st.evSign = ev ? ev[1] : 0;
+      day.co[c.code] = { rev, prof, price: st.price, prev: st.prev, ev: st.event, evSign: st.evSign };
+    }
+    // まち全体：景気・預金・地価・燃料・えさ代・スポーツクラブの会員
+    const ratio = revSum / bSum;
+    S.mood = Math.min(1, Math.max(0, S.mood * 0.9 + 0.1 * (0.15 + vn1(n / 7, 601) * 0.7 + (ratio - 1) * 0.6)));
+    S.dep = Math.round(S.dep + POP_N * 900 * (0.8 + 0.4 * S.mood) - lossSum * 0.5);
+    S.lpi = Math.round(S.lpi * (1 + 0.0006 * (S.mood - 0.45) + 0.0004 * (hash(n, 602) - 0.5)) * 1e5) / 1e5;
+    S.fuel = 0.85 + 0.3 * vn1(n / 10, 603); S.feed = 0.9 + 0.2 * vn1(n / 12, 604);
+    S.gym = Math.round(S.gym + (2400 * (x.c.m === 1 ? 1.08 : x.c.m >= 6 && x.c.m <= 8 ? 1.03 : 1) - S.gym) * 0.15 + (hash(n, 605) - 0.5) * 20);
+    S.dry = x.w.rainH > 1 ? 0 : S.dry + 1;
+    let ps = 0, p0s = 0; for (const c of COMPANIES) { ps += S.co[c.code].price; p0s += c.p0; }
+    const prevIdx = S.index; S.index = Math.round(ps / p0s * 100000) / 100;
+    Object.assign(day, { index: S.index, prevIdx, econ: Math.round(ratio * 1000) / 10, lpi: S.lpi, dep: S.dep, gym: S.gym, dry: S.dry, mood: S.mood });
+    S.hist.push(day); if (S.hist.length > 20) S.hist.shift();
+    S.d = n;
+  }
+  // n 日目の終わりまで計算する（今日のぶんの終値も前もって計算しておく。昼の株価は前の日の終値から今日の終値へ動く）
+  function upTo(n) { const t0 = performance.now(); let k = 0; while (S.d < n) { step(); k++; } if (k > 50) console.log(`経済：${k} 日ぶん計算（${Math.round(performance.now() - t0)}ms）`); }
+  const dayRec = (n) => S.hist.find((h) => h.n === n) || null;
+  // いまの株価：取引は 9:00〜15:00。そのあいだに前の日の終値から今日の終値へ（ゆれながら）。それ以外は終値
+  function priceNow(code) {
+    const f = gameDayF(), n = Math.max(0, Math.floor(f)); upTo(n);
+    const today = dayRec(n), st = today && today.co[code]; if (!st) return S.co[code].price;
+    const hr = (f - Math.floor(f)) * 24;
+    if (hr < 9) return st.prev;
+    if (hr >= 15) return st.price;
+    const k = (hr - 9) / 6, step = Math.floor(hr * 12), wob = (vn1(hr * 3, code) - 0.5) * 0.012 * st.prev * Math.sin(k * Math.PI);
+    return Math.max(1, Math.round(st.prev + (st.price - st.prev) * k + wob + 0 * step));
+  }
+  return { S, B, PER, upTo, dayRec, priceNow, ctx, rentU, marketOpen: () => { const h = (gameDayF() % 1) * 24; return h >= 9 && h < 15; } };
+})();
+/* ================= 街と経済の画面（☰ の「新聞」「街と株」、お店・PA の売り場） ================= */
+const TP = { open: false, tab: 'paper', paperN: null, sel: null, shop: null, lastPaper: -1 };
+const yen = (v) => Math.round(v).toLocaleString('ja-JP');
+const man = (v) => { const a = Math.abs(v); return (v < 0 ? '−' : '') + (a >= 1e8 ? (a / 1e8).toFixed(a >= 1e10 ? 0 : 1) + '億' : a >= 1e4 ? Math.round(a / 1e4).toLocaleString('ja-JP') + '万' : Math.round(a)) + '円'; };
+const pct = (a, b) => b ? (a - b) / b * 100 : 0;
+const chgTxt = (a, b) => { const d = a - b, p = pct(a, b); return `<span class="${d > 0 ? 'up' : d < 0 ? 'dn' : ''}">${d > 0 ? '▲' : d < 0 ? '▼' : '±'}${yen(Math.abs(d))}（${p >= 0 ? '+' : ''}${p.toFixed(1)}%）</span>`; };
+const escH = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+const resName = (p) => `${TOWN.hh[TOWN.hhOf[p]].fam} ${TOWN.GIVEN[TOWN.given[p]]}`;
+// 株の持ち物（この端末だけ。P と同じく localStorage）
+const STOCKS_KEY = 'world.stocks';
+let myStocks = {}; try { myStocks = JSON.parse(localStorage.getItem(STOCKS_KEY) || '{}') || {}; } catch (e) { myStocks = {}; }
+const saveStocks = () => { try { localStorage.setItem(STOCKS_KEY, JSON.stringify(myStocks)); } catch (e) {} };
+// 天気予報の文
+function wxDayText(n) { const w = wxDay(n), k = WX_KIND[w.kind]; return { icon: k[0], name: k[1], tMax: w.tMax, tMin: w.tMin, pop: Math.min(100, Math.round(w.rainH / 24 * 100 / 10) * 10 + (w.rainH ? 10 : 0)), w }; }
+/* ---- 新聞（n 日目の朝 6 時に出る。前の日のできごと） ---- */
+function makePaper(n) {
+  ECON.upTo(n);
+  const c = calOf(n), y = ECON.dayRec(n - 1), yy = ECON.dayRec(n - 2), fc = wxDayText(n), fc2 = wxDayText(n + 1);
+  const stories = [];
+  const add = (pri, head, body, co) => stories.push({ pri, head, body, co });
+  if (y) {
+    const x = y.x, w = x.w;
+    // 天気
+    if (w.stormH >= 3) add(95, '台風が通過　漁船は港で待機', `きのうは台風の影響で一日じゅう強い雨と風。${x.fish.out ? '' : 'なか海の漁船はすべて港にとどまり、水あげはありませんでした。'}みずうみ遊園地は臨時休園、みなとマートは${'客足がにぶりました'}。`, 9681);
+    else if (w.snowH >= 4) add(80, `${w.snowH}時間の雪　道路に遅れ`, `きのうは${w.snowH}時間にわたって雪がふり、はじめ運輸のトラックに遅れが出ました。東山温泉には「雪見ぶろ」目あてのお客さんが集まりました。`, 9064);
+    else if (w.tMax >= 31) add(60, `最高気温${w.tMax}℃の暑さ　エアコンが売れる`, `きのうは最高気温${w.tMax}℃まで上がりました。はじめ電気ではエアコンや扇風機がよく売れ、売り上げは${man(y.co[3048].rev)}。はじめ牛乳は暑さで牛の乳の量が少し減りました。`, 3048);
+    if (!x.fish.out && w.stormH < 3) add(70, '大雨で漁に出られず', `きのうは雨が強く、なか海の漁船は港で待機しました。魚の値段は1kg${yen(x.fish.price)}円に上がっています。`, 1332);
+    // 野菜・魚
+    if (yy) {
+      const vp = pct(x.veg.price, yy.x.veg.price);
+      if (Math.abs(vp) >= 7) add(45 + Math.abs(vp), `${x.veg.names[0]}など野菜が${vp > 0 ? '値上がり' : '値下がり'}　${vp > 0 ? '+' : ''}${vp.toFixed(0)}%`,
+        `${vp > 0 ? (x.veg.wf < 0.85 ? '天気の影響で畑の取れる量が減り' : '出荷が少なく') : '畑の取れる量がふえ'}、野菜の平均価格は1kg${yen(x.veg.price)}円（前の日${yen(yy.x.veg.price)}円）。はじめファームの出荷は${yen(x.veg.kg)}kgでした。${y.dry > 4 ? `雨のない日が${y.dry}日つづいています。` : ''}`, 1301);
+      const ip2 = pct(x.farmInc, yy.x.farmInc);
+      if (Math.abs(ip2) >= 10) add(44 + Math.abs(ip2) / 2, ip2 < 0 ? `農家の手取りが減る　1けん${yen(x.farmInc)}円` : `農家の手取りがふえる　1けん${yen(x.farmInc)}円`,
+        `きのう農家1けんあたりの売り上げ（手取り）は${yen(x.farmInc)}円で、前の日の${yen(yy.x.farmInc)}円から${ip2 > 0 ? 'ふえました' : '減りました'}。${ip2 < 0 && x.veg.wf < 0.85 ? '天気が悪く畑の取れる量が少なかったためで、野菜の値段は上がっています。' : ''}`, 1301);
+      const fp = yy.x.fish.kg ? pct(x.fish.kg, yy.x.fish.kg) : 0;
+      const big = x.fish.kg > x.fish.norm * 1.15, poor = x.fish.out && x.fish.kg < x.fish.norm * 0.75;
+      if (big) add(58, `${x.fish.names[0]}が豊漁　PAの鮮魚コーナーがにぎわう`, `水あげは${yen(x.fish.kg)}kgと多く、魚の値段は1kg${yen(x.fish.price)}円に下がりました。はじめ高速サービスのPA売店では鮮魚がよく売れ、売り上げは${man(y.co[3091].rev)}。仕入れが安くなったみなと水産加工の利益は${man(y.co[2877].prof)}でした。`, 3091);
+      else if (poor) add(52, `${x.fish.names[0]}が不漁　魚の値段が上がる`, `水あげは${yen(x.fish.kg)}kgと少なく、魚は1kg${yen(x.fish.price)}円。漁師1人あたりの手取りは${yen(x.fishInc)}円でした。みなと水産加工は仕入れ値が上がり、利益は${man(y.co[2877].prof)}でした。`, 2877);
+      if (!big && !poor && x.fish.kg && Math.abs(fp) >= 25) add(40 + Math.abs(fp) / 3, fp > 0 ? `${x.fish.names[0]}が大漁　水あげ${yen(x.fish.kg)}kg` : `${x.fish.names[0]}が不漁　水あげ${yen(x.fish.kg)}kg`,
+        `なか海水産によると、きのうの水あげは${yen(x.fish.kg)}kg（前の日${yen(yy.x.fish.kg)}kg）。魚の値段は1kg${yen(x.fish.price)}円${fp > 0 ? 'に下がりました' : 'に上がりました'}。`, 1332);
+    }
+    // 会社
+    for (const co of COMPANIES) {
+      const r = y.co[co.code], p = pct(r.price, r.prev);
+      if (r.ev) add(65 + Math.abs(p), `${co.short}　${r.ev}`, `${co.name}（${co.ind}）は${r.ev.replace(/た$/, 'た')}。株価は${yen(r.price)}円（${p >= 0 ? '+' : ''}${p.toFixed(1)}%）で取引を終えました。`, co.code);
+      else if (Math.abs(p) >= 4.5) add(35 + Math.abs(p) * 3, `${co.short}株が${p > 0 ? '大きく上がる' : '大きく下がる'}　${p > 0 ? '+' : ''}${p.toFixed(1)}%`,
+        `${co.name}の株価は${yen(r.prev)}円から${yen(r.price)}円へ。きのうの売り上げは${man(r.rev)}、利益は${man(r.prof)}でした。`, co.code);
+    }
+    // 遊びの場所
+    const vis = (code) => Math.round(y.co[code].rev / ECON_CO[code].price);
+    if (x.hol && !x.storm && x.rainF < 0.1) add(42, `休日の晴れ　みずうみ遊園地に${yen(vis(9681))}人`, `きのうは${c.week === '月' ? '週末' : '休日'}の晴れで、みずうみ遊園地の来場者は${yen(vis(9681))}人。観覧車には行列ができました。`, 9681);
+    if (x.rainF >= 0.25 && !x.storm) add(38, `雨の日は水族館へ　来場${yen(vis(9680))}人`, `雨がふったきのう、みさき水族館には${yen(vis(9680))}人が来ました。イルカショーは屋根の下で行われました。`, 9680);
+    if (x.tAvg < 9) add(36, `寒い日は温泉　東山温泉に${yen(vis(9722))}人`, `平均気温${x.tAvg.toFixed(1)}℃と冷えこんだきのう、東山温泉 ゆけむりには${yen(vis(9722))}人が入浴に来ました。`, 9722);
+    // 株価指数
+    const ip = pct(y.index, y.prevIdx);
+    add(30 + Math.abs(ip) * 6, `みなと株価指数　${yen(y.index)}（${ip >= 0 ? '+' : ''}${ip.toFixed(2)}%）`, `${COMPANIES.length}社の株価をまとめた「みなと株価指数」は${y.index.toFixed(2)}。${ip >= 0 ? '値上がり' : '値下がり'}した会社が${COMPANIES.filter((co) => (y.co[co.code].price - y.co[co.code].prev) * (ip >= 0 ? 1 : -1) > 0).length}社ありました。景気の指数は${y.econ.toFixed(1)}です。`, null);
+    if (c.d === 1) add(55, `${c.m}月がはじまる　地価指数は${(y.lpi * 100).toFixed(1)}`, `みなと不動産によると、街の地価指数は${(y.lpi * 100).toFixed(1)}（はじめを100として）。銀行と信用金庫にあずけられたお金は合わせて${man(y.dep)}になりました。`, 8801);
+  }
+  if (!stories.length) add(50, '「みなと経済新聞」創刊', 'はじめ市とみなと市の経済ニュースを、毎朝6時にお届けします。株価、野菜や魚の値段、天気予報ものっています。', null);
+  stories.sort((a, b) => b.pri - a.pri);
+  const top = stories[0], rest = stories.slice(1, 5);
+  // 住人の声（記事の会社の社員か、農家・漁師）
+  const voice = (s, k) => {
+    let pool = s.co && companyBy(s.co) && companyBy(s.co).staffIds; if (!pool || !pool.length) pool = null;
+    const N = TOWN.N; let p = pool ? pool[Math.floor(hash(n, 701 + k) * pool.length)] : Math.floor(hash(n, 702 + k) * N);
+    const jobT = TOWN.emp[p] >= 0 ? `${COMPANIES[TOWN.emp[p]].short}の社員` : TOWN.JOBS[TOWN.job[p]];
+    const lines = ['「お客さんの顔を見るのが楽しみです」', '「天気には勝てませんね」', '「あしたもがんばります」', '「この街がもっとにぎやかになるといいな」', '「いい物を安く、が大事です」', '「みんなが笑顔になる仕事です」'];
+    return `<p class="voice">${lines[Math.floor(hash(n, 703 + k) * lines.length)]}<small>（${escH(TOWN.homes[TOWN.home[p]].dist.name)}・${jobT}・${escH(resName(p))}さん ${TOWN.ages[p]}）</small></p>`;
+  };
+  const ad = BUS_ADS[n % BUS_ADS.length];
+  const mkt = y ? COMPANIES.map((co) => { const r = y.co[co.code]; return `<tr><td>${co.code}</td><td>${escH(co.short)}</td><td class="num">${yen(r.price)}</td><td class="num">${chgTxt(r.price, r.prev)}</td></tr>`; }).join('') : '';
+  const x = y && y.x;
+  const prod = x ? `<table class="ptab"><tr><th colspan="2">野菜（1kg・はじめファーム）</th></tr>${x.veg.names.map((v, k) => `<tr><td>${v}</td><td class="num">${yen(x.veg.price * [1, 1.25, 0.85][k])}円</td></tr>`).join('')}
+    <tr><th colspan="2">魚（1kg・なか海水産）</th></tr>${x.fish.names.map((v, k) => `<tr><td>${v}</td><td class="num">${x.fish.kg ? yen(x.fish.price * [1, 0.8, 1.3][k]) + '円' : '入荷なし'}</td></tr>`).join('')}</table>` : '';
+  return `<article class="paper">
+    <header><b>みなと経済新聞</b><span>${calText(c)} 朝刊　第${n + 1}号</span></header>
+    <h2>${escH(top.head)}</h2><p class="lead">${escH(top.body)}</p>${voice(top, 0)}
+    <div class="cols">${rest.map((s, k) => `<section><h3>${escH(s.head)}</h3><p>${escH(s.body)}</p></section>`).join('')}</div>
+    <div class="cols2">
+      <section class="wxbox"><h3>きょうの天気</h3><div class="big">${fc.icon} ${fc.name}</div><p>最高 ${fc.tMax}℃・最低 ${fc.tMin}℃・雨 ${fc.pop}%</p><p class="small">あした：${fc2.icon} ${fc2.name} ${fc2.tMax}℃／${fc2.tMin}℃</p></section>
+      <section><h3>市場の値段</h3>${prod || '<p>まだありません</p>'}</section>
+    </div>
+    ${y ? `<section><h3>株式（きのうの終値・円）　みなと株価指数 ${y.index.toFixed(2)}</h3><table class="mtab">${mkt}</table></section>` : ''}
+    <section class="adbox" style="background:${ad.base};color:${ad.ink}"><b>${escH(ad.name)}</b><span>${escH(ad.copy)}</span><small>広告</small></section>
+    <p class="small">人口 ${yen(TOWN.N)}人・${yen(TOWN.hh.length)}世帯　会社員 ${yen(TOWN.jobN[3])}人・農家 ${yen(TOWN.jobN[4])}人・漁師 ${yen(TOWN.jobN[5])}人</p>
+  </article>`;
+}
+// いま読める新聞の号：朝 6 時に出る
+const paperNow = () => { const f = gameDayF(), n = Math.max(0, Math.floor(f)); return (f - Math.floor(f)) * 24 >= 6 ? n : Math.max(0, n - 1); };
+/* ---- 株 ---- */
+function sparkSvg(hist) {
+  const h = hist.slice(-24), lo = Math.min(...h), hi = Math.max(...h), W = 80, H = 22;
+  const pts = h.map((v, k) => `${(k / Math.max(1, h.length - 1) * W).toFixed(1)},${(H - 2 - (v - lo) / Math.max(1, hi - lo) * (H - 4)).toFixed(1)}`).join(' ');
+  return `<svg class="spark" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" aria-hidden="true"><polyline points="${pts}" fill="none" stroke="${h[h.length - 1] >= h[0] ? '#d4402f' : '#2f6fd4'}" stroke-width="1.6"/></svg>`;
+}
+function stocksHtml() {
+  const n = Math.max(0, Math.floor(gameDayF())); ECON.upTo(n);
+  const open = ECON.marketOpen(), rows = [];
+  let val = 0, cost = 0;
+  for (const co of COMPANIES) {
+    const p = ECON.priceNow(co.code), rec = ECON.dayRec(n), prev = rec ? rec.co[co.code].prev : p, h = myStocks[co.code];
+    if (h && h.n) { val += h.n * p; cost += h.cost; }
+    rows.push(`<button type="button" class="srow${TP.sel === co.code ? ' on' : ''}" data-co="${co.code}"><span class="sname"><b>${escH(co.short)}</b><small>${co.code}・${co.ind}${h && h.n ? `・${h.n}株` : ''}</small></span>${sparkSvg(ECON.S.co[co.code].hist)}<span class="sprice"><b>${yen(p)}</b><small>${chgTxt(p, prev)}</small></span></button>`);
+    if (TP.sel === co.code) {
+      const st = ECON.S.co[co.code], y = ECON.dayRec(n - 1), yr = y && y.co[co.code];
+      rows.push(`<div class="sdet"><p>${escH(co.name)}（${escH(co.sub)}）　社員 ${co.staffIds ? co.staffIds.length : co.staff}人・本社 ${co.hq && co.hq.dist ? escH(co.hq.dist.name) : '-'}${co.shops.length ? `・お店 ${co.shops.length}` : ''}</p>
+        <p>きのうの売り上げ ${yr ? man(yr.rev) : '-'}・利益 ${yr ? man(yr.prof) : '-'}　時価総額 ${man(p * co.shares)}</p>
+        <p>持っている株：${h && h.n ? `${h.n}株（評価 ${yen(h.n * p)}P・損益 ${chgTxt(h.n * p, h.cost)}）` : 'なし'}</p>
+        <div class="trade"><button type="button" data-q="-10">−10</button><button type="button" data-q="-1">−1</button><b id="tQty">${TP.qty || 1}</b>株<button type="button" data-q="1">＋1</button><button type="button" data-q="10">＋10</button>
+        <button type="button" class="buy" data-trade="buy">買う ${yen((TP.qty || 1) * p)}P</button><button type="button" class="sell" data-trade="sell"${h && h.n ? '' : ' disabled'}>売る</button></div></div>`);
+    }
+  }
+  return `<p class="note">${open ? '取引中（9:00〜15:00）：株価が動いています' : '取引時間外：きのう・きょうの終値で買えます'}。1P＝1円。　持ち株の評価 <b>${yen(val)}P</b>（${chgTxt(val, cost)}）　手持ち <b>${fmtP(wallet.p)}</b></p>${rows.join('')}`;
+}
+function trade(kind, code) {
+  const co = companyBy(code), p = ECON.priceNow(code), q = Math.max(1, TP.qty || 1), h = myStocks[code] || (myStocks[code] = { n: 0, cost: 0 });
+  if (kind === 'buy') {
+    if (wallet.p < q * p) { showMsg(`ポイントが足りません（${yen(q * p)}P いります）`); return; }
+    addPoints(-q * p); h.n += q; h.cost += q * p; showMsg(`${co.short}の株を${q}株買いました（${yen(q * p)}P）`);
+  } else {
+    const k = Math.min(q, h.n); if (!k) return;
+    const c0 = h.cost * k / h.n; h.cost -= c0; h.n -= k; addPoints(k * p); showMsg(`${co.short}の株を${k}株売りました（＋${yen(k * p)}P）`);
+    if (!h.n) delete myStocks[code];
+  }
+  saveStocks(); renderTown();
+}
+/* ---- 街のようす ---- */
+function townHtml() {
+  const T = TOWN, n = Math.max(0, Math.floor(gameDayF())), y = ECON.dayRec(n - 1);
+  const dist = {}; for (const h of T.hh) { const o = T.homes[h.home], d = o.dist.name; const r = dist[d] || (dist[d] = { city: o.dist.city, pop: 0, hh: 0, v: 0, nv: 0 }); r.pop += h.members.length; r.hh++; }
+  for (const o of T.homes) { const r = dist[o.dist.name]; if (r) { r.v += o.value; r.nv++; } }
+  const vac = T.homes.filter((o) => !o.hh.length).length;
+  const jobs = T.JOBS.map((j, k) => `<div class="bar"><span>${j}</span><i style="width:${(T.jobN[k] / T.N * 100 * 2.2).toFixed(1)}%"></i><b>${yen(T.jobN[k])}人</b></div>`).join('');
+  const dRows = Object.entries(dist).sort((a, b) => b[1].pop - a[1].pop).map(([d, r]) => `<tr><td>${escH(r.city)} ${escH(d)}</td><td class="num">${yen(r.pop)}</td><td class="num">${yen(r.hh)}</td><td class="num">${yen(Math.round(r.v / Math.max(1, r.nv) * (y ? y.lpi : 1) / 1000) * 1000)}</td></tr>`).join('');
+  const inds = [...new Set(COMPANIES.map((c) => c.ind))];
+  const coRows = inds.map((ind) => `<tr><th colspan="4">${ind}</th></tr>` + COMPANIES.filter((c) => c.ind === ind).map((c) => `<tr><td>${escH(c.name)}<small>${escH(c.sub)}</small></td><td>${c.hq && c.hq.dist ? escH(c.hq.dist.name) : '-'}${c.shops.length ? `＋${c.shops.length}店` : ''}</td><td class="num">${c.staffIds ? c.staffIds.length : 0}人</td><td class="num">${y ? man(y.co[c.code].rev) : '-'}</td></tr>`).join('')).join('');
+  // だれかひとり
+  const p = Math.floor(hash(n, 801 + (TP.pick || 0)) * T.N), o = T.homes[T.home[p]];
+  const jobT = T.emp[p] >= 0 ? `${COMPANIES[T.emp[p]].name}の社員` : T.JOBS[T.job[p]];
+  const fam = T.hh[T.hhOf[p]];
+  return `<section><h3>住人</h3><p>人口 <b>${yen(T.N)}人</b>・${yen(T.hh.length)}世帯・家 ${yen(T.homes.filter((o) => o.kind === 'house').length)}けん・マンション ${yen(T.homes.filter((o) => o.kind === 'apt').length)}むね（空き家・空き部屋のある建物 ${vac}）・畑 ${yen(T.fields.length)}まい</p>${jobs}</section>
+    <section class="card"><h3>住人をひとり紹介 <button type="button" id="tPick">ほかの人</button></h3><p><b>${escH(resName(p))}</b>さん（${T.ages[p]}さい）　${escH(o.dist.city)} ${escH(o.dist.name)}の${o.kind === 'apt' ? `${o.floors}階建てのマンション` : '一戸建て'}に${fam.members.length}人で住んでいます。仕事：${escH(jobT)}。地価 ${yen(o.value)}円/㎡ の場所です。</p></section>
+    <section><h3>町ごとの人口と地価（円/㎡）</h3><table class="mtab"><tr><th>町</th><th>人口</th><th>世帯</th><th>地価</th></tr>${dRows}</table><p class="small">家は道路に面した所から建っています。地価は道路のはば・バス停や海の近さ・坂で決まり、高い所から人が住んでいます。</p></section>
+    <section><h3>会社（きのうの売り上げ）</h3><table class="mtab">${coRows}</table></section>`;
+}
+function wxHtml() {
+  const T = gameHourT(), w = weatherAt(T), c = calOf(gameDayN()), k = WX_KIND[w.kind];
+  const hours = []; for (let h = 0; h < 24; h += 3) { const t = Math.floor(T / 24) * 24 + h + 1.5, ww = weatherAt(t); hours.push(`<div><small>${h}時</small><b>${WX_KIND[ww.kind][0]}</b><small>${Math.round(ww.temp)}℃</small></div>`); }
+  const days = []; for (let d = 0; d < 5; d++) { const n = gameDayN() + d, f = wxDayText(n), cc = calOf(n); days.push(`<div><small>${cc.m}/${cc.d}（${cc.week}）</small><b>${f.icon}</b><small>${f.tMax}℃／${f.tMin}℃</small><small>雨${f.pop}%</small></div>`); }
+  return `<section><h3>いまの天気</h3><div class="big">${k[0]} ${k[1]}　${w.temp.toFixed(1)}℃</div><p>風 ${w.wind.toFixed(0)}m/s${WX.cover > 0.05 ? `・積雪 ${Math.round(WX.cover * 20)}cm` : ''}　${calText(c)}・${c.season}</p></section>
+    <section><h3>きょう（3時間ごと）</h3><div class="hours">${hours.join('')}</div></section>
+    <section><h3>5日間の予報</h3><div class="hours">${days.join('')}</div></section>
+    <p class="small">ゲームの1日は実際の1時間、ひと月は4日、1年（春夏秋冬）は48日＝実際の2日です。6月は梅雨、7〜8月は夕立、8〜10月はときどき台風、冬は雪がふります。季節で草の色がかわり、雪は積もります。天気はみんなの画面で同じです。</p>`;
+}
+/* ---- お店・PA の売り場 ---- */
+function shopHtml(a) {
+  const n = Math.max(0, Math.floor(gameDayF())); ECON.upTo(n);
+  const y = ECON.dayRec(n - 1) || ECON.dayRec(n), x = ECON.ctx(n, ECON.S), c = a.co;
+  const farmer = (k) => { const ids = []; for (let p = 0; p < TOWN.N && ids.length < 6; p += 37) if (TOWN.job[p] === k) ids.push(p); return ids; };
+  const goods = (title, list) => `<section><h3>${title}</h3><table class="ptab">${list.map(([nm, pr, who]) => `<tr><td>${escH(nm)}<small>${escH(who || '')}</small></td><td class="num">${pr}</td></tr>`).join('')}</table></section>`;
+  const fa = farmer(4), fi = farmer(5);
+  const veg = x.veg.names.map((v, k) => [v, `${yen(x.veg.price * [1, 1.25, 0.85][k] / 2)}円（500g）`, `${TOWN.homes[TOWN.home[fa[k % fa.length]]].dist.name}の${TOWN.hh[TOWN.hhOf[fa[k % fa.length]]].fam}さんの畑`]);
+  const fish = x.fish.names.map((v, k) => [v, x.fish.kg ? `${yen(x.fish.price * [1, 0.8, 1.3][k] * 0.3)}円（300g）` : '入荷なし', x.fish.kg ? `${TOWN.hh[TOWN.hhOf[fi[k % fi.length]]].fam}さんの船` : '漁に出られませんでした']);
+  let body = '';
+  if (a.kind === 'pa') body = `<p>はじめ高速サービスが運営する売店。地元の野菜（はじめファーム）と、とれたての魚（なか海水産）を売っています。魚が多く取れて安い日や、休日・晴れの日はよく売れます（株価 ${yen(ECON.priceNow(3091))}円）。</p>${goods('きょうの野菜', veg)}${goods('きょうの魚', fish)}`;
+  else {
+    const kind = c.b, o = a.o;
+    body = `<p>${escH(c.name)}（${escH(c.ind)}・${escH(c.sub)}）${o.label && o.label !== '本社' ? escH(o.label) : '本社'}。社員 ${c.staffIds ? c.staffIds.length : 0}人。株価 ${yen(ECON.priceNow(c.code))}円。</p>`;
+    if (c.code === 8201 || c.code === 1301) body += goods('きょうの野菜', veg);
+    if (c.code === 8201 || c.code === 1332) body += goods('きょうの魚', fish);
+    if (c.code === 2877) body += goods('売り物', [[`${x.fish.names[0]}の干物`, `${yen(400 + x.fish.price * 0.2)}円`], ['かまぼこ', '320円'], ['ちくわ', '180円']]);
+    if (c.code === 2264) body += goods('売り物', [['はじめ牛乳 1L', '230円'], ['のむヨーグルト', '160円'], ['ソフトクリーム', '350円']]);
+    if (c.code === 7611) body += goods('メニュー', [['港町カレー', '890円'], [`${x.veg.names[0]}カレー（季節）`, '980円'], ['シーフードカレー', `${yen(900 + x.fish.price * 0.15)}円`]]);
+    if (c.code === 2212) body += goods('焼きたて', [['しょくパン', '320円'], ['牛乳あんパン', '180円'], [`${x.veg.names[0]}のキッシュ`, '260円']]);
+    if (c.code === 3087) body += goods('ドーナツ', [['もちもちリング', '150円'], ['チョコ', '160円'], ['季節のドーナツ', '190円']]);
+    if (c.code === 3048) body += goods('おすすめ', [[x.tMax > 26 ? 'エアコン' : x.tMin < 6 ? 'ヒーター' : '冷蔵庫', x.tMax > 26 || x.tMin < 6 ? '79,800円' : '98,000円'], ['テレビ 43型', '59,800円'], ['電球', '480円']]);
+    if (ECON_CO[c.code].visit) { const v = y ? Math.round(y.co[c.code].rev / ECON_CO[c.code].price) : 0; body += goods('ご案内', [['入場料（おとな）', `${yen(ECON_CO[c.code].price)}円`], ['きのうの来場者', `${yen(v)}人`]]); }
+    if (c.code === 9001) body += goods('料金', [['初乗り', '500円'], ['雨の日は', 'よばれる回数がふえます']]);
+    if (c.code === 9064) body += goods('きのうの荷物', [['野菜と魚', `${yen(y ? y.x.veg.kg + y.x.fish.kg : 0)}kg`]]);
+    if (c.ind === '銀行') body += goods('金利', [['ふつう預金', '年0.05%'], ['住宅ローン', '年1.8%'], ['街の預金の合計', man(y ? y.dep : ECON.S.dep)]]);
+    if (c.code === 8801) body += goods('物件', [['地価指数', ((y ? y.lpi : 1) * 100).toFixed(1)], ['空き家・空き部屋のある建物', `${TOWN.homes.filter((h) => !h.hh.length).length}`], ['家賃（2LDK）', `${yen(Math.round(70000 * (y ? y.lpi : 1) / 100) * 100)}円/月`]]);
+    if (c.code === 2429) body += goods('会員', [['会員数', `${yen(ECON.S.gym)}人`], ['月会費', '8,000円']]);
+  }
+  return body;
+}
+/* ---- 画面 ---- */
+function renderTown() {
+  const box = el('townBody'); if (!box) return;
+  for (const b of document.querySelectorAll('#town [data-tt]')) b.setAttribute('aria-pressed', String(b.dataset.tt === TP.tab));
+  el('townShopTab').hidden = !TP.shop;
+  if (TP.tab === 'shop' && TP.shop) { el('townTitle').textContent = TP.shop.text; box.innerHTML = shopHtml(TP.shop); return; }
+  if (TP.tab === 'paper') {
+    const now = paperNow(); if (TP.paperN == null || TP.paperN > now) TP.paperN = now;
+    el('townTitle').textContent = 'みなと経済新聞';
+    box.innerHTML = `<div class="pnav"><button type="button" data-pn="-1"${TP.paperN <= Math.max(0, now - 12) ? ' disabled' : ''}>◀ 前の号</button><span>${TP.paperN === now ? 'きょうの朝刊' : `${now - TP.paperN}日前の朝刊`}</span><button type="button" data-pn="1"${TP.paperN >= now ? ' disabled' : ''}>次の号 ▶</button></div>` + makePaper(TP.paperN);
+    TP.lastPaper = Math.max(TP.lastPaper, now); try { localStorage.setItem('world.paperRead', String(TP.lastPaper)); } catch (e) {}
+  } else if (TP.tab === 'stocks') { el('townTitle').textContent = `株（${COMPANIES.length}社）`; box.innerHTML = stocksHtml(); }
+  else if (TP.tab === 'town') { el('townTitle').textContent = '街のようす'; box.innerHTML = townHtml(); }
+  else { el('townTitle').textContent = '天気と季節'; box.innerHTML = wxHtml(); }
+}
+function openTown(tab, shop) { TP.open = true; TP.shop = shop || null; TP.tab = shop ? 'shop' : tab; el('town').hidden = false; renderTown(); el('townBody').scrollTop = 0; }
+function closeTown() { TP.open = false; el('town').hidden = true; }
+el('townClose').addEventListener('click', closeTown);
+for (const b of document.querySelectorAll('#town [data-tt]')) b.addEventListener('click', () => { TP.tab = b.dataset.tt; renderTown(); el('townBody').scrollTop = 0; });
+el('townBody').addEventListener('click', (e) => {
+  const t = e.target.closest('button'); if (!t) return;
+  if (t.dataset.pn) { TP.paperN += +t.dataset.pn; renderTown(); el('townBody').scrollTop = 0; }
+  else if (t.dataset.co) { TP.sel = TP.sel === +t.dataset.co ? null : +t.dataset.co; TP.qty = 1; renderTown(); }
+  else if (t.dataset.q) { TP.qty = Math.max(1, Math.min(9999, (TP.qty || 1) + +t.dataset.q)); renderTown(); }
+  else if (t.dataset.trade) trade(t.dataset.trade, TP.sel);
+  else if (t.id === 'tPick') { TP.pick = (TP.pick || 0) + 1; renderTown(); }
+});
+el('paperBtn').addEventListener('click', () => { setMenu(false); openTown('paper'); });
+el('townBtn').addEventListener('click', () => { setMenu(false); openTown('stocks'); });
+// 株の画面は、取引中は 2 秒ごとに書きなおす
+setInterval(() => { if (TP.open && TP.tab === 'stocks' && ECON.marketOpen() && !document.querySelector('#town .trade:hover')) renderTown(); }, 2000);
+// 新しい朝刊が出たら知らせる
+try { TP.lastPaper = +(localStorage.getItem('world.paperRead') || -1); } catch (e) {}
+let paperSeen = paperNow();
+function stepPaper() {
+  const now = paperNow();
+  el('paperDot').hidden = !(now > TP.lastPaper);
+  if (now !== paperSeen) { paperSeen = now; const c = calOf(now); showMsg(`📰 ${c.m}月${c.d}日の朝刊が届きました（☰ → 新聞）`); }
+}
+// お店・PA の前で「のぞく」
+function townNearAction() {
+  const p = player.pos;
+  for (const o of TOWN.companies) {
+    if (Math.abs(o.x - p.x) > 60 || Math.abs(o.z - p.z) > 60) continue;
+    const s = Math.sin(o.rot), c = Math.cos(o.rot), fx = o.x + s * (o.d / 2 + 2), fz = o.z + c * (o.d / 2 + 2);
+    if (Math.hypot(p.x - fx, p.z - fz) < Math.min(9, o.w / 2 + 2) && Math.abs(p.y - o.y) < 3) return { kind: 'co', co: o.c, o, text: o.c.name + (o.label && o.label !== '本社' ? ' ' + o.label : ''), btn: 'のぞく' };
+  }
+  for (const L of HW_LOTS) {
+    if (p.x < L.x0 || p.x > L.x1 || p.z < L.z0 || p.z > L.z1) continue;
+    const [u, v] = lotUV(L, p.x, p.z), S = HW_SHOP;
+    if (u > S.u0 && u < S.u1 && v > S.v0 - 7 && v < S.v0 + 0.5 && Math.abs(p.y - L.y) < 3) return { kind: 'pa', L, text: L.pa.name.replace(/（.*）/, '') + ' ショップ', btn: '売り場を見る' };
+  }
+  return null;
+}
+document.addEventListener('keydown', (e) => { if (TP.open && e.key === 'Escape') closeTown(); }, true);
+/* ---- 地図に家・畑・会社 ---- */
+function drawTownOnMap(g, P, sc, det) {
+  if (sc < 0.08) return;
+  const sz = Math.max(1.2, 8 * sc);
+  g.fillStyle = 'rgba(120,96,72,.55)'; for (const f of TOWN.fields) { const [X, Y] = P(f.x, f.z); g.fillRect(X - f.w * sc / 2, Y - f.d * sc / 2, Math.max(1, f.w * sc), Math.max(1, f.d * sc)); }
+  g.fillStyle = 'rgba(214,120,96,.85)'; for (const o of TOWN.homes) { const [X, Y] = P(o.x, o.z); const s = o.kind === 'apt' ? sz * 1.7 : sz; g.fillRect(X - s / 2, Y - s / 2, s, s); }
+  if (!det) return;
+  g.font = '800 11px ' + getComputedStyle(document.body).fontFamily; g.textAlign = 'left'; g.textBaseline = 'middle';
+  for (const o of TOWN.companies) {
+    const [X, Y] = P(o.x, o.z); g.fillStyle = (o.c.col || ['#335'])[0]; g.strokeStyle = '#fff'; g.lineWidth = 2; g.beginPath(); g.rect(X - 5, Y - 5, 10, 10); g.fill(); g.stroke();
+    const t = o.c.short + (o.label && o.label !== '本社' && o.label !== '本店' ? '' : ''); g.lineWidth = 3; g.strokeStyle = 'rgba(255,255,255,.9)'; g.strokeText(t, X + 8, Y); g.fillStyle = '#1b2b3c'; g.fillText(t, X + 8, Y);
+  }
+}
 /* ================= ループ ================= */
 const clock = new THREE.Clock();
 let netTick = 0, firstFrame = true;
@@ -8865,6 +10056,8 @@ function frame() {
   stepWrecks(dt);
   for (const v of vehicles) stepVehicle(v, dt);
   stepBuildings(dt);
+  stepTown();
+  stepPaper();
   if (aboard) { player.pos.copy(seatWorld(aboard.v, aboard.seat)); player.vy = 0; player.face = visYaw(aboard.v); player.mode = 'walk'; }
   avatar.visible = camera.position.distanceTo(camTarget) > 0.9 && !driving && !busRide && !(aboard && vtype(aboard.v) === 'sub') && !(pod && pod.mine && !pod.landed);
   avatar.position.copy(player.pos);
@@ -9668,6 +10861,7 @@ function drawWmap() {
     g.lineWidth = Math.max(pass ? (e.hw === 'main' ? 3.5 : 2) : (e.hw === 'main' ? 6 : 4), e.w * sc * (pass ? 1 : 1.5));
     g.stroke();
   }
+  drawTownOnMap(g, P, sc, det);   // 家・畑・会社（2026-11-02）
   // 高速道路の IC・PA・JCT の名前
   g.font = `800 ${det ? 13 : 11}px ` + getComputedStyle(document.body).fontFamily; g.textAlign = 'left'; g.textBaseline = 'middle';
   const hwLabel = (t, x, z) => { const [X, Y] = P(x, z); if (X < -50 || Y < -20 || X > W + 50 || Y > H + 20) return; g.fillStyle = '#1f6b3a'; g.beginPath(); g.arc(X, Y, 4, 0, 7); g.fill(); g.lineWidth = 3; g.strokeStyle = 'rgba(255,255,255,.9)'; g.strokeText(t, X + 6, Y); g.fillText(t, X + 6, Y); };
@@ -9997,6 +11191,7 @@ window.__world = {
   hullGround, findWaterSpot, rescueBoat, get periscope() { return periscope; }, toggleLight, setPeriscope,
   teleport(x, z, y) { player.pos.set(x, y ?? heightAt(x, z), z); player.vy = 0; },
   torps, tube, ord, booms, get clockT() { return clock.elapsedTime; },
+  TOWN, COMPANIES, ECON, makePaper, openTown, closeTown, townNearAction, get myStocks() { return myStocks; }, weatherAt, wxDay, calOf, gameDayN, setDayOffset(d) { dayOffset = d; }, setGameTime(n, hr) { dayOffset = 0; const real = (Date.now() % DAY_MS) / DAY_MS * 24; hourOffset = ((hr - real) % 24 + 24) % 24; dayOffset = n - Math.floor(gameDayF()); }, townMeshes, townBlds, townBoats, fieldStage,
   AUTO, SEMI, semiGo, semiHalt, setSemi, semiTurnReq, semiTurnCand, semiNext, setApMin, startAuto, stopAuto, planAuto, stepHwTraffic, autoSpeed, autoLaneReq, autoTurnReq, get myCar() { return myCar; }, stepTraffic, stepVehicle, camera, signalState,
 };
 
