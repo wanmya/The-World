@@ -5063,9 +5063,9 @@ function simulate(v, others, cruise, laps) {
       const tAbs = v.phase + tau;
       while (jp < jAll.length && jAll[jp].pos - s < -(jAll[jp].j.node.jr + 16)) jp++;
       for (let q = jp; q < jAll.length && q < jp + 3; q++) {
-        const j = jAll[q].j, d = jAll[q].pos - s;
+        const j = jAll[q].j, d = jAll[q].pos - s, dF = d - T.hl - 0.6;   // dF：前のはし（バンパー）から止まる所まで。長いバスやトラックも停止線の手前で止まる
         if (d > 140) break;
-        if (d > -0.5 && signalState(j.node, j.grp, tAbs) !== 0 && d > sp * sp / (2 * 3.0) - 0.5) vt = Math.min(vt, Math.sqrt(2 * T.dec * Math.max(0, d - 0.3)));
+        if (dF > -0.5 && signalState(j.node, j.grp, tAbs) !== 0 && dF > sp * sp / (2 * 3.0) - 0.5) vt = Math.min(vt, Math.sqrt(2 * T.dec * Math.max(0, dF - 0.3)));
         if (j.turn && d < 40 && d > -(j.node.jr + 14)) fl |= j.turn > 0 ? 2 : 4;   // 曲がるときのウインカー
       }
       // 前の車
@@ -11679,8 +11679,9 @@ function autoDrive(car, dt) {
   if (Math.abs(al) > 1.1) vt = Math.min(vt, 3);   // 向きが大きくちがう（Ｕターンなど）：ゆっくり
   if (AUTO.semi && AUTO.halt) { vt = Math.min(vt, AUTO.haltV); why = '停止します'; }
   const tNow = Date.now() / 1000;
+  const front = (V.halfLength || 2) + (V.centerZ || 0);   // 車のまん中から前のはしまで（長い車も停止線をこえないように）
   for (const j of P.junc) {
-    const d = j.stopS - AUTO.s;
+    const d = j.stopS - AUTO.s - front;
     if (d < -0.5 || j.go) continue;
     if (d > 140) break;
     const sg = signalState(j.node, j.grp, tNow);
