@@ -419,6 +419,7 @@ body.helmOn .subbtns { flex-wrap: wrap; justify-content: flex-end; max-width: ca
   <span class="grp" id="apSemiG"><button type="button" id="apGo">▶前進</button><button type="button" id="apHalt">■停止</button><button type="button" id="apSemiOff" aria-label="半自動運転をやめる" title="半自動運転をやめる">✕</button></span>
   <span class="grp"><button type="button" id="apSlow" aria-label="おそく">−</button><button type="button" id="apSpd" title="押すとおまかせ">おまかせ</button><button type="button" id="apFast" aria-label="はやく">＋</button></span>
   <span class="grp" id="apLaneG"><button type="button" id="apLaneL">⇦車線</button><button type="button" id="apLaneR">車線⇨</button></span>
+  <span class="grp" id="apLampG"><button type="button" id="apLamp" title="ライト（自動・オン・オフ）">💡自動</button><button type="button" id="apBlinkL" aria-label="左ウインカー" title="左ウインカー">⇦</button><button type="button" id="apHazard" aria-label="ハザード" title="ハザード">⚠</button><button type="button" id="apBlinkR" aria-label="右ウインカー" title="右ウインカー">⇨</button></span>
   <span class="grp" id="apTurnG"><button type="button" id="apTurnL">↰左折</button><button type="button" id="apTurnR">右折↱</button></span>
   <button type="button" class="apToggle" id="apMin" aria-label="操作ボタンをしまう" title="しまう">▾</button>
   <button type="button" class="apToggle" id="apMax" hidden aria-label="操作ボタンを出す">▴ 操作</button>
@@ -12006,6 +12007,10 @@ el('apSpd').addEventListener('click', () => autoSpeed(0));
 el('apLaneL').addEventListener('click', () => autoLaneReq(1));
 el('apLaneR').addEventListener('click', () => autoLaneReq(-1));
 el('apTurnL').addEventListener('click', () => autoTurnReq(1));
+el('apLamp').addEventListener('click', () => cycleLampMode());
+el('apBlinkL').addEventListener('click', () => setTurnSignal(1));
+el('apBlinkR').addEventListener('click', () => setTurnSignal(-1));
+el('apHazard').addEventListener('click', () => setTurnSignal(2));
 el('apTurnR').addEventListener('click', () => autoTurnReq(-1));
 // 自動運転の操作パネル：運転中で自動運転・半自動運転のときだけ。▾ でしまえる（しまうと「降りる」の案内も隠す）
 setInterval(() => {
@@ -12028,6 +12033,19 @@ setInterval(() => {
   const pr = el('prompt'), want = show ? `${Math.round(window.innerHeight - el('autoPanel').getBoundingClientRect().top + 8)}px` : '';
   if (pr.style.bottom !== want) pr.style.bottom = want;
   if (!show) return;
+  // 車のライト（ライトやウインカーの部品がある車だけ）
+  const L = ride.item.lamps;
+  el('apLampG').hidden = !L;
+  if (L) {
+    const lt = `💡${{ auto: '自動', on: 'オン', off: 'オフ' }[CARL.mode]}`;
+    if (el('apLamp').textContent !== lt) el('apLamp').textContent = lt;
+    el('apLamp').hidden = !(L.has.head || L.has.tail);
+    el('apBlinkL').hidden = el('apBlinkR').hidden = el('apHazard').hidden = !(L.has.turnL || L.has.turnR);
+    const bits = ride.lampBits | 0, blink = CARL.hazard ? 2 : AUTO.on ? autoBlinkDir() || CARL.turn : CARL.turn;
+    el('apBlinkL').setAttribute('aria-pressed', String(!CARL.hazard && blink === 1)); el('apBlinkR').setAttribute('aria-pressed', String(!CARL.hazard && blink === -1));
+    el('apHazard').setAttribute('aria-pressed', String(CARL.hazard));
+    el('apLamp').setAttribute('aria-pressed', String(!!(bits & 1)));
+  }
   const t = AUTO.vset ? `${Math.round(AUTO.vset * 3.6)}km/h` : 'おまかせ';
   if (el('apSpd').textContent !== t) el('apSpd').textContent = t;
   el('apLaneL').setAttribute('aria-pressed', String(AUTO.shift === 1)); el('apLaneR').setAttribute('aria-pressed', String(AUTO.shift === -1));
