@@ -57,6 +57,7 @@ body { margin: 0; background: var(--sky); color: var(--ink); font-family: var(--
 #menu .mgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
 #menu .mgrid .mi { padding: 9px 8px; font-size: 13px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #menu .mgrid .mi[hidden] { display: none; }
+#menu .mi[aria-pressed="true"] { background: #f5a623; color: #fff; border-color: #f5a623; }
 #menu .mi small { margin-left: 6px; font: 700 10px var(--font-mono); color: var(--ink-dim); }
 #menu .mine { display: flex; align-items: center; gap: 6px; }
 #menu .mine span { font: 700 12px var(--font-ui); color: var(--ink-dim); }
@@ -383,6 +384,15 @@ body.helmOn .subbtns { flex-wrap: wrap; justify-content: flex-end; max-width: ca
   <button class="mi" id="seacatBtn" type="button" hidden>シーキャット（潜水艦）を出す</button>
   <button class="mi" id="autoBtn" type="button" hidden>🚗 自動運転（地図で行き先をえらぶ）</button>
   <button class="mi" id="semiBtn" type="button" hidden>🚙 半自動運転（行き先なしで道なりに）</button>
+  <div id="lampMenu" hidden>
+    <p class="mh">車のライト</p>
+    <div class="mgrid">
+      <button class="mi" type="button" id="mLamp" title="L キー">💡 ライト自動</button>
+      <button class="mi" type="button" id="mHazard" aria-pressed="false" title="H キー">⚠ ハザード</button>
+      <button class="mi" type="button" id="mTurnL" aria-pressed="false" title="Z キー">⇦ ウインカー</button>
+      <button class="mi" type="button" id="mTurnR" aria-pressed="false" title="X キー">ウインカー ⇨</button>
+    </div>
+  </div>
   <div id="vehMenu" hidden>
     <p class="mh">船・潜水艦</p>
     <div class="mgrid">
@@ -711,7 +721,7 @@ function rigAutoCar(item, root, model, gltf, def) {
     spin.attach(found[k]);
     item.wheels.push({ steer, spin, front: FRONT_W.has(k) });
   }
-  const kmh = kmhOf(extrasOf(gltf), 60, 20, 90);
+  const kmh = carKmh(model, extrasOf(gltf));
   const halfWidth = Math.max(0.3, Math.abs(all.min.x), all.max.x), halfLength = size.z / 2, centerZ = (all.max.z + all.min.z) / 2;
   item.def.vehicle = {
     type: 'car', wheels: lay.length, cargo,
@@ -721,6 +731,174 @@ function rigAutoCar(item, root, model, gltf, def) {
     exit: [-(halfWidth + 0.6), centerZ],
   };
   item.size = size;
+  item.lamps = rigCarLamps(root, model);
+}
+// 最高速度：ボディ（どの部品でもよい）のカスタムプロパティ「最高速度」（文字列 "120" や "120km/h"、数でも可）か max_speed_kmh。ないときは 60km/h
+const SPEED_KEYS = ['最高速度', 'max_speed_kmh', 'max_speed', 'top_speed'];
+function carKmh(model, ex) {
+  const read = (u) => { for (const k of SPEED_KEYS) if (u && u[k] != null) { const n = typeof u[k] === 'number' ? u[k] : parseFloat(String(u[k]).replace(/[０-９．]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0xfee0))); if (n > 0) return n; } return null; };
+  let v = null, body = null;
+  model.traverse((o) => { if (!body && /^(ボディ|車体|body)/i.test(o.name || '')) body = o; });
+  if (body) v = read(body.userData);
+  if (v == null) model.traverse((o) => { if (v == null) v = read(o.userData); });
+  if (v == null) v = read(ex);
+  return v == null ? 60 : THREE.MathUtils.clamp(v, 10, 300);
+}
+
+/* ---- 車のライト：部品の名前で見つける。ヘッドライト・テールランプ・ブレーキランプ・ウインカー（左右）
+   光らせ方は世界のほうで決める（.glb は名前だけ）。左右は名前の 左/右（left/right）、なければ置いてある場所で決める（+X が左） ---- */
+const LAMP_DEFS = {
+  head: /^(左|右)?(ヘッドライト|ヘッドランプ|前照灯|head[ _-]?(light|lamp))/i,
+  tail: /^(左|右)?(テールランプ|テールライト|尾灯|tail[ _-]?(light|lamp)|rear[ _-]?(light|lamp))/i,
+  brake: /^(左|右)?(ブレーキランプ|ブレーキライト|制動灯|stop[ _-]?(light|lamp)|brake[ _-]?(light|lamp))/i,
+  turn: /^(左|右)?(ウインカー|ウィンカー|方向指示器|turn[ _-]?(signal|light|lamp)|blinker|indicator)/i,
+};
+const LAMP_COL = { head: 0xfff4dc, tail: 0xff2414, brake: 0xff2414, turn: 0xffa018 };
+let lampHaloTex = null, lampPoolTex = null;
+function lampTex(w, h, stops) {
+  const c = document.createElement('canvas'); c.width = w; c.height = h;
+  const g = c.getContext('2d'), gr = g.createRadialGradient(w / 2, h / 2, 0, w / 2, h / 2, w / 2);
+  for (const [o, a] of stops) gr.addColorStop(o, `rgba(255,255,255,${a})`);
+  g.fillStyle = gr; g.fillRect(0, 0, w, h);
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
+}
+function rigCarLamps(root, model) {
+  const parts = [];
+  model.traverse((o) => {
+    const n = (o.name || '').trim();
+    for (const k in LAMP_DEFS) if (LAMP_DEFS[k].test(n) && !parts.some((p) => p.o.getObjectById(o.id) || o.getObjectById(p.o.id))) { parts.push({ o, k, n }); break; }
+  });
+  if (!parts.length) return null;
+  root.updateMatrixWorld(true);
+  const all = new THREE.Box3().setFromObject(model), mid = all.getCenter(new THREE.Vector3());
+  if (!lampHaloTex) {
+    lampHaloTex = lampTex(64, 64, [[0, 1], [0.25, 0.55], [1, 0]]);
+    lampPoolTex = lampTex(64, 64, [[0, 0.9], [0.5, 0.35], [1, 0]]);
+  }
+  const L = { head: [], tail: [], brake: [], turnL: [], turnR: [], halos: [], pool: null, bits: -1, dark: -1, has: {} };
+  for (const p of parts) {
+    const b = new THREE.Box3().setFromObject(p.o);
+    if (b.isEmpty()) continue;
+    const c = b.getCenter(new THREE.Vector3()), sz = b.getSize(new THREE.Vector3());
+    let g = p.k;
+    if (g === 'turn') {
+      const side = /左|left|(^|[ _.-])l($|[ _.\d-])/i.test(p.n) ? 1 : /右|right|(^|[ _.-])r($|[ _.\d-])/i.test(p.n) ? -1 : (c.x >= mid.x ? 1 : -1);
+      g = side > 0 ? 'turnL' : 'turnR';
+    }
+    // 光る部品：材料を自分用に写して、元の光り方をおぼえておく
+    const mats = [];
+    p.o.traverse((o) => {
+      if (!o.isMesh) return;
+      o.material = [].concat(o.material).map((m) => m.clone()); if (o.material.length === 1) o.material = o.material[0];
+      for (const m of [].concat(o.material)) mats.push({ m, e: m.emissive ? m.emissive.getHex() : null, ei: m.emissiveIntensity ?? 1, c: m.color ? m.color.getHex() : 0xffffff });
+    });
+    // まわりのぼんやりした光（夜によく見える）。少し外側に出しておく
+    const out = new THREE.Vector3(g === 'turnL' ? 1 : g === 'turnR' ? -1 : 0, 0, g === 'head' ? 1 : g === 'tail' || g === 'brake' ? -1 : Math.sign(c.z - mid.z));
+    const halo = new THREE.Sprite(new THREE.SpriteMaterial({ map: lampHaloTex, color: LAMP_COL[p.k], transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, opacity: 0 }));
+    const r = THREE.MathUtils.clamp(Math.max(sz.x, sz.y, sz.z) * 2.2, 0.35, 1.6);
+    halo.scale.set(r, r, 1); halo.position.copy(c).addScaledVector(out, 0.06); halo.visible = false; halo.renderOrder = 3;
+    root.add(halo);
+    L[g].push({ mats, halo });
+    L.has[g] = true;
+  }
+  if (!L.head.length && !L.tail.length && !L.brake.length && !L.turnL.length && !L.turnR.length) return null;
+  if (L.head.length) {   // ヘッドライトが道を照らす（地面にうすい光をのせる。本物のライトは使わない：重くならないように）
+    const w = Math.max(2.4, all.max.x - all.min.x + 1.2), len = 16;
+    const pool = new THREE.Mesh(new THREE.PlaneGeometry(w, len), new THREE.MeshBasicMaterial({ map: lampPoolTex, color: LAMP_COL.head, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4 }));
+    pool.rotation.x = -Math.PI / 2; pool.position.set(mid.x, 0.06, all.max.z + len / 2 - 1); pool.visible = false; pool.renderOrder = 2;
+    root.add(pool); L.pool = pool;
+  }
+  return L;
+}
+// 自分の車のライト：mode は auto（夜・雨や霧・自動運転と半自動運転のときにつく）／on／off。turn は手動のウインカー（左 +1・右 -1）
+const CARL = { mode: 'auto', turn: 0, hazard: false, yaw: 0, lastH: 0, ticked: false };
+try { const m = localStorage.getItem('world.lampMode'); if (m === 'on' || m === 'off' || m === 'auto') CARL.mode = m; } catch (e) { /* なくてもよい */ }
+const hasLamps = (v) => !!(v && v.item.lamps);
+function lampAutoOn() {
+  if (dayLight < 0.45 || (driving && AUTO.on)) return true;
+  const w = WX.now; return !!(w && (w.rain > 0.35 || w.fog > 0.35 || w.snow > 0.5));
+}
+// 自動運転・半自動運転のウインカー：曲がる所の手前、車線変更、行き先で左へ寄るとき
+function autoBlinkDir() {
+  if (!AUTO.on || !AUTO.route) return 0;
+  const lat = AUTO.shift * 3.5 - AUTO.lat;
+  if (Math.abs(lat) > 0.25 || (AUTO.laneWait && AUTO.shift)) return AUTO.shift || Math.sign(lat);
+  const P = AUTO.route.P;
+  for (const t of P.turns || []) if (AUTO.s > t.s - t.a && AUTO.s < t.s + t.b) return t.dir;
+  if (!AUTO.semi && P.L - AUTO.s < 40) return 1;
+  return 0;
+}
+function myLampBits(car) {
+  const on = CARL.mode === 'on' || (CARL.mode === 'auto' && lampAutoOn());
+  let bits = on ? 1 : 0;
+  if (car.lampBrk) bits |= 2;
+  // 手動のウインカーは、曲がり終わってハンドルがもどったら自然に消える
+  if (CARL.turn) {
+    CARL.yaw += wrapA(car.h - CARL.lastH) * CARL.turn;
+    if (CARL.yaw > 0.7 && Math.abs(car.steer) < 0.08) { CARL.turn = 0; renderLampMenu(); }
+  }
+  CARL.lastH = car.h;
+  const d = CARL.hazard ? 2 : AUTO.on ? autoBlinkDir() || CARL.turn : CARL.turn;
+  if (d === 2) bits |= 12; else if (d > 0) bits |= 4; else if (d < 0) bits |= 8;
+  // カチカチ（運転している人だけ）
+  const b = lampBlinkOn();
+  if (bits & 12 && b !== CARL.ticked) lampTick(b);
+  CARL.ticked = b;
+  return bits;
+}
+function lampTick(hi) {
+  const a = actx && actx.state === 'running' ? actx : null;
+  if (!a) return;
+  const t = a.currentTime, o = a.createOscillator(), g = a.createGain();
+  o.type = 'square'; o.frequency.value = hi ? 1900 : 1500;
+  g.gain.setValueAtTime(0.025, t); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.025);
+  o.connect(g).connect(a.destination); o.start(t); o.stop(t + 0.03);
+}
+function setTurnSignal(d) {
+  if (!hasLamps(ride) || !driving) return;
+  if (d === 2) CARL.hazard = !CARL.hazard;
+  else { CARL.turn = CARL.turn === d ? 0 : d; CARL.yaw = 0; CARL.lastH = ride.h; }
+  renderLampMenu();
+}
+function cycleLampMode() {
+  CARL.mode = CARL.mode === 'auto' ? 'on' : CARL.mode === 'on' ? 'off' : 'auto';
+  try { localStorage.setItem('world.lampMode', CARL.mode); } catch (e) { /* なくてもよい */ }
+  showMsg(`ライト：${LAMP_MODE_TXT[CARL.mode]}`);
+  renderLampMenu();
+}
+const LAMP_MODE_TXT = { auto: '自動（夜・雨・自動運転でつく）', on: 'いつもつける', off: '消す' };
+// 毎コマ：車のライトを見せる（自分が運転中・ほかの人が運転中・止めてある＝消す）
+function stepCarLamps(v) {
+  if (!v.item.lamps) return;
+  const bits = v.remote ? (v.remote.cl | 0) : v === ride && driving ? myLampBits(v) : 0;
+  v.lampBits = bits;
+  showCarLamps(v, bits);
+}
+// bits：1 ヘッドライト（テールランプも）、2 ブレーキ、4 左ウインカー、8 右ウインカー。点滅は時計で決める（みんなの画面でそろう）
+const lampBlinkOn = () => (Date.now() % 800) < 440;
+function showCarLamps(v, bits) {
+  const L = v.item.lamps;
+  if (!L) return;
+  const blink = lampBlinkOn(), dark = Math.round((1 - dayLight) * 10) / 10;
+  const vis = (bits & 3) | ((bits & 4) && blink ? 4 : 0) | ((bits & 8) && blink ? 8 : 0);
+  if (vis === L.bits && dark === L.dark) return;
+  L.bits = vis; L.dark = dark;
+  const set = (list, on, k) => {
+    for (const q of list) {
+      for (const s of q.mats) {
+        if (s.e != null) { s.m.emissive.setHex(on ? LAMP_COL[k] : s.e); s.m.emissiveIntensity = on ? (k === 'tail' && !(vis & 2) ? 0.9 : 2.5) : s.ei; }
+        else if (s.m.color) s.m.color.setHex(on ? LAMP_COL[k] : s.c);
+      }
+      q.halo.visible = on;
+      q.halo.material.opacity = (k === 'tail' && !(vis & 2) ? 0.45 : 0.85) * (0.3 + 0.7 * dark);
+    }
+  };
+  set(L.head, !!(vis & 1), 'head');
+  set(L.tail, !!(vis & 3), 'tail');   // テールランプ：ライトをつけるとうすく、ブレーキで明るく
+  set(L.brake, !!(vis & 2), 'brake');
+  set(L.turnL, !!(vis & 4), 'turn');
+  set(L.turnR, !!(vis & 8), 'turn');
+  if (L.pool) { L.pool.visible = !!(vis & 1) && dark > 0.15; L.pool.material.opacity = 0.42 * dark; }
 }
 
 const BOAT_LIMITS = { length: 30, width: 20, height: 15 };
@@ -4146,7 +4324,8 @@ document.addEventListener('keydown', (e) => {
   keys[e.code] = true;
   if (e.code === 'KeyE' || e.code === 'KeyF') toggleRide();
   if (e.code === 'Space' && busRide && !e.repeat) toggleSeat();
-  if (e.code === 'KeyL') toggleLight();
+  if (e.code === 'KeyL') { if (driving && hasLamps(ride)) cycleLampMode(); else toggleLight(); }
+  if (driving && hasLamps(ride) && !e.repeat) { if (e.code === 'KeyZ') setTurnSignal(1); if (e.code === 'KeyX') setTurnSignal(-1); if (e.code === 'KeyH') setTurnSignal(2); }
   if (e.code === 'KeyR') rescueBoat();
   if (e.code === 'KeyP') setPeriscope(!periscope);
   if (e.code === 'KeyV') toggleBusView();
@@ -4342,6 +4521,7 @@ function leaveRide(force) {
   dropPlayerAt(exitPoint(car), visYaw(car), car.y);
   ride = null; driving = false; avatar.visible = true;
   stopAuto(); SEMI.on = false;
+  CARL.turn = 0; CARL.hazard = false;
   if (periscope) setPeriscope(false);
   car.vF = 0; car.vL = 0; car.settled = false;
   car.h = wrapA(visYaw(car)); car.yawOff = 0;   // 見た目の向きを、そのまま止めた向きにする
@@ -6610,6 +6790,7 @@ function stepCar(car, dt) {
   car.vF -= 9.8 * Math.sin(car.pitch) * 0.8 * dt;   // 坂道：上りは遅く、下りは速く
   if (!gas && !brk) car.vF -= Math.sign(car.vF) * Math.min(Math.abs(car.vF), (V.glide ?? 2.2) * dt);   // ロボットはスキーなので、よくすべる
   if (hand) car.vF -= Math.sign(car.vF) * Math.min(Math.abs(car.vF), 5 * dt);
+  car.lampBrk = mine && ((brk > 0.05 && car.vF > -0.3) || !!(auto && (auto.hold || (AUTO.vt < 0.3 && Math.abs(car.vF) < 0.6))));   // ブレーキランプ
   if (!mine) car.vF = 0;   // 降りたらパーキングブレーキ
   if (auto && auto.hold) car.vF = 0;   // 自動運転で止まっているとき（坂でも動かない）
   car.vF -= car.vF * Math.abs(car.vF) * (V.drag ?? 0.004) * dt;
@@ -6927,13 +7108,14 @@ function stepVehicle(v, dt) {
     showCar(v);
     if (v.item.robot) { if (v.noPod && !v.doom) showPod(v); animRobot(v, dt, null); }
     hideSubmerged(v);
+    stepCarLamps(v);
     return;
   }
   const t = vtype(v);
   if (t === 'ship' || t === 'sub') { stepBoat(v, dt); hideSubmerged(v); }
   else if (t === 'plane') stepPlane(v, dt);
   else if (t === 'robot') { const v0 = v.vF; stepCar(v, dt); animRobot(v, dt, (v.vF - v0) / Math.max(dt, 1e-3)); }
-  else stepCar(v, dt);
+  else { stepCar(v, dt); stepCarLamps(v); }
 }
 function driveInput(mine) {
   const k = { thr: 0, turn: 0, up: 0 };
@@ -7159,6 +7341,7 @@ function syncPeers(peers) {
     o.t.bl = o.t.bb != null && Array.isArray(pr.bl) ? [num(pr.bl[0], -2, 2), num(pr.bl[1], -6, 6), pr.bl[2] === 1 ? 1 : 0] : null;
     o.t.pv = o.t.m === 'ride' && typeof pr.pv === 'string' && /^[A-Za-z0-9_-]{1,40}$/.test(pr.pv) ? pr.pv : null;
     o.t.ps = Number.isInteger(pr.ps) && pr.ps >= 0 && pr.ps < 16 ? pr.ps : 0;
+    o.t.cl = Number.isInteger(pr.cl) ? pr.cl & 15 : 0;   // 車のライト
     o.t.lt = pr.lt === 1; o.t.py = num(pr.py, -7, 7); o.t.ns = pr.ns === 1; o.t.sp = num(pr.sp, 0, 99, 0);
     o.t.gy = Array.isArray(pr.gy) ? [num(pr.gy[0], -2, 2), num(pr.gy[1], -2, 2)] : null;
     o.tc = Array.isArray(pr.c) ? { x: num(pr.c[0], X0, X1), y: num(pr.c[1], Y_BOTTOM, Y_TOP), z: num(pr.c[2], Z0, Z1), h: num(pr.c[3], -100, 100), pitch: num(pr.c[4], -1, 1), roll: num(pr.c[5], -1, 1) } : null;
@@ -7178,7 +7361,7 @@ function syncPeers(peers) {
   }
   // みんなの車：だれかが運転中なら、その人の位置に合わせる
   const driven = new Map();
-  for (const [peer, o] of net.others) if (o.t && o.t.v && o.t.vc) driven.set(o.t.v, Object.assign({ peer, lt: o.t.lt, py: o.t.py, gy: o.t.gy }, o.t.vc));
+  for (const [peer, o] of net.others) if (o.t && o.t.v && o.t.vc) driven.set(o.t.v, Object.assign({ peer, lt: o.t.lt, py: o.t.py, gy: o.t.gy, cl: o.t.cl }, o.t.vc));
   for (const v of vehicles) {
     if (!v.shared) continue;
     const d = driven.get(v.id);
@@ -7204,6 +7387,7 @@ function sendPresence() {
     ns: ride && isBoat(ride) && (vtype(ride) === 'sub' || ride.item.def.vehicle.aegis ? subNoisy(ride) : Math.abs(ride.vF) > 0.3) ? 1 : 0,   // スクリューの音
     sp: ride && isBoat(ride) ? Math.round(Math.abs(ride.vF) / KT) : 0,   // 速さ（ノット）。5 ノット以下は 300m まで近づかないと聞こえない
     gy: ride && ride.item.guns ? [r((ride.item.guns.main[0] || { pivot: { rotation: { y: 0 } } }).pivot.rotation.y), r((ride.item.guns.ciws[0] || { pivot: { rotation: { y: 0 } } }).pivot.rotation.y)] : null,   // イージス艦の砲塔の向き   // 潜水艦の音（動いている・装填中・撃った直後）
+    cl: ride && ride.shared && ride.item.lamps ? (ride.lampBits & 15) : 0,   // 車のライト（1 ライト・2 ブレーキ・4 左・8 右）
     c: myCar ? pose(myCar) : null,
     v: ride && ride.shared ? ride.id : null,       // みんなの車を運転中なら、その車の番号と位置
     vc: ride && ride.shared ? pose(ride) : null,
@@ -8994,7 +9178,7 @@ const menuEl = el('menu'), menuBtn = el('menuBtn');
 function setMenu(open) {
   menuEl.hidden = !open; menuBtn.setAttribute('aria-expanded', String(open));
   if (open) {
-    renderMyList(); renderVehMenu();
+    renderMyList(); renderVehMenu(); renderLampMenu();
     el('autoBtn').hidden = !canAuto(); el('autoBtn').textContent = AUTO.on && !AUTO.semi ? '🚗 自動運転をやめる' : '🚗 自動運転（地図で行き先をえらぶ）';
     el('semiBtn').hidden = !canAuto(); el('semiBtn').textContent = SEMI.on ? '🚙 半自動運転をやめる' : '🚙 半自動運転（行き先なしで道なりに）';
     // コンピュータ対戦は潜水艦を操縦しているときだけ（対戦中は「やめる」も）
@@ -9016,6 +9200,23 @@ function renderVehMenu() {
   el('mScope').textContent = periscope ? '潜望鏡をやめる' : '潜望鏡をのぞく';
   el('mLight').textContent = ride.item.light && ride.item.light.on ? 'ライトを消す' : 'ライトをつける';
 }
+// 車のライト（ヘッドライト・ウインカーなどの部品がある車を運転しているとき）
+function renderLampMenu() {
+  const show = driving && hasLamps(ride);
+  el('lampMenu').hidden = !show;
+  if (!show) return;
+  const L = ride.item.lamps;
+  el('mLamp').textContent = `💡 ライト${{ auto: '自動', on: 'オン', off: 'オフ' }[CARL.mode]}`;
+  el('mLamp').hidden = !(L.has.head || L.has.tail);
+  const turn = L.has.turnL || L.has.turnR;
+  el('mTurnL').hidden = el('mTurnR').hidden = el('mHazard').hidden = !turn;
+  el('mTurnL').setAttribute('aria-pressed', String(CARL.turn === 1)); el('mTurnR').setAttribute('aria-pressed', String(CARL.turn === -1));
+  el('mHazard').setAttribute('aria-pressed', String(CARL.hazard));
+}
+el('mLamp').addEventListener('click', () => cycleLampMode());
+el('mTurnL').addEventListener('click', () => { setTurnSignal(1); setMenu(false); });
+el('mTurnR').addEventListener('click', () => { setTurnSignal(-1); setMenu(false); });
+el('mHazard').addEventListener('click', () => { setTurnSignal(2); setMenu(false); });
 for (const b of document.querySelectorAll('#vehMenu [data-proxy]')) b.addEventListener('click', () => { el(b.dataset.proxy).click(); setMenu(false); });
 menuBtn.addEventListener('click', (e) => { e.stopPropagation(); setMenu(menuEl.hidden); });
 document.addEventListener('pointerdown', (e) => { if (!menuEl.hidden && !menuEl.contains(e.target) && !menuBtn.contains(e.target)) setMenu(false); });
@@ -11072,7 +11273,7 @@ function buildAutoPath(pieces) {
   pieces.forEach((p, k) => {
     const n = Math.max(1, Math.ceil(Math.abs(p.s1 - p.s0) / RD_STEP)), wide = p.e.w > 10.5, tEnd = turnOf(k), tPrev = k ? turnOf(k - 1) : 0;
     const sEnd = p.dir > 0 ? p.e.L : 0, sStart = p.dir > 0 ? 0 : p.e.L;
-    if (k) joins.push({ at: cx.length, node: p.dir > 0 ? p.e.a : p.e.b, prev: pieces[k - 1], cur: p });
+    if (k) joins.push({ at: cx.length, node: p.dir > 0 ? p.e.a : p.e.b, prev: pieces[k - 1], cur: p, turn: tPrev });
     pAt.push(Math.max(0, cx.length - (k ? 1 : 0)));
     for (let m = k ? 1 : 0; m <= n; m++) {
       const sv = p.s0 + (p.s1 - p.s0) * m / n;
@@ -11132,7 +11333,18 @@ function buildAutoPath(pieces) {
     const q = n.ends.find((q) => q.e === j.prev.e && q.end === (j.prev.dir > 0 ? 1 : 0));
     junc.push({ node: n, grp: q ? q.grp : 0, stopS: S[j.at] - (n.jr + 1.6) });
   }
-  return { N, X, Z, Y, S, L, capV, capC, junc, hw: Uint8Array.from(grp), alt: ALT, pieces, pAt, joins };
+  // ウインカーを出す所：交差点で曲がる所と、高速道路の出口（本線→ランプ）・合流（ランプ→本線）。左 +1・右 -1
+  const turns = [];
+  const side = (i0, i1, q) => { const fx = X[i1] - X[i0], fz = Z[i1] - Z[i0], l = Math.hypot(fx, fz) || 1; return Math.sign(((X[q] - X[i0]) * fz - (Z[q] - Z[i0]) * fx) / l); };
+  const at = (s) => { let i = 0; while (i < N - 1 && S[i] < s) i++; return i; };
+  for (const j of joins) {
+    if (j.prev.e === j.cur.e) continue;
+    const i = Math.min(N - 1, j.at), sj = S[i];
+    if (j.prev.hw === 'main' && j.cur.hw && j.cur.hw !== 'main') { const d = side(at(sj - 60), i, at(sj + 80)); if (d) turns.push({ s: sj, dir: d, a: 250, b: 40 }); }
+    else if (j.cur.hw === 'main' && j.prev.hw && j.prev.hw !== 'main') { const d = -side(i, at(sj + 60), at(sj - 60)); if (d) turns.push({ s: sj + 60, dir: d, a: 120, b: 0 }); }
+    else if (j.turn) turns.push({ s: sj, dir: j.turn, a: 45, b: 12 });
+  }
+  return { N, X, Z, Y, S, L, capV, capC, junc, hw: Uint8Array.from(grp), alt: ALT, pieces, pAt, joins, turns };
 }
 function autoPoint(P, s, out) {
   s = Math.min(P.L, Math.max(0, s));
@@ -11899,7 +12111,7 @@ window.__world = {
   teleport(x, z, y) { player.pos.set(x, y ?? heightAt(x, z), z); player.vy = 0; },
   torps, tube, ord, booms, get clockT() { return clock.elapsedTime; },
   get BIZ() { return BIZ; }, BIZ_NET, bizNetLoad, bizNetEvent, bizPush, bizAct, bizDay, bizSettle, bizHtml, drawBizOnMap, TOWN, COMPANIES, ECON, makePaper, openTown, closeTown, townNearAction, get myStocks() { return myStocks; }, weatherAt, wxDay, calOf, gameDayN, setDayOffset(d) { dayOffset = d; }, setGameTime(n, hr) { dayOffset = 0; const real = (Date.now() % DAY_MS) / DAY_MS * 24; hourOffset = ((hr - real) % 24 + 24) % 24; dayOffset = n - Math.floor(gameDayF()); }, townMeshes, townBlds, townBoats, fieldStage,
-  AUTO, SEMI, semiGo, semiHalt, setSemi, semiTurnReq, semiTurnCand, semiNext, setApMin, startAuto, stopAuto, planAuto, stepHwTraffic, autoSpeed, autoLaneReq, autoTurnReq, get myCar() { return myCar; }, stepTraffic, stepVehicle, camera, signalState,
+  AUTO, SEMI, semiGo, semiHalt, setSemi, semiTurnReq, semiTurnCand, semiNext, setApMin, startAuto, stopAuto, planAuto, stepHwTraffic, autoSpeed, autoLaneReq, autoTurnReq, get myCar() { return myCar; }, makeVehicle, CARL, setTurnSignal, cycleLampMode, autoBlinkDir, stepTraffic, stepVehicle, camera, signalState,
 };
 
 camera.position.set(player.pos.x, player.pos.y + 6, player.pos.z + 10);
