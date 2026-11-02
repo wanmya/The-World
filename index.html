@@ -7367,6 +7367,22 @@ async function startNet() {
       return res.arrayBuffer();
     },
   };
+  // みんなの会社（supabase-update-7.sql の表。なければ この端末だけ）
+  net.biz = {
+    async claim(row) { const r = await sb.from('biz_lots').insert(row); if (r.error) throw r.error; },
+    async set(id, f) { const r = await sb.from('biz_lots').update(Object.assign({ updated_at: new Date().toISOString() }, f)).eq('lot_id', id).eq('by', net.myId); if (r.error) throw r.error; },
+    async free(id) { const r = await sb.from('biz_lots').delete().eq('lot_id', id).eq('by', net.myId); if (r.error) throw r.error; },
+    async co(row) { const r = await sb.from('businesses').upsert(Object.assign({ updated_at: new Date().toISOString() }, row)); if (r.error) throw r.error; },
+    async coGone() { const r = await sb.from('businesses').delete().eq('by', net.myId); if (r.error) throw r.error; },
+  };
+  async function loadBiz() {
+    const [a, c] = await Promise.all([sb.from('biz_lots').select('lot_id,by,biz,own,bld,done,gltf').limit(700), sb.from('businesses').select('by,name,form,day,rev,prof,lots').limit(300)]);
+    if (a.error || c.error || !Array.isArray(a.data) || !Array.isArray(c.data)) { BIZ_NET.err = 'no table'; console.warn('biz tables', a.error || c.error); return; }
+    bizNetLoad(a.data, c.data);
+  }
+  sb.channel('world-biz').on('postgres_changes', { event: '*', schema: 'public', table: 'biz_lots' }, (m) => bizNetEvent('lot', m))
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'businesses' }, (m) => bizNetEvent('co', m))
+    .subscribe((status) => { if (status === 'SUBSCRIBED') loadBiz(); });
   // 今ある物を全部読む。つなぎ直したときは、いないあいだに消えた物も消す
   async function loadAll() {
     const r = await sb.from('props').select('id,name,cat,x,z,rot,bytes,by').order('created_at').limit(300);
@@ -10004,6 +10020,7 @@ function wxHtml() {
 }
 /* ---- お店・PA の売り場 ---- */
 function shopHtml(a) {
+  if (a.kind === 'bizo') return bizOtherHtml(a.row);
   const n = Math.max(0, Math.floor(gameDayF())); ECON.upTo(n);
   const y = ECON.dayRec(n - 1) || ECON.dayRec(n), x = ECON.ctx(n, ECON.S), c = a.co;
   const farmer = (k) => { const ids = []; for (let p = 0; p < TOWN.N && ids.length < 6; p += 37) if (TOWN.job[p] === k) ids.push(p); return ids; };
@@ -10193,7 +10210,7 @@ function bizNew(form, name) {
 // 会社の値うち（純資産）：現金 ＋ 自分の土地 ＋ 建物（古くなると下がる）＋ トラック ＋ 在庫 − 借金
 function bizBook(b, x) {
   const n = gameDayF(); let land = 0, bld = 0;
-  for (const m of b.lots) { if (m.own) land += bizLandPrice(bizLot(m.id)); if (m.bld) bld += BIZ_BLD[m.bld.t].cost * Math.max(0.3, 1 - (n - m.bld.at) / 480); }
+  for (const m of b.lots) { if (m.own) land += bizLandPrice(bizLot(m.id)); if (m.bld && !m.bld.gltf) bld += BIZ_BLD[m.bld.t].cost * Math.max(0.3, 1 - (n - m.bld.at) / 480); }
   let inv = 0; if (x) for (const g in b.inv) inv += b.inv[g] * bizMkt(g, x);
   const debt = b.loans.reduce((s, l) => s + l.amt, 0), trucks = b.fleet.reduce((s, f) => s + (f.src === 'buy' ? BIZ_TRUCKS[f.t].price * 0.6 : 0), 0);
   return { land, bld, inv, debt, trucks, eq: b.cash + land + bld + inv + trucks - debt };
@@ -10244,8 +10261,8 @@ function bizDay(b, n, x) {
     const priceF = Math.pow(1.3 / b.markup, 2.5), comp = 1 / (1 + 0.35 * bizRivals(L, 'shop'));
     const draw = (crowd(L) + spillIn(m)) * wx * (x.hol ? 1.3 : 1);
     const want = ((bizNearPop(L) * 0.1 + (L.road >= 14 ? 120 : 45)) * comp * wx * (x.hol ? 1.15 : 1) * att * (B.big ? 2.4 : 1) + draw) * mood * priceF;
-    const cust = Math.round(Math.min(want, B.cap * sf)); R.cust = (R.cust || 0) + cust; R.draw = (R.draw || 0) + Math.round(Math.min(draw, cust)); spillOut(L, cust);
-    if (want > B.cap * sf * 1.05) R.notes.push(`${B.name}：お客さんが入りきらない（人手か、大きい店を）`);
+    const cap = B.cap * (m.bld.scale || 1) * sf, cust = Math.round(Math.min(want, cap)); R.cust = (R.cust || 0) + cust; R.draw = (R.draw || 0) + Math.round(Math.min(draw, cust)); spillOut(L, cust);
+    if (want > cap * 1.05) R.notes.push(`${B.name}：お客さんが入りきらない（人手か、大きい店を）`);
     aR('お店（日用品）', cust * 1000); aC('日用品の仕入れ', cust * 750);
     for (const g in BIZ_G) { const kg = Math.min(inv[g], cust * BIZ_G[g].basket); inv[g] -= kg; aR(`お店（${BIZ_G[g].name}）`, kg * bizMkt(g, x) * b.markup); aK('お店で売った', kg); }
   }
@@ -10255,7 +10272,7 @@ function bizDay(b, n, x) {
     const priceF = Math.pow(950 / b.meal, 2), comp = Math.pow(0.75, bizRivals(L, 'diner'));
     const draw = (crowd(L) + spillIn(m)) * 0.6 * wx * (x.hol ? 1.3 : 1);
     const want = ((bizNearPop(L) * 0.035 + (L.road >= 14 ? 80 : 30)) * comp * wx * (x.hol ? 1.25 : 1) + draw) * mood * priceF;
-    const meals = Math.round(Math.min(want, B.cap * sf)); R.meals = (R.meals || 0) + meals; R.draw = (R.draw || 0) + Math.round(Math.min(draw, meals)); spillOut(L, meals);
+    const meals = Math.round(Math.min(want, B.cap * (m.bld.scale || 1) * sf)); R.meals = (R.meals || 0) + meals; R.draw = (R.draw || 0) + Math.round(Math.min(draw, meals)); spillOut(L, meals);
     aR('飲食店', meals * b.meal); aC('材料（米・調味料など）', meals * 260);
     for (const [g, per] of [['veg', 0.15], ['fish', 0.06]]) { const kg = meals * per, use = Math.min(inv[g], kg); inv[g] -= use; if (kg > use) aC('材料をマートで買い足し', (kg - use) * bizMkt(g, x) * 1.25); }
   }
@@ -10270,7 +10287,7 @@ function bizDay(b, n, x) {
     if (!o.q.free) moves.push([kg, baseL ? bizDist(baseL, coAt(o.q.code)) : 0]);
   }
   // 売れ残り：次の日まで持つのは一部（倉庫があれば多く、置ける量もふえる）
-  let room = 300 + wares.length * BIZ_BLD.ware.cap * sf, lost = 0;
+  let room = 300 + wares.reduce((q, m) => q + BIZ_BLD.ware.cap * (m.bld.scale || 1), 0) * sf, lost = 0;
   for (const g in BIZ_G) {
     const keep = Math.min(inv[g] * (wares.length ? BIZ_G[g].carryW : BIZ_G[g].carry), room); room -= keep;
     lost += (inv[g] - keep) * bizMkt(g, x); inv[g] = Math.round(keep);
@@ -10288,7 +10305,7 @@ function bizDay(b, n, x) {
   // アパート
   for (const m of apts) {
     const L = bizLot(m.id), zf = { urban: 1.4, suburb: 1, village: 0.8, rural: 0.6 }[L.zone] || 1;
-    const occ = Math.min(1, 0.55 + 0.3 * x.mood + (L.zone === 'urban' ? 0.1 : 0) + (bizNearPop(L) > 2500 ? 0.05 : 0)), rooms = Math.round(8 * occ);
+    const occ = Math.min(1, 0.55 + 0.3 * x.mood + (L.zone === 'urban' ? 0.1 : 0) + (bizNearPop(L) > 2500 ? 0.05 : 0)), rooms = Math.round(8 * (m.bld.scale || 1) * occ);
     aR('家賃（アパート）', rooms * 5500 * zf * x.lpi); aC('管理費', rooms * 5500 * zf * x.lpi * 0.05); R.rooms = (R.rooms || 0) + rooms;
   }
   // 土地と建物
@@ -10335,14 +10352,14 @@ function bizSettle() {
     if (res === 'bankrupt') { bizClose(true); return; }
     if (res) { b.events.push({ n, t: res }); showMsg('🏢 ' + res); }
   }
-  if (BIZ && k) { saveBiz(); if (k === 1) { const R = b.ledger[b.ledger.length - 1]; showMsg(`🏢 ${b.name}の決算：売り上げ ${man(R.revT)}・利益 ${man(R.prof)}`); } else showMsg(`🏢 ${b.name}：${k}日ぶんの決算をしました（☰ → 事業）`); }
+  if (BIZ && k) { saveBiz(); bizPush(true); if (k === 1) { const R = b.ledger[b.ledger.length - 1]; showMsg(`🏢 ${b.name}の決算：売り上げ ${man(R.revT)}・利益 ${man(R.prof)}`); } else showMsg(`🏢 ${b.name}：${k}日ぶんの決算をしました（☰ → 事業）`); }
 }
 // 廃業・倒産：土地を売り、建物をこわし、借金を返す。残りを手持ちへ（会社は持ち株の割合）
 function bizClose(bankrupt) {
   const b = BIZ; if (!b) return;
   const k = bizBook(b), f = bankrupt ? 0.7 : 0.9;
   let cash = b.cash + k.land * f + k.trucks * (bankrupt ? 0.67 : 1) - b.fleet.reduce((s, q) => s + (q.src === 'lease' ? BIZ_TRUCKS[q.t].lease * 4 : 0), 0);
-  for (const m of b.lots) if (m.bld) cash += m.own && BIZ_BLD[m.bld.t].kind !== 'farm' ? BIZ_BLD[m.bld.t].cost * Math.max(0.3, 1 - (gameDayF() - m.bld.at) / 480) * 0.5 : -BIZ_BLD[m.bld.t].cost * 0.05;
+  for (const m of b.lots) if (m.bld && !m.bld.gltf) cash += m.own && BIZ_BLD[m.bld.t].kind !== 'farm' ? BIZ_BLD[m.bld.t].cost * Math.max(0.3, 1 - (gameDayF() - m.bld.at) / 480) * 0.5 : -BIZ_BLD[m.bld.t].cost * 0.05;
   for (const g in b.inv) cash += b.inv[g] * 50;
   cash -= k.debt;
   let msg;
@@ -10350,7 +10367,7 @@ function bizClose(bankrupt) {
   else if (b.form === 'sole') { const pay = Math.min(wallet.p, -cash); addPoints(-pay); msg = `${b.name}${bankrupt ? 'は倒産しました' : 'を廃業しました'}。個人事業主なので、売っても のこった借金 ${yen(-cash)}円のうち ${yen(pay)}P を手持ちから返しました`; }
   else msg = `${b.name}${bankrupt ? 'は倒産しました' : 'を廃業しました'}。のこった借金 ${yen(-cash)}円は会社の分なので、手持ちのPは守られました`;
   for (const m of b.lots) bizUnbuild(m);
-  BIZ = null; saveBiz(); TP.bizMsg = msg; showMsg('🏢 ' + msg);
+  BIZ = null; saveBiz(); bizPush(true); TP.bizMsg = msg; showMsg('🏢 ' + msg);
   if (TP.open) renderTown();
 }
 /* ---- 手続き ---- */
@@ -10362,7 +10379,7 @@ function bizAct(a, v) {
     const F = BIZ_FORMS[TP.bizForm || 'sole'], nm = (el('bizName') && el('bizName').value.trim().slice(0, 16)) || '';
     if (!nm) return say('お店・会社の名前を入れてください');
     if (wallet.p < F.fee) return say(`登録に ${yen(F.fee)}P いります（手持ち ${fmtP(wallet.p)}）`);
-    addPoints(-F.fee); BIZ = bizNew(TP.bizForm || 'sole', nm); BIZ.events.push({ n, t: `${F.name}「${nm}」を登録` }); saveBiz();
+    addPoints(-F.fee); BIZ = bizNew(TP.bizForm || 'sole', nm); BIZ.events.push({ n, t: `${F.name}「${nm}」を登録` }); saveBiz(); bizPush(true);
     say(`${F.name}「${nm}」を登録しました。まずは銀行でお金を借りて、土地をさがしましょう`); TP.bizOpen = new Set(['money', 'loan']);
   }
   if (!b) return;
@@ -10398,10 +10415,15 @@ function bizAct(a, v) {
       if (B.farmOnly && !L.farm) return say('畑は いなかの広い土地だけです'); if (B.big && L.area < 600) return say('大きな店は 600㎡ 以上の土地がいります');
       if (!ensure(B.cost)) return; b.cash -= B.cost; m.bld = { t, at: gameDayF(), done: gameDayF() + B.days }; if (t === 'farm') b.buy[1301] = 1;   // 畑の野菜はふだんファームが引き取る
       bizBuild(m); say(`はじめ建設に「${B.name}」をたのみました（${man(B.cost)}）。${B.days < 1 ? `${Math.round(B.days * 24)}時間` : `${B.days}日`}でできます`); break; }
-    case 'demolish': { const m = b.lots.find((q) => q.id === +v); if (!m || !m.bld) return; const B = BIZ_BLD[m.bld.t], c = Math.round(B.cost * 0.05); if (!ensure(c)) return; b.cash -= c; bizUnbuild(m); m.bld = null; say(`${B.name}をこわしました（${man(c)}）`); break; }
+    case 'buildG': { const [id, t, key] = v.split(':'), m = b.lots.find((q) => q.id === +id), B = BIZ_BLD[t], L = bizLot(+id), pr = bizGltfOn(L).find((q) => bizGltfKey(q) === key);
+      if (!m || m.bld || !B || B.kind === 'farm' || !pr) return say('その glTF の建物が土地の上に見つかりません');
+      const scale = Math.round(Math.min(2.5, Math.max(0.4, bizGltfScale(pr)[t])) * 100) / 100, cost = Math.round(B.cost * 0.15 * scale / 1e4) * 1e4; if (!ensure(cost)) return; b.cash -= cost;   // 設備費は広さに合わせて
+      m.bld = { t, at: gameDayF(), done: gameDayF() + 0.05, gltf: key, scale };
+      bizBuild(m); say(`「${pr.name}」を${B.name}にしました（設備費 ${man(cost)}・建設費は0円）。1時間ほどで開店します`); break; }
+    case 'demolish': { const m = b.lots.find((q) => q.id === +v); if (!m || !m.bld) return; const B = BIZ_BLD[m.bld.t], c = m.bld.gltf ? 0 : Math.round(B.cost * 0.05); if (!ensure(c)) return; b.cash -= c; bizUnbuild(m); m.bld = null; say(`${B.name}をこわしました（${man(c)}）`); break; }
     case 'sellLot': { const i = b.lots.findIndex((q) => q.id === +v); if (i < 0) return; const m = b.lots[i], L = bizLot(m.id);
       let got = m.own ? Math.round(bizLandPrice(L) * 0.95) : m.dep || 0;
-      if (m.bld) got += m.own && BIZ_BLD[m.bld.t].kind !== 'farm' ? Math.round(BIZ_BLD[m.bld.t].cost * Math.max(0.3, 1 - (gameDayF() - m.bld.at) / 480) * 0.5) : -Math.round(BIZ_BLD[m.bld.t].cost * 0.05);
+      if (m.bld && !m.bld.gltf) got += m.own && BIZ_BLD[m.bld.t].kind !== 'farm' ? Math.round(BIZ_BLD[m.bld.t].cost * Math.max(0.3, 1 - (gameDayF() - m.bld.at) / 480) * 0.5) : -Math.round(BIZ_BLD[m.bld.t].cost * 0.05);
       bizUnbuild(m); b.lots.splice(i, 1); b.cash += got; say(m.own ? `土地を みなと不動産に売りました（${man(got)}）` : `土地をかえしました（${got >= 0 ? `敷金など ${man(got)} がもどりました` : `こわす費用 ${man(-got)}`}）`); break; }
     case 'sup': { const [code, d] = v.split(':').map(Number); const i = BIZ_SUP_KG.indexOf(b.sup[code] || 0), j = Math.max(0, Math.min(BIZ_SUP_KG.length - 1, i + d)); b.sup[code] = BIZ_SUP_KG[j]; if (!b.sup[code]) delete b.sup[code]; break; }
     case 'buy': { const code = +v; if (b.buy[code]) delete b.buy[code]; else b.buy[code] = 1; say(b.buy[code] ? `${companyBy(code).name}と卸の契約をしました` : `${companyBy(code).name}との契約をやめました`); break; }
@@ -10418,18 +10440,33 @@ function bizAct(a, v) {
     case 'upgrade': { const F = BIZ_FORMS[v], fee = v === 'kk' && b.form === 'llc' ? 140000 : F.fee; if (wallet.p < fee) return say(`${yen(fee)}P いります`); addPoints(-fee); b.form = v; if (v === 'kk' && !b.shares) { b.shares = 1000; b.own = 1000; } b.capital = Math.max(b.capital, Math.max(0, b.cash)); b.events.push({ n, t: `${F.name}になりました` }); say(`${F.name}になりました（法人成り）`); break; }
     case 'close': if (TP.bizSure) { TP.bizSure = false; bizClose(false); return; } TP.bizSure = true; say('もう一度おすと、ほんとうに廃業します（土地は 9 割の値段で売り、借金を返します）'); return;
   }
-  TP.bizSure = false; saveBiz();
+  TP.bizSure = false; saveBiz(); bizPush();
 }
-const bizLotTaken = (id) => !!(BIZ && BIZ.lots.some((m) => m.id === id));
+// 自分の土地の上に置いた glTF の建物（☰ →「glTF を置く」→ 建物）
+const bizGltfKey = (pr) => String(pr.id || pr.name).replace(/:/g, '');
+const bizGltfArea = (pr) => { const s = pr.box.getSize(new THREE.Vector3()); return s.x * s.z; };
+const bizGltfScale = (pr) => { const a = bizGltfArea(pr), o = {}; for (const t in BIZ_BLD) o[t] = a / (BIZ_BLD[t].w * BIZ_BLD[t].d || 1); return o; };
+function bizGltfOn(L) {
+  const c = Math.cos(L.rot), s = Math.sin(L.rot), used = new Set(BIZ ? BIZ.lots.filter((m) => m.bld && m.bld.gltf).map((m) => m.bld.gltf) : []);
+  return props.filter((pr) => { if (!pr.mine || pr.cat !== 'building' || used.has(bizGltfKey(pr))) return false; const ce = pr.box.getCenter(new THREE.Vector3()), dx = ce.x - L.x, dz = ce.z - L.z, u = dx * c - dz * s, v = dx * s + dz * c; return Math.abs(u) < L.w / 2 + 4 && Math.abs(v) < L.d / 2 + 4; });
+}
+const bizLotTaken = (id) => !!((BIZ && BIZ.lots.some((m) => m.id === id)) || bizOtherLot(id));
 /* ---- 3D：自分の建物 ---- */
 const bizG = new Map();   // lot id → { g, ob }
 let bizAptMat = null;
-function bizBuild(m) {
+function bizBuild(m, nm) {
   bizUnbuild(m); if (!m.bld) return;
   const L = bizLot(m.id), B = BIZ_BLD[m.bld.t], M = townBlds.M, g = new THREE.Group(), done = gameDayF() >= m.bld.done;
   const add = (geo, mat, x, y, z) => { const o = new THREE.Mesh(geo, mat); o.position.set(x, y, z); o.castShadow = o.receiveShadow = true; g.add(o); return o; };
   const boxM = (mat, w, h, d, x, y, z) => add(new THREE.BoxGeometry(w, h, d).translate(0, h / 2, 0), mat, x, y, z);
-  const name = BIZ ? BIZ.name : '';
+  const name = nm != null ? nm : BIZ ? BIZ.name : '';
+  if (m.bld.gltf) {   // 自分の glTF の社屋：形はその glTF。道ばたに看板を立てるだけ
+    const tex = townSignTex(name, B.name.replace(/（.*）/, ''), '#2e6b4a', '#ffffff'), z = L.d / 2 - 1.2;
+    boxM(M.metal, 0.3, 5, 0.3, -L.w / 2 + 2, 0, z);
+    const sgn = new THREE.Mesh(new THREE.PlaneGeometry(4, 1), new THREE.MeshBasicMaterial({ map: tex, side: THREE.DoubleSide })); sgn.position.set(-L.w / 2 + 2, 4.6, z + 0.2); g.add(sgn);
+    g.position.set(L.x, L.y, L.z); g.rotation.y = L.rot; scene.add(g);
+    bizG.set(m.id, { g, ob: null, pad: null, done, m, name, mine: nm == null }); return;
+  }
   if (B.kind === 'farm') {
     boxM(new THREE.MeshLambertMaterial({ color: 0x7a5a3a }), L.w - 2, 0.12, L.d - 2, 0, -0.04, 0);
     if (done) { const st = new THREE.MeshLambertMaterial({ color: 0x5f9a3a }); for (let k = 0; k < Math.floor((L.w - 4) / 3); k++) boxM(st, 1.2, 0.5, L.d - 5, -L.w / 2 + 3 + k * 3, 0, 0); }
@@ -10468,24 +10505,107 @@ function bizBuild(m) {
     ob = { kind: 'bizbld', x: L.x + sn * m.z, z: L.z + c * m.z, rot: L.rot, w: m.w, d: m.d, h: m.h, y: L.y, g }; ob.r = Math.hypot(ob.w, ob.d) / 2;
     const k = Math.floor(ob.x / TOWN.OCC) * 65536 + Math.floor(ob.z / TOWN.OCC); let a = TOWN.occ.get(k); if (!a) TOWN.occ.set(k, a = []); a.push(ob);
   }
-  bizG.set(m.id, { g, ob, pad, done });
+  bizG.set(m.id, { g, ob, pad, done, m, name, mine: nm == null });
 }
 function bizUnbuild(m) {
   const e = bizG.get(m.id); if (!e) return;
   scene.remove(e.g); e.g.traverse((o) => { if (o.geometry) o.geometry.dispose(); });
-  const i = PADS.indexOf(e.pad); if (i >= 0) { PADS.splice(i, 1); refreshPadArea(e.pad); }
+  const i = e.pad ? PADS.indexOf(e.pad) : -1; if (i >= 0) { PADS.splice(i, 1); refreshPadArea(e.pad); }
   if (e.ob) for (const a of TOWN.occ.values()) { const j = a.indexOf(e.ob); if (j >= 0) a.splice(j, 1); }
   bizG.delete(m.id);
 }
 if (BIZ) for (const m of BIZ.lots) if (m.bld) bizBuild(m);
+
+/* ---- みんなの会社（2026-11-02）：Supabase の businesses（会社）と biz_lots（使っている土地）。supabase-update-7.sql
+   ここに書くのは名前・建物の種類・できあがる時刻・きのうの売り上げだけ（データだけ）。お金の計算は それぞれの端末でする ---- */
+const BIZ_NET = { on: false, err: '', lots: new Map(), cos: new Map(), pushing: false, again: false, coSent: '' };
+const bizOtherLot = (id) => { const r = BIZ_NET.lots.get(id); return r && r.by !== net.myId ? r : null; };
+const bizCleanName = (t) => String(t || '').replace(/[\u0000-\u001f<>]/g, '').slice(0, 16) || '会社';
+// ほかの人の土地を 3D に（自分の分は BIZ から描く）
+function bizNetShow(row) {
+  const L = bizLot(row.lot_id); if (!L || row.by === net.myId) return;
+  const old = bizG.get(row.lot_id); if (old && old.mine) return;
+  const m = { id: row.lot_id, bld: BIZ_BLD[row.bld] ? { t: row.bld, at: 0, done: Number(row.done) || 0, gltf: !!row.gltf } : null };
+  if (old) bizUnbuild(old.m);
+  if (m.bld) bizBuild(m, bizCleanName(row.biz));
+}
+function bizNetHide(id) { const e = bizG.get(id); if (e && !e.mine) bizUnbuild(e.m); }
+function bizNetLoad(lots, cos) {
+  for (const id of [...BIZ_NET.lots.keys()]) if (!lots.some((r) => r.lot_id === id)) { BIZ_NET.lots.delete(id); bizNetHide(id); }
+  for (const r of lots) { BIZ_NET.lots.set(r.lot_id, r); bizNetShow(r); }
+  BIZ_NET.cos = new Map(cos.map((c) => [c.by, c]));
+  BIZ_NET.on = true; BIZ_NET.err = '';
+  bizPush(true);
+  if (TP.open && TP.tab === 'biz') renderTown();
+}
+function bizNetEvent(kind, m) {
+  if (kind === 'lot') {
+    if (m.eventType === 'DELETE') { const id = m.old && m.old.lot_id; if (id != null) { BIZ_NET.lots.delete(id); bizNetHide(id); } }
+    else if (m.new && Number.isInteger(m.new.lot_id)) { BIZ_NET.lots.set(m.new.lot_id, m.new); bizNetShow(m.new); }
+  } else {
+    if (m.eventType === 'DELETE') { if (m.old && m.old.by) BIZ_NET.cos.delete(m.old.by); }
+    else if (m.new && m.new.by) BIZ_NET.cos.set(m.new.by, m.new);
+  }
+}
+// 自分の会社と土地を、みんなの表にそろえる（足りない土地は取る・ちがう所は直す・やめた土地は消す）
+async function bizPush(co) {
+  if (!BIZ_NET.on || !net.biz) return;
+  if (BIZ_NET.pushing) { BIZ_NET.again = true; return; }
+  BIZ_NET.pushing = true;
+  try {
+    const b = BIZ, mine = new Map();
+    if (b) for (const m of b.lots) mine.set(m.id, { lot_id: m.id, by: net.myId, biz: bizCleanName(b.name), own: !!m.own, bld: m.bld ? m.bld.t : null, done: m.bld ? m.bld.done : null, gltf: !!(m.bld && m.bld.gltf) });
+    for (const [id, r] of BIZ_NET.lots) if (r.by === net.myId && !mine.has(id)) { await net.biz.free(id); BIZ_NET.lots.delete(id); }
+    for (const [id, w] of mine) {
+      const r = BIZ_NET.lots.get(id);
+      if (!r) {
+        try { await net.biz.claim(w); BIZ_NET.lots.set(id, w); }
+        catch (e) { bizLostLot(id); }   // ほかの人が先に取っていた
+      } else if (r.by !== net.myId) bizLostLot(id);
+      else if (r.biz !== w.biz || r.own !== w.own || r.bld !== w.bld || r.done !== w.done || !!r.gltf !== w.gltf) { await net.biz.set(id, { biz: w.biz, own: w.own, bld: w.bld, done: w.done, gltf: w.gltf }); BIZ_NET.lots.set(id, w); }
+    }
+    if (b) {
+      const last = b.ledger[b.ledger.length - 1], row = { by: net.myId, name: bizCleanName(b.name), form: b.form, day: last ? last.n : b.start, rev: last ? last.revT : 0, prof: last ? last.prof : 0, lots: Math.min(50, b.lots.length) };
+      const key = JSON.stringify(row); if (co || key !== BIZ_NET.coSent) { await net.biz.co(row); BIZ_NET.coSent = key; BIZ_NET.cos.set(net.myId, row); }
+    } else if (BIZ_NET.cos.has(net.myId)) { await net.biz.coGone(); BIZ_NET.cos.delete(net.myId); BIZ_NET.coSent = ''; }
+  } catch (e) { console.warn('biz sync', e); }
+  BIZ_NET.pushing = false;
+  if (BIZ_NET.again) { BIZ_NET.again = false; bizPush(); }
+}
+// 先に取られていた土地：自分の分から外して、はらったお金をもどす
+function bizLostLot(id) {
+  const b = BIZ; if (!b) return; const i = b.lots.findIndex((m) => m.id === id); if (i < 0) return;
+  const m = b.lots[i]; let back = m.own ? m.price : m.dep || 0; if (m.bld && !m.bld.gltf) back += BIZ_BLD[m.bld.t].cost;
+  bizUnbuild(m); b.lots.splice(i, 1); b.cash += back; saveBiz();
+  const r = BIZ_NET.lots.get(id); if (r) bizNetShow(r);
+  showMsg(`🏢 その土地は ${r ? bizCleanName(r.biz) : 'ほかの会社'} が先に使っていました。はらったお金（${man(back)}）はもどりました`);
+}
+// みんなの会社の一覧
+function bizCosHtml() {
+  if (!BIZ_NET.on) return `<p class="small">${net.biz ? 'みんなの会社を読みこんでいます…（Supabase で supabase-update-7.sql を実行すると、ほかの人にも会社が見えます）' : 'ひとりで遊んでいるので、会社はこの端末だけに出ます'}</p>`;
+  const list = [...BIZ_NET.cos.values()].sort((a, c) => (c.prof || 0) - (a.prof || 0));
+  if (!list.length) return '<p class="small">まだ だれも会社を作っていません。</p>';
+  return `<table class="mtab"><tr><th>会社</th><th>土地</th><th>きのうの利益</th></tr>${list.map((c) => `<tr><td>${escH(bizCleanName(c.name))}${c.by === net.myId ? '（あなた）' : ''}<small>${(BIZ_FORMS[c.form] || BIZ_FORMS.sole).name}・${escH(net.names.get(c.by) || (c.by === net.myId ? myName || '' : 'だれか'))}</small></td><td class="num">${c.lots || 0}</td><td class="num ${c.prof < 0 ? 'dn' : 'up'}">${man(c.prof || 0)}</td></tr>`).join('')}</table>`;
+}
+// ほかの人の店の前で「のぞく」
+function bizOtherHtml(row) {
+  const c = BIZ_NET.cos.get(row.by), B = BIZ_BLD[row.bld], L = bizLot(row.lot_id);
+  return `<section class="card"><h3>${escH(bizCleanName(row.biz))}</h3><p>${c ? (BIZ_FORMS[c.form] || BIZ_FORMS.sole).name : '会社'}・${B ? `${B.icon} ${B.name}${row.gltf ? '（自分で作った社屋）' : ''}` : '空き地'}${B && gameDayF() < row.done ? '（工事中）' : ''}・${escH(L.dist.name)}・${L.area}㎡（${row.own ? '自分の土地' : '借りている土地'}）</p>
+    <p>社長：${escH(net.names.get(row.by) || 'だれか')}さん${c ? `・きのうの売り上げ ${man(c.rev || 0)}・利益 ${man(c.prof || 0)}・土地 ${c.lots || 0}か所` : ''}</p><p class="small">ほかのプレイヤーの会社です。近くに店を出すと、おたがいにお客さんが立ちよります。</p></section>
+    <section><h3>🌐 みんなの会社</h3>${bizCosHtml()}</section>`;
+}
 let bizT = 0;
 function stepBiz() {
-  if (!BIZ || performance.now() - bizT < 1000) return; bizT = performance.now();
-  bizSettle(); if (!BIZ) return;
+  if (performance.now() - bizT < 1000) return; bizT = performance.now();
+  if (BIZ) bizSettle();
   const f = gameDayF(), cx = camera.position.x, cz = camera.position.z;
-  for (const m of BIZ.lots) {
-    const e = bizG.get(m.id); if (!e) continue;
-    if (!e.done && m.bld && f >= m.bld.done) { bizBuild(m); showMsg(`🏗️ はじめ建設：「${BIZ_BLD[m.bld.t].name}」ができました`); if (!BIZ.events.some((q) => q.open)) BIZ.events.push({ n: Math.floor(f), t: `${BIZ_BLD[m.bld.t].name}が開店`, open: true }); saveBiz(); }
+  for (const e of [...bizG.values()]) {
+    const m = e.m;
+    if (!e.done && m.bld && f >= m.bld.done) {
+      bizBuild(m, e.mine ? null : e.name);
+      if (e.mine && BIZ) { showMsg(`🏗️ はじめ建設：「${BIZ_BLD[m.bld.t].name}」ができました`); if (!BIZ.events.some((q) => q.open)) BIZ.events.push({ n: Math.floor(f), t: `${BIZ_BLD[m.bld.t].name}が開店`, open: true }); saveBiz(); }
+      continue;
+    }
     const L = bizLot(m.id); e.g.visible = Math.abs(L.x - cx) < 1200 && Math.abs(L.z - cz) < 1200;
   }
 }
@@ -10498,7 +10618,7 @@ function bizHtml() {
     return `${msg}<section class="card"><h3>🏢 事業をはじめる</h3><p>店や会社をつくって、街の会社と取り引きしてもうけましょう。たとえば小売なら：<b>みなと銀行</b>でお金を借りる → <b>みなと不動産</b>で土地を買う／借りる → <b>はじめ建設</b>で店を建てる → <b>はじめファーム</b>などと仕入れの契約 → <b>はじめ運輸</b>で運んで売る。</p>
       <p>店を持たずに<b>みなとマートやPAに卸す</b>、<b>畑</b>をやって売る、<b>トラック</b>で運送業、<b>アパート</b>で家賃、などのやり方もあります。毎日0時に決算します（ゲームの1日＝実際の1時間）。</p></section>
       <section><h3>事業の形をえらぶ</h3>${Object.entries(BIZ_FORMS).map(([k, F]) => `<button type="button" class="bzopt${f === k ? ' on' : ''}" data-b="form" data-v="${k}"><b>${F.name}</b>　<span>${F.fee ? yen(F.fee) + 'P' : '0P'}・税 ${F.tax * 100}%・借りられる額 ${man(F.base)}〜・${F.staffMax > 100 ? '人数の上限なし' : `${F.staffMax}人まで`}</span><small>${F.note}</small></button>`).join('')}</section>
-      <section><h3>名前</h3><input id="bizName" maxlength="16" placeholder="${f === 'sole' ? 'わんみゃ商店' : f === 'llc' ? 'わんみゃ合同会社' : '株式会社わんみゃ'}" autocomplete="off"> <button type="button" class="buy" data-b="register">登録する</button><p class="small">手持ち ${fmtP(wallet.p)}。事業はこの端末に覚えます。</p></section>`;
+      <section><h3>名前</h3><input id="bizName" maxlength="16" placeholder="${f === 'sole' ? 'わんみゃ商店' : f === 'llc' ? 'わんみゃ合同会社' : '株式会社わんみゃ'}" autocomplete="off"> <button type="button" class="buy" data-b="register">登録する</button><p class="small">手持ち ${fmtP(wallet.p)}。お金の計算はこの端末でします。会社の名前・土地・建物は、みんなの画面にも出ます。</p></section><section><h3>🌐 みんなの会社</h3>${bizCosHtml()}</section>`;
   }
   const F = BIZ_FORMS[b.form], k = bizBook(b), x = ECON.S.xs.get(n) || ECON.ctx(n, ECON.S);
   const pv = bizDay(structuredClone(b), n, x), last = b.ledger[b.ledger.length - 1];
@@ -10528,10 +10648,12 @@ function bizHtml() {
     ${btn('lotMore', '', 'もっと見る')}<p class="small">地図（M）で自分の土地は金色に出ます。お店はまわりに住む人が多く、道が広く、ライバルが少ない所がよく売れます。</p>`;
   // 建設
   const free = b.lots.filter((m) => !m.bld);
-  const build = free.length ? free.map((m) => { const L = bizLot(m.id); return `<div class="bzrow col"><span><b>${escH(L.dist.name)}・${L.area}㎡</b></span><span class="trade">${Object.entries(BIZ_BLD).filter(([t, B]) => (L.farm || !B.farmOnly) && (!B.big || L.area >= 600)).map(([t, B]) => btn('build', `${m.id}:${t}`, `${B.icon} ${B.name} ${man(B.cost)}`, '', b.cash < B.cost)).join('')}</span></div>`; }).join('')
+  const build = free.length ? free.map((m) => { const L = bizLot(m.id), gl = bizGltfOn(L);
+    return `<div class="bzrow col"><span><b>${escH(L.dist.name)}・${L.area}㎡</b><small>はじめ建設のデザインで建てる</small></span><span class="trade">${Object.entries(BIZ_BLD).filter(([t, B]) => (L.farm || !B.farmOnly) && (!B.big || L.area >= 600)).map(([t, B]) => btn('build', `${m.id}:${t}`, `${B.icon} ${B.name} ${man(B.cost)}`, '', b.cash < B.cost)).join('')}</span>
+      ${gl.map((pr) => { const sc = bizGltfScale(pr); return `<span><b>🧱 自分の glTF「${escH(pr.name)}」を社屋にする</b><small>建設費なし（設備費だけ）・床 約${Math.round(bizGltfArea(pr))}㎡</small></span><span class="trade">${Object.entries(BIZ_BLD).filter(([t, B]) => !B.farmOnly && B.kind !== 'farm').map(([t, B]) => { const s2 = Math.min(2.5, Math.max(0.4, sc[t])), cost = Math.round(B.cost * 0.15 * s2 / 1e4) * 1e4; return btn('buildG', `${m.id}:${t}:${bizGltfKey(pr)}`, `${B.icon} ${B.name.replace(/（.*）/, '')}として ${man(cost)}${s2 !== 1 ? `・${B.kind === 'apt' ? Math.round(8 * s2) + '部屋' : '広さ×' + s2.toFixed(1)}` : ''}`, '', b.cash < cost); }).join('')}</span>`; }).join('')}</div>`; }).join('')
     : '<p>建てられる空き地がありません（🗺️ 土地で買うか借りる）。</p>';
   const builtL = b.lots.filter((m) => m.bld).map((m) => `<div class="bzrow"><span>${BIZ_BLD[m.bld.t].icon} ${BIZ_BLD[m.bld.t].name}<small>${escH(bizLot(m.id).dist.name)}</small></span>${btn('demolish', m.id, 'こわす')}</div>`).join('');
-  const bld = `<p>はじめ建設（株価 ${yen(ECON.priceNow(1801))}円）が建てます。お金ははじめにはらいます。</p>${build}${builtL ? `<h4>建てた物</h4>${builtL}` : ''}
+  const bld = `<p>はじめ建設（株価 ${yen(ECON.priceNow(1801))}円）が建てます。お金ははじめにはらいます。<br><small>自分の glTF の建物（☰ →「glTF を置く」→ 建物）を自分の土地の上に置くと、それを社屋にできます。建設費がかからず、設備費（はじめ建設のデザインの15%×広さ）だけで開店できます。床が広いほど、たくさんお客さんが入ります。</small></p>${build}${builtL ? `<h4>建てた物</h4>${builtL}` : ''}
     <table class="mtab"><tr><th>建物</th><th>1日に</th><th>人</th></tr>${Object.values(BIZ_BLD).map((B) => `<tr><td>${B.icon} ${B.name}</td><td>${B.kind === 'shop' ? `お客さん${B.cap}人まで` : B.kind === 'diner' ? `食事${B.cap}食まで` : B.kind === 'ware' ? `${B.cap}kg置ける・売れ残りが長もち` : B.kind === 'apt' ? '家賃（8部屋）' : '野菜（広さ×季節×天気）'}</td><td class="num">${B.need}</td></tr>`).join('')}</table>`;
   // 仕入れ
   const sup = `<p>市場の値段の1.03倍で、毎日とどきます。不作・不漁の日は量がそろいません。</p>${BIZ_SUP.map((s) => { const c = companyBy(s.code), kg = b.sup[s.code] || 0;
@@ -10575,7 +10697,7 @@ function bizHtml() {
     <p class="small">${b.events.slice(-6).reverse().map((e) => `${calOf(e.n).m}/${calOf(e.n).d} ${escH(e.t)}`).join('<br>')}</p>`;
   return msg + head + det('money', '💰 お金', money) + det('loan', `🏦 融資（みなと銀行・はじめ信用金庫）`, loan) + det('land', `🗺️ 土地（みなと不動産）`, land) + det('build', '🏗️ 建てる（はじめ建設）', bld)
     + det('sup', '🤝 仕入れ（ファーム・水産・牛乳・水産加工）', sup) + det('buy', '📦 卸す（マート・PA・お店）', buy) + det('truck', `🚚 トラック・運送（${b.fleet.length}台）`, truck)
-    + det('staff', `👥 従業員（${b.staff.length}人）`, staff) + det('price', '🏷️ 値段', price) + det('book', '📒 帳簿', book) + det('corp', `📜 ${F.name}`, corp);
+    + det('staff', `👥 従業員（${b.staff.length}人）`, staff) + det('price', '🏷️ 値段', price) + det('book', '📒 帳簿', book) + det('corp', `📜 ${F.name}`, corp) + det('cos', `🌐 みんなの会社（${BIZ_NET.cos.size}社）`, bizCosHtml());
 }
 // まわりへの経済効果：自分の店に来た人が、近くの会社のお店や施設にも立ちよる（それぞれの会社でつかうお金のめやす）
 function bizSpillHtml(R) {
@@ -10588,18 +10710,27 @@ const bizSeekers = (() => { let list = null; return () => { if (!list) { list = 
 // 地図に自分の土地（金色）・売っている土地（うすい）
 function drawBizOnMap(g, P, sc, det) {
   if (det && sc > 0.25) { g.strokeStyle = 'rgba(107,63,160,.55)'; g.lineWidth = 1; for (const L of TOWN.lots) { if (bizLotTaken(L.id)) continue; const [X, Y] = P(L.x, L.z); g.strokeRect(X - L.w * sc / 2, Y - L.d * sc / 2, L.w * sc, L.d * sc); } }
+  for (const r of BIZ_NET.lots.values()) {
+    if (r.by === net.myId) continue; const L = bizLot(r.lot_id); if (!L) continue; const [X, Y] = P(L.x, L.z), s = Math.max(6, L.w * sc);
+    g.fillStyle = '#f08c1a'; g.strokeStyle = '#5a3000'; g.lineWidth = 1.5; g.fillRect(X - s / 2, Y - s / 2, s, s); g.strokeRect(X - s / 2, Y - s / 2, s, s);
+    if (det) { g.font = '700 11px ' + getComputedStyle(document.body).fontFamily; g.textAlign = 'left'; g.textBaseline = 'middle'; const t = bizCleanName(r.biz); g.lineWidth = 3; g.strokeStyle = 'rgba(255,255,255,.9)'; g.strokeText(t, X + s / 2 + 3, Y); g.fillStyle = '#5a3000'; g.fillText(t, X + s / 2 + 3, Y); }
+  }
   if (!BIZ) return;
   for (const m of BIZ.lots) { const L = bizLot(m.id), [X, Y] = P(L.x, L.z), s = Math.max(7, L.w * sc); g.fillStyle = '#f2c12e'; g.strokeStyle = '#5a4300'; g.lineWidth = 2; g.fillRect(X - s / 2, Y - s / 2, s, s); g.strokeRect(X - s / 2, Y - s / 2, s, s);
     if (det) { g.font = '800 11px ' + getComputedStyle(document.body).fontFamily; g.textAlign = 'left'; g.textBaseline = 'middle'; const t = BIZ.name + (m.bld ? ' ' + BIZ_BLD[m.bld.t].icon : ''); g.lineWidth = 3; g.strokeStyle = 'rgba(255,255,255,.9)'; g.strokeText(t, X + s / 2 + 3, Y); g.fillStyle = '#5a4300'; g.fillText(t, X + s / 2 + 3, Y); } }
 }
 // 自分の店の前で「のぞく」
 function bizNearAction() {
-  if (!BIZ) return null; const p = player.pos;
+  const p = player.pos;
+  for (const r of BIZ_NET.lots.values()) { if (r.by === net.myId || !r.bld) continue; const L = bizLot(r.lot_id); if (L && Math.abs(L.x - p.x) < L.w && Math.abs(L.z - p.z) < L.w && Math.hypot(L.x - p.x, L.z - p.z) < Math.max(L.w, L.d) / 2 + 3) return { kind: 'bizo', row: r, text: bizCleanName(r.biz) + ' ' + BIZ_BLD[r.bld].name, btn: 'のぞく' }; }
+  if (!BIZ) return null;
   for (const m of BIZ.lots) { const L = bizLot(m.id); if (Math.abs(L.x - p.x) < L.w && Math.abs(L.z - p.z) < L.w && Math.hypot(L.x - p.x, L.z - p.z) < Math.max(L.w, L.d) / 2 + 3) return { kind: 'biz', text: BIZ.name + (m.bld ? ' ' + BIZ_BLD[m.bld.t].name : ' の土地'), btn: 'のぞく' }; }
   return null;
 }
 // 新聞：自分の事業の記事
 function bizPaper(n, add) {
+  const top = [...BIZ_NET.cos.values()].filter((c) => c.by !== net.myId && c.day === n - 1 && c.rev > 0).sort((a, c) => c.prof - a.prof)[0];
+  if (top) add(44, `${bizCleanName(top.name)}　売り上げ${man(top.rev)}`, `${(BIZ_FORMS[top.form] || BIZ_FORMS.sole).name}「${bizCleanName(top.name)}」（社長：${net.names.get(top.by) || 'プレイヤー'}さん）のきのうの売り上げは${man(top.rev)}、利益は${man(top.prof)}でした。${top.lots}か所の土地で事業をしています。`, null);
   const b = BIZ; if (!b) return;
   const ev = b.events.filter((e) => e.n === n - 1);
   for (const e of ev) add(48, `${b.name}　${e.t}`, `${BIZ_FORMS[b.form].name}「${b.name}」は${e.t.replace(/を登録$/, 'として登録しました')}。${e.open ? 'さっそくお客さんがおとずれています。' : ''}`, null);
@@ -11767,7 +11898,7 @@ window.__world = {
   hullGround, findWaterSpot, rescueBoat, get periscope() { return periscope; }, toggleLight, setPeriscope,
   teleport(x, z, y) { player.pos.set(x, y ?? heightAt(x, z), z); player.vy = 0; },
   torps, tube, ord, booms, get clockT() { return clock.elapsedTime; },
-  get BIZ() { return BIZ; }, bizAct, bizDay, bizSettle, bizHtml, drawBizOnMap, TOWN, COMPANIES, ECON, makePaper, openTown, closeTown, townNearAction, get myStocks() { return myStocks; }, weatherAt, wxDay, calOf, gameDayN, setDayOffset(d) { dayOffset = d; }, setGameTime(n, hr) { dayOffset = 0; const real = (Date.now() % DAY_MS) / DAY_MS * 24; hourOffset = ((hr - real) % 24 + 24) % 24; dayOffset = n - Math.floor(gameDayF()); }, townMeshes, townBlds, townBoats, fieldStage,
+  get BIZ() { return BIZ; }, BIZ_NET, bizNetLoad, bizNetEvent, bizPush, bizAct, bizDay, bizSettle, bizHtml, drawBizOnMap, TOWN, COMPANIES, ECON, makePaper, openTown, closeTown, townNearAction, get myStocks() { return myStocks; }, weatherAt, wxDay, calOf, gameDayN, setDayOffset(d) { dayOffset = d; }, setGameTime(n, hr) { dayOffset = 0; const real = (Date.now() % DAY_MS) / DAY_MS * 24; hourOffset = ((hr - real) % 24 + 24) % 24; dayOffset = n - Math.floor(gameDayF()); }, townMeshes, townBlds, townBoats, fieldStage,
   AUTO, SEMI, semiGo, semiHalt, setSemi, semiTurnReq, semiTurnCand, semiNext, setApMin, startAuto, stopAuto, planAuto, stepHwTraffic, autoSpeed, autoLaneReq, autoTurnReq, get myCar() { return myCar; }, stepTraffic, stepVehicle, camera, signalState,
 };
 
