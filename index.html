@@ -493,8 +493,8 @@ body.helmOn .subbtns { flex-wrap: wrap; justify-content: flex-end; max-width: ca
     <button type="button" data-cat="car" data-wheels="2" class="pveh"><b>2 輪</b><small>タイヤ前・タイヤ後</small></button>
     <button type="button" data-cat="car" data-wheels="3" class="pveh"><b>3 輪</b><small>前 1＋後ろ 2、または前 2＋後ろ 1</small></button>
     <button type="button" data-cat="car" data-wheels="4" class="pveh"><b>4 輪</b><small>右前・右後・左前・左後</small></button>
-    <button type="button" data-cat="car" data-wheels="6" class="pveh"><b>6 輪</b><small>4 輪＋右中・左中</small></button>
-    <button type="button" data-cat="car" data-wheels="8" class="pveh"><b>8 輪</b><small>6 輪＋右後2・左後2（大きなトラック）</small></button>
+    <button type="button" data-cat="car" data-wheels="6" class="pveh"><b>6 輪</b><small>右前・右中・右後（左も）。曲がるのは前だけ</small></button>
+    <button type="button" data-cat="car" data-wheels="8" class="pveh"><b>8 輪</b><small>右前1・右前2・右中・右後（左も）。前1・前2 が曲がる</small></button>
   </div>
   <div class="pcats" data-screen="boat" hidden>
     <button type="button" data-cat="ship" class="pveh"><b>船</b><small>海の上を走る・相乗りできる</small></button>
@@ -757,17 +757,20 @@ const SIDE = '(?![ _-]?(r|l|right|left)(?![a-z])|[a-z])';   // wheel_f と wheel
 const WHEEL_DEFS = {
   F: ['タイヤ前', new RegExp(`^(タイヤ前|前タイヤ|(wheel|tire)[ _-]?(f|front)${SIDE})`, 'i')],
   R: ['タイヤ後', new RegExp(`^(タイヤ後|後タイヤ|(wheel|tire)[ _-]?(r|rear|b|back)${SIDE})`, 'i')],
-  FR: ['タイヤ右前', /^(タイヤ右前|右前タイヤ|(wheel|tire)[ _-]?(fr|front[ _-]?right|right[ _-]?front))/i],
+  FR: ['タイヤ右前', /^(タイヤ右前(?![2２])|右前[1１]?タイヤ|(wheel|tire)[ _-]?(fr|front[ _-]?right|right[ _-]?front)(?![ _-]?2|[a-z]))/i],   // タイヤ右前1 もこれ
   RR: ['タイヤ右後', /^(タイヤ右後(?!2)|右後タイヤ|(wheel|tire)[ _-]?(rr|br|rear[ _-]?right|right[ _-]?rear|back[ _-]?right)(?![ _-]?2))/i],
-  FL: ['タイヤ左前', /^(タイヤ左前|左前タイヤ|(wheel|tire)[ _-]?(fl|front[ _-]?left|left[ _-]?front))/i],
+  FL: ['タイヤ左前', /^(タイヤ左前(?![2２])|左前[1１]?タイヤ|(wheel|tire)[ _-]?(fl|front[ _-]?left|left[ _-]?front)(?![ _-]?2|[a-z]))/i],
+  F2R: ['タイヤ右前2', /^(タイヤ右前[2２]|右前[2２]タイヤ|(wheel|tire)[ _-]?(fr|front[ _-]?right|right[ _-]?front)[ _-]?2)/i],   // 8 輪の 2 本目の前の軸
+  F2L: ['タイヤ左前2', /^(タイヤ左前[2２]|左前[2２]タイヤ|(wheel|tire)[ _-]?(fl|front[ _-]?left|left[ _-]?front)[ _-]?2)/i],
   RL: ['タイヤ左後', /^(タイヤ左後(?!2)|左後タイヤ|(wheel|tire)[ _-]?(rl|bl|rear[ _-]?left|left[ _-]?rear|back[ _-]?left)(?![ _-]?2))/i],
   MR: ['タイヤ右中', /^(タイヤ右中|右中タイヤ|(wheel|tire)[ _-]?(mr|cr|middle[ _-]?right|right[ _-]?middle|center[ _-]?right))/i],
   ML: ['タイヤ左中', /^(タイヤ左中|左中タイヤ|(wheel|tire)[ _-]?(ml|cl|middle[ _-]?left|left[ _-]?middle|center[ _-]?left))/i],
   R2R: ['タイヤ右後2', /^(タイヤ右後2|右後2タイヤ|(wheel|tire)[ _-]?(rr|br|rear[ _-]?right|right[ _-]?rear)[ _-]?2)/i],
   R2L: ['タイヤ左後2', /^(タイヤ左後2|左後2タイヤ|(wheel|tire)[ _-]?(rl|bl|rear[ _-]?left|left[ _-]?rear)[ _-]?2)/i],
 };
-const LAYOUTS = { 2: [['F', 'R']], 3: [['F', 'RR', 'RL'], ['FR', 'FL', 'R']], 4: [['FR', 'RR', 'FL', 'RL']], 6: [['FR', 'MR', 'RR', 'FL', 'ML', 'RL']], 8: [['FR', 'MR', 'RR', 'R2R', 'FL', 'ML', 'RL', 'R2L']] };
-const FRONT_W = new Set(['F', 'FR', 'FL']), REAR_W = new Set(['R', 'RR', 'RL', 'R2R', 'R2L']);
+const LAYOUTS = { 2: [['F', 'R']], 3: [['F', 'RR', 'RL'], ['FR', 'FL', 'R']], 4: [['FR', 'RR', 'FL', 'RL']], 6: [['FR', 'MR', 'RR', 'FL', 'ML', 'RL']], 8: [['FR', 'F2R', 'MR', 'RR', 'FL', 'F2L', 'ML', 'RL'], ['FR', 'MR', 'RR', 'R2R', 'FL', 'ML', 'RL', 'R2L']] };   // 8 輪：前1・前2・中・後（前の古いならべ方 前・中・後・後2 も読める）
+// ハンドルで曲がるのは、名前に「前」がつくタイヤだけ（6 輪・8 輪の中・後ろは曲がらない）
+const FRONT_W = new Set(['F', 'FR', 'FL', 'F2R', 'F2L']), REAR_W = new Set(['R', 'RR', 'RL', 'R2R', 'R2L']);
 const CAR_LIMITS = { length: 7, width: 3.5, height: 4, rMin: 0.1, rMax: 1.0 }, TRUCK_LIMITS = { length: 12.5, width: 3.5, height: 4.2 };
 const BED_RE = /^(荷台|cargo|truck[ _-]?bed|bed)/i;
 /* ---- 自動車の種類（「glTF を置く」→ 乗り物 → 自動車 で選ぶ。販売店の種類もこれ）
@@ -879,7 +882,8 @@ function rigAutoCar(item, root, model, gltf, def) {
     root.add(steer); steer.add(spin);
     root.updateMatrixWorld(true);
     spin.attach(found[k]);
-    item.wheels.push({ steer, spin, front: FRONT_W.has(k) });
+    // 前の軸が 2 本あるときは、後ろの軸から遠いほど大きく曲げる（まん中の前輪がハンドルの角度）
+    item.wheels.push({ steer, spin, front: FRONT_W.has(k), sk: FRONT_W.has(k) && frontZ - rearZ > 0.3 ? (w[k].c.z - rearZ) / (frontZ - rearZ) : 1 });
   }
   const kmh = carKmh(model, extrasOf(gltf), VK.kmh || 60);
   const halfWidth = Math.max(0.3, Math.abs(all.min.x), all.max.x), halfLength = size.z / 2, centerZ = (all.max.z + all.min.z) / 2;
@@ -4495,8 +4499,14 @@ const HELP_CAR = `<h4>自動車のきまり（どの種類も同じ）</h4>
 <tr><td>2 輪</td><td><code>タイヤ前</code> <code>タイヤ後</code></td></tr>
 <tr><td>3 輪</td><td><code>タイヤ前</code> <code>タイヤ右後</code> <code>タイヤ左後</code>（または 右前・左前・後）</td></tr>
 <tr><td>4 輪</td><td><code>タイヤ右前</code> <code>タイヤ右後</code> <code>タイヤ左前</code> <code>タイヤ左後</code></td></tr>
-<tr><td>6 輪</td><td>4 輪 ＋ <code>タイヤ右中</code> <code>タイヤ左中</code></td></tr>
-<tr><td>8 輪</td><td>6 輪 ＋ <code>タイヤ右後2</code> <code>タイヤ左後2</code></td></tr></table></li>
+<tr><td>6 輪</td><td><code>タイヤ右前</code> <code>タイヤ右中</code> <code>タイヤ右後</code> <code>タイヤ左前</code> <code>タイヤ左中</code> <code>タイヤ左後</code></td></tr>
+<tr><td>8 輪</td><td>前から <code>タイヤ右前1</code> <code>タイヤ右前2</code> <code>タイヤ右中</code> <code>タイヤ右後</code>（左も同じ：<code>タイヤ左前1</code> <code>タイヤ左前2</code> <code>タイヤ左中</code> <code>タイヤ左後</code>）</td></tr></table></li>
+<li><b>名前のつけ方のきまり</b>：
+<ul><li><code>タイヤ</code> ＋ <code>右</code> か <code>左</code> ＋ 場所（<code>前</code>・<code>中</code>・<code>後</code>）。2 輪と、3 輪の 1 本だけの所は 右・左 をつけない（<code>タイヤ前</code>）。</li>
+<li><b>ハンドルで曲がるのは、名前に「前」がつくタイヤだけ</b>です。6 輪・8 輪の 中・後 は曲がりません。8 輪は 前1・前2 の 2 本の軸が曲がり、前1 のほうが少し大きく曲がります。</li>
+<li>前の軸が 2 本あるときは、前から順に <code>1</code> <code>2</code> をつける。<code>タイヤ右前</code> は <code>タイヤ右前1</code> と同じです。</li>
+<li>名前は頭が合っていればよい（<code>タイヤ右前.001</code> も OK）。英語なら <code>wheel_fr</code> <code>wheel_fr2</code> <code>wheel_mr</code> <code>wheel_rr</code>（左は l）。</li>
+<li>前に作った 8 輪（<code>タイヤ右後2</code> <code>タイヤ左後2</code> がある車）もそのまま走れます（そのときは 前 だけ曲がる）。</li></ul></li>
 <li>地面の高さ・車の中心は、ワールドがタイヤから決めます（いちばん低いタイヤの下が地面）。</li>
 <li>大きさ：全長 7m・全幅 3.5m・高さ 4m まで。バス・トラック・ダンプ・ミキサー・タンクローリー・重機は全長 12.5m・高さ 4.2m まで。</li>
 </ol>
@@ -7203,7 +7213,7 @@ function stepCar(car, dt) {
   if (!mine && Math.abs(pose.y - car.y) < 0.002 && Math.abs(pose.pitch - car.pitch) < 0.001 && Math.abs(pose.roll - car.roll) < 0.001) car.settled = true;
   for (const w of car.item.wheels) {
     w.spin.rotation.x += (car.vF / V.wheelRadius) * dt;
-    if (w.front) w.steer.rotation.y = car.steer;
+    if (w.front) w.steer.rotation.y = w.sk && w.sk !== 1 ? Math.atan(w.sk * Math.tan(car.steer)) : car.steer;
   }
 }
 function hitWall(car) { car.vF *= -0.15; car.vL *= 0.3; }
