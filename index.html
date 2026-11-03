@@ -518,7 +518,7 @@ body.helmOn .subbtns { flex-wrap: wrap; justify-content: flex-end; max-width: ca
     <div class="pgrow"><button type="button" id="pgLend">玉を借りる（500P＝125玉）</button><button type="button" id="pgQuit">精算して立つ</button></div>
   </div>
 </div>
-<div id="prompt" hidden><span><kbd>E</kbd> <span id="promptText">車に</span></span><button id="busViewBtn" type="button" hidden>車外視点</button><button id="promptBtn" type="button">乗る</button></div>
+<div id="prompt" hidden><span><kbd>E</kbd> <span id="promptText">車に</span></span><button id="busViewBtn" type="button" hidden>車外視点</button><button id="cargoBtn" type="button" hidden>📦 積む</button><button id="promptBtn" type="button">乗る</button></div>
 
 <div class="keys" id="keys">
   <span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd>移動</span>
@@ -4879,6 +4879,7 @@ function toggleRide() {
   if (nb) { boardBus(nb); return; }
   const v = nearCar();
   if (!v) return;
+  if (v.run) { showMsg(`${v.name} は配達中です（従業員が運転しています）`); return; }
   if (v.remote) {
     if (!canShareRide(v)) { showMsg(`${v.name} はほかの人が運転中です`); return; }
     const seat = freeSeat(v);
@@ -7707,7 +7708,7 @@ function syncPeers(peers) {
     if (d) {
       if (ride === v) { leaveRide(true); showMsg(`${v.name} はほかの人が運転しはじめました`); }
       v.remote = d; v.settled = false;
-    } else if (v.remote) { v.remote = null; v.settled = false; }
+    } else if (v.remote && !v.run) { v.remote = null; v.settled = false; }
   }
   const n = net.others.size + 1;
   el('who').textContent = n > 1 ? `${n}人で遊んでいます` : 'いまはひとり';
@@ -7718,6 +7719,7 @@ function sendPresence() {
   const r = (v, k = 100) => Math.round(v * k) / k;
   const pose = (v) => [r(v.pos.x), r(v.y), r(v.pos.y), r(wrapA(visYaw(v))), r(v.pitch), r(v.roll)];
   const at = ride ? [ride.pos.x, ride.y, ride.pos.y] : [player.pos.x, player.pos.y, player.pos.z];
+  const runShown = !ride ? (RUNS.find((R) => R.v.shared && R.v.id) || {}).v : null;
   const msg = {
     p: at.map((v) => r(v)), f: r(wrapA(ride ? ride.h : player.face)), m: ride ? 'drive' : aboard ? 'ride' : busRide ? 'bus' : player.mode, col: myColor,
     bb: busRide ? busRide.b.id : null, bl: busRide ? [r(busRide.lx), r(busRide.lz), busRide.seat ? 1 : 0] : null,   // 乗っている路線バスと、車内の位置
@@ -7728,8 +7730,8 @@ function sendPresence() {
     gy: ride && ride.item.guns ? [r((ride.item.guns.main[0] || { pivot: { rotation: { y: 0 } } }).pivot.rotation.y), r((ride.item.guns.ciws[0] || { pivot: { rotation: { y: 0 } } }).pivot.rotation.y)] : null,   // イージス艦の砲塔の向き   // 潜水艦の音（動いている・装填中・撃った直後）
     cl: ride && ride.shared ? ((ride.item.lamps ? ride.lampBits & 15 : 0) | (ride.workOn ? 16 : 0)) : 0,   // 車のライト（1 ライト・2 ブレーキ・4 左・8 右）と作業中（16）
     c: myCar ? pose(myCar) : null,
-    v: ride && ride.shared ? ride.id : null,       // みんなの車を運転中なら、その車の番号と位置
-    vc: ride && ride.shared ? pose(ride) : null,
+    v: ride && ride.shared ? ride.id : runShown ? runShown.id : null,       // みんなの車を運転中なら、その車の番号と位置（運転していないときは、配達中の自分のトラック）
+    vc: ride && ride.shared ? pose(ride) : runShown ? pose(runShown) : null,
   };
   const key = JSON.stringify(msg);
   if (key === net.lastSent && clock.elapsedTime - net.sentAt < 3) return;
@@ -8176,6 +8178,7 @@ const HINT = {
 function updateUi() {
   if (busRide || (!ride && !aboard && nearBusDoor())) { busUi(); return; }
   if (lastUi.startsWith('bus|')) { el('navLine').hidden = true; el('speedBox').hidden = true; el('busViewBtn').hidden = true; }
+  const cg = driving ? cargoAction() : null, ct = !cg && driving ? cargoTruck() : null, cgTxt = cg ? cg.text : ct && ct.f.load && ct.f.load.kg ? `荷台：${BIZ_G[ct.f.load.g] ? BIZ_G[ct.f.load.g].name : '荷物'} ${yen(ct.f.load.kg)}kg（卸す先か自分の店の前で おろす）` : '';
   const nv = !ride && !aboard ? nearCar() : null;
   const near = !!nv;
   const ba = !ride && !aboard && !nv ? (blds.length && nearBldAction()) || townNearAction() : null;   // ドア・スイッチ・イス、お店の前
@@ -8205,12 +8208,13 @@ function updateUi() {
     autoTxt = `半自動${nx ? `・${Math.max(0, Math.round(nx.d / 10) * 10)}m 先を${tl}` : dl < 400 ? `・${Math.round(dl / 10) * 10}m 先で行き止まり` : ''}${AUTO.why ? '・' + AUTO.why : ''}`;
   } else if (SEMI.on && driving && !AUTO.on) autoTxt = '半自動：道路で「▶前進」を押すと走り出します';
   else if (AUTO.on && AUTO.route && driving) { const left = Math.max(0, AUTO.route.P.L - AUTO.s); autoTxt = `自動運転 →${AUTO.route.name} ${left < 1000 ? Math.round(left / 10) * 10 + 'm' : (left / 1000).toFixed(1) + 'km'}${AUTO.why ? '・' + AUTO.why : ''}`; }
-  const key = [mode, near, share, locked, kmh, alt, vname, vt, periscope, navTxt, hpTxt, tgtTxt, autoTxt, ba ? ba.text + ba.btn : ''].join('|');
+  const key = [mode, near, share, locked, kmh, alt, vname, vt, periscope, navTxt, hpTxt, tgtTxt, autoTxt, ba ? ba.text + ba.btn : '', cgTxt, cg ? cg.kind : ''].join('|');
   if (key === lastUi) return;
   lastUi = key;
   el('state').textContent = mode === 'drive' ? `${vname}を${DRIVE_VERB[vt]}中` : mode === 'ride' ? `${vname}に相乗り中` : STATE_TEXT[mode];
   el('alt').textContent = alt;
-  el('navLine').hidden = !(navTxt || tgtTxt || autoTxt); el('navLine').textContent = navTxt || tgtTxt || autoTxt;
+  el('navLine').hidden = !(navTxt || tgtTxt || autoTxt || cgTxt); el('navLine').textContent = navTxt || tgtTxt || autoTxt || cgTxt;
+  el('cargoBtn').hidden = !cg; if (cg) el('cargoBtn').textContent = cg.kind === 'load' ? '📦 積む' : '📦 おろす';
   el('hpLine').hidden = !hpTxt; el('hpLine').textContent = hpTxt;
   el('speedBox').hidden = !driving;
   el('speed').textContent = kmh;
@@ -8255,7 +8259,7 @@ function busUi() {
   el('promptBtn').textContent = r ? '降りる' : '乗る';
   tAct.hidden = false; tAct.textContent = r ? (sit ? '立つ' : '座る') : 'ジャンプ'; tDive.hidden = true;
   el('hint').textContent = r ? (r.out ? HINT.busOut : HINT.bus) : HINT.walk;
-  el('busViewBtn').hidden = !r; el('busViewBtn').textContent = r && r.out ? '車内視点' : '車外視点';
+  el('busViewBtn').hidden = !r; el('busViewBtn').textContent = r && r.out ? '車内視点' : '車外視点'; el('cargoBtn').hidden = true;
   el('subBtns').hidden = true; el('ejectBtn').hidden = true;
   el('keys').innerHTML = r ? KEYS_HTML.bus : KEYS_HTML.walk;
 }
@@ -10994,7 +10998,9 @@ const myMachines = () => myGltfCars().map((v) => ({ v, kind: MACH[truckKey(v)] |
 const carCost = (len, wid, kmh) => Math.round((600000 + 110000 * len * wid + 6000 * Math.max(0, kmh - 120)) / 10000) * 10000;
 const carFair = (c) => Math.round(c.cost * 1.3 / 10000) * 10000;   // 街の相場（作る値段の 1.3 倍）
 const myGltfCars = () => vehicles.filter((v) => v.mine && v !== myCar && v.item && v.item.def.vehicle && vtype(v) === 'car');
-const fleetKg = (b) => b.fleet.reduce((s, f) => s + f.kg, 0);
+// glTF のトラックは「自分で運転」（mode 'self'。ふだん）か「自動（従業員が運転）」（'auto'）。自分で運転のトラックは、運んだ分だけが運べる量になる
+const fleetSelf = (f) => f.src === 'gltf' && f.mode !== 'auto';
+const fleetKg = (b) => b.fleet.reduce((s, f) => s + (fleetSelf(f) ? 0 : f.kg), 0);
 // 自分が置いた glTF のトラック（荷台のある車）
 const myGltfTrucks = () => vehicles.filter((v) => v.mine && v.item && v.item.def.vehicle && v.item.def.vehicle.cargo);
 const truckKey = (v) => v.id || v.name;
@@ -11102,7 +11108,7 @@ function bizDay(b, n, x, G) {
   const base = (shops[0] || diners[0] || wares[0] || farms[0]) || null, baseL = base && bizLot(base.id);
   // 人手：建物ごとにいる人数＋トラックの運転手＋卸の荷さばき（1500kg に 1 人）。社長（自分）も 1 人に数える
   let supKg = 0; for (const s of BIZ_SUP) supKg += b.sup[supKey(s)] || 0;
-  let need = b.fleet.length; for (const m of live) need += bldNeed(m);
+  let need = b.fleet.filter((f) => !fleetSelf(f)).length; for (const m of live) need += bldNeed(m);   // 自分で運転するトラックは社長が運転する
   { const fm = live.filter((m) => BIZ_BLD[m.bld.t].kind === 'farm').length, tr = (b.mach || []).filter((q) => q.kind === 'tractor').length; need -= Math.min(fm * 0.6, tr * 0.6); }   // トラクターがあると畑の人手が少なくてすむ
   if (!shops.length && !diners.length) need += supKg / 1500;
   const have = b.staff.length + 1, sf = need > 0 ? Math.min(1, have / need) : 1;
@@ -11234,12 +11240,16 @@ function bizDay(b, n, x, G) {
   let cap = Math.max(0, fleetKg(b) * Math.min(1, sf * 1.0001) * (x.snow || x.storm ? 0.7 : 1) - hauledForOthers), own = 0, out = 0;
   const car = b.carrier ? bizCarrier(b.carrier, b) : null, cu = { amt: 0, cost: 0, kg: 0 };
   if (b.carrier && !car) R.notes.push('たのんだ運送会社が見つからないので、はじめ運輸に運んでもらいました');
+  let selfCap = (b.selfKg && b.selfKg[n]) || 0, selfUsed = 0;   // その日にプレイヤーが自分で運転して運んだ分
   for (const [kg, km] of moves) {
-    const a = Math.min(kg, cap); cap -= a; own += a * (1 + 0.6 * km * x.fuel); let r = kg - a;
+    const a0 = Math.min(kg, selfCap); selfCap -= a0; selfUsed += a0; own += a0 * (1 + 0.6 * km * x.fuel);
+    const a = Math.min(kg - a0, cap); cap -= a; own += a * (1 + 0.6 * km * x.fuel); let r = kg - a0 - a;
     if (r > 0 && car) { const used = G.use.get('h:' + b.carrier) || 0, a2 = Math.max(0, Math.min(r, car.cap - used)); if (a2 > 0) { G.use.set('h:' + b.carrier, used + a2); cu.amt += a2 * (car.base + 1.2 * km); cu.cost += a2 * (1 + 0.6 * km * x.fuel); cu.kg += a2; r -= a2; } }
     out += r * (8 + 1.5 * km);
   }
   aC('燃料（自分のトラック）', own); aC('はじめ運輸へ', out);
+  if (selfUsed) aK('自分で運転して運んだ', selfUsed);
+  if (out > 0 && b.fleet.some(fleetSelf) && !selfUsed) R.notes.push('自分のトラックで運ばなかったので、はじめ運輸に運んでもらいました（トラックに乗って 契約先で「積む」「おろす」）');
   if (cu.kg) {
     aC(`運送代（${car.name}）`, cu.amt); aK(`${car.name}が運んだ`, cu.kg);
     if (car.kind === 'me') G.out.push({ t: 'svc', to: car.id, r: `運送の受託（${b.name}）`, amt: Math.round(cu.amt), c: '燃料（自分のトラック）', cost: Math.round(cu.cost), kg: Math.round(cu.kg), k: '受託で運んだ' });
@@ -11433,6 +11443,11 @@ function bizAct(a, v) {
     case 'truckBuy': { const T = BIZ_TRUCKS[v]; if (!ensure(T.price)) return; b.cash -= T.price; b.fleet.push({ src: 'buy', t: v, kg: T.kg, name: T.name, at: n }); say(`はじめ自動車で${T.name}を買いました（${man(T.price)}）。運転手が1人いります（社長が運転してもよい）`); break; }
     case 'truckLease': { const T = BIZ_TRUCKS[v]; b.fleet.push({ src: 'lease', t: v, kg: T.kg, name: T.name, at: n }); say(`みなとリースで${T.name}を借りました（1日 ${yen(T.lease)}円・整備と保険こみ）`); break; }
     case 'truckGltf': { const tv = myGltfTrucks().find((q) => truckKey(q) === v); if (!tv || BIZS.some((o) => o.fleet.some((f) => f.vid === v))) return say('そのトラックは もう事業でつかっています'); const c = tv.item.def.vehicle.cargo; b.fleet.push({ src: 'gltf', vid: v, kg: c.kg, name: tv.name || 'トラック', at: n }); say(`自分のトラック「${tv.name || 'トラック'}」（荷台 ${c.w}×${c.l}m・${yen(c.kg)}kg）を事業につかいます。買わなくてよいので、そのぶん安くはじめられます`); break; }
+    case 'truckMode': { const [fi, md] = v.split(':'), f = b.fleet[+fi]; if (!f || f.src !== 'gltf' || (md === 'auto') === (f.mode === 'auto')) return;
+      if (md === 'self') { f.mode = 'self'; say(`「${f.name}」は自分で運転します。トラックに乗って、仕入れ先で「積む」、卸す先で「おろす」と、その日の運送が自分のトラックになります`); break; }
+      const autos = b.fleet.filter((q) => q.src === 'gltf' && q.mode === 'auto').length;
+      if (b.staff.length <= autos) return say('自動にするには、トラック1台に従業員が1人いります（👥 従業員で雇ってください）');
+      f.mode = 'auto'; say(`「${f.name}」は従業員が運転します。毎日 ${RUN_HOUR}時ごろ、トラックが町を走って 仕入れ先 → 卸す先 → もとの場所 と配達します（あなたが遊んでいるときに見えます）`); break; }
     case 'truckDrop': { const f = b.fleet[+v]; if (!f) return; let got = 0; if (f.src === 'buy') got = BIZ_TRUCKS[f.t].price * 0.6; if (f.src === 'lease') got = -BIZ_TRUCKS[f.t].lease * 4;
       b.fleet.splice(+v, 1); b.cash += got; say(f.src === 'buy' ? `${f.name}を はじめ自動車に売りました（${man(got)}）` : f.src === 'lease' ? `リースをやめました（解約金 ${man(-got)}）` : `「${f.name}」を事業からはずしました`); break; }
     case 'carAdd': carRegister(v); return;
@@ -11878,10 +11893,173 @@ function carSaleIn(r) {
   net.sales.done(r.id).catch(() => {});
   if (TP.open && TP.tab === 'biz') renderTown();
 }
+/* ---- トラックで実際に運ぶ（2026-11-03 わんみゃさんの案） ----
+   🧑 自分で運転：自分の glTF のトラックに乗って、仕入れ先の前で「積む」→ 卸す先・自分の店の前で「おろす」。おろした kg が その日の自分の運送になる（b.selfKg[日]）
+   🤖 自動：従業員がいると えらべる。毎日 RUN_HOUR 時ごろ、トラックが 仕入れ先 → 卸す先 → もとの場所 と町の道を走る（自動運転と同じ道・信号）。
+   走っている形は、運転している人と同じしくみ（presence の v／vc）で みんなの画面にも出る。お金の計算は いつもどおり決算でする */
+const RUN_HOUR = 7, RUN_V = 11.1;   // 出発する時刻（ゲーム）・速さ（時速 40km）
+const coSites = (code) => TOWN.companies.filter((o) => o.c.code === code);
+const nearSite = (code, x, z, r) => coSites(code).some((o) => Math.hypot(o.x - x, o.z - z) < r);
+// いま運転しているのが 自分の会社のトラックなら、その会社とトラック
+function cargoTruck() {
+  if (!driving || !ride || vtype(ride) !== 'car') return null;
+  const key = truckKey(ride);
+  for (const b of BIZS) { const f = b.fleet.find((q) => q.src === 'gltf' && q.vid === key); if (f) return { b, f }; }
+  return null;
+}
+function cargoAction() {
+  const t = cargoTruck(); if (!t || t.f.mode === 'auto' || Math.abs(ride.vF) > 1.5) return null;
+  const { b, f } = t, n = gameDayN(), x = ride.pos.x, z = ride.pos.y, ld = f.load && f.load.kg > 0 ? f.load : null;
+  if (ld) {
+    for (const q of BIZ_BUY) if (b.buy[q.code] && !q.free && nearSite(q.code, x, z, 70)) return { kind: 'unload', b, f, to: companyBy(q.code).short, text: `${companyBy(q.code).short}に おろす（${BIZ_G[ld.g] ? BIZ_G[ld.g].name : '荷物'} ${yen(ld.kg)}kg）` };
+    for (const c of BIZS) for (const m of c.lots) if (m.bld && ['shop', 'diner', 'ware', 'factory'].includes(BIZ_BLD[m.bld.t].kind)) { const L = bizLot(m.id); if (Math.hypot(L.x - x, L.z - z) < Math.max(L.w, L.d) / 2 + 25) return { kind: 'unload', b, f, to: c.name, text: `${c.name}（${BIZ_BLD[m.bld.t].name}）に おろす（${yen(ld.kg)}kg）` }; }
+  }
+  const room = f.kg - (ld ? ld.kg : 0); if (room < 1) return null;
+  const got = b.selfGot && b.selfGot.n === n ? b.selfGot : { n };
+  for (const s of BIZ_SUP) {
+    const want = b.sup[supKey(s)] || 0; if (!want || !nearSite(s.code, x, z, 70)) continue;
+    const kg = Math.min(room, want - (got[supKey(s)] || 0));
+    if (kg > 0) return { kind: 'load', b, f, s, kg, text: `${companyBy(s.code).short}で 積む（${BIZ_G[s.g].name} ${yen(kg)}kg）` };
+  }
+  return null;
+}
+function doCargo() {
+  const a = cargoAction(); if (!a) return;
+  const { b, f } = a, n = gameDayN();
+  if (a.kind === 'load') {
+    if (!b.selfGot || b.selfGot.n !== n) b.selfGot = { n };
+    b.selfGot[supKey(a.s)] = (b.selfGot[supKey(a.s)] || 0) + a.kg;
+    f.load = { kg: (f.load ? f.load.kg : 0) + a.kg, g: a.s.g, n };
+    showMsg(`📦 ${companyBy(a.s.code).short}で ${BIZ_G[a.s.g].name} ${yen(a.kg)}kg を積みました。卸す先（または自分の店）の前で「おろす」`);
+  } else {
+    b.selfKg = b.selfKg || {}; b.selfKg[n] = (b.selfKg[n] || 0) + f.load.kg;
+    for (const k in b.selfKg) if (+k < n - 3) delete b.selfKg[k];
+    showMsg(`📦 ${a.to}に ${yen(f.load.kg)}kg おろしました。きょうの運送は自分のトラック（${b.name}の決算で はじめ運輸に払うぶんが へります）`);
+    f.load = null;
+  }
+  saveBiz(); lastUi = '';
+  if (TP.open && TP.tab === 'biz') renderTown();
+}
+el('cargoBtn').addEventListener('click', doCargo);
+// 会社の画面に出す トラックのようす
+function truckStatus(b, f) {
+  const n = gameDayN(), R = RUNS.find((q) => q.f === f);
+  if (f.mode === 'auto') return R ? `🤖 配達中（${R.stops[Math.min(R.li, R.stops.length - 1)].name}へ）` : f.runN === n ? '🤖 きょうの配達はすみました' : `🤖 ${RUN_HOUR}時ごろ出発`;
+  const d = (b.selfKg && b.selfKg[n]) || 0;
+  return `🧑 ${f.load && f.load.kg ? `荷台に ${yen(f.load.kg)}kg・` : ''}${d ? `きょう自分で ${yen(d)}kg 運んだ` : 'きょうはまだ運んでいません'}`;
+}
+// ---- 自動：従業員が運転するトラック ----
+const RUNS = [];
+const runTp = { x: 0, z: 0, i: 0 }, runTp2 = { x: 0, z: 0, i: 0 };
+function runPlanTo(R, tx, tz) {
+  const car = { pos: { x: R.x, y: R.z }, h: R.h, y: R.v.y, item: R.v.item }, ton = TOLL.on;
+  TOLL.on = false; let r; try { r = planAutoRoute(car, tx, tz, true); } finally { TOLL.on = ton; }   // 高速道路は使わない（料金所の状態はプレイヤーの車の物）
+  return r;
+}
+function runStart(b, f, v) {
+  const sup = BIZ_SUP.find((s) => (b.sup[supKey(s)] || 0) > 0), buy = BIZ_BUY.find((q) => b.buy[q.code] && !q.free);
+  const near = (code, x, z) => coSites(code).reduce((a, o) => !a || Math.hypot(o.x - x, o.z - z) < Math.hypot(a.x - x, a.z - z) ? o : a, null);
+  const stops = []; let px = v.pos.x, pz = v.pos.y;
+  if (sup) { const o = near(sup.code, px, pz); if (o) { stops.push({ x: o.x, z: o.z, name: companyBy(sup.code).short, what: 'load', g: sup.g }); px = o.x; pz = o.z; } }
+  if (buy) { const o = near(buy.code, px, pz); if (o) stops.push({ x: o.x, z: o.z, name: companyBy(buy.code).short, what: 'unload' }); }
+  else { const L = bizBaseLot(b); if (L && stops.length) stops.push({ x: L.x, z: L.z, name: b.name, what: 'unload' }); }
+  if (!stops.length) return 'no';
+  stops.push({ x: v.pos.x, z: v.pos.y, name: 'もとの場所', home: true });
+  const R = { b, f, v, home: { x: v.pos.x, z: v.pos.y, h: v.h }, stops, li: 0, P: null, s: 0, k: 0, sp: 0, wait: 0, x: v.pos.x, z: v.pos.y, h: v.h, y: v.y, ignoreT: 0, stuckT: 0 };
+  const r = runPlanTo(R, stops[0].x, stops[0].z);
+  if (r.err) return r.err;
+  R.P = r.P; RUNS.push(R); v.run = R; v.settled = false;
+  return '';
+}
+function runEnd(R) {
+  const i = RUNS.indexOf(R); if (i >= 0) RUNS.splice(i, 1);
+  const v = R.v; v.run = null; v.remote = null;
+  if (vehicles.includes(v)) parkAt(v, R.home.x, R.home.z, R.home.h);
+  lastUi = '';
+}
+function runObstacle(R, look, front, hw) {
+  const s = Math.sin(R.h), c = Math.cos(R.h); let best = null;
+  const test = (x, z, y, rf, rl, kind) => {
+    if (Math.abs(y - R.y) > 3.5) return;
+    const dx = x - R.x, dz = z - R.z, a = dx * s + dz * c, l = dx * c - dz * s;
+    if (a <= 0 || a > look + front + rf || Math.abs(l) > hw + rl + 0.3) return;
+    const gap = a - front - rf; if (!best || gap < best.gap) best = { gap, kind };
+  };
+  if (R.ignoreT <= 0) for (const t of traffic) if (t.root.visible) test(t.x, t.z, t.y, t.T.hl, t.T.hw, 'traffic');
+  if (!driving && !aboard && !busRide) test(player.pos.x, player.pos.z, player.pos.y, 0.4, 0.4, 'person');
+  for (const v of vehicles) { if (v === R.v || v.sunk) continue; const W = v.item.def.vehicle; test(v.pos.x, v.pos.y, v.y, W.halfLength || 2, W.halfWidth || 1, 'car'); }
+  for (const o of net.others.values()) if (o.avatar && o.avatar.visible) test(o.pos.x, o.pos.z, o.pos.y, 0.4, 0.4, 'person');
+  return best;
+}
+function runStep(R, dt) {
+  const v = R.v;
+  if (!vehicles.includes(v)) { runEnd(R); return; }
+  if (R.wait > 0) {
+    R.wait -= dt; R.sp = 0;
+    if (R.wait <= 0) {
+      R.li++;
+      if (R.li >= R.stops.length) { runEnd(R); return; }
+      const st = R.stops[R.li], r = runPlanTo(R, st.x, st.z);
+      if (r.err === 'もう着いています') { R.P = null; R.wait = st.home ? 0.01 : 20; }
+      else if (r.err) { showMsg(`🚚 ${R.f.name}：${st.name}への道が見つからないので、もとの場所にもどりました`); runEnd(R); return; }
+      else { R.P = r.P; R.s = 0; R.k = 0; }
+    }
+  } else {
+    const P = R.P, V = v.item.def.vehicle, front = (V.halfLength || 2) + (V.centerZ || 0), left = P.L - R.s;
+    while (R.k < P.N - 1 && P.S[R.k + 1] <= R.s) R.k++;
+    let vt = Math.min(RUN_V, P.capV[R.k] || RUN_V, Math.sqrt(2 * 2 * Math.max(0, left - 0.5)));
+    const tNow = Date.now() / 1000;
+    for (const j of P.junc) {
+      const d = j.stopS - R.s - front;
+      if (d < -0.5 || j.go) continue;
+      if (d > 140) break;
+      const sg = signalState(j.node, j.grp, tNow);
+      if (sg === 0) continue;
+      if (sg === 1 && d < (R.sp * R.sp) / 6 - 0.5) { j.go = true; continue; }
+      vt = Math.min(vt, d < 1.3 ? 0 : Math.sqrt(2 * 2 * Math.max(0, d - 1.0)));
+    }
+    R.ignoreT = Math.max(0, R.ignoreT - dt);
+    const ob = runObstacle(R, Math.max(12, R.sp * R.sp / 4 + 12), front, V.halfWidth || 1);
+    if (ob) vt = Math.min(vt, ob.gap < 3 + R.sp * 0.6 ? 0 : Math.sqrt(2 * 2 * Math.max(0, ob.gap - 3)));
+    R.stuckT = ob && ob.kind === 'traffic' && vt < 0.3 && R.sp < 0.3 ? R.stuckT + dt : 0;
+    if (R.stuckT > 10) { R.ignoreT = 5; R.stuckT = 0; }
+    R.sp += Math.max(-5 * dt, Math.min(1.6 * dt, vt - R.sp)); R.sp = Math.max(0, R.sp);
+    R.s = Math.min(P.L, R.s + R.sp * dt);
+    autoPoint(P, R.s, runTp); autoPoint(P, R.s + 4, runTp2);
+    R.x = runTp.x; R.z = runTp.z;
+    if (Math.hypot(runTp2.x - runTp.x, runTp2.z - runTp.z) > 0.2) R.h = lerpAngle(R.h, Math.atan2(runTp2.x - runTp.x, runTp2.z - runTp.z), 1 - Math.exp(-6 * dt));
+    if (P.L - R.s < 1 && R.sp < 0.3) {
+      const st = R.stops[R.li];
+      if (!st.home && Math.hypot(camera.position.x - R.x, camera.position.z - R.z) < 1500) showMsg(`🚚 ${R.f.name}（${R.b.name}）：${st.name}で${st.what === 'load' ? '荷物を積んでいます' : '荷物をおろしています'}`);
+      R.wait = st.home ? 0.01 : 20;
+    }
+  }
+  const pp = carPose({ item: v.item, pos: new THREE.Vector2(R.x, R.z), h: R.h, y: R.y });
+  R.y = pp.y;
+  v.remote = { x: R.x, z: R.z, y: pp.y, h: R.h, pitch: pp.pitch, roll: pp.roll, cl: R.sp < 0.5 ? 2 : 0 };
+  v.settled = false;
+}
+function stepRuns(dt) { for (const R of [...RUNS]) runStep(R, Math.min(dt, 0.1)); }
+// 毎日 RUN_HOUR 時：自動のトラックが出発する
+function runCheck() {
+  const n = gameDayN(), hr = (gameDayF() - n) * 24;
+  if (hr < RUN_HOUR || hr > 18) return;
+  for (const b of BIZS) for (const f of b.fleet) {
+    if (f.src !== 'gltf' || f.mode !== 'auto' || f.runN === n) continue;
+    const v = myGltfTrucks().find((q) => truckKey(q) === f.vid);
+    if (!v || v === ride || v.run || v.remote) continue;
+    f.runN = n; saveBiz();
+    const err = runStart(b, f, v);
+    if (err === 'no') showMsg(`🚚 ${f.name}：仕入れ先・卸す先の契約がないので、きょうは配達しません`);
+    else if (err) showMsg(`🚚 ${f.name}：出発できませんでした（${err}）。トラックを道路の近くに置いてください`);
+    else showMsg(`🚚 ${f.name}（${b.name}）が配達に出発しました（${R_NAMES(RUNS[RUNS.length - 1])}）`);
+  }
+}
+const R_NAMES = (R) => R.stops.filter((s) => !s.home).map((s) => s.name).join(' → ');
 let bizT = 0;
 function stepBiz() {
   if (performance.now() - bizT < 1000) return; bizT = performance.now();
-  if (BIZS.length) bizSettle();
+  if (BIZS.length) { bizSettle(); runCheck(); }
   if (BIZX.out.length && performance.now() - (BIZ_NET.flushT || 0) > 60000) { BIZ_NET.flushT = performance.now(); bizTradeFlush(); }
   dlrSync(); trialStep();
   const f = gameDayF(), cx = camera.position.x, cz = camera.position.z;
@@ -11959,7 +12137,8 @@ function bizHtml() {
   const gl = myGltfTrucks(), present = new Set(gl.map(truckKey));
   const truck = `<p>荷物は ふだん <b>はじめ運輸</b> が運びます（1kg 8円＋1kmごとに1.5円）。自分のトラックなら燃料代だけ。トラック1台に運転手が1人いります（社長が運転してもよい・足りなければ 👥 で求人）。あいているトラックは はじめ運輸の下うけで運送料（1kg 15円）をかせぎます＝運送業。</p>
     <h4>持っているトラック（${b.fleet.length}台・${yen(fleetKg(b))}kg/日）</h4>
-    ${b.fleet.map((f, i) => `<div class="bzrow"><span><b>${escH(f.name)}</b><small>${f.src === 'buy' ? `買った・整備と保険 1日${yen(BIZ_TRUCKS[f.t].keep)}円` : f.src === 'lease' ? `みなとリース・1日${yen(BIZ_TRUCKS[f.t].lease)}円` : `自分の glTF・保険 1日${yen(BIZ_GLTF_KEEP)}円${present.has(f.vid) ? '' : '（世界に見つかりません）'}`}・${yen(f.kg)}kg</small></span>${btn('truckDrop', i, f.src === 'buy' ? '売る' : f.src === 'lease' ? '返す' : 'はずす')}</div>`).join('') || '<p class="small">まだありません</p>'}
+    ${b.fleet.map((f, i) => `<div class="bzrow${f.src === 'gltf' ? ' col' : ''}"><span><b>${escH(f.name)}</b><small>${f.src === 'buy' ? `買った・整備と保険 1日${yen(BIZ_TRUCKS[f.t].keep)}円` : f.src === 'lease' ? `みなとリース・1日${yen(BIZ_TRUCKS[f.t].lease)}円` : `自分の glTF・保険 1日${yen(BIZ_GLTF_KEEP)}円${present.has(f.vid) ? '' : '（世界に見つかりません）'}`}・${yen(f.kg)}kg${f.src === 'gltf' ? `・${truckStatus(b, f)}` : ''}</small></span><span class="trade">${f.src === 'gltf' ? btn('truckMode', `${i}:self`, '🧑 自分で運転', fleetSelf(f) ? 'on' : '') + btn('truckMode', `${i}:auto`, '🤖 自動（従業員）', f.mode === 'auto' ? 'on' : '', f.mode !== 'auto' && b.staff.length <= b.fleet.filter((q) => q.src === 'gltf' && q.mode === 'auto').length) : ''}${btn('truckDrop', i, f.src === 'buy' ? '売る' : f.src === 'lease' ? '返す' : 'はずす')}</span></div>`).join('') || '<p class="small">まだありません</p>'}
+    ${b.fleet.some((f) => f.src === 'gltf') ? `<p class="small">🧑 <b>自分で運転</b>：トラックに乗って 仕入れ先（はじめファームなど）の前で止まると「📦 積む」、卸す先（みなとマートの店など）や自分の店の前で「📦 おろす」。おろした分だけ、その日の運送が自分のトラックになります（はじめ運輸に払わない）。運ばなかった日は はじめ運輸が運びます。<br>🤖 <b>自動</b>：従業員がいると えらべます（トラック1台に1人）。毎日 ${RUN_HOUR}時ごろ、トラックが町を走って配達し、もとの場所にもどります。あいた時間は はじめ運輸の下うけで運送料をかせぎます。配達中は乗れません。トラックは道路から30m以内に置いてください。</p>` : ''}
     <h4>はじめ自動車で買う</h4>${Object.entries(BIZ_TRUCKS).map(([t, T]) => `<div class="bzrow"><span><b>${T.name}</b><small>${yen(T.kg)}kg/日・整備と保険 1日${yen(T.keep)}円</small></span>${btn('truckBuy', t, `買う ${man(T.price)}`, '', b.cash < T.price)}</div>`).join('')}
     <h4>みなとリースで借りる（はじめのお金がいらない）</h4>${Object.entries(BIZ_TRUCKS).map(([t, T]) => `<div class="bzrow"><span><b>${T.name}</b><small>${yen(T.kg)}kg/日・整備と保険こみ・返すときは4日分</small></span>${btn('truckLease', t, `1日 ${yen(T.lease)}円`)}</div>`).join('')}
     <h4>自分の glTF のトラック（無料）</h4>${gl.length ? gl.map((q) => { const c = q.item.def.vehicle.cargo, used = b.fleet.some((f) => f.vid === truckKey(q)); return `<div class="bzrow"><span><b>${escH(q.name || 'トラック')}</b><small>荷台 ${c.w}×${c.l}m → ${yen(c.kg)}kg/日</small></span>${btn('truckGltf', truckKey(q), used ? 'つかっている ✓' : '事業につかう', used ? 'on' : '', used)}</div>`; }).join('') : ''}
@@ -12099,7 +12278,7 @@ function frame() {
   stepBuildings(dt);
   stepTown();
   stepPaper();
-  stepBiz();
+  stepBiz(); stepRuns(dt);
   if (aboard) { player.pos.copy(seatWorld(aboard.v, aboard.seat)); player.vy = 0; player.face = visYaw(aboard.v); player.mode = 'walk'; }
   avatar.visible = camera.position.distanceTo(camTarget) > 0.9 && !driving && !busRide && !(aboard && (vtype(aboard.v) === 'sub' || vtype(aboard.v) === 'car')) && !(pod && pod.mine && !pod.landed);
   avatar.position.copy(player.pos);
@@ -13264,7 +13443,7 @@ window.__world = {
   hullGround, findWaterSpot, rescueBoat, get periscope() { return periscope; }, toggleLight, setPeriscope,
   teleport(x, z, y) { player.pos.set(x, y ?? heightAt(x, z), z); player.vy = 0; },
   torps, tube, ord, booms, get clockT() { return clock.elapsedTime; },
-  get BIZ() { return BIZ; }, get BIZS() { return BIZS; }, BIZX, BIZ_RECIPE, bizById, bizProcBy, bizCarrier, grpList, bizTradeIn, bizTradeFlush, BIZ_NET, carRegister, carBuy, carTry, trialEnd, TRIAL, carSaleIn, carList, dlrSync, DLR_SHOW, dlrLayout, myMachines, MACH, BIZ_BLD, bizNetLoad, bizNetEvent, bizPush, bizAct, bizDay, bizSettle, bizHtml, drawBizOnMap, TOWN, COMPANIES, ECON, makePaper, openTown, closeTown, townNearAction, get myStocks() { return myStocks; }, weatherAt, wxDay, calOf, gameDayN, setDayOffset(d) { dayOffset = d; }, setGameTime(n, hr) { dayOffset = 0; const real = (Date.now() % DAY_MS) / DAY_MS * 24; hourOffset = ((hr - real) % 24 + 24) % 24; dayOffset = n - Math.floor(gameDayF()); }, townMeshes, townBlds, townBoats, fieldStage,
+  get BIZ() { return BIZ; }, get BIZS() { return BIZS; }, RUNS, stepRuns, runCheck, cargoAction, doCargo, coSites, parkAt, myGltfTrucks, truckKey, BIZX, BIZ_RECIPE, bizById, bizProcBy, bizCarrier, grpList, bizTradeIn, bizTradeFlush, BIZ_NET, carRegister, carBuy, carTry, trialEnd, TRIAL, carSaleIn, carList, dlrSync, DLR_SHOW, dlrLayout, myMachines, MACH, BIZ_BLD, bizNetLoad, bizNetEvent, bizPush, bizAct, bizDay, bizSettle, bizHtml, drawBizOnMap, TOWN, COMPANIES, ECON, makePaper, openTown, closeTown, townNearAction, get myStocks() { return myStocks; }, weatherAt, wxDay, calOf, gameDayN, setDayOffset(d) { dayOffset = d; }, setGameTime(n, hr) { dayOffset = 0; const real = (Date.now() % DAY_MS) / DAY_MS * 24; hourOffset = ((hr - real) % 24 + 24) % 24; dayOffset = n - Math.floor(gameDayF()); }, townMeshes, townBlds, townBoats, fieldStage,
   AUTO, SEMI, semiGo, semiHalt, setSemi, semiTurnReq, semiTurnCand, semiNext, setApMin, startAuto, stopAuto, planAuto, stepHwTraffic, autoSpeed, autoLaneReq, autoTurnReq, get myCar() { return myCar; }, makeVehicle, rideFromMenu, putAwayMini, renderMoveList, makeMiniCar, CARL, setTurnSignal, cycleLampMode, autoBlinkDir, stepTraffic, stepVehicle, camera, signalState,
 };
 
