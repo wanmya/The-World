@@ -7949,6 +7949,20 @@ async function startNet() {
   }
   sb.channel('world-trades').on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'biz_trades' }, (m) => bizTradeIn(m.new))
     .subscribe((status) => { if (status === 'SUBSCRIBED') loadTrades(); });
+  // ほかのプレイヤーの会社に入る（supabase-update-12.sql の biz_members）：入る人が書き、やめるときは本人か会社の持ち主が消す
+  net.mem = {
+    async add(row) { const r = await sb.from('biz_members').insert(row); if (r.error) throw r.error; },
+    async leave(co) { const r = await sb.from('biz_members').delete().eq('member', net.myId).eq('co', co); if (r.error) throw r.error; },
+    async fire(member, co) { const r = await sb.from('biz_members').delete().eq('member', member).eq('co', co).eq('owner', net.myId); if (r.error) throw r.error; },
+  };
+  async function loadMembers() {
+    const r = await sb.from('biz_members').select('member,owner,co,member_name,co_name,day').limit(2000);
+    if (r.error || !Array.isArray(r.data)) { BIZ_NET.memOk = false; return; }
+    BIZ_NET.memOk = true; BIZ_NET.mem = new Map(r.data.filter(memRowOk).map((d) => [memKey(d), d]));
+    bizMemSync(true);
+  }
+  sb.channel('world-members').on('postgres_changes', { event: '*', schema: 'public', table: 'biz_members' }, (m) => bizMemEvent(m))
+    .subscribe((status) => { if (status === 'SUBSCRIBED') loadMembers(); });
   async function loadBiz() {
     let [a, c] = await Promise.all([sb.from('biz_lots').select('lot_id,by,biz,own,bld,done,gltf,cfg').limit(700), sb.from('businesses').select('by,name,form,day,rev,prof,lots,cars,grp').limit(300)]);
     if (c.error) { c = await sb.from('businesses').select('by,name,form,day,rev,prof,lots,cars').limit(300); BIZ_NET.noGrp = !c.error; }   // grp の列がまだない（supabase-update-11.sql の前）
@@ -11049,21 +11063,22 @@ const truckKey = (v) => v.id || v.name;
 // その人がはたらいてもよい給料（仕事をさがしている人は安くても来る。ほかの仕事の人は高くないと来ない）
 const bizMinWage = (p) => Math.round((TOWN.job[p] === 7 ? 8000 + hash(p, 813) * 5000 : 11000 + hash(p, 813) * 9000) / 500) * 500;
 // 自分の会社（いくつでも持てる）。BIZ は画面で えらんでいる会社。
-// world.bizs = { list: 会社, sel: えらんでいる会社, out: ほかのプレイヤーへの支払いの送りまち, seen: 受けとった取り引きの id }
-let BIZS = [], BIZ = null, BIZX = { out: [], seen: [] };
+// world.bizs = { list: 会社, sel: えらんでいる会社, out: ほかのプレイヤーへの支払いの送りまち, seen: 受けとった取り引きの id, pay: ほかの人の会社からもらった給与 }
+let BIZS = [], BIZ = null, BIZX = { out: [], seen: [], pay: [] };
 const bizNewId = () => 'c' + Math.random().toString(36).slice(2, 10);
 function bizFix(b) {
   b.fleet = b.fleet || []; b.wage = b.wage || 11000; b.cars = b.cars || []; b.pend = b.pend || []; b.saleIds = b.saleIds || []; b.mach = b.mach || [];
   b.inv = b.inv || {}; for (const g in BIZ_G) b.inv[g] = b.inv[g] || 0;
   b.id = b.id || bizNewId(); b.flows = b.flows || []; b.inbox = b.inbox || []; b.svc = b.svc || []; b.recipes = b.recipes || []; b.pFee = b.pFee || {}; b.hRate = b.hRate || 10;
+  b.job = b.job || { open: false, w: 10000, s: 0 }; b.mem = b.mem || [];
   return b;
 }
 try {
   const st = JSON.parse(localStorage.getItem('world.bizs') || 'null');
-  if (st && Array.isArray(st.list)) { BIZS = st.list.filter(Boolean).map(bizFix); BIZX = { out: Array.isArray(st.out) ? st.out : [], seen: Array.isArray(st.seen) ? st.seen : [] }; BIZ = BIZS.find((b) => b.id === st.sel) || BIZS[0] || null; }
+  if (st && Array.isArray(st.list)) { BIZS = st.list.filter(Boolean).map(bizFix); BIZX = { out: Array.isArray(st.out) ? st.out : [], seen: Array.isArray(st.seen) ? st.seen : [], pay: Array.isArray(st.pay) ? st.pay : [] }; BIZ = BIZS.find((b) => b.id === st.sel) || BIZS[0] || null; }
   else { const old = JSON.parse(localStorage.getItem(BIZ_KEY) || 'null'); if (old) { BIZS = [bizFix(old)]; BIZ = BIZS[0]; } }   // 前の形（1 人 1 社）から
 } catch (e) { BIZS = []; BIZ = null; }
-const saveBiz = () => { try { if (!BIZS.includes(BIZ)) BIZ = BIZS[0] || null; localStorage.setItem('world.bizs', JSON.stringify({ list: BIZS, sel: BIZ && BIZ.id, out: BIZX.out.slice(-300), seen: BIZX.seen.slice(-300) })); localStorage.removeItem(BIZ_KEY); } catch (e) {} };
+const saveBiz = () => { try { if (!BIZS.includes(BIZ)) BIZ = BIZS[0] || null; localStorage.setItem('world.bizs', JSON.stringify({ list: BIZS, sel: BIZ && BIZ.id, out: BIZX.out.slice(-1000), seen: BIZX.seen.slice(-300), pay: BIZX.pay.slice(-30) })); localStorage.removeItem(BIZ_KEY); } catch (e) {} };
 const bizById = (id) => BIZS.find((b) => b.id === id) || null;
 const bizOwnerOf = (lotId) => BIZS.find((b) => b.lots.some((m) => m.id === lotId)) || null;
 const bizAllLots = () => BIZS.flatMap((b) => b.lots);
@@ -11081,7 +11096,7 @@ const bizFee = (b, k) => b.pFee[k] || Math.round(BIZ_RECIPE[k].fee * 0.85);
 const grpList = (row) => (row && Array.isArray(row.grp) ? row.grp : []).slice(0, 10).filter((c) => c && typeof c.id === 'string' && /^c[a-z0-9]{1,12}$/.test(c.id)).map((c) => ({
   id: c.id, n: bizCleanName(c.n), f: BIZ_FORMS[c.f] ? c.f : 'sole', l: Number.isInteger(c.l) && TOWN.lots[c.l] ? c.l : null,
   p: c.p && typeof c.p === 'object' ? Object.fromEntries(Object.keys(BIZ_RECIPE).filter((k) => Number.isFinite(+c.p[k]) && +c.p[k] > 0).map((k) => [k, Math.max(10, Math.min(2000, Math.round(+c.p[k])))])) : null,
-  pc: Math.max(0, Math.min(20000, Math.round(+c.pc || 0))), h: Number.isFinite(+c.h) && +c.h > 0 ? Math.max(4, Math.min(40, Math.round(+c.h))) : null, hc: Math.max(0, Math.min(50000, Math.round(+c.hc || 0))) }));
+  pc: Math.max(0, Math.min(20000, Math.round(+c.pc || 0))), h: Number.isFinite(+c.h) && +c.h > 0 ? Math.max(4, Math.min(40, Math.round(+c.h))) : null, hc: Math.max(0, Math.min(50000, Math.round(+c.hc || 0))), j: memJob(c.j) }));
 // 加工をたのむ先。key：'npc~会社の番号'（街の会社）／'me~会社id'（自分の別会社）／'p~プレイヤー~会社id'（ほかのプレイヤーの会社）
 function bizProcBy(key, k, self) {
   const P = BIZ_RECIPE[k]; if (!P || !key) return null; const a = String(key).split('~');
@@ -11125,7 +11140,7 @@ function bizNew(form, name) {
   const n = gameDayN();
   return { v: 1, form, name, cash: 0, capital: 0, start: n, lastN: n - 1, lots: [], loans: [], sup: {}, buy: {}, trucks: 0, staff: [], inv: Object.fromEntries(Object.keys(BIZ_G).map((g) => [g, 0])),
     id: bizNewId(), flows: [], inbox: [], svc: [], recipes: [], pFee: {}, hRate: 10, carrier: null, svcP: false, svcH: false,
-    markup: 1.3, meal: 950, pay: 0, wage: 11000, fleet: [], cars: [], pend: [], saleIds: [], mach: [], lossCarry: 0, shares: form === 'kk' ? 1000 : 0, own: form === 'kk' ? 1000 : 0, ledger: [], events: [], cum: { rev: 0, prof: 0, tax: 0 }, lastIssue: -1 };
+    markup: 1.3, meal: 950, pay: 0, wage: 11000, job: { open: false, w: 10000, s: 0 }, mem: [], fleet: [], cars: [], pend: [], saleIds: [], mach: [], lossCarry: 0, shares: form === 'kk' ? 1000 : 0, own: form === 'kk' ? 1000 : 0, ledger: [], events: [], cum: { rev: 0, prof: 0, tax: 0 }, lastIssue: -1 };
 }
 // 会社の値うち（純資産）：現金 ＋ 自分の土地 ＋ 建物（古くなると下がる）＋ トラック ＋ 在庫 − 借金
 function bizBook(b, x) {
@@ -11153,7 +11168,8 @@ function bizDay(b, n, x, G) {
   let need = b.fleet.filter((f) => !fleetSelf(f)).length; for (const m of live) need += bldNeed(m);   // 自分で運転するトラックは社長が運転する
   { const fm = live.filter((m) => BIZ_BLD[m.bld.t].kind === 'farm').length, tr = (b.mach || []).filter((q) => q.kind === 'tractor').length; need -= Math.min(fm * 0.6, tr * 0.6); }   // トラクターがあると畑の人手が少なくてすむ
   if (!shops.length && !diners.length) need += supKg / 1500;
-  const have = b.staff.length + 1, sf = need > 0 ? Math.min(1, have / need) : 1;
+  const mem = (b.mem || []).filter((m) => (m.day || 0) <= n);   // ほかのプレイヤーの社員も 人手に数える
+  const have = b.staff.length + 1 + mem.length, sf = need > 0 ? Math.min(1, have / need) : 1;
   R.need = Math.round(need * 10) / 10; R.have = have; R.sf = sf;
   aC('給料', b.staff.length * b.wage);
   if (b.pay && b.form !== 'sole') aC('役員報酬', b.pay);
@@ -11319,6 +11335,15 @@ function bizDay(b, n, x, G) {
   for (const l of b.loans) { aC('利息', l.amt * l.rate / CAL_YEAR); const p = Math.min(l.amt, Math.round(l.orig / l.term)); l.amt -= p; principal += p; }
   b.loans = b.loans.filter((l) => l.amt > 0);
   if (F.fixed) aC('住民税（均等割）', F.fixed);
+  // プレイヤー社員の給与：日給 ＋ 利益の分配（給与の前の利益の s% を 人数で分ける）。代金は biz_trades でその人の手持ちへ
+  if (mem.length) {
+    const J = b.job || {}, pre = Object.values(R.rev).reduce((s, v) => s + v, 0) - Object.values(R.cost).reduce((s, v) => s + v, 0);
+    const bonus = J.s > 0 && pre > 0 ? pre * J.s / 100 / mem.length : 0, each = Math.min(1e9, Math.round((J.w || 0) + bonus));
+    if (each > 0) {
+      aC('プレイヤー社員の給与', each * mem.length); R.memPay = { each, n: mem.length, bonus: Math.round(bonus) };
+      for (const m of mem) G.out.push({ t: 'net', payee: m.id, co: b.id, kind: 'wage', what: '給与', kg: n, amt: each, cost: 0, from: b.name });   // kg にはその日（ゲームの日）を入れる
+    }
+  }
   const rev = Object.values(R.rev).reduce((s, v) => s + v, 0), cost = Object.values(R.cost).reduce((s, v) => s + v, 0), prof = rev - cost;
   // 税金：もうけ（前の赤字を引いて）× 税率
   let taxable = prof - b.lossCarry; if (prof < 0) { b.lossCarry += -prof; taxable = 0; } else { b.lossCarry = Math.max(0, b.lossCarry - prof); }
@@ -11372,7 +11397,7 @@ function bizDeliver(out) {
     if (q.t === 'in') c.inbox.push({ g: q.g, kg: q.kg, pay: q.pay, label: q.label });
     else if (q.t === 'svc') c.svc.push({ r: q.r, amt: q.amt, c: q.c, cost: q.cost, kg: q.kg, k: q.k });
   }
-  if (BIZX.out.length > 300) BIZX.out.splice(0, BIZX.out.length - 300);
+  if (BIZX.out.length > 1000) BIZX.out.splice(0, BIZX.out.length - 1000);
 }
 // 廃業・倒産：土地を売り、建物をこわし、借金を返す。残りを手持ちへ（会社は持ち株の割合）
 function bizClose(bankrupt, b0) {
@@ -11387,6 +11412,7 @@ function bizClose(bankrupt, b0) {
   else if (b.form === 'sole') { const pay = Math.min(wallet.p, -cash); addPoints(-pay); msg = `${b.name}${bankrupt ? 'は倒産しました' : 'を廃業しました'}。個人事業主なので、売っても のこった借金 ${yen(-cash)}円のうち ${yen(pay)}P を手持ちから返しました`; }
   else msg = `${b.name}${bankrupt ? 'は倒産しました' : 'を廃業しました'}。のこった借金 ${yen(-cash)}円は会社の分なので、手持ちのPは守られました`;
   for (const m of b.lots) bizUnbuild(m);
+  for (const m of b.mem || []) { BIZ_NET.mem.delete(m.id + '~' + b.id); if (net.mem) net.mem.fire(m.id, b.id).catch(() => {}); }   // プレイヤー社員は退社
   BIZS = BIZS.filter((q) => q !== b);
   for (const o of BIZS) { o.flows = o.flows.filter((f) => f.to !== b.id && f.by !== 'me~' + b.id); if (o.carrier === 'me~' + b.id) o.carrier = null; }
   if (BIZ === b) BIZ = BIZS[0] || null;
@@ -11411,6 +11437,7 @@ function bizAct(a, v) {
   if (a === 'sel') { const c = bizById(v); if (c) { BIZ = c; TP.bizNew = false; TP.bizSure = false; TP.fl = null; saveBiz(); } return; }
   if (a === 'newCo') { TP.bizNew = !TP.bizNew; return; }
   if (a === 'trialEnd') { trialEnd(); return; }
+  if (a === 'jobJoin' || a === 'jobLeave') { memAct(a, v, say); return; }
   if (a === 'carBuy' || a === 'carTry') { const [by, i] = String(v).split('|'); (a === 'carBuy' ? carBuy : carTry)(by, +i); return; }
   if (!b) return;
   const ensure = (amt) => { if (b.cash >= amt) return true; say(`事業のお金が足りません（${man(amt)} いります・いま ${man(b.cash)}）。融資を受けるか、お金を入れてください`); return false; };
@@ -11504,6 +11531,12 @@ function bizAct(a, v) {
     case 'carPrice': { const [i, d] = v.split(':').map(Number), c = b.cars[i]; if (!c) return; c.price = Math.max(Math.round(c.cost * 0.8 / 1e4) * 1e4, Math.min(c.cost * 3, Math.round(c.price * (1 + d) / 1e4) * 1e4)); break; }
     case 'carDrop': { const c = b.cars[+v]; if (!c) return; b.cars.splice(+v, 1); say(`「${c.name}」の販売をやめました`); break; }
     case 'wage': b.wage = Math.max(8000, Math.min(25000, b.wage + +v)); say(`求人の給料を1日 ${yen(b.wage)}円にしました。${b.staff.filter((p) => bizMinWage(p) > b.wage).length ? 'いまの給料ではやめたい人がいます（つぎの決算でやめます）' : ''}`); break;
+    case 'jobW': b.job.w = Math.max(0, Math.min(1e6, +v || 0)); say(`プレイヤー社員の日給を ${yen(b.job.w)}円にしました`); break;
+    case 'jobS': b.job.s = Math.max(0, Math.min(50, +v || 0)); say(b.job.s ? `その日の利益の ${b.job.s}% を プレイヤー社員みんなで分けます` : '利益の分配をやめました'); break;
+    case 'jobOpen': if (!b.job.open && !b.job.w && !b.job.s) return say('日給か 利益の分配を決めてください');
+      if (!b.job.open && !BIZ_NET.memOk) return say('Supabase で supabase-update-12.sql を実行すると募集できます');
+      b.job.open = !b.job.open; say(b.job.open ? 'プレイヤー社員を募集しました（🌐 みんなの画面に出ます）' : '募集をやめました（いまの社員はそのまま）'); break;
+    case 'jobFire': { const m = (b.mem || []).find((q) => q.id === v); if (!m || !net.mem) return; BIZ_NET.mem.delete(v + '~' + b.id); bizMemSync(); net.mem.fire(v, b.id).catch((e) => { console.warn('fire', e); }); say(`${m.name}さんに やめてもらいました`); break; }
     case 'hire': { if (BIZS.some((o) => o.staff.includes(+v))) return say('その人は もう自分の会社ではたらいています'); if (bizMinWage(+v) > b.wage) return say('この給料では来てくれません'); if (b.staff.length + 1 >= BIZ_FORMS[b.form].staffMax) return say(`${BIZ_FORMS[b.form].name}は ${BIZ_FORMS[b.form].staffMax}人まで（社長をふくむ）。会社にすると たくさん雇えます`); b.staff.push(+v); say(`${resName(+v)}さんを雇いました（1日 ${yen(b.wage)}円）`); break; }
     case 'fire': b.staff = b.staff.filter((p) => p !== +v); say(`${resName(+v)}さんがやめました`); break;
     case 'markup': b.markup = Math.max(1.1, Math.min(1.8, Math.round((b.markup + +v) * 100) / 100)); break;
@@ -11614,7 +11647,7 @@ for (const m of bizAllLots()) if (m.bld) bizBuild(m);
 
 /* ---- みんなの会社（2026-11-02）：Supabase の businesses（会社）と biz_lots（使っている土地）。supabase-update-7.sql
    ここに書くのは名前・建物の種類・できあがる時刻・きのうの売り上げだけ（データだけ）。お金の計算は それぞれの端末でする ---- */
-const BIZ_NET = { on: false, err: '', lots: new Map(), cos: new Map(), pushing: false, again: false, coSent: '', tradesOk: false, flushing: false };
+const BIZ_NET = { on: false, err: '', lots: new Map(), cos: new Map(), pushing: false, again: false, coSent: '', tradesOk: false, flushing: false, mem: new Map(), memOk: false, bye: new Set() };
 // ほかのプレイヤーの会社に たのんだ加工・運送の代金を送る（送れなかった分は とっておいて あとで送る）
 async function bizTradeFlush() {
   if (!net.trades || !BIZ_NET.tradesOk || BIZ_NET.flushing || !BIZX.out.length) return;
@@ -11625,11 +11658,12 @@ async function bizTradeFlush() {
       await net.trades.add({ id: q.id, payer: net.myId, payee: q.payee, co: q.co, payer_name: (myName || '').slice(0, 24), payer_co: bizCleanName(q.from), kind: q.kind, what: String(q.what).slice(0, 16), kg: Math.max(0, Math.min(1e7, q.kg | 0)), amt: Math.max(0, Math.min(1e9, Math.round(q.amt))), cost: Math.max(0, Math.min(1e9, Math.round(q.cost))) });
       BIZX.out.shift(); saveBiz();
     }
-  } catch (e) { console.warn('biz trade', e); }
+  } catch (e) { if (/kind_check/.test(String(e && e.message)) && BIZX.out[0] && BIZX.out[0].kind === 'wage') { BIZX.out = BIZX.out.filter((q) => q.kind !== 'wage'); saveBiz(); } else console.warn('biz trade', e); }
   BIZ_NET.flushing = false;
 }
 // ほかのプレイヤーが自分の会社に たのんだ加工・運送：代金はつぎの決算で売り上げに、材料・燃料は費用に
 function bizTradeIn(r) {
+  if (r && r.kind === 'wage') return bizWageIn(r);
   if (!r || r.payee !== net.myId || !isId(r.id) || !BIZS.length) return;
   if (BIZX.seen.includes(r.id)) { if (net.trades) net.trades.done(r.id).catch(() => {}); return; }
   const c = bizById(r.co) || BIZ, amt = Math.max(0, Math.min(1e9, Math.round(+r.amt || 0))), cost = Math.max(0, Math.min(amt * 2, Math.round(+r.cost || 0))), kg = Math.max(0, Math.min(1e7, Math.round(+r.kg || 0)));
@@ -11640,6 +11674,105 @@ function bizTradeIn(r) {
   saveBiz(); if (net.trades) net.trades.done(r.id).catch(() => {});
   showMsg(`🏢 ${who}さんの「${co}」から ${c.name}へ ${haul ? '運送' : what + 'の加工'}の代金 ${yen(amt)}円（つぎの決算で売り上げに）`);
   if (TP.open && TP.tab === 'biz') renderTown();
+}
+/* ---- ほかのプレイヤーの会社に入る（2026-11-03）：Supabase の biz_members（だれが どの会社に入っているか）。supabase-update-12.sql
+   会社の持ち主は 毎日の決算で 日給 ＋ 利益の分配 をはらい、biz_trades（kind 'wage'）で その人に知らせる。もらった人は手持ちの P に入れる（1 割は所得税） ---- */
+const MEM_MAX = 10, MEM_JOBS = 3;   // 1 社の プレイヤー社員の人数・1 人が入れる ほかの人の会社の数
+const memKey = (d) => d.member + '~' + d.co;
+const memRowOk = (d) => !!d && isId(d.member) && isId(d.owner) && d.member !== d.owner && typeof d.co === 'string' && /^c[a-z0-9]{1,12}$/.test(d.co);
+const memCount = (co) => { let k = 0; for (const r of BIZ_NET.mem.values()) if (r.co === co) k++; return k; };
+const memName = (t) => String(t || '').replace(/[\u0000-\u001f<>]/g, '').slice(0, 24) || 'だれか';
+// 募集の決まり（ネットから来たデータなので形をたしかめる）：[日給, 利益の分配 %, 人数]
+function memJob(j) {
+  if (!Array.isArray(j)) return null;
+  const w = Math.max(0, Math.min(1e6, Math.round(+j[0] || 0))), s = Math.max(0, Math.min(50, Math.round(+j[1] || 0))), mx = Math.max(1, Math.min(MEM_MAX, Math.round(+j[2] || MEM_MAX)));
+  return w || s ? { w, s, mx } : null;
+}
+// 自分の会社の社員の一覧（決算で使う）を みんなの表から作りなおす
+function bizMemSync(clean) {
+  if (!BIZ_NET.memOk) return;
+  for (const b of BIZS) b.mem = [...BIZ_NET.mem.values()].filter((r) => r.owner === net.myId && r.co === b.id).slice(0, MEM_MAX).map((r) => ({ id: r.member, name: memName(r.member_name), day: Number.isInteger(+r.day) ? +r.day : 0 }));
+  if (clean && net.mem) for (const r of [...BIZ_NET.mem.values()]) if (r.owner === net.myId && !bizById(r.co)) { BIZ_NET.mem.delete(memKey(r)); net.mem.fire(r.member, r.co).catch(() => {}); }   // もうない会社の社員
+  saveBiz();
+  if (TP.open && TP.tab === 'biz') renderTown();
+}
+function bizMemEvent(m) {
+  if (!BIZ_NET.memOk) return;
+  if (m.eventType === 'DELETE') {
+    const d = m.old; if (!d || !d.member || !d.co) return;
+    const k = memKey(d), had = BIZ_NET.mem.get(k) || d; BIZ_NET.mem.delete(k);
+    if (!BIZ_NET.bye.has(k)) { if (had.member === net.myId) showMsg(`💼 ${bizCleanName(had.co_name)}を やめることになりました`); else if (had.owner === net.myId && bizById(had.co)) showMsg(`🙋 ${memName(had.member_name)}さんが ${bizById(had.co).name}をやめました`); }
+    BIZ_NET.bye.delete(k);
+  } else {
+    const d = m.new; if (!memRowOk(d)) return;
+    const k = memKey(d), was = BIZ_NET.mem.has(k); BIZ_NET.mem.set(k, d);
+    if (!was && d.owner === net.myId && bizById(d.co)) showMsg(`🙋 ${memName(d.member_name)}さんが ${bizById(d.co).name}に入りました`);
+  }
+  bizMemSync();
+}
+// ほかの人の会社からの給与：手持ちの P へ（1 割は所得税）。会社がなくても受けとれる
+function bizWageIn(r) {
+  if (r.payee !== net.myId || !isId(r.id)) return;
+  if (BIZX.seen.includes(r.id)) { if (net.trades) net.trades.done(r.id).catch(() => {}); return; }
+  const amt = Math.max(0, Math.min(1e9, Math.round(+r.amt || 0))), got = Math.round(amt * 0.9), n = Math.max(0, Math.round(+r.kg || 0));
+  const who = memName(r.payer_name), co = bizCleanName(r.payer_co);
+  if (got > 0) addPoints(got);
+  BIZX.pay.push({ n, co, who, got }); if (BIZX.pay.length > 30) BIZX.pay.splice(0, BIZX.pay.length - 30);
+  BIZX.seen.push(r.id); if (BIZX.seen.length > 300) BIZX.seen.splice(0, BIZX.seen.length - 300);
+  saveBiz(); if (net.trades) net.trades.done(r.id).catch(() => {});
+  const c = calOf(n); showMsg(`💼 ${co}（${who}さんの会社）から ${c.m}/${c.d}の給与 ${yen(got)}P（1割は所得税）`);
+  if (TP.open && TP.tab === 'biz') renderTown();
+}
+// 入社・退社（v は「持ち主~会社id」）
+function memAct(a, v, say) {
+  if (!net.mem || !BIZ_NET.memOk) return say('Supabase で supabase-update-12.sql を実行すると、ほかのプレイヤーの会社に入れます');
+  const [by, co] = String(v).split('~'); if (!isId(by) || by === net.myId || !co) return;
+  const k = net.myId + '~' + co, redraw = () => { if (TP.open && TP.tab === 'biz') renderTown(); };
+  if (a === 'jobLeave') {
+    const r = BIZ_NET.mem.get(k); if (!r) return;
+    BIZ_NET.bye.add(k); BIZ_NET.mem.delete(k);
+    net.mem.leave(co).catch((e) => { console.warn('leave', e); BIZ_NET.mem.set(k, r); BIZ_NET.bye.delete(k); TP.bizMsg = '退社できませんでした（つながりを確かめてください）'; redraw(); });
+    return say(`${bizCleanName(r.co_name)}を退社しました`);
+  }
+  const c = grpList(BIZ_NET.cos.get(by)).find((q) => q.id === co);
+  if (!c || !c.j) return say('その会社は いま募集していません');
+  if (BIZ_NET.mem.has(k)) return say('もう入っています');
+  if ([...BIZ_NET.mem.values()].filter((r) => r.member === net.myId).length >= MEM_JOBS) return say(`ほかの人の会社には ${MEM_JOBS}社まで入れます`);
+  if (memCount(co) >= c.j.mx) return say('その会社は 社員がいっぱいです');
+  const row = { member: net.myId, owner: by, co, member_name: (myName || '').slice(0, 24), co_name: c.n, day: gameDayN() };
+  BIZ_NET.mem.set(k, row);
+  net.mem.add(row).catch((e) => { console.warn('join', e); BIZ_NET.mem.delete(k); TP.bizMsg = /too many jobs/.test(String(e && e.message)) ? `ほかの人の会社には ${MEM_JOBS}社まで入れます` : '入社できませんでした（つながりを確かめてください）'; redraw(); });
+  say(`「${c.n}」（${bizWho(by)}さんの会社）に入りました。毎日の決算で 給与が手持ちの P にとどきます。自分の事業も そのままできます`);
+}
+const memJobText = (j) => j ? [j.w ? `日給 ${yen(j.w)}円` : '', j.s ? `利益の${j.s}%を社員で分ける` : ''].filter(Boolean).join('＋') : '';
+// 事業の画面：💼 ほかの人の会社ではたらく（会社がなくても出る）
+function bizJobsHtml() {
+  const B = (a, v, t, cls = '', dis = false) => `<button type="button" class="${cls}" data-b="${a}" data-v="${escH(v)}"${dis ? ' disabled' : ''}>${t}</button>`;
+  if (!net.mem) return '<p class="small">ひとりで遊んでいるので、ほかの人の会社には入れません</p>';
+  if (!BIZ_NET.memOk) return '<p class="small">Supabase で supabase-update-12.sql を実行すると、ほかのプレイヤーの会社に入れます</p>';
+  const mine = [...BIZ_NET.mem.values()].filter((r) => r.member === net.myId);
+  const my = mine.map((r) => { const c = grpList(BIZ_NET.cos.get(r.owner)).find((q) => q.id === r.co), gone = BIZ_NET.on && !BIZ_NET.noGrp && !c;
+    return `<div class="bzrow"><span><b>${escH(c ? c.n : bizCleanName(r.co_name))}</b><small>${escH(bizWho(r.owner))}さんの会社・${gone ? '<span class="dn">この会社は いまは見つかりません</span>' : c && c.j ? memJobText(c.j) : '募集はおわっています（給与はいままでどおり）'}・社員 ${memCount(r.co)}人・${calOf(+r.day || 0).m}/${calOf(+r.day || 0).d}から</small></span>${B('jobLeave', `${r.owner}~${r.co}`, '退社する')}</div>`; }).join('');
+  const open = [];
+  for (const [by, row] of BIZ_NET.cos) if (by !== net.myId) for (const c of grpList(row)) if (c.j && !BIZ_NET.mem.has(net.myId + '~' + c.id)) open.push([by, c, row]);
+  open.sort((p, q) => (q[2].prof || 0) - (p[2].prof || 0));
+  const list = open.slice(0, 20).map(([by, c, row]) => { const k = memCount(c.id), full = k >= c.j.mx;
+    return `<div class="bzrow"><span><b>${escH(c.n)}</b><small>${escH(bizWho(by))}さん・${(BIZ_FORMS[c.f] || BIZ_FORMS.sole).name}・${memJobText(c.j)}・社員 ${k}/${c.j.mx}人・きのうの利益（その人の会社ぜんぶ） ${man(row.prof || 0)}</small></span>${B('jobJoin', `${by}~${c.id}`, full ? 'いっぱい' : '入社する', 'buy', full || mine.length >= MEM_JOBS)}</div>`; }).join('');
+  const pay = BIZX.pay.slice(-6).reverse().map((q) => `${calOf(q.n).m}/${calOf(q.n).d} ${escH(q.co)} ${yen(q.got)}P`).join('<br>');
+  return `<p>ほかのプレイヤーの会社に入ると、その会社の決算のたびに（1日ごと）給与が手持ちの P にとどきます（1割は所得税）。大きくもうけた会社ほど「利益の分配」が大きくなります。自分の事業も そのままつづけられます（${MEM_JOBS}社まで）。</p>
+    ${my ? `<h4>はたらいている会社</h4>${my}` : ''}<h4>募集している会社</h4>${list || '<p class="small">いまは募集している会社がありません</p>'}
+    ${pay ? `<h4>もらった給与（手取り）</h4><p class="small">${pay}</p>` : ''}<p class="small">給与は 会社の持ち主がゲームを開いて決算したときに送られます（休んでいた日の分は あとから まとめて とどきます）。</p>`;
+}
+// 事業の画面：🙋 プレイヤー社員（自分の会社に ほかのプレイヤーを入れる）
+function bizMemHtml(b, btn, last) {
+  const J = b.job, L = last && last.memPay, where = b.form === 'sole' ? '事業' : '会社の口座';
+  return `<p>ほかのプレイヤーが この会社に入って はたらけます（${MEM_MAX}人まで）。社員は 人手の1人に数えます。給与は毎日の決算で ${where}のお金からはらい、その人の手持ちの P にとどきます。</p>
+    <div class="bzrow col"><span><b>日給 ${yen(J.w)}円</b><small>毎日 1人に はらう分</small></span><span class="trade">${[0, 5000, 10000, 20000, 50000, 100000].map((a) => btn('jobW', a, a ? yen(a) + '円' : 'なし', J.w === a ? 'on' : '')).join('')}</span></div>
+    <div class="bzrow col"><span><b>利益の分配 ${J.s}%</b><small>その日の利益（給与の前）が出たら、その ${J.s || '○'}% を 社員の人数で分けて 日給にたします。大きくもうけた日は たくさん わたせます</small></span><span class="trade">${[0, 5, 10, 20, 30, 50].map((a) => btn('jobS', a, a ? a + '%' : 'なし', J.s === a ? 'on' : '')).join('')}</span></div>
+    <div class="trade">${btn('jobOpen', '', J.open ? '募集している ✓' : '募集する', J.open ? 'on' : '', !J.open && !BIZ_NET.memOk)}</div>
+    ${!BIZ_NET.memOk ? '<p class="small">Supabase で supabase-update-12.sql を実行すると 募集できます</p>' : BIZ_NET.noGrp ? '<p class="small dn">supabase-update-11.sql も実行してください（募集が みんなの画面に出ません）</p>' : ''}
+    <h4>社員（${b.mem.length}人）</h4>${b.mem.map((m) => `<div class="bzrow"><span>${escH(m.name)}さん<small>${calOf(m.day).m}/${calOf(m.day).d}から</small></span>${btn('jobFire', m.id, 'やめてもらう')}</div>`).join('') || '<p class="small">まだ だれもいません</p>'}
+    ${L ? `<p class="small">きのうの給与：1人 ${yen(L.each)}円${L.bonus ? `（うち利益の分配 ${yen(L.bonus)}円）` : ''} × ${L.n}人</p>` : ''}`;
 }
 // ほかの人の店の車種（ネットから来たデータなので形をたしかめる）
 const carList = (co) => (co && Array.isArray(co.cars) ? co.cars : []).slice(0, DLR_MAX).filter((c) => c && isId(c.m) && Number.isFinite(+c.p) && +c.p >= 1e5 && +c.p <= 1e9)
@@ -11699,6 +11832,7 @@ async function bizPush(co) {
       if (!BIZ_NET.noGrp) row.grp = BIZS.map((c) => { const fl = bizKindLots(c, 'factory'), L = fl.length ? bizLot(fl[0].id) : bizBaseLot(c), o = { id: c.id, n: bizCleanName(c.name), f: c.form, l: L ? L.id : null };
         if (c.svcP && fl.length) { o.p = Object.fromEntries(Object.keys(BIZ_RECIPE).map((k) => [k, bizFee(c, k)])); o.pc = Math.round(bizFacCap(c) * 0.5); }
         if (c.svcH && c.fleet.length) { o.h = c.hRate; o.hc = Math.round(fleetKg(c) * 0.6); }
+        if (c.job && c.job.open && (c.job.w || c.job.s)) o.j = [c.job.w, c.job.s, MEM_MAX];   // プレイヤー社員の募集：日給・利益の分配（%）・人数
         return o; });
       const key = JSON.stringify(row); if (co || key !== BIZ_NET.coSent) { await net.biz.co(row); BIZ_NET.coSent = key; BIZ_NET.cos.set(net.myId, row); }
     } else if (BIZ_NET.cos.has(net.myId)) { await net.biz.coGone(); BIZ_NET.cos.delete(net.myId); BIZ_NET.coSent = ''; }
@@ -11721,7 +11855,7 @@ function bizCosHtml() {
   if (!BIZ_NET.on) return `<p class="small">${net.biz ? 'みんなの会社を読みこんでいます…（Supabase で supabase-update-7.sql を実行すると、ほかの人にも会社が見えます）' : 'ひとりで遊んでいるので、会社はこの端末だけに出ます'}</p>`;
   const list = [...BIZ_NET.cos.values()].sort((a, c) => (c.prof || 0) - (a.prof || 0));
   if (!list.length) return '<p class="small">まだ だれも会社を作っていません。</p>';
-  return `<table class="mtab"><tr><th>会社</th><th>土地</th><th>きのうの利益</th></tr>${list.map((c) => `<tr><td>${escH(bizCleanName(c.name))}${c.by === net.myId ? '（あなた）' : ''}<small>${grpList(c).length > 1 ? `グループ ${grpList(c).map((q) => escH(q.n) + (q.p ? '🏭' : '') + (q.h ? '🚚' : '')).join('・')}・` : grpList(c).some((q) => q.p || q.h) ? `${grpList(c)[0].p ? '🏭加工を受ける・' : ''}${grpList(c)[0].h ? '🚚運送を受ける・' : ''}` : ''}${(BIZ_FORMS[c.form] || BIZ_FORMS.sole).name}・${escH(net.names.get(c.by) || (c.by === net.myId ? myName || '' : 'だれか'))}</small></td><td class="num">${c.lots || 0}</td><td class="num ${c.prof < 0 ? 'dn' : 'up'}">${man(c.prof || 0)}</td></tr>`).join('')}</table>`;
+  return `<table class="mtab"><tr><th>会社</th><th>土地</th><th>きのうの利益</th></tr>${list.map((c) => `<tr><td>${escH(bizCleanName(c.name))}${c.by === net.myId ? '（あなた）' : ''}<small>${grpList(c).length > 1 ? `グループ ${grpList(c).map((q) => escH(q.n) + (q.p ? '🏭' : '') + (q.h ? '🚚' : '') + (q.j ? '💼' : '')).join('・')}・` : grpList(c).some((q) => q.p || q.h || q.j) ? `${grpList(c)[0].p ? '🏭加工を受ける・' : ''}${grpList(c)[0].h ? '🚚運送を受ける・' : ''}${grpList(c)[0].j ? '💼社員を募集中・' : ''}` : ''}${(BIZ_FORMS[c.form] || BIZ_FORMS.sole).name}・${escH(net.names.get(c.by) || (c.by === net.myId ? myName || '' : 'だれか'))}</small></td><td class="num">${c.lots || 0}</td><td class="num ${c.prof < 0 ? 'dn' : 'up'}">${man(c.prof || 0)}</td></tr>`).join('')}</table>`;
 }
 // ほかの人の店の前で「のぞく」
 function bizOtherHtml(row) {
@@ -12137,7 +12271,7 @@ function bizHtml() {
     return `${msg}<section class="card"><h3>🏢 事業をはじめる</h3><p>店や会社をつくって、街の会社と取り引きしてもうけましょう。たとえば小売なら：<b>みなと銀行</b>でお金を借りる → <b>みなと不動産</b>で土地を買う／借りる → <b>はじめ建設</b>で店を建てる → <b>はじめファーム</b>などと仕入れの契約 → <b>はじめ運輸</b>で運んで売る。</p>
       <p>店を持たずに<b>みなとマートやPAに卸す</b>、<b>畑・果樹園</b>をやって売る、<b>加工工場</b>でジュースやジャムを作る、<b>トラック</b>で運送業、<b>アパート</b>で家賃、などのやり方もあります。会社はあとから いくつもふやせます。毎日0時に決算します（ゲームの1日＝実際の40分）。</p></section>
       <section><h3>事業の形をえらぶ</h3>${Object.entries(BIZ_FORMS).map(([k, F]) => `<button type="button" class="bzopt${f === k ? ' on' : ''}" data-b="form" data-v="${k}"><b>${F.name}</b>　<span>${F.fee ? yen(F.fee) + 'P' : '0P'}・税 ${F.tax * 100}%・借りられる額 ${man(F.base)}〜・${F.staffMax > 100 ? '人数の上限なし' : `${F.staffMax}人まで`}</span><small>${F.note}</small></button>`).join('')}</section>
-      <section><h3>名前</h3><input id="bizName" maxlength="16" placeholder="${f === 'sole' ? 'わんみゃ商店' : f === 'llc' ? 'わんみゃ合同会社' : '株式会社わんみゃ'}" autocomplete="off"> <button type="button" class="buy" data-b="register">登録する</button><p class="small">手持ち ${fmtP(wallet.p)}。お金の計算はこの端末でします。会社の名前・土地・建物は、みんなの画面にも出ます。</p></section><section><h3>🌐 みんなの会社</h3>${bizCosHtml()}</section>`;
+      <section><h3>名前</h3><input id="bizName" maxlength="16" placeholder="${f === 'sole' ? 'わんみゃ商店' : f === 'llc' ? 'わんみゃ合同会社' : '株式会社わんみゃ'}" autocomplete="off"> <button type="button" class="buy" data-b="register">登録する</button><p class="small">手持ち ${fmtP(wallet.p)}。お金の計算はこの端末でします。会社の名前・土地・建物は、みんなの画面にも出ます。</p></section><section><h3>💼 ほかの人の会社ではたらく</h3>${bizJobsHtml()}</section><section><h3>🌐 みんなの会社</h3>${bizCosHtml()}</section>`;
   }
   const F = BIZ_FORMS[b.form], k = bizBook(b), x = ECON.S.xs.get(n) || ECON.ctx(n, ECON.S);
   const pv = bizDay(structuredClone(b), n, x), last = b.ledger[b.ledger.length - 1];
@@ -12222,7 +12356,8 @@ function bizHtml() {
     <p class="small">${b.events.slice(-6).reverse().map((e) => `${calOf(e.n).m}/${calOf(e.n).d} ${escH(e.t)}`).join('<br>')}</p>`;
   return msg + tabs + head + det('money', '💰 お金', money) + det('loan', `🏦 融資（みなと銀行・はじめ信用金庫）`, loan) + det('land', `🗺️ 土地（みなと不動産）`, land) + det('build', '🏗️ 建てる（はじめ建設）', bld)
     + det('sup', '🤝 仕入れ（ファーム・水産・牛乳・水産加工）', sup) + det('buy', '📦 卸す（マート・PA・お店）', buy) + det('fac', `🏭 加工工場（${bizKindLots(b, 'factory').length}）`, facSec) + det('flow', `🔗 グループ・委託（${b.flows.length}）`, flowSec) + det('truck', `🚚 トラック・運送（${b.fleet.length}台）`, truck) + det('cars', `🚗 車の販売（${b.cars.length}車種）`, carSec) + det('mach', `🚜 農機（${(b.mach || []).length}台）`, machSec)
-    + det('staff', `👥 従業員（${b.staff.length}人）`, staff) + det('price', '🏷️ 値段', price) + det('book', '📒 帳簿', book) + det('corp', `📜 ${F.name}`, corp) + det('cos', `🌐 みんなの会社（${BIZ_NET.cos.size}社）`, bizCosHtml());
+    + det('staff', `👥 従業員（${b.staff.length}人）`, staff) + det('pmem', `🙋 プレイヤー社員（${b.mem.length}人${b.job.open ? '・募集中' : ''}）`, bizMemHtml(b, btn, last))
+    + det('job', `💼 ほかの人の会社ではたらく（${[...BIZ_NET.mem.values()].filter((r) => r.member === net.myId).length}社）`, bizJobsHtml()) + det('price', '🏷️ 値段', price) + det('book', '📒 帳簿', book) + det('corp', `📜 ${F.name}`, corp) + det('cos', `🌐 みんなの会社（${BIZ_NET.cos.size}社）`, bizCosHtml());
 }
 // 事業の画面：🏭 加工工場
 function bizFacHtml(b, btn, last) {
