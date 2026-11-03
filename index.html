@@ -137,6 +137,8 @@ body.mapOn #msg { top: max(145px, 30vh); }
 .paper .voice small { display: inline; margin-left: 4px; }
 .paper .cols, .paper .cols2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 0 14px; }
 .paper .mtab td { font-size: 12px; padding: 2px 4px; }
+.paper .chain ol { margin: 4px 0; padding-left: 1.4em; font-size: 13px; } .paper .chain li { margin: 2px 0; }
+.paper .movers .mv { border-top: 1px dotted #bbb; padding: 4px 0; } .paper .movers .mv p { margin: 2px 0; font-size: 13px; }
 .paper .adbox { display: flex; flex-direction: column; align-items: center; border-radius: 6px; padding: 8px; font-family: var(--font-ui); }
 .paper .adbox b { font-size: 18px; } .paper .adbox small { color: inherit; opacity: .7; }
 #townBody .srow { display: grid; grid-template-columns: 1fr auto auto; align-items: center; gap: 8px; width: 100%; text-align: left; margin-top: 4px; padding: 6px 8px; background: #fff; }
@@ -10036,11 +10038,14 @@ const ECON = (() => {
       const fair = earn * 0.85 + book / 0.7 * 0.15;   // 純資産ははじめ株価の 7 割
       const z = (hash(n, c.code) + hash(n, c.code + 7) + hash(n, c.code + 13)) / 3 - 0.5;
       let p = st.price + 0.08 * (fair - st.price) + st.price * (0.05 * z + 0.025 * (S.mood - 0.5));
+      const p0 = p;
       if (ev) p *= 1 + ev[1] * (0.05 + 0.06 * hash(n, c.code + 97));
+      // 動いた理由（新聞の解説用）：会社の値うちとの差・景気・ニュース・売り買いのゆれ
+      const why = { fair: Math.round(fair), gap: 0.08 * (fair - st.price), mood: st.price * 0.025 * (S.mood - 0.5), noise: st.price * 0.05 * z, ev: p - p0, pr: prof / Math.max(1, b * E.m), ar: st.avgP / Math.max(1, b * E.m) };
       st.prev = st.price; st.price = Math.max(1, Math.round(p));
       st.hist.push(st.price); if (st.hist.length > 60) st.hist.shift();
       st.event = ev ? ev[0] : null; st.evSign = ev ? ev[1] : 0;
-      day.co[c.code] = { rev, prof, price: st.price, prev: st.prev, ev: st.event, evSign: st.evSign };
+      day.co[c.code] = { rev, prof, price: st.price, prev: st.prev, ev: st.event, evSign: st.evSign, why, rr: rev / Math.max(1, b) };
     }
     // まち全体：景気・預金・地価・燃料・えさ代・スポーツクラブの会員
     const ratio = revSum / bSum;
@@ -10087,6 +10092,64 @@ const saveStocks = () => { try { localStorage.setItem(STOCKS_KEY, JSON.stringify
 // 天気予報の文
 function wxDayText(n) { const w = wxDay(n), k = WX_KIND[w.kind]; return { icon: k[0], name: k[1], tMax: w.tMax, tMin: w.tMin, pop: Math.min(100, Math.round(w.rainH / 24 * 100 / 10) * 10 + (w.rainH ? 10 : 0)), w }; }
 /* ---- 新聞（n 日目の朝 6 時に出る。前の日のできごと） ---- */
+
+/* ---- 株価の解説（2026-11-03）：天気 → 畑・漁 → 値段 → 会社の売り上げ・利益 → 株価 のつながりを文にする ---- */
+const pctT = (r) => r >= 2 ? `${(Math.round(r * 10) / 10)}倍` : r < 0 ? '赤字' : `${Math.round(r * 100)}%`;
+function wxSay(x) {
+  const w = x.w, k = WX_KIND[w.kind] || ['', ''];
+  if (x.storm) return `台風（強い雨と風が${w.stormH}時間）`;
+  if (x.snow) return `${w.snowH}時間の雪（最高${w.tMax}℃）`;
+  if (w.rainH >= 6) return `雨の多い一日（${w.rainH}時間・最高${w.tMax}℃）`;
+  if (w.rainH >= 2) return `ときどき雨（${w.rainH}時間・最高${w.tMax}℃）`;
+  return `${w.sun >= 8 ? '晴れ' : 'くもり'}（日照${w.sun}時間・最高${w.tMax}℃）`;
+}
+// 会社ごとの「売り上げが動いたわけ」
+function coDriver(code, x, r, yy) {
+  const vk = x.veg.kg / Math.max(1, x.veg.norm), fk = x.fish.kg / Math.max(1, x.fish.norm), hol = x.hol ? '休日で' : '平日で';
+  const vegWhy = x.veg.wf < 0.8 ? `${wxSay(x)}で畑の取れる量が減り` : x.veg.wf > 1.05 ? '日ざしにめぐまれて畑の取れる量がふえ' : '畑の取れる量はほぼふつうで';
+  const fishWhy = !x.fish.out ? `${wxSay(x)}で漁船が港から出られず` : fk > 1.15 ? `${x.fish.names[0]}の群れが来て大漁で` : fk < 0.75 ? '魚の群れが少なく不漁で' : '漁はほぼいつもどおりで';
+  switch (code) {
+    case 1301: return `${vegWhy}、野菜の出荷は${yen(x.veg.kg)}kg（ふつうの${pctT(vk)}）、値段は1kg${yen(x.veg.price)}円。ファームの手数料は出荷した野菜の金額で決まる`;
+    case 1332: return `${fishWhy}、水あげは${yen(x.fish.kg)}kg（ふつうの${pctT(fk)}）、値段は1kg${yen(x.fish.price)}円`;
+    case 3091: return `${fishWhy}、魚が${x.fish.kg ? `1kg${yen(x.fish.price)}円` : '入らず'}。PAの鮮魚コーナーは魚が多く安い日ほど売れる。${x.hol ? '休日' : '平日'}・${wxSay(x)}で旅の人は${x.travel >= 1.2 ? '多め' : x.travel < 0.8 ? '少なめ' : 'ふつう'}`;
+    case 2877: return `原料の魚が1kg${yen(x.fish.price)}円（ふつうの${pctT(x.fishIdx)}）。魚が安いほど干物・かまぼこの利益がふえる`;
+    case 2264: return x.tMax > 28 ? `最高${x.tMax}℃の暑さで牛の乳の量が減った。えさ代はふつうの${pctT(x.feed)}` : `牛乳の量はふつう。えさ代はふつうの${pctT(x.feed)}`;
+    case 8201: return `${hol}${x.storm ? '台風でお客さんが少なかった' : x.stormNext ? 'あしたの台風にそなえて買いだめが多かった' : 'お客さんはいつもどおり'}。野菜の仕入れ値はふつうの${pctT(x.vegIdx)}`;
+    case 3048: return x.tMax > 28 ? `最高${x.tMax}℃の暑さでエアコンが売れた` : x.tMin < 3 ? `最低${x.tMin}℃の寒さでヒーターが売れた` : `${hol}家電の売れゆきはふつう`;
+    case 9064: return `運んだ野菜と魚は${yen(x.veg.kg + x.fish.kg)}kg。燃料代はふつうの${pctT(x.fuel)}${x.snow || x.storm ? `。${x.snow ? '雪' : '台風'}で遅れが出た` : ''}`;
+    case 9001: return `${x.rainF > 0.2 ? `雨（${x.w.rainH}時間）でタクシーをよぶ人がふえた` : '晴れて歩く人が多く、タクシーはふつう'}。燃料代はふつうの${pctT(x.fuel)}`;
+    case 8301: case 8350: return `街の預金は${man(x.dep)}。景気が${x.mood > 0.55 ? '良く' : x.mood < 0.45 ? '悪く' : 'ふつうで'}、お金を借りる会社が${x.mood > 0.55 ? 'ふえている' : x.mood < 0.45 ? '減っている' : 'いつもどおり'}`;
+    case 8801: return `地価指数は${(x.lpi * 100).toFixed(1)}。景気が${x.mood > 0.55 ? '良く、土地の売り買いが多い' : x.mood < 0.45 ? '悪く、土地の売り買いが少ない' : 'ふつう'}`;
+    case 7611: return `${x.tAvg < 12 ? '寒くてカレーがよく出た' : x.rainF > 0.2 ? '雨の日はカレーがよく出る' : 'お客さんはふつう'}。材料の野菜は1kg${yen(x.veg.price)}円`;
+    case 2212: return `${hol}${x.sunF > 0.5 ? '晴れてパンがよく売れた' : 'お客さんはふつう'}。牛乳・小麦のえさ代・材料はふつうの${pctT(x.feed)}`;
+    case 3087: return `${hol}${x.sunF > 0.5 ? '晴れてドーナツがよく売れた' : 'お客さんはふつう'}${x.tMax > 30 ? '。暑すぎて少し売れにくかった' : ''}`;
+    case 9722: return `${x.tAvg < 10 ? `平均${x.tAvg.toFixed(1)}℃の寒さで` : ''}${x.snow ? '雪見ぶろ目あてに' : ''}${hol}入浴に${yen(Math.round(r.rev / ECON_CO[9722].price))}人`;
+    case 9680: return `${x.rainF > 0.2 ? '雨で屋根の下の水族館に人が集まり' : ''}${hol}来場${yen(Math.round(r.rev / ECON_CO[9680].price))}人`;
+    case 9681: return x.storm ? '台風で臨時休園' : `${wxSay(x)}・${x.hol ? '休日' : '平日'}で来場${yen(Math.round(r.rev / ECON_CO[9681].price))}人`;
+    case 2429: return `会員は${yen(x.gym)}人`;
+    case 1801: return `景気が${x.mood > 0.55 ? '良く工事の注文が多い' : x.mood < 0.45 ? '悪く工事の注文が少ない' : 'ふつう'}${x.storm ? '。台風で現場が止まった' : ''}`;
+    case 7201: return `景気が${x.mood > 0.55 ? '良く車がよく売れた' : x.mood < 0.45 ? '悪く車の売れゆきがにぶった' : 'ふつう'}${x.snow ? '。雪で整備の仕事がふえた' : ''}`;
+    case 8591: return 'リース料は毎月ほぼ同じで、景気の波を受けにくい';
+    default: return '';
+  }
+}
+// 株価が動いたわけ（いちばん大きい理由から）
+function priceWhy(code, r, mood) {
+  const w = r.why; if (!w) return '';
+  const parts = [   // [動いた円, 文, 短い名前]
+    [w.gap, w.gap > 0 ? `利益から見た会社の値うち（目安${yen(w.fair)}円）より安かったので買われた` : `利益から見た会社の値うち（目安${yen(w.fair)}円）より高かったので売られた`, '会社の値うちとの差'],
+    [w.mood, w.mood > 0 ? `街の景気の気分が明るく（${mood}）、株全体に買いが入った` : `街の景気の気分が暗く（${mood}）、株全体が売られた`, '景気'],
+    [w.ev, r.ev ? `「${r.ev}」のニュースで${w.ev > 0 ? '買い' : '売り'}がふえた` : '', 'ニュース'],
+    [w.noise, w.noise > 0 ? '売り買いのゆれで少し上がった' : '売り買いのゆれで少し下がった', '売り買いのゆれ'],
+  ].filter((q) => q[1] && Math.abs(q[0]) >= 0.5).sort((a, b) => Math.abs(b[0]) - Math.abs(a[0]));
+  const d = r.price - r.prev, main = parts.filter((q) => Math.sign(q[0]) === Math.sign(d) || !d).slice(0, 2), against = parts.filter((q) => d && Math.sign(q[0]) !== Math.sign(d) && Math.abs(q[0]) > Math.abs(d) * 0.3);
+  return main.map((q) => q[1]).join('うえ、') + '。' + (against.length ? `${d > 0 ? '下げ' : '上げ'}の材料（${against.map((q) => q[2]).join('・')}）もあったが、こちらが上回った。` : '');
+}
+function coExplain(co, y, yy) {
+  const r = y.co[co.code], x = y.x, w = r.why || {};
+  const trend = w.ar > 1.08 ? 'ここ数日の利益はふつうより多め' : w.ar < 0.92 ? 'ここ数日の利益はふつうより少なめ' : 'ここ数日の利益はほぼふつう';
+  return `${coDriver(co.code, x, r, yy)}。売り上げは${man(r.rev)}（ふつうの日の${pctT(r.rr || 1)}）、利益は${man(r.prof)}（${r.prof < 0 ? '赤字' : 'ふつうの' + pctT(w.pr || 1)}）で、${trend}。株価は、${priceWhy(co.code, r, Math.round(y.mood * 100))}`;
+}
 function makePaper(n) {
   ECON.upTo(n);
   const c = calOf(n), y = ECON.dayRec(n - 1), yy = ECON.dayRec(n - 2), fc = wxDayText(n), fc2 = wxDayText(n + 1);
@@ -10135,6 +10198,22 @@ function makePaper(n) {
   if (!stories.length) add(50, '「みなと経済新聞」創刊', 'はじめ市とみなと市の経済ニュースを、毎朝6時にお届けします。株価、野菜や魚の値段、天気予報ものっています。', null);
   stories.sort((a, b) => b.pri - a.pri);
   const top = stories[0], rest = stories.slice(1, 5);
+  // きのうの経済のつながり ＋ 値上がり・値下がりの大きい会社の解説
+  let chain = '', movers = '';
+  if (y) {
+    const x = y.x, vk = x.veg.kg / Math.max(1, x.veg.norm), fk = x.fish.kg / Math.max(1, x.fish.norm);
+    chain = `<section class="chain"><h3>きのうの経済のつながり</h3><ol>
+      <li><b>天気</b>：${escH(wxSay(x))}${y.dry > 4 ? `・雨のない日が${y.dry}日つづく` : ''}</li>
+      <li><b>畑</b>：取れる量はふつうの${pctT(x.veg.wf)} → 出荷${yen(x.veg.kg)}kg（${pctT(vk)}）→ 野菜1kg${yen(x.veg.price)}円（ふつうの${pctT(x.vegIdx)}）→ 農家1けんの手取り${yen(x.farmInc)}円</li>
+      <li><b>漁</b>：${x.fish.out ? `水あげ${yen(x.fish.kg)}kg（ふつうの${pctT(fk)}）→ 魚1kg${yen(x.fish.price)}円（ふつうの${pctT(x.fishIdx)}）→ 漁師1人の手取り${yen(x.fishInc)}円` : '漁船は港で待機 → 魚は入荷なし・値段が上がる'}</li>
+      <li><b>人の動き</b>：${x.hol ? '休日' : '平日'}・旅の人はふつうの${pctT(x.travel)}・燃料代${pctT(x.fuel)}・えさ代${pctT(x.feed)}</li>
+      <li><b>景気</b>：${COMPANIES.length}社の売り上げの合計はふつうの${y.econ.toFixed(1)}% → 景気の気分 ${Math.round(y.mood * 100)}（50がふつう）・地価指数${(y.lpi * 100).toFixed(1)}</li></ol></section>`;
+    const ranked = COMPANIES.map((co) => [co, pct(y.co[co.code].price, y.co[co.code].prev)]).sort((a, b) => b[1] - a[1]);
+    const pick = [...ranked.slice(0, 3).filter((q) => q[1] > 0), ...ranked.slice(-3).reverse().filter((q) => q[1] < 0)];
+    movers = `<section class="movers"><h3>株価の動きと理由（値上がり・値下がりの大きい会社）</h3>${pick.map(([co, pc]) => { const r = y.co[co.code];
+      return `<div class="mv"><p><b>${escH(co.short)}</b>（${escH(co.ind)}）${yen(r.price)}円 ${chgTxt(r.price, r.prev)}</p><p>${escH(coExplain(co, y, yy))}</p></div>`; }).join('')}
+      <p class="small">株価は「利益から見た会社の値うち」に少しずつ近づき、街の景気・ニュース・毎日の売り買いのゆれで動きます。ほかの会社の理由は 📈 株 で会社をおすと見られます。</p></section>`;
+  }
   // 住人の声（記事の会社の社員か、農家・漁師）
   const voice = (s, k) => {
     let pool = s.co && companyBy(s.co) && companyBy(s.co).staffIds; if (!pool || !pool.length) pool = null;
@@ -10152,6 +10231,7 @@ function makePaper(n) {
     <header><b>みなと経済新聞</b><span>${calText(c)} 朝刊　第${n + 1}号</span></header>
     <h2>${escH(top.head)}</h2><p class="lead">${escH(top.body)}</p>${voice(top, 0)}
     <div class="cols">${rest.map((s, k) => `<section><h3>${escH(s.head)}</h3><p>${escH(s.body)}</p></section>`).join('')}</div>
+    ${movers}${chain}
     <div class="cols2">
       <section class="wxbox"><h3>きょうの天気</h3><div class="big">${fc.icon} ${fc.name}</div><p>最高 ${fc.tMax}℃・最低 ${fc.tMin}℃・雨 ${fc.pop}%</p><p class="small">あした：${fc2.icon} ${fc2.name} ${fc2.tMax}℃／${fc2.tMin}℃</p></section>
       <section><h3>市場の値段</h3>${prod || '<p>まだありません</p>'}</section>
@@ -10181,6 +10261,7 @@ function stocksHtml() {
       const st = ECON.S.co[co.code], y = ECON.dayRec(n - 1), yr = y && y.co[co.code];
       rows.push(`<div class="sdet"><p>${escH(co.name)}（${escH(co.sub)}）　社員 ${co.staffIds ? co.staffIds.length : co.staff}人・本社 ${co.hq && co.hq.dist ? escH(co.hq.dist.name) : '-'}${co.shops.length ? `・お店 ${co.shops.length}` : ''}</p>
         <p>きのうの売り上げ ${yr ? man(yr.rev) : '-'}・利益 ${yr ? man(yr.prof) : '-'}　時価総額 ${man(p * co.shares)}</p>
+        ${yr ? `<p class="small"><b>きのうの動き ${chgTxt(yr.price, yr.prev)}：</b>${escH(coExplain(co, y, ECON.dayRec(n - 2)))}</p>` : ''}
         <p>持っている株：${h && h.n ? `${h.n}株（評価 ${yen(h.n * p)}P・損益 ${chgTxt(h.n * p, h.cost)}）` : 'なし'}</p>
         <div class="trade"><button type="button" data-q="-10">−10</button><button type="button" data-q="-1">−1</button><b id="tQty">${TP.qty || 1}</b>株<button type="button" data-q="1">＋1</button><button type="button" data-q="10">＋10</button>
         <button type="button" class="buy" data-trade="buy">買う ${yen((TP.qty || 1) * p)}P</button><button type="button" class="sell" data-trade="sell"${h && h.n ? '' : ' disabled'}>売る</button></div></div>`);
