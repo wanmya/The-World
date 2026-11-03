@@ -78,6 +78,8 @@ body { margin: 0; background: var(--sky); color: var(--ink); font-family: var(--
 #myList .row span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #myList .row button { font: 800 12px var(--font-ui); border: 1px solid var(--line); background: #fff; color: var(--ink); border-radius: 999px; padding: 5px 10px; cursor: pointer; }
 #myList .row button.del { color: #c8402a; }
+#myList .row button.share { padding: 5px 8px; }
+#myList .row button.share[aria-pressed="true"] { background: #e6f4ea; border-color: #7bbf8e; }
 #pingWarn { position: fixed; z-index: 8; left: 50%; top: 45%; transform: translate(-50%, -50%); pointer-events: none; padding: 14px 22px; border-radius: 12px;
   background: rgba(200, 40, 30, 0.88); color: #fff; font: 900 clamp(20px, 6vw, 34px) var(--font-ui); white-space: nowrap; animation: pingBlink 0.3s steps(2, start) infinite; }
 @keyframes pingBlink { to { visibility: hidden; } }
@@ -4175,6 +4177,7 @@ async function addPropFromBuffer(buf, name, cat, wheels) {
   const place = (id) => {
     const o = veh ? makeVehicle(item, x, z, rot, { id, shared: !!id, name }) : placeProp(item, name, cat, x, z, rot, id);
     o.mine = true;   // 自分が出した物（メニューから消せる）
+    if (veh) { o.by = net.myId || null; o.share = false; }   // 乗り物は、はじめは持ち主だけが運転できる
     return o;
   };
   const sizeText = () => { const sz = new THREE.Box3().setFromObject(item.root).getSize(new THREE.Vector3()); return `${sz.x.toFixed(1)}×${sz.z.toFixed(1)}×高さ${sz.y.toFixed(1)}m`; };
@@ -4221,10 +4224,12 @@ async function loadSharedProp(d) {
     const x = num(d.x, X0 + 1, X1 - 1), z = num(d.z, Z0 + 1, Z1 - 1), rot = num(d.rot, -100, 100);
     const o = VEHICLE_CATS.has(asCat) ? makeVehicle(item, x, z, rot, { id, shared: true, name }) : placeProp(item, name, asCat, x, z, rot, id);
     o.mine = !!(d.by && d.by === net.myId);
+    if (o.item && VEHICLE_CATS.has(asCat)) { o.by = typeof d.by === 'string' ? d.by : null; o.share = !!d.share; }
   } catch (e) { net.loading.delete(id); }
 }
 function movedSharedProp(d) {
   const v = vehicles.find((x) => x.id === d.id);
+  if (v && 'share' in d) v.share = !!d.share;   // 持ち主が「みんな使える」を切りかえた
   if (!v || v === ride || v.remote || v.sunk) return;
   parkAt(v, num(d.x, X0 + 1, X1 - 1), num(d.z, Z0 + 1, Z1 - 1), num(d.rot, -100, 100));
 }
@@ -4483,6 +4488,9 @@ function nearCar() {
   }
   return best;
 }
+// glTF で置いた乗り物は、置いた本人か、本人が「みんな使える」にしたときだけ運転できる（相乗りはだれでも）
+const canDrive = (v) => !v.shared || !v.by || v.by === net.myId || !!v.share;
+const ownerName = (v) => net.names.get(v.by) || 'だれか';
 function carLocalToWorld(car, lx, lz) {
   const s = Math.sin(car.h), c = Math.cos(car.h);
   return new THREE.Vector2(car.pos.x + lx * c + lz * s, car.pos.y - lx * s + lz * c);
@@ -4561,6 +4569,7 @@ function toggleRide() {
     showMsg(`${v.name} に相乗りしました。「降りる」でいつでも降りられます`);
     return;
   }
+  if (!canDrive(v)) { showMsg(`${v.name} は持ち主（${ownerName(v)}）だけが運転できます`); return; }
   ride = v; driving = true; avatar.visible = false;
   v.settled = false;
   if (v.noPod) showPod(v);   // 脱出したロボットには、新しいコックピットがつく
@@ -7549,6 +7558,10 @@ async function startNet() {
       const r = await sb.from('props').update({ x, z, rot }).eq('id', id);
       if (r.error) throw r.error;
     },
+    async share(id, on) {   // 乗り物を、ほかの人も運転できるようにする（supabase-update-8.sql の列）
+      const r = await sb.from('props').update({ share: !!on }).eq('id', id).eq('by', net.myId);
+      if (r.error) throw r.error;
+    },
     async remove(id) {
       const r = await sb.from('props').delete().eq('id', id);
       if (r.error) throw r.error;
@@ -7578,7 +7591,8 @@ async function startNet() {
     .subscribe((status) => { if (status === 'SUBSCRIBED') loadBiz(); });
   // 今ある物を全部読む。つなぎ直したときは、いないあいだに消えた物も消す
   async function loadAll() {
-    const r = await sb.from('props').select('id,name,cat,x,z,rot,bytes,by').order('created_at').limit(300);
+    let r = await sb.from('props').select('id,name,cat,x,z,rot,bytes,by,share').order('created_at').limit(300);
+    if (r.error) r = await sb.from('props').select('id,name,cat,x,z,rot,bytes,by').order('created_at').limit(300);   // share の列がまだない
     if (r.error || !Array.isArray(r.data)) return;
     const ids = new Set(r.data.map((d) => d.id));
     for (const id of [...net.loading]) if (!ids.has(id) && isId(id)) unloadSharedProp(id);
@@ -7819,6 +7833,7 @@ function updateUi() {
   const deep = (vt === 'sub' && y < SEA - 0.3) || mode === 'dive' || mode === 'swim';
   const alt = vt === 'sub' ? `深度 ${Math.max(0, SEA - y).toFixed(1)}m` : deep ? `水深 ${Math.max(0, SEA - y).toFixed(1)}m` : `高さ ${y >= 0 ? '+' : ''}${y.toFixed(1)}m`;
   const share = nv && nv.remote && isBoat(nv);
+  const locked = nv && !nv.remote && !canDrive(nv);   // 持ち主だけの乗り物
   const sv2 = vt === 'sub' ? ride : aboard && vtype(aboard.v) === 'sub' ? aboard.v : null;
   const navTxt = sv2 ? `方位 ${String(Math.round(bearingOf(sv2.h)) % 360).padStart(3, '0')}°（${compassName(bearingOf(sv2.h))}）　海底 ${seabedAt(sv2.pos.x, sv2.pos.y).toFixed(1)}m` : '';
   const shipV = !sv2 && ride && vt === 'ship' ? ride : null, ag = shipV && shipV.item.def.vehicle.aegis ? shipV : null;
@@ -7835,7 +7850,7 @@ function updateUi() {
     autoTxt = `半自動${nx ? `・${Math.max(0, Math.round(nx.d / 10) * 10)}m 先を${tl}` : dl < 400 ? `・${Math.round(dl / 10) * 10}m 先で行き止まり` : ''}${AUTO.why ? '・' + AUTO.why : ''}`;
   } else if (SEMI.on && driving && !AUTO.on) autoTxt = '半自動：道路で「▶前進」を押すと走り出します';
   else if (AUTO.on && AUTO.route && driving) { const left = Math.max(0, AUTO.route.P.L - AUTO.s); autoTxt = `自動運転 →${AUTO.route.name} ${left < 1000 ? Math.round(left / 10) * 10 + 'm' : (left / 1000).toFixed(1) + 'km'}${AUTO.why ? '・' + AUTO.why : ''}`; }
-  const key = [mode, near, share, kmh, alt, vname, vt, periscope, navTxt, hpTxt, tgtTxt, autoTxt, ba ? ba.text + ba.btn : ''].join('|');
+  const key = [mode, near, share, locked, kmh, alt, vname, vt, periscope, navTxt, hpTxt, tgtTxt, autoTxt, ba ? ba.text + ba.btn : ''].join('|');
   if (key === lastUi) return;
   lastUi = key;
   el('state').textContent = mode === 'drive' ? `${vname}を${DRIVE_VERB[vt]}中` : mode === 'ride' ? `${vname}に相乗り中` : STATE_TEXT[mode];
@@ -7846,7 +7861,7 @@ function updateUi() {
   el('speed').textContent = kmh;
   el('speedUnit').textContent = sea ? 'kt' : 'km/h';
   el('prompt').hidden = !(near || driving || aboard || ba);
-  el('promptText').textContent = driving || aboard ? `${vname}から` : share ? `${vname}に相乗り` : ba ? ba.text : `${vname}に`;
+  el('promptText').textContent = driving || aboard ? `${vname}から` : share ? `${vname}に相乗り` : locked ? `🔒${vname}（${ownerName(nv)}さん専用）` : ba ? ba.text : `${vname}に`;
   el('promptBtn').textContent = driving || aboard ? '降りる' : ba ? ba.btn : '乗る';
   const wet = !driving && !aboard && (mode === 'swim' || mode === 'dive');
   tAct.hidden = vt === 'ship' || vt === 'sub' || !!aboard;
@@ -9284,18 +9299,27 @@ function myThings() {
 function renderMyList() {
   const box = el('myList');
   box.textContent = '';
-  const row = (label, btnText, cls, fn) => {
+  const row = (label, btnText, cls, fn, more) => {
     const r = document.createElement('div'); r.className = 'row';
     const s1 = document.createElement('span'); s1.textContent = label; r.appendChild(s1);
+    if (more) r.appendChild(more);
     const b = document.createElement('button'); b.type = 'button'; b.textContent = btnText; if (cls) b.className = cls;
     b.addEventListener('click', fn); r.appendChild(b);
     box.appendChild(r);
+  };
+  const shareBtn = (v) => {   // 乗り物：自分だけ／みんな使える
+    const b = document.createElement('button'); b.type = 'button'; b.className = 'share';
+    b.textContent = v.share ? '👥みんな' : '🔒自分だけ';
+    b.title = v.share ? 'ほかの人も運転できます（押すと自分だけに）' : '自分だけが運転できます（押すとみんな使えるに）';
+    b.setAttribute('aria-pressed', String(!!v.share));
+    b.addEventListener('click', async () => { await setShare(v, !v.share); renderMyList(); });
+    return b;
   };
   const list = myThings();
   el('myCount').textContent = `（${list.length + (gacchiItem ? 1 : 0)}）`;
   if (box.hidden) return;
   if (gacchiItem) row('がっち号', myCar ? 'しまう' : '出す', '', () => { toggleGacchi(); renderMyList(); });
-  for (const t of list) row(t.name, '消す', 'del', async () => { await removeMine(t); renderMyList(); });
+  for (const t of list) row(t.name, '消す', 'del', async () => { await removeMine(t); renderMyList(); }, t.kind === 'v' && t.o.shared && t.o.id ? shareBtn(t.o) : null);
   if (!list.length) { const p = document.createElement('p'); p.className = 'none'; p.textContent = 'glTF で置いた物はまだありません'; box.appendChild(p); }
 }
 function toggleGacchi() {
@@ -9310,6 +9334,14 @@ function toggleGacchi() {
     const s = Math.sin(player.face), c = Math.cos(player.face);
     parkAt(myCar, clampX(player.pos.x + c * 4, 4), clampZ(player.pos.z - s * 4, 4), player.face);   // 自分の右どなりに出す
     showMsg('がっち号を出しました');
+  }
+}
+async function setShare(v, on) {
+  if (!net.db || !net.db.share) return;
+  try { await net.db.share(v.id, on); v.share = on; showMsg(on ? `${v.name} を、ほかの人も運転できるようにしました` : `${v.name} を、自分だけが運転できるようにしました`); }
+  catch (e) {
+    const em = String((e && (e.message || e.error)) || e || '');
+    showMsg(/share|column|schema/i.test(em) ? '切りかえられません（Supabase で supabase-update-8.sql を実行すると使えます）' : '切りかえられませんでした（つながりを確かめてください）');
   }
 }
 async function removeMine(t) {
