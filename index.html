@@ -11011,20 +11011,23 @@ const MACH_NEW = { tractor: 2.4e6, combine: 4.8e6 }, EQUIP_FEE = 0.5;
 let PAIDV = {}; try { PAIDV = JSON.parse(localStorage.getItem('world.paidv') || '{}') || {}; } catch (e) { PAIDV = {}; }
 const savePaidV = () => { try { localStorage.setItem('world.paidv', JSON.stringify(PAIDV)); } catch (e) {} };
 const equipKind = (v) => MACH[truckKey(v)] || guessKind(v);
-// いま事業でつかっている、自分で作った（買っていない・登録料なしの）同じ種類の機材の数
-function equipFreeUsed(kind, skip) {
+// 同じ機材のなかま：トラック類は 種類＋トン数クラス（2トン車と4トン車は別。それぞれ1台目が無料）、農機は種類だけ
+const equipGroup = (kind, kg) => kg ? `${kind}:${tonCls(kg).name}` : kind;
+// いま事業でつかっている、自分で作った（買っていない・登録料なしの）同じなかまの機材の数
+function equipFreeUsed(grp, skip) {
   const byKey = new Map(myGltfCars().map((v) => [truckKey(v), v])); let k = 0;
   const kindOf = (key, fk) => { const v = byKey.get(key); return v ? equipKind(v) : fk || 'truck'; };
   for (const o of BIZS) {
-    for (const f of o.fleet || []) if (f.src === 'gltf' && f.vid !== skip && !f.paid && !MACH[f.vid] && kindOf(f.vid, f.kind) === kind) k++;
-    for (const m of o.mach || []) if (m.vid !== skip && !m.paid && !MACH[m.vid] && kindOf(m.vid, m.kind) === kind) k++;
+    for (const f of o.fleet || []) if (f.src === 'gltf' && f.vid !== skip && !f.paid && !MACH[f.vid] && equipGroup(kindOf(f.vid, f.kind), f.kg) === grp) k++;
+    for (const m of o.mach || []) if (m.vid !== skip && !m.paid && !MACH[m.vid] && kindOf(m.vid, m.kind) === grp) k++;
   }
   return k;
 }
 // この機材を事業につかうときの登録料（0 なら無料）
 function equipFee(v, kind) {
-  const key = truckKey(v); if (MACH[key] || PAIDV[key] || !equipFreeUsed(kind, key)) return 0;
-  const base = MACH_NEW[kind] || tonCls((v.item.def.vehicle.cargo || { kg: 2000 }).kg).price;
+  const key = truckKey(v), c = v.item.def.vehicle.cargo, kg = MACH_NEW[kind] || !c ? 0 : c.kg;
+  if (MACH[key] || PAIDV[key] || !equipFreeUsed(equipGroup(kind, kg), key)) return 0;
+  const base = MACH_NEW[kind] || tonCls(kg || 2000).price;
   return Math.round(base * EQUIP_FEE / 1e4) * 1e4;
 }
 const truckKey = (v) => v.id || v.name;
@@ -11472,8 +11475,8 @@ function bizAct(a, v) {
       if (fee) { b.cash -= fee; PAIDV[v] = 1; savePaidV(); }
       const paid = !!(fee || PAIDV[v] || MACH[v]);
       b.fleet.push({ src: 'gltf', vid: v, kg: c.kg, kind, paid, name: tv.name || 'トラック', at: n });
-      say(fee ? `自分の${DLR_KINDS[kind].name}「${tv.name || 'トラック'}」（${cls.name}クラス・${yen(c.kg)}kg）を事業につかいます。同じ種類の2台目からなので、登録料 ${man(fee)} をはらいました（整備・保険は${cls.name}と同じ 1日${yen(cls.keep)}円）`
-        : `自分の${DLR_KINDS[kind].name}「${tv.name || 'トラック'}」（荷台 ${c.w}×${c.l}m・${cls.name}クラス・${yen(c.kg)}kg）を事業につかいます${paid ? '' : '。この種類の1台目なので無料です'}`); break; }
+      say(fee ? `自分の${DLR_KINDS[kind].name}「${tv.name || 'トラック'}」（${cls.name}クラス・${yen(c.kg)}kg）を事業につかいます。同じ${cls.name}の2台目からなので、登録料 ${man(fee)} をはらいました（整備・保険は${cls.name}と同じ 1日${yen(cls.keep)}円）`
+        : `自分の${DLR_KINDS[kind].name}「${tv.name || 'トラック'}」（荷台 ${c.w}×${c.l}m・${cls.name}クラス・${yen(c.kg)}kg）を事業につかいます${paid ? '' : '。この${cls.name}の1台目なので無料です'}`); break; }
     case 'truckMode': { const [fi, md] = v.split(':'), f = b.fleet[+fi]; if (!f || f.src !== 'gltf' || (md === 'auto') === (f.mode === 'auto')) return;
       if (md === 'self') { f.mode = 'self'; say(`「${f.name}」は自分で運転します。トラックに乗って、仕入れ先で「積む」、卸す先で「おろす」と、その日の運送が自分のトラックになります`); break; }
       const autos = b.fleet.filter((q) => q.src === 'gltf' && q.mode === 'auto').length;
@@ -12172,8 +12175,8 @@ function bizHtml() {
     ${b.fleet.some((f) => f.src === 'gltf') ? `<p class="small">🧑 <b>自分で運転</b>：トラックに乗って 仕入れ先（はじめファームなど）の前で止まると「📦 積む」、卸す先（みなとマートの店など）や自分の店の前で「📦 おろす」。おろした分だけ、その日の運送が自分のトラックになります（はじめ運輸に払わない）。運ばなかった日は はじめ運輸が運びます。<br>🤖 <b>自動</b>：従業員がいると えらべます（トラック1台に1人）。毎日 ${RUN_HOUR}時ごろ、トラックが町を走って配達し、もとの場所にもどります。あいた時間は はじめ運輸の下うけで運送料をかせぎます。配達中は乗れません。トラックは道路から30m以内に置いてください。</p>` : ''}
     <h4>はじめ自動車で買う</h4>${Object.entries(BIZ_TRUCKS).map(([t, T]) => `<div class="bzrow"><span><b>${T.name}</b><small>${yen(T.kg)}kg/日・整備と保険 1日${yen(T.keep)}円</small></span>${btn('truckBuy', t, `買う ${man(T.price)}`, '', b.cash < T.price)}</div>`).join('')}
     <h4>みなとリースで借りる（はじめのお金がいらない）</h4>${Object.entries(BIZ_TRUCKS).map(([t, T]) => `<div class="bzrow"><span><b>${T.name}</b><small>${yen(T.kg)}kg/日・整備と保険こみ・返すときは4日分</small></span>${btn('truckLease', t, `1日 ${yen(T.lease)}円`)}</div>`).join('')}
-    <h4>自分の glTF のトラック（種類ごとに1台目は無料）</h4>${gl.length ? gl.map((q) => { const c = q.item.def.vehicle.cargo, key = truckKey(q), used = BIZS.some((o) => o.fleet.some((f) => f.vid === key)), kd = equipKind(q), fee = used ? 0 : equipFee(q, kd); return `<div class="bzrow"><span><b>${escH(q.name || 'トラック')}</b><small>${DLR_KINDS[kd] ? DLR_KINDS[kd].name : 'トラック'}・荷台 ${c.w}×${c.l}m → ${tonCls(c.kg).name}クラス・${yen(c.kg)}kg/日</small></span>${btn('truckGltf', key, used ? 'つかっている ✓' : fee ? `登録料 ${man(fee)} で つかう` : '無料で つかう', used ? 'on' : '', used || b.cash < fee)}</div>`; }).join('') : ''}
-    <p class="small">☰ →「glTF を置く」→ 乗り物 → 自動車 → トラック（またはダンプカー）で、ボディ＋タイヤ（4・6・8輪）＋「荷台」という名前の部品の車を置くと、自分のトラックになります。荷台の床（よこ×たて）1㎡で 400kg 運べます（12トンまで）。積める重さで 1トン車（1000kgまで）・2トン車・4トン車・10トン車 のクラスに分かれます。<br>同じ種類（トラック・ダンプなど）の glTF は <b>1台目は無料</b>、<b>2台目からは登録料</b>（同じクラスの新車の半額）を1回はらいます。整備と保険もそのクラスの新車と同じになります。一度はらった車は、はずしてまたつかっても かかりません。</p>
+    <h4>自分の glTF のトラック（種類・クラスごとに1台目は無料）</h4>${gl.length ? gl.map((q) => { const c = q.item.def.vehicle.cargo, key = truckKey(q), used = BIZS.some((o) => o.fleet.some((f) => f.vid === key)), kd = equipKind(q), fee = used ? 0 : equipFee(q, kd); return `<div class="bzrow"><span><b>${escH(q.name || 'トラック')}</b><small>${DLR_KINDS[kd] ? DLR_KINDS[kd].name : 'トラック'}・荷台 ${c.w}×${c.l}m → ${tonCls(c.kg).name}クラス・${yen(c.kg)}kg/日</small></span>${btn('truckGltf', key, used ? 'つかっている ✓' : fee ? `登録料 ${man(fee)} で つかう` : '無料で つかう', used ? 'on' : '', used || b.cash < fee)}</div>`; }).join('') : ''}
+    <p class="small">☰ →「glTF を置く」→ 乗り物 → 自動車 → トラック（またはダンプカー）で、ボディ＋タイヤ（4・6・8輪）＋「荷台」という名前の部品の車を置くと、自分のトラックになります。荷台の床（よこ×たて）1㎡で 400kg 運べます（12トンまで）。積める重さで 1トン車（1000kgまで）・2トン車・4トン車・10トン車 のクラスに分かれます。<br>同じ種類（トラック・ダンプなど）で同じクラス（2トン車・4トン車など）の glTF は <b>1台目は無料</b>、<b>2台目からは登録料</b>（同じクラスの新車の半額）を1回はらいます。整備と保険もそのクラスの新車と同じになります。一度はらった車は、はずしてまたつかっても かかりません。</p>
     <h4>運びきれない荷物を たのむ運送会社</h4><div class="bzrow col"><span class="trade">${btn('carrier', '', '🚚 はじめ運輸（1kg 8円＋1km 1.5円）', !b.carrier ? 'on' : '')}${bizCarrierOpts(b).map(([key, c]) => btn('carrier', escH(key), `${c.kind === 'me' ? '🏢 自分の' : '🌐 '}${escH(c.name)}${c.kind === 'p' ? `（${escH(bizWho(key.split('~')[1]))}さん）` : ''}・1kg ${c.base}円＋1km 1.2円・${yen(c.cap)}kg/日まで`, b.carrier === key ? 'on' : '')).join('')}</span>
       <small>自分のほかの会社にトラックがあると、ここに出ます（その会社のトラックの6割まで）。いっぱいの日は はじめ運輸が運びます。</small></div>
     <h4>運送業：ほかの会社の荷物を運ぶ</h4><div class="bzrow"><span><b>運送料 1kg ${b.hRate}円＋1km 1.2円</b><small>自分のほかの会社は いつでも たのめます。ほかのプレイヤーにも出すと、その人たちの荷物も運べます（代金はその人の決算のあとで届く）。あいたトラックは はじめ運輸の下うけ（1kg 15円）</small></span><span class="trade">${btn('hRate', -1, '−')}${btn('hRate', 1, '＋')}${btn('svcH', '', b.svcH ? 'みんなに出している ✓' : 'みんなに出す', b.svcH ? 'on' : '', !b.fleet.length)}</span></div>`;
