@@ -1606,10 +1606,10 @@ const LINES = [
   { no: 2, name: 'はじめの浜・港・中央', color: '#2f7fd8', legs: [[17, 1], [15, 1], [13, 1], [11, 1], [9, -1], [6, -1], [0, -1], [13, -1], [16, -1], [14, 1], [16, 1], [15, -1]], buses: 3 },   // はじめの浜バスターミナル発着（ロータリーをまわって、のりばに寄る）
   { no: 3, name: '中央循環', color: '#2aa35a', legs: [[7, 1], [3, 1], [12, -1], [9, -1]], buses: 4 },
   // 高速バス HAKATA（2026-11-01 わんみゃさんの案）：はじめの浜 9:00・21:00 発 → 高速道路（PA 5 か所で 60 分ずつ休憩）→ みさき はなれ島ロータリー。
-  // 帰りは逆の道（みさき発）。2026-11-02 から 4 台：はじめの浜発・みさき発が、それぞれ 9:00 と 21:00（時刻はゲームの時刻。ゲームの 1 時間 = 150 秒）。道順は hakataRoute()
+  // 帰りは逆の道（みさき発）。2026-11-02 から 4 台：はじめの浜発・みさき発が、それぞれ 9:00 と 21:00（時刻はゲームの時刻。ゲームの 1 時間 = 100 秒）。道順は hakataRoute()
   { no: 0, express: true, name: 'はじめの浜⇔みさき', color: '#ffffff', legs: null, buses: 4, departs: [21, 9] },
 ];
-const T_DAY = 3600;   // ゲームの 1 日（実際の秒）。バスと車の予定も 1 時間でひとまわり
+const T_DAY = 2400;   // ゲームの 1 日（実際の秒）＝ 40 分（2026-11-03 から）。バスと車の予定も 40 分でひとまわり
 const lineLabel = (ln) => ln.express ? `高速バス ${ln.name}` : `${ln.no}番 ${ln.name}`;
 const lineShort = (ln) => ln.express ? '高速バス' : `${ln.no}番`;
 const gameSec = (h) => h / 24 * T_DAY;   // ゲームの時刻（時）→ 1 時間の中の秒
@@ -1675,7 +1675,7 @@ const CARS = [
   const ROUTE_W = [3, 3, 2, 2, 2, 4, 4, 4, 5, 5, 3, 3, 3, 3, 3, 3];   // 長い道順ほど多く
   const pool = []; ROUTE_W.forEach((w, r) => { for (let k = 0; k < w; k++) pool.push(r); });
   // 101 台目からは、こんでいる道（大陸の東の交差点 → 港の交差点 など）を通る道順を少なめに、内陸の道を多めに
-  const ROUTE_W2 = [2, 1, 2, 1, 2, 1, 3, 3, 2, 1, 2, 2, 2, 2, 3, 3, 6, 6, 4, 4];
+  const ROUTE_W2 = [2, 1, 2, 1, 2, 1, 3, 3, 2, 1, 2, 2, 2, 2, 3, 3, 8, 8, 4, 0];   // 19 番（27km）は 1 日 40 分では 1 周できないので使わない（2026-11-03）
   const pool2 = []; ROUTE_W2.forEach((w, r) => { for (let k = 0; k < w; k++) pool2.push(r); });
   for (let i = CARS.length; i < GEN_CARS; i++) {
     const r = i < 100 ? pool[(i * 7) % pool.length] : pool2[(i * 7) % pool2.length], u = hash(i, 91), t = hash(i, 92);
@@ -2385,10 +2385,15 @@ for (let i = 0; i < 9; i++) {
   clouds.add(g);
 }
 
-/* ---- 昼と夜：ワールドの 1 日は 1 時間。時計を全員でそろえるので、だれの画面でも同じ時刻 ---- */
-const DAY_MS = 60 * 60 * 1000;
-let hourOffset = 0;   // 確認用（ふだんは 0）
-function worldHour() { return ((((Date.now() % DAY_MS) / DAY_MS) * 24) + hourOffset) % 24; }
+/* ---- 昼と夜：ワールドの 1 日は実際の 40 分（2026-11-03 から。それまでは 1 時間）。時計を全員でそろえるので、だれの画面でも同じ時刻 ---- */
+const DAY_MS = T_DAY * 1000;
+// 1 年 11 月 1 日 0:00 = 2026-11-02 21:00（日本時間）。2026-11-03 23:00（日本時間）の 26 日目 0:00 までは 1 日 = 1 時間、そこからは 1 日 = 40 分
+const OLD_EPOCH = Date.UTC(2026, 10, 2, 12), OLD_DAY_MS = 60 * 60 * 1000, CLOCK_SW = Date.UTC(2026, 10, 3, 14), CLOCK_SW_DAY = 26;
+let hourOffset = 0, dayOffset = 0;   // 確認用（ふだんは 0）
+const gameDayRaw = () => { const t = Date.now(); return t < CLOCK_SW ? (t - OLD_EPOCH) / OLD_DAY_MS : CLOCK_SW_DAY + (t - CLOCK_SW) / DAY_MS; };
+const gameDayF = () => gameDayRaw() + hourOffset / 24 + dayOffset;   // 1 年 11 月 1 日 0:00 からの日数（小数つき）
+const gameDayN = () => Math.max(0, Math.floor(gameDayF()));
+function worldHour() { const f = gameDayRaw() + hourOffset / 24; return (f - Math.floor(f)) * 24; }
 const SKYC = {
   dayTop: new THREE.Color(0x2a74d6), dayBot: new THREE.Color(0xbfe2ff), duskTop: new THREE.Color(0x3b4c8c), duskBot: new THREE.Color(0xffa36b), nightTop: new THREE.Color(0x040817), nightBot: new THREE.Color(0x101c33),
   sun: new THREE.Color(0xfff3df), sunDusk: new THREE.Color(0xffb070), moon: new THREE.Color(0x9fb6e8),
@@ -2481,24 +2486,22 @@ function surfaceColor(cx, cy, cz, ny, out) {
    区画のふちに下へのびる「すそ」をつけて、細かさのちがう区画のすき間を隠す ---- */
 const TERRAIN_MAT = new THREE.MeshLambertMaterial({ vertexColors: true });
 /* ================= こよみと天気（2026-11-02） =================
-   ゲームの 1 日 = 実際の 1 時間。ひと月 = 4 日、1 年 = 12 か月 = 48 日（実際の 2 日）。1 年目は 11 月からはじまる。
+   ゲームの 1 日 = 実際の 40 分（実際の 1 日で 36 日すすむ）。1 年 = 365 日（ふつうのこよみ。実際の約 10 日）。1 年目は 11 月からはじまる。
    天気は「決まった種のノイズ」から時刻で決まるので、だれの画面でも同じ。経済の計算にも使う（足し算・かけ算だけで、どの端末でも同じ答え） */
-const CAL_DPM = 4, CAL_YEAR = 48;
-const ECON_EPOCH = Math.floor(Date.UTC(2026, 10, 2, 12) / DAY_MS);   // 1 年 11 月 1 日 = 2026-11-02 21:00（日本時間）からの 1 時間
-let dayOffset = 0;   // 確認用（ふだんは 0）
-const gameDayF = () => Date.now() / DAY_MS + hourOffset / 24 + dayOffset - ECON_EPOCH;   // 1 年 11 月 1 日 0:00 からの日数（小数つき）
-const gameDayN = () => Math.max(0, Math.floor(gameDayF()));
+// 1 年 = 365 日（うるう年なし）。CAL_OFF：1 年 11 月 1 日は 1 月 1 日から数えて 304 日目（0 から）
+const CAL_YEAR = 365, CAL_MDAYS = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31], CAL_MSTART = CAL_MDAYS.map((_, i) => CAL_MDAYS.slice(0, i).reduce((a, b) => a + b, 0)), CAL_OFF = 304;
+const calMonthOf = (doy) => { let i = 11; while (i > 0 && CAL_MSTART[i] > doy) i--; return i; };   // 年の中の日（0〜364）→ 月（0〜11）
 const WEEK = ['日', '月', '火', '水', '木', '金', '土'];
 function calOf(n) {   // n 日目の日付
-  const mIdx = Math.floor(n / CAL_DPM) + 10, m = mIdx % 12 + 1, d = n % CAL_DPM + 1, w = (n + 1) % 7;   // 1 日目は 1 年 11 月 1 日（月曜）
-  return { n, year: Math.floor(mIdx / 12) + 1, m, d, w, week: WEEK[w], season: m >= 3 && m <= 5 ? '春' : m >= 6 && m <= 8 ? '夏' : m >= 9 && m <= 11 ? '秋' : '冬', holiday: w === 0 || w === 6 };
+  const t = n + CAL_OFF, doy = t % CAL_YEAR, mi = calMonthOf(doy), m = mi + 1, d = doy - CAL_MSTART[mi] + 1, w = (n + 1) % 7;   // 1 日目は 1 年 11 月 1 日（月曜）
+  return { n, year: Math.floor(t / CAL_YEAR) + 1, m, d, w, week: WEEK[w], season: m >= 3 && m <= 5 ? '春' : m >= 6 && m <= 8 ? '夏' : m >= 9 && m <= 11 ? '秋' : '冬', holiday: w === 0 || w === 6 };
 }
 const calText = (c) => `${c.year}年${c.m}月${c.d}日（${c.week}）`;
 // 月の平均気温（1〜12 月）と、雨の降りやすさ。月のまん中から次の月のまん中へ直線でつなぐ
 const MONTH_T = [2, 3, 7, 13, 18, 22, 26, 27, 23, 17, 10, 4];
 const MONTH_WET = [-0.06, -0.04, 0, 0.02, 0.02, 0.16, 0.04, -0.02, 0.06, 0.0, -0.04, -0.06];
 // 時刻 T（1 年 11 月 1 日 0:00 からのゲームの時間。小数も可）→ 月（0〜12 の小数。0.5 が 1 月のまん中）
-function monthF(T) { const r = (((T / 24) % CAL_YEAR) + CAL_YEAR) % CAL_YEAR; return (10 + r / CAL_DPM) % 12; }
+function monthF(T) { const r = ((((T / 24) + CAL_OFF) % CAL_YEAR) + CAL_YEAR) % CAL_YEAR, i = calMonthOf(r); return i + (r - CAL_MSTART[i]) / CAL_MDAYS[i]; }
 function monthLerp(A, mf) { const a = mf - 0.5, i = Math.floor(a), f = a - i; const i0 = (i + 12) % 12, i1 = (i + 13) % 12; return A[i0] + (A[i1] - A[i0]) * f; }
 function vn1(t, seed) { const i = Math.floor(t), f = t - i, u = f * f * (3 - 2 * f), a = hash(i, seed), b = hash(i + 1, seed); return a + (b - a) * u; }
 function tri(h, a, b) { return h < a ? 0 : h > b ? 0 : 1 - Math.abs((h - a) / (b - a) * 2 - 1); }
@@ -4903,7 +4906,7 @@ function takeWheel(v) {   // 運転席に座る
    だれも運転しない。決まった道順を、信号・バス停・前の車に合わせて走る。動きは読み込んだときに 1 時間ぶんを
    計算しておき、時計で引くだけ（全員の画面で同じ）。1 時間で必ずもとの場所・もとの状態にもどるように速さを調整する。
    バスは止まると左のドアをあけ、乗ると一人称の視点になる。車体は仮のもの（寸法の数字で乗り降り・当たり判定を決める）。 */
-const T_ALL = 3600, REC_DT = 0.5, SIM_DT = 0.4;
+const T_ALL = T_DAY, REC_DT = 0.5, SIM_DT = 0.4;
 const BUS_DIM = { hw: 1.25, hl: 5.4, floor: 0.62, ceil: 2.7, eye: 1.55, sitEye: 1.2 };
 const BUS_V = { halfWidth: BUS_DIM.hw, halfLength: BUS_DIM.hl, centerZ: 0 };
 const BUS_DOORS = [{ z0: 3.55, z1: 4.55 }, { z0: -0.55, z1: 0.55 }];   // 左側（+x）の前ドアと中ドア
@@ -5370,7 +5373,7 @@ function simulate(v, others, cruise, laps) {
   for (let lap = 0; lap < laps; lap++) for (const j of junc) jAll.push({ j, pos: lap * L + j.stopS });
   jAll.sort((a, b) => a.pos - b.pos);
   // ほかの車は TR_OCC（車線の番号 → 10 秒ごとに、その車線にいる車）から引く。others は TR_OCC に入っている車（先に決まった車）と同じ
-  const NR = nRec - 1;   // 記録は 1 時間でひとまわり
+  const NR = nRec - 1;   // 記録は 1 日（T_ALL）でひとまわり
   const offOf = new Float64Array(TR_N).fill(-1);   // 相手（ti 番の車）の記録とのずれ（記録の数で）
   const offFor = (o) => { let f = offOf[o.ti]; if (f < 0) f = offOf[o.ti] = ((((v.phase - o.phase) % T_ALL) + T_ALL) % T_ALL) / REC_DT; return f; };
   while (tau < T_ALL - 1e-6) {
@@ -5487,6 +5490,8 @@ function runTrafficSim(traffic, passes) {
     // ふつうの速さで 1 回。終点に早く着きすぎたら少しゆっくり、間に合わなければ周回を減らす（余りは終点で待つ）
     let cruise = v.T.cruise, res = simulate(v, done, cruise, laps);
     for (let it = 0; it < 4 && res.finishedAt > T_ALL - 8; it++) { laps = Math.max(1, laps - 1); res = simulate(v, done, cruise, laps); }
+    // 1 日（40 分）で 1 周できない長い道順の車は、少し速く走る（2026-11-03：1 日が 1 時間 → 40 分になったため）
+    for (let it = 0; it < 3 && res.finishedAt > T_ALL - 8 && v.kind === 'car'; it++) { cruise *= 1.12; res = simulate(v, done, cruise, laps); }
     const ratio = res.finishedAt / (T_ALL - 40);
     if (ratio < 0.92 && v.kind !== 'bus') {
       const c2 = cruise * Math.max(0.75, ratio), r2 = simulate(v, done, c2, laps);
@@ -5594,7 +5599,7 @@ function laneRecords(v) {
 /* ================= 高速バス HAKATA の道順（2026-11-01 わんみゃさんの案） =================
    はじめの浜 → はじめ町IC → ひろ野PA → みずうみPA → 東山PA → はじめ町JCT → みなと線 → みなとJCT → 港町PA → 北浜PA → 北大通りIC → みさき はなれ島ロータリー。
    帰りは同じ道を逆に。PA では駐車場のお店の前（バスのりば）に 60 分（ゲームの時刻）止まる。2 台で、毎晩 行き 1 本・帰り 1 本 */
-const HK_PA_DWELL = 150, HK_ROUND = 12.5;   // PA の休憩：ゲームの 60 分（150 秒）。発車はゲームの 5 分きざみ
+const HK_PA_DWELL = T_DAY / 24, HK_ROUND = T_DAY / 288;   // PA の休憩：ゲームの 60 分。発車はゲームの 5 分きざみ
 const HK_BERTH = { u0: -26, u: -20, v: 122.5 };   // PA の中のバスのりば（駐車場の座標。お店の前の歩道ぞい）
 function hakataRoute() {
   const R = roadNet, ring = R.edges[HWY.ring], mring = R.edges[HWY.mring], ext = R.edges[HWY.ext];
@@ -6848,7 +6853,7 @@ function busDepTime(b, now) {
   return now + (i - r) * REC_DT;
 }
 /* ---- 高速バス HAKATA：PA で降りて休憩 → 発車 10 分前（ゲームの時刻）に自動でバスへもどる ---- */
-const HK_CALL = 25, HK_WARN = 50;   // 現実の秒：25 秒 ＝ ゲームの 10 分、50 秒 ＝ 20 分
+const HK_CALL = T_DAY / 144, HK_WARN = T_DAY / 72;   // ゲームの 10 分・20 分（実際の秒）
 let hkTrip = null;   // { b, name, dep, warned, auto, t }
 function hkBoard(b, d) {   // 運賃なしで乗る（PA の休憩からもどる）
   d = d || b.D.doors[0];
@@ -10199,15 +10204,15 @@ const townMeshes = (() => {
 })();
 // 畑の色：作物と育ち具合（季節・その日）
 const CROPS = [   // 植える月 → 取れる月。c：育つと緑、r：取れるころの色
-  { name: 'キャベツ', plant: [3, 9], days: 8, ripe: '#a8cf6a' }, { name: 'トマト', plant: [4], days: 10, ripe: '#d2402f' },
-  { name: 'だいこん', plant: [9, 10], days: 8, ripe: '#dfe8c8' }, { name: 'さつまいも', plant: [5], days: 14, ripe: '#8a5a8a' },
+  { name: 'キャベツ', plant: [3, 9], days: 60, ripe: '#a8cf6a' }, { name: 'トマト', plant: [4], days: 75, ripe: '#d2402f' },
+  { name: 'だいこん', plant: [9, 10], days: 60, ripe: '#dfe8c8' }, { name: 'さつまいも', plant: [5], days: 105, ripe: '#8a5a8a' },
 ];
 const SOIL = new THREE.Color(0x7a5a3e), GREEN = new THREE.Color(0x5fa340), FROST = new THREE.Color(0xc9ccc4), TMPC2 = new THREE.Color();
 function fieldStage(f, n) {   // 0：土だけ、0〜1：育っている、1：取りごろ
-  const crop = CROPS[f.crop], c = calOf(n), mi = Math.floor((n + 10 * CAL_DPM) / CAL_DPM);   // 月の通し番号
-  const off = Math.floor(hash(Math.round(f.x), Math.round(f.z)) * 3);   // 畑ごとに少しずらす
+  const crop = CROPS[f.crop], t = n + CAL_OFF, y0 = Math.floor(t / CAL_YEAR);   // 1 月 1 日から数えた通しの日
+  const off = Math.floor(hash(Math.round(f.x), Math.round(f.z)) * 20);   // 畑ごとに少しずらす
   let best = -1;
-  for (const pm of crop.plant) { for (let y = -1; y <= 0; y++) { const plantDay = ((Math.floor(mi / 12) + y) * 12 + pm - 1 - 10) * CAL_DPM + off; const age = n - plantDay; if (age >= 0 && age <= crop.days + 3) best = Math.max(best, age); } }
+  for (const pm of crop.plant) { for (let y = -1; y <= 0; y++) { const plantDay = (y0 + y) * CAL_YEAR + CAL_MSTART[pm - 1] + off; const age = t - plantDay; if (age >= 0 && age <= crop.days + 20) best = Math.max(best, age); } }
   if (best < 0) return { st: 0, crop };
   return { st: Math.min(1, best / crop.days), crop, harvest: best >= crop.days };
 }
@@ -10462,7 +10467,7 @@ const ECON = (() => {
       pa, store: 1 - pa - 0.1, vegIdx: vPrice / VEG_PRICE[mi], mood: S.mood, fuel: S.fuel, feed: S.feed, dep: S.dep, lpi: S.lpi, rentU, gym: S.gym };
   }
   const startState = () => ({ xs: new Map(), d: -1, dry: 0, mood: 0.5, fuel: 1, feed: 1, dep: 80e9, lpi: 1, gym: 2400, co: {}, hist: [], index: 1000 });
-  // ふつうの売り上げ（B）：はじめの 1 年（48 日）の平均。利益率 m になるように費用を決める
+  // ふつうの売り上げ（B）：はじめの 1 年（365 日）の平均。利益率 m になるように費用を決める
   const B = {};
   { const S = startState(); const sum = {}; for (let n = 0; n < CAL_YEAR; n++) { const x = ctx(n, S); for (const k in ECON_CO) sum[k] = (sum[k] || 0) + ECON_CO[k].rev(x); } for (const k in ECON_CO) B[k] = sum[k] / CAL_YEAR; }
   const PER = {};
@@ -10761,7 +10766,7 @@ function wxHtml() {
   return `<section><h3>いまの天気</h3><div class="big">${k[0]} ${k[1]}　${w.temp.toFixed(1)}℃</div><p>風 ${w.wind.toFixed(0)}m/s${WX.cover > 0.05 ? `・積雪 ${Math.round(WX.cover * 20)}cm` : ''}　${calText(c)}・${c.season}</p></section>
     <section><h3>きょう（3時間ごと）</h3><div class="hours">${hours.join('')}</div></section>
     <section><h3>5日間の予報</h3><div class="hours">${days.join('')}</div></section>
-    <p class="small">ゲームの1日は実際の1時間、ひと月は4日、1年（春夏秋冬）は48日＝実際の2日です。6月は梅雨、7〜8月は夕立、8〜10月はときどき台風、冬は雪がふります。季節で草の色がかわり、雪は積もります。天気はみんなの画面で同じです。</p>`;
+    <p class="small">ゲームの1日は実際の40分（実際の1日で36日すすみます）。1年はふつうと同じ365日で、実際の約10日です。6月は梅雨、7〜8月は夕立、8〜10月はときどき台風、冬は雪がふります。季節で草の色がかわり、雪は積もります。天気はみんなの画面で同じです。</p>`;
 }
 /* ---- お店・PA の売り場 ---- */
 function shopHtml(a) {
@@ -11301,7 +11306,7 @@ function bizDay(b, n, x, G) {
   }
   // 借金：利息は費用、元金の返済は現金だけ減る
   let principal = 0;
-  for (const l of b.loans) { aC('利息', l.amt * l.rate / 48); const p = Math.min(l.amt, Math.round(l.orig / l.term)); l.amt -= p; principal += p; }
+  for (const l of b.loans) { aC('利息', l.amt * l.rate / CAL_YEAR); const p = Math.min(l.amt, Math.round(l.orig / l.term)); l.amt -= p; principal += p; }
   b.loans = b.loans.filter((l) => l.amt > 0);
   if (F.fixed) aC('住民税（均等割）', F.fixed);
   const rev = Object.values(R.rev).reduce((s, v) => s + v, 0), cost = Object.values(R.cost).reduce((s, v) => s + v, 0), prof = rev - cost;
@@ -11408,7 +11413,7 @@ function bizAct(a, v) {
       if (b.form !== 'kk') return; if (b.lastIssue === n) return say('増資は1日に1回までです');
       const k = bizBook(b), last = b.ledger.slice(-5), avg = last.length ? last.reduce((s, r) => s + r.prof, 0) / last.length : 0;
       if (k.eq <= 0 || (avg < 0 && n - b.start > 3)) return say('赤字つづきなので、株を買ってくれる人がいません');
-      const pps = Math.max(1000, k.eq / b.shares * (avg > 0 ? 1 + Math.min(1, avg * 48 / Math.max(1, k.eq)) : 1)), amt = +v, ns = Math.round(amt / pps);
+      const pps = Math.max(1000, k.eq / b.shares * (avg > 0 ? 1 + Math.min(1, avg * CAL_YEAR / Math.max(1, k.eq)) : 1)), amt = +v, ns = Math.round(amt / pps);
       b.shares += ns; b.cash += ns * pps; b.capital += ns * pps; b.lastIssue = n;
       say(`新しい株を${yen(ns)}株（1株 ${yen(pps)}円）出して、${man(ns * pps)} 集めました。あなたの持ち分は ${(b.own / b.shares * 100).toFixed(1)}%`); break; }
     case 'borrow': { const [code, amt] = v.split(':').map(Number), bank = BIZ_BANKS.find((q) => q.code === code), cr = bizCredit(b);
@@ -11422,9 +11427,9 @@ function bizAct(a, v) {
     case 'buyLot': case 'rentLot': {
       const L = bizLot(+v); if (!L || bizLotTaken(L.id)) return; const P = bizLandPrice(L);
       if (a === 'buyLot') { if (!ensure(P)) return; b.cash -= P; }
-      else if (!ensure(bizRent(L) * 4)) return; else b.cash -= bizRent(L) * 4;   // 借りるときは 4 日分（1 か月）の敷金
-      b.lots.push({ id: L.id, own: a === 'buyLot', price: P, at: gameDayF(), bld: null, dep: a === 'buyLot' ? 0 : bizRent(L) * 4 });
-      say(`${L.dist.name}の土地（${L.area}㎡）を${a === 'buyLot' ? `${man(P)}で買いました` : `1日 ${yen(bizRent(L))}円で借りました（敷金 ${yen(bizRent(L) * 4)}円）`}。つぎは はじめ建設に たのみましょう`);
+      else if (!ensure(bizRent(L) * 30)) return; else b.cash -= bizRent(L) * 30;   // 借りるときは 30 日分（1 か月）の敷金
+      b.lots.push({ id: L.id, own: a === 'buyLot', price: P, at: gameDayF(), bld: null, dep: a === 'buyLot' ? 0 : bizRent(L) * 30 });
+      say(`${L.dist.name}の土地（${L.area}㎡）を${a === 'buyLot' ? `${man(P)}で買いました` : `1日 ${yen(bizRent(L))}円で借りました（敷金 ${yen(bizRent(L) * 30)}円）`}。つぎは はじめ建設に たのみましょう`);
       TP.bizOpen.add('build'); break; }
     case 'dlrCfg': { const [id, k, val] = v.split(':'), c = dlrCfg((TP.dlrCfg || {})[id]); c[k] = k === 'f' ? +val : val; TP.dlrCfg = Object.assign(TP.dlrCfg || {}, { [id]: `${c.f}:${c.sz}:${c.st}` }); return; }
     case 'buildD': { const m = b.lots.find((q) => q.id === +v), L = bizLot(+v); if (!m || m.bld) return; const cfg = dlrCfg((TP.dlrCfg || {})[v]), P = dlrPlan(L, cfg);
@@ -12120,7 +12125,7 @@ function bizHtml() {
       <section><h3>事業の形をえらぶ</h3>${Object.entries(BIZ_FORMS).map(([k, F]) => `<button type="button" class="bzopt${f === k ? ' on' : ''}" data-b="form" data-v="${k}"><b>${F.name}</b>　<span>${F.fee ? yen(F.fee) + 'P' : '0P'}・税 ${F.tax * 100}%・借りられる額 ${man(F.base)}〜</span></button>`).join('')}</section>
       <section><h3>名前</h3><input id="bizName" maxlength="16" placeholder="${f === 'sole' ? 'わんみゃ果樹園' : f === 'llc' ? 'わんみゃ食品合同会社' : '株式会社わんみゃ運送'}" autocomplete="off"> <button type="button" class="buy" data-b="register">登録する</button><p class="small">手持ち ${fmtP(wallet.p)}。会社は8社まで。</p></section>`;
     return `${msg}<section class="card"><h3>🏢 事業をはじめる</h3><p>店や会社をつくって、街の会社と取り引きしてもうけましょう。たとえば小売なら：<b>みなと銀行</b>でお金を借りる → <b>みなと不動産</b>で土地を買う／借りる → <b>はじめ建設</b>で店を建てる → <b>はじめファーム</b>などと仕入れの契約 → <b>はじめ運輸</b>で運んで売る。</p>
-      <p>店を持たずに<b>みなとマートやPAに卸す</b>、<b>畑・果樹園</b>をやって売る、<b>加工工場</b>でジュースやジャムを作る、<b>トラック</b>で運送業、<b>アパート</b>で家賃、などのやり方もあります。会社はあとから いくつもふやせます。毎日0時に決算します（ゲームの1日＝実際の1時間）。</p></section>
+      <p>店を持たずに<b>みなとマートやPAに卸す</b>、<b>畑・果樹園</b>をやって売る、<b>加工工場</b>でジュースやジャムを作る、<b>トラック</b>で運送業、<b>アパート</b>で家賃、などのやり方もあります。会社はあとから いくつもふやせます。毎日0時に決算します（ゲームの1日＝実際の40分）。</p></section>
       <section><h3>事業の形をえらぶ</h3>${Object.entries(BIZ_FORMS).map(([k, F]) => `<button type="button" class="bzopt${f === k ? ' on' : ''}" data-b="form" data-v="${k}"><b>${F.name}</b>　<span>${F.fee ? yen(F.fee) + 'P' : '0P'}・税 ${F.tax * 100}%・借りられる額 ${man(F.base)}〜・${F.staffMax > 100 ? '人数の上限なし' : `${F.staffMax}人まで`}</span><small>${F.note}</small></button>`).join('')}</section>
       <section><h3>名前</h3><input id="bizName" maxlength="16" placeholder="${f === 'sole' ? 'わんみゃ商店' : f === 'llc' ? 'わんみゃ合同会社' : '株式会社わんみゃ'}" autocomplete="off"> <button type="button" class="buy" data-b="register">登録する</button><p class="small">手持ち ${fmtP(wallet.p)}。お金の計算はこの端末でします。会社の名前・土地・建物は、みんなの画面にも出ます。</p></section><section><h3>🌐 みんなの会社</h3>${bizCosHtml()}</section>`;
   }
@@ -12141,7 +12146,7 @@ function bizHtml() {
   const cr = bizCredit(b);
   const loan = `<p>あと借りられる額 <b>${man(cr)}</b>（${F.name}の基本 ${man(F.base)} ＋ 自分の土地の7割 ＋ 建物の5割 − 借金）</p>
     ${BIZ_BANKS.map((q) => `<div class="bzrow"><span><b>${companyBy(q.code).name}</b><small>年${((q.rate - (b.form === 'kk' ? 0.003 : 0)) * 100).toFixed(1)}%・${q.term}日で返す${q.cap < Infinity ? `・1社 ${man(q.cap)} まで` : ''}</small></span><span class="trade">${[1e6, 3e6, 1e7].map((a) => btn('borrow', `${q.code}:${a}`, man(a), '', a > cr)).join('')}</span></div>`).join('')}
-    ${b.loans.length ? `<table class="mtab"><tr><th>借りた所</th><th>のこり</th><th>毎日</th><th></th></tr>${b.loans.map((l, i) => `<tr><td>${companyBy(l.bank).short}${l.tsunagi ? '（つなぎ）' : ''}<small>年${(l.rate * 100).toFixed(1)}%</small></td><td class="num">${man(l.amt)}</td><td class="num">${man(l.orig / l.term + l.amt * l.rate / 48)}</td><td>${btn('repay', i, '返す', '', b.cash < l.amt)}</td></tr>`).join('')}</table>` : ''}`;
+    ${b.loans.length ? `<table class="mtab"><tr><th>借りた所</th><th>のこり</th><th>毎日</th><th></th></tr>${b.loans.map((l, i) => `<tr><td>${companyBy(l.bank).short}${l.tsunagi ? '（つなぎ）' : ''}<small>年${(l.rate * 100).toFixed(1)}%</small></td><td class="num">${man(l.amt)}</td><td class="num">${man(l.orig / l.term + l.amt * l.rate / CAL_YEAR)}</td><td>${btn('repay', i, '返す', '', b.cash < l.amt)}</td></tr>`).join('')}</table>` : ''}`;
   // 土地
   const pp = player.pos, flt = TP.lotF || 'shop';
   const cand = TOWN.lots.filter((L) => !bizLotTaken(L.id) && (flt === 'farm' ? L.farm : !L.farm)).map((L) => [Math.hypot(L.x - pp.x, L.z - pp.z), L]).sort((a, c) => a[0] - c[0]).slice(0, TP.lotMore || 6);
@@ -13477,7 +13482,7 @@ window.__world = {
   hullGround, findWaterSpot, rescueBoat, get periscope() { return periscope; }, toggleLight, setPeriscope,
   teleport(x, z, y) { player.pos.set(x, y ?? heightAt(x, z), z); player.vy = 0; },
   torps, tube, ord, booms, get clockT() { return clock.elapsedTime; },
-  get BIZ() { return BIZ; }, get BIZS() { return BIZS; }, equipFee, tonCls, PAIDV, RUNS, stepRuns, runCheck, cargoAction, doCargo, coSites, parkAt, myGltfTrucks, truckKey, BIZX, BIZ_RECIPE, bizById, bizProcBy, bizCarrier, grpList, bizTradeIn, bizTradeFlush, BIZ_NET, carRegister, carBuy, carTry, trialEnd, TRIAL, carSaleIn, carList, dlrSync, DLR_SHOW, dlrLayout, myMachines, MACH, BIZ_BLD, bizNetLoad, bizNetEvent, bizPush, bizAct, bizDay, bizSettle, bizHtml, drawBizOnMap, TOWN, COMPANIES, ECON, makePaper, openTown, closeTown, townNearAction, get myStocks() { return myStocks; }, weatherAt, wxDay, calOf, gameDayN, setDayOffset(d) { dayOffset = d; }, setGameTime(n, hr) { dayOffset = 0; const real = (Date.now() % DAY_MS) / DAY_MS * 24; hourOffset = ((hr - real) % 24 + 24) % 24; dayOffset = n - Math.floor(gameDayF()); }, townMeshes, townBlds, townBoats, fieldStage,
+  get BIZ() { return BIZ; }, get BIZS() { return BIZS; }, equipFee, tonCls, PAIDV, RUNS, stepRuns, runCheck, cargoAction, doCargo, coSites, parkAt, myGltfTrucks, truckKey, BIZX, BIZ_RECIPE, bizById, bizProcBy, bizCarrier, grpList, bizTradeIn, bizTradeFlush, BIZ_NET, carRegister, carBuy, carTry, trialEnd, TRIAL, carSaleIn, carList, dlrSync, DLR_SHOW, dlrLayout, myMachines, MACH, BIZ_BLD, bizNetLoad, bizNetEvent, bizPush, bizAct, bizDay, bizSettle, bizHtml, drawBizOnMap, TOWN, COMPANIES, ECON, makePaper, openTown, closeTown, townNearAction, get myStocks() { return myStocks; }, weatherAt, wxDay, calOf, gameDayN, setDayOffset(d) { dayOffset = d; }, setGameTime(n, hr) { dayOffset = 0; hourOffset = 0; const real = worldHour(); hourOffset = ((hr - real) % 24 + 24) % 24; dayOffset = n - Math.floor(gameDayF()); }, townMeshes, townBlds, townBoats, fieldStage,
   AUTO, SEMI, semiGo, semiHalt, setSemi, semiTurnReq, semiTurnCand, semiNext, setApMin, startAuto, stopAuto, planAuto, stepHwTraffic, autoSpeed, autoLaneReq, autoTurnReq, get myCar() { return myCar; }, makeVehicle, rideFromMenu, putAwayMini, renderMoveList, makeMiniCar, CARL, setTurnSignal, cycleLampMode, autoBlinkDir, stepTraffic, stepVehicle, camera, signalState,
 };
 
