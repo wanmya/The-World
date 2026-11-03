@@ -11003,6 +11003,30 @@ const fleetSelf = (f) => f.src === 'gltf' && f.mode !== 'auto';
 const fleetKg = (b) => b.fleet.reduce((s, f) => s + (fleetSelf(f) ? 0 : f.kg), 0);
 // 自分が置いた glTF のトラック（荷台のある車）
 const myGltfTrucks = () => vehicles.filter((v) => v.mine && v.item && v.item.def.vehicle && v.item.def.vehicle.cargo);
+// 同じ種類の glTF 機材（トラック・ダンプ・トラクター・コンバインなど）は、1台目は無料、2台目からは「登録料」（同じクラスの新車の半額）を1回はらう。
+// 自分で作れる人だけが無制限にふやせないように。販売店で買った車（MACH）と、もう登録料をはらった車（PAIDV）はかからない
+const TON_CLS = [{ max: 1000, name: '1トン車', price: 9e5, keep: 1000 }, { max: 2000, ...BIZ_TRUCKS.t2 }, { max: 4000, ...BIZ_TRUCKS.t4 }, { max: 1e9, ...BIZ_TRUCKS.t10 }];
+const tonCls = (kg) => TON_CLS.find((c) => kg <= c.max);
+const MACH_NEW = { tractor: 2.4e6, combine: 4.8e6 }, EQUIP_FEE = 0.5;
+let PAIDV = {}; try { PAIDV = JSON.parse(localStorage.getItem('world.paidv') || '{}') || {}; } catch (e) { PAIDV = {}; }
+const savePaidV = () => { try { localStorage.setItem('world.paidv', JSON.stringify(PAIDV)); } catch (e) {} };
+const equipKind = (v) => MACH[truckKey(v)] || guessKind(v);
+// いま事業でつかっている、自分で作った（買っていない・登録料なしの）同じ種類の機材の数
+function equipFreeUsed(kind, skip) {
+  const byKey = new Map(myGltfCars().map((v) => [truckKey(v), v])); let k = 0;
+  const kindOf = (key, fk) => { const v = byKey.get(key); return v ? equipKind(v) : fk || 'truck'; };
+  for (const o of BIZS) {
+    for (const f of o.fleet || []) if (f.src === 'gltf' && f.vid !== skip && !f.paid && !MACH[f.vid] && kindOf(f.vid, f.kind) === kind) k++;
+    for (const m of o.mach || []) if (m.vid !== skip && !m.paid && !MACH[m.vid] && kindOf(m.vid, m.kind) === kind) k++;
+  }
+  return k;
+}
+// この機材を事業につかうときの登録料（0 なら無料）
+function equipFee(v, kind) {
+  const key = truckKey(v); if (MACH[key] || PAIDV[key] || !equipFreeUsed(kind, key)) return 0;
+  const base = MACH_NEW[kind] || tonCls((v.item.def.vehicle.cargo || { kg: 2000 }).kg).price;
+  return Math.round(base * EQUIP_FEE / 1e4) * 1e4;
+}
 const truckKey = (v) => v.id || v.name;
 // その人がはたらいてもよい給料（仕事をさがしている人は安くても来る。ほかの仕事の人は高くないと来ない）
 const bizMinWage = (p) => Math.round((TOWN.job[p] === 7 ? 8000 + hash(p, 813) * 5000 : 11000 + hash(p, 813) * 9000) / 500) * 500;
@@ -11256,7 +11280,7 @@ function bizDay(b, n, x, G) {
     else G.out.push({ t: 'net', payee: car.by, co: car.id, kind: 'haul', what: '運送', kg: Math.round(cu.kg), amt: Math.round(cu.amt), cost: Math.round(cu.cost), from: b.name });
   }
   if (b.fleet.length) {
-    for (const f of b.fleet) if (f.src === 'buy') aC('トラックの整備・保険', BIZ_TRUCKS[f.t].keep); else if (f.src === 'lease') aC('リース料（みなとリース）', BIZ_TRUCKS[f.t].lease); else aC('トラックの整備・保険', BIZ_GLTF_KEEP);
+    for (const f of b.fleet) if (f.src === 'buy') aC('トラックの整備・保険', BIZ_TRUCKS[f.t].keep); else if (f.src === 'lease') aC('リース料（みなとリース）', BIZ_TRUCKS[f.t].lease); else aC('トラックの整備・保険', f.paid ? tonCls(f.kg).keep : BIZ_GLTF_KEEP);
     const sub = cap * (0.45 + 0.3 * x.mood) * (x.storm ? 0.5 : 1);   // あいているトラックははじめ運輸の下うけ
     if (sub > 50) { aR('運送（はじめ運輸の下うけ）', sub * 15); aC('燃料（自分のトラック）', sub * 2.5 * x.fuel); aK('下うけで運んだ', sub); }
   }
@@ -11408,7 +11432,8 @@ function bizAct(a, v) {
       if (B.custom) return; if (!ensure(B.cost)) return; b.cash -= B.cost; m.bld = { t, at: gameDayF(), done: gameDayF() + B.days }; if (B.kind === 'farm') b.buy[1301] = 1;   // 畑の野菜はふだんファームが引き取る
       if (B.kind === 'factory' && !b.recipes.length) b.recipes = ['juice'];
       bizBuild(m); say(`はじめ建設に「${B.name}」をたのみました（${man(B.cost)}）。${B.days < 1 ? `${Math.round(B.days * 24)}時間` : `${B.days}日`}でできます`); break; }
-    case 'mach': { const tv = myMachines().find((q) => truckKey(q.v) === v); if (!tv) return; b.mach = b.mach || []; if (BIZS.some((o) => o !== b && (o.mach || []).some((q) => q.vid === v))) return say('その農機は ほかの自分の会社でつかっています'); const i = b.mach.findIndex((q) => q.vid === v); if (i >= 0) { b.mach.splice(i, 1); say(`「${tv.v.name}」を畑からはずしました`); } else { b.mach.push({ vid: v, kind: tv.kind, name: tv.v.name || DLR_KINDS[tv.kind].name }); say(`「${tv.v.name}」（${DLR_KINDS[tv.kind].name}）を畑・田んぼにつかいます`); } break; }
+    case 'mach': { const tv = myMachines().find((q) => truckKey(q.v) === v); if (!tv) return; b.mach = b.mach || []; if (BIZS.some((o) => o !== b && (o.mach || []).some((q) => q.vid === v))) return say('その農機は ほかの自分の会社でつかっています'); const i = b.mach.findIndex((q) => q.vid === v); if (i >= 0) { b.mach.splice(i, 1); say(`「${tv.v.name}」を畑からはずしました`); } else { const fee = equipFee(tv.v, tv.kind); if (fee && !ensure(fee)) return; if (fee) { b.cash -= fee; PAIDV[v] = 1; savePaidV(); }
+        b.mach.push({ vid: v, kind: tv.kind, paid: !!(fee || PAIDV[v] || MACH[v]), name: tv.v.name || DLR_KINDS[tv.kind].name }); say(`「${tv.v.name}」（${DLR_KINDS[tv.kind].name}）を畑・田んぼにつかいます${fee ? `。同じ種類の2台目からなので、登録料 ${man(fee)} をはらいました` : ''}`); } break; }
     case 'buildG': { const [id, t, key] = v.split(':'), m = b.lots.find((q) => q.id === +id), B = BIZ_BLD[t], L = bizLot(+id), pr = bizGltfOn(L).find((q) => bizGltfKey(q) === key);
       if (!m || m.bld || !B || B.kind === 'farm' || !pr) return say('その glTF の建物が土地の上に見つかりません');
       const scale = Math.round(Math.min(2.5, Math.max(0.4, bizGltfScale(pr)[t])) * 100) / 100, cost = Math.round(B.cost * 0.15 * scale / 1e4) * 1e4; if (!ensure(cost)) return; b.cash -= cost;   // 設備費は広さに合わせて
@@ -11442,7 +11467,13 @@ function bizAct(a, v) {
     case 'buy': { const code = +v; if (b.buy[code]) delete b.buy[code]; else b.buy[code] = 1; say(b.buy[code] ? `${companyBy(code).name}と卸の契約をしました` : `${companyBy(code).name}との契約をやめました`); break; }
     case 'truckBuy': { const T = BIZ_TRUCKS[v]; if (!ensure(T.price)) return; b.cash -= T.price; b.fleet.push({ src: 'buy', t: v, kg: T.kg, name: T.name, at: n }); say(`はじめ自動車で${T.name}を買いました（${man(T.price)}）。運転手が1人いります（社長が運転してもよい）`); break; }
     case 'truckLease': { const T = BIZ_TRUCKS[v]; b.fleet.push({ src: 'lease', t: v, kg: T.kg, name: T.name, at: n }); say(`みなとリースで${T.name}を借りました（1日 ${yen(T.lease)}円・整備と保険こみ）`); break; }
-    case 'truckGltf': { const tv = myGltfTrucks().find((q) => truckKey(q) === v); if (!tv || BIZS.some((o) => o.fleet.some((f) => f.vid === v))) return say('そのトラックは もう事業でつかっています'); const c = tv.item.def.vehicle.cargo; b.fleet.push({ src: 'gltf', vid: v, kg: c.kg, name: tv.name || 'トラック', at: n }); say(`自分のトラック「${tv.name || 'トラック'}」（荷台 ${c.w}×${c.l}m・${yen(c.kg)}kg）を事業につかいます。買わなくてよいので、そのぶん安くはじめられます`); break; }
+    case 'truckGltf': { const tv = myGltfTrucks().find((q) => truckKey(q) === v); if (!tv || BIZS.some((o) => o.fleet.some((f) => f.vid === v))) return say('そのトラックは もう事業でつかっています'); const c = tv.item.def.vehicle.cargo, kind = equipKind(tv), fee = equipFee(tv, kind), cls = tonCls(c.kg);
+      if (fee && !ensure(fee)) return;
+      if (fee) { b.cash -= fee; PAIDV[v] = 1; savePaidV(); }
+      const paid = !!(fee || PAIDV[v] || MACH[v]);
+      b.fleet.push({ src: 'gltf', vid: v, kg: c.kg, kind, paid, name: tv.name || 'トラック', at: n });
+      say(fee ? `自分の${DLR_KINDS[kind].name}「${tv.name || 'トラック'}」（${cls.name}クラス・${yen(c.kg)}kg）を事業につかいます。同じ種類の2台目からなので、登録料 ${man(fee)} をはらいました（整備・保険は${cls.name}と同じ 1日${yen(cls.keep)}円）`
+        : `自分の${DLR_KINDS[kind].name}「${tv.name || 'トラック'}」（荷台 ${c.w}×${c.l}m・${cls.name}クラス・${yen(c.kg)}kg）を事業につかいます${paid ? '' : '。この種類の1台目なので無料です'}`); break; }
     case 'truckMode': { const [fi, md] = v.split(':'), f = b.fleet[+fi]; if (!f || f.src !== 'gltf' || (md === 'auto') === (f.mode === 'auto')) return;
       if (md === 'self') { f.mode = 'self'; say(`「${f.name}」は自分で運転します。トラックに乗って、仕入れ先で「積む」、卸す先で「おろす」と、その日の運送が自分のトラックになります`); break; }
       const autos = b.fleet.filter((q) => q.src === 'gltf' && q.mode === 'auto').length;
@@ -11738,8 +11769,8 @@ function dlrSecHtml(b, btn, last) {
 // 事業の画面：🚜 農機
 function machSecHtml(b, btn) {
   const ms = myMachines(), has = b.lots.some((m) => m.bld && BIZ_BLD[m.bld.t].kind === 'farm'), here = new Set(ms.map((q) => truckKey(q.v)));
-  return `<p>トラクターやコンバインがあると、畑・田んぼの事業がはかどります。<b>トラクター</b>：とれる量 ×1.25・畑の人手が減る。<b>コンバイン</b>：田んぼの米をとりこぼさない（ないと65%）。燃料・整備は1台1日900円くらい。</p>${has ? '' : '<p class="small">畑・田んぼは 🗺️ 土地（🌾 畑用）→ 🏗️ 建てる。田んぼの米は秋（9・10月）にとれます。</p>'}
-    ${ms.map((q) => { const on = (b.mach || []).some((m) => m.vid === truckKey(q.v)); return `<div class="bzrow"><span><b>${DLR_KINDS[q.kind].icon} ${escH(q.v.name || DLR_KINDS[q.kind].name)}</b><small>${DLR_KINDS[q.kind].name}</small></span>${btn('mach', escH(truckKey(q.v)), on ? 'つかっている ✓' : '畑につかう', on ? 'on' : '')}</div>`; }).join('')
+  return `<p>トラクターやコンバインがあると、畑・田んぼの事業がはかどります。<b>トラクター</b>：とれる量 ×1.25・畑の人手が減る。<b>コンバイン</b>：田んぼの米をとりこぼさない（ないと65%）。燃料・整備は1台1日900円くらい。自分の glTF の農機は、種類ごとに <b>1台目は無料</b>、<b>2台目からは登録料</b>（新車の半額：トラクター ${man(MACH_NEW.tractor * EQUIP_FEE)}・コンバイン ${man(MACH_NEW.combine * EQUIP_FEE)}）を1回はらいます。販売店で買った農機はかかりません。</p>${has ? '' : '<p class="small">畑・田んぼは 🗺️ 土地（🌾 畑用）→ 🏗️ 建てる。田んぼの米は秋（9・10月）にとれます。</p>'}
+    ${ms.map((q) => { const on = (b.mach || []).some((m) => m.vid === truckKey(q.v)); return `<div class="bzrow"><span><b>${DLR_KINDS[q.kind].icon} ${escH(q.v.name || DLR_KINDS[q.kind].name)}</b><small>${DLR_KINDS[q.kind].name}</small></span>${(() => { const fee = on ? 0 : equipFee(q.v, q.kind); return btn('mach', escH(truckKey(q.v)), on ? 'つかっている ✓' : fee ? `登録料 ${man(fee)} で 畑につかう` : '畑につかう', on ? 'on' : '', !on && b.cash < fee); })()}</div>`; }).join('')
       || '<p class="small">まだありません。ほかのプレイヤーの販売店でトラクター・コンバインを買うか、自分の glTF の車を置きます（名前かカスタムプロパティ「種類」に トラクター／コンバイン）。</p>'}
     ${(b.mach || []).filter((m) => !here.has(m.vid)).map((m) => `<p class="small dn">「${escH(m.name)}」が世界に見つかりません（消した？）</p>`).join('')}`;
 }
@@ -12137,12 +12168,12 @@ function bizHtml() {
   const gl = myGltfTrucks(), present = new Set(gl.map(truckKey));
   const truck = `<p>荷物は ふだん <b>はじめ運輸</b> が運びます（1kg 8円＋1kmごとに1.5円）。自分のトラックなら燃料代だけ。トラック1台に運転手が1人いります（社長が運転してもよい・足りなければ 👥 で求人）。あいているトラックは はじめ運輸の下うけで運送料（1kg 15円）をかせぎます＝運送業。</p>
     <h4>持っているトラック（${b.fleet.length}台・${yen(fleetKg(b))}kg/日）</h4>
-    ${b.fleet.map((f, i) => `<div class="bzrow${f.src === 'gltf' ? ' col' : ''}"><span><b>${escH(f.name)}</b><small>${f.src === 'buy' ? `買った・整備と保険 1日${yen(BIZ_TRUCKS[f.t].keep)}円` : f.src === 'lease' ? `みなとリース・1日${yen(BIZ_TRUCKS[f.t].lease)}円` : `自分の glTF・保険 1日${yen(BIZ_GLTF_KEEP)}円${present.has(f.vid) ? '' : '（世界に見つかりません）'}`}・${yen(f.kg)}kg${f.src === 'gltf' ? `・${truckStatus(b, f)}` : ''}</small></span><span class="trade">${f.src === 'gltf' ? btn('truckMode', `${i}:self`, '🧑 自分で運転', fleetSelf(f) ? 'on' : '') + btn('truckMode', `${i}:auto`, '🤖 自動（従業員）', f.mode === 'auto' ? 'on' : '', f.mode !== 'auto' && b.staff.length <= b.fleet.filter((q) => q.src === 'gltf' && q.mode === 'auto').length) : ''}${btn('truckDrop', i, f.src === 'buy' ? '売る' : f.src === 'lease' ? '返す' : 'はずす')}</span></div>`).join('') || '<p class="small">まだありません</p>'}
+    ${b.fleet.map((f, i) => `<div class="bzrow${f.src === 'gltf' ? ' col' : ''}"><span><b>${escH(f.name)}</b><small>${f.src === 'buy' ? `買った・整備と保険 1日${yen(BIZ_TRUCKS[f.t].keep)}円` : f.src === 'lease' ? `みなとリース・1日${yen(BIZ_TRUCKS[f.t].lease)}円` : `自分の glTF・${tonCls(f.kg).name}クラス・${f.paid ? `整備と保険 1日${yen(tonCls(f.kg).keep)}円` : `保険 1日${yen(BIZ_GLTF_KEEP)}円（1台目）`}${present.has(f.vid) ? '' : '（世界に見つかりません）'}`}・${yen(f.kg)}kg${f.src === 'gltf' ? `・${truckStatus(b, f)}` : ''}</small></span><span class="trade">${f.src === 'gltf' ? btn('truckMode', `${i}:self`, '🧑 自分で運転', fleetSelf(f) ? 'on' : '') + btn('truckMode', `${i}:auto`, '🤖 自動（従業員）', f.mode === 'auto' ? 'on' : '', f.mode !== 'auto' && b.staff.length <= b.fleet.filter((q) => q.src === 'gltf' && q.mode === 'auto').length) : ''}${btn('truckDrop', i, f.src === 'buy' ? '売る' : f.src === 'lease' ? '返す' : 'はずす')}</span></div>`).join('') || '<p class="small">まだありません</p>'}
     ${b.fleet.some((f) => f.src === 'gltf') ? `<p class="small">🧑 <b>自分で運転</b>：トラックに乗って 仕入れ先（はじめファームなど）の前で止まると「📦 積む」、卸す先（みなとマートの店など）や自分の店の前で「📦 おろす」。おろした分だけ、その日の運送が自分のトラックになります（はじめ運輸に払わない）。運ばなかった日は はじめ運輸が運びます。<br>🤖 <b>自動</b>：従業員がいると えらべます（トラック1台に1人）。毎日 ${RUN_HOUR}時ごろ、トラックが町を走って配達し、もとの場所にもどります。あいた時間は はじめ運輸の下うけで運送料をかせぎます。配達中は乗れません。トラックは道路から30m以内に置いてください。</p>` : ''}
     <h4>はじめ自動車で買う</h4>${Object.entries(BIZ_TRUCKS).map(([t, T]) => `<div class="bzrow"><span><b>${T.name}</b><small>${yen(T.kg)}kg/日・整備と保険 1日${yen(T.keep)}円</small></span>${btn('truckBuy', t, `買う ${man(T.price)}`, '', b.cash < T.price)}</div>`).join('')}
     <h4>みなとリースで借りる（はじめのお金がいらない）</h4>${Object.entries(BIZ_TRUCKS).map(([t, T]) => `<div class="bzrow"><span><b>${T.name}</b><small>${yen(T.kg)}kg/日・整備と保険こみ・返すときは4日分</small></span>${btn('truckLease', t, `1日 ${yen(T.lease)}円`)}</div>`).join('')}
-    <h4>自分の glTF のトラック（無料）</h4>${gl.length ? gl.map((q) => { const c = q.item.def.vehicle.cargo, used = b.fleet.some((f) => f.vid === truckKey(q)); return `<div class="bzrow"><span><b>${escH(q.name || 'トラック')}</b><small>荷台 ${c.w}×${c.l}m → ${yen(c.kg)}kg/日</small></span>${btn('truckGltf', truckKey(q), used ? 'つかっている ✓' : '事業につかう', used ? 'on' : '', used)}</div>`; }).join('') : ''}
-    <p class="small">☰ →「glTF を置く」→ 乗り物 → 自動車 → トラック（またはダンプカー）で、ボディ＋タイヤ（4・6・8輪）＋「荷台」という名前の部品の車を置くと、自分のトラックになります。荷台の床（よこ×たて）1㎡で 400kg 運べます（12トンまで）。</p>
+    <h4>自分の glTF のトラック（種類ごとに1台目は無料）</h4>${gl.length ? gl.map((q) => { const c = q.item.def.vehicle.cargo, key = truckKey(q), used = BIZS.some((o) => o.fleet.some((f) => f.vid === key)), kd = equipKind(q), fee = used ? 0 : equipFee(q, kd); return `<div class="bzrow"><span><b>${escH(q.name || 'トラック')}</b><small>${DLR_KINDS[kd] ? DLR_KINDS[kd].name : 'トラック'}・荷台 ${c.w}×${c.l}m → ${tonCls(c.kg).name}クラス・${yen(c.kg)}kg/日</small></span>${btn('truckGltf', key, used ? 'つかっている ✓' : fee ? `登録料 ${man(fee)} で つかう` : '無料で つかう', used ? 'on' : '', used || b.cash < fee)}</div>`; }).join('') : ''}
+    <p class="small">☰ →「glTF を置く」→ 乗り物 → 自動車 → トラック（またはダンプカー）で、ボディ＋タイヤ（4・6・8輪）＋「荷台」という名前の部品の車を置くと、自分のトラックになります。荷台の床（よこ×たて）1㎡で 400kg 運べます（12トンまで）。積める重さで 1トン車（1000kgまで）・2トン車・4トン車・10トン車 のクラスに分かれます。<br>同じ種類（トラック・ダンプなど）の glTF は <b>1台目は無料</b>、<b>2台目からは登録料</b>（同じクラスの新車の半額）を1回はらいます。整備と保険もそのクラスの新車と同じになります。一度はらった車は、はずしてまたつかっても かかりません。</p>
     <h4>運びきれない荷物を たのむ運送会社</h4><div class="bzrow col"><span class="trade">${btn('carrier', '', '🚚 はじめ運輸（1kg 8円＋1km 1.5円）', !b.carrier ? 'on' : '')}${bizCarrierOpts(b).map(([key, c]) => btn('carrier', escH(key), `${c.kind === 'me' ? '🏢 自分の' : '🌐 '}${escH(c.name)}${c.kind === 'p' ? `（${escH(bizWho(key.split('~')[1]))}さん）` : ''}・1kg ${c.base}円＋1km 1.2円・${yen(c.cap)}kg/日まで`, b.carrier === key ? 'on' : '')).join('')}</span>
       <small>自分のほかの会社にトラックがあると、ここに出ます（その会社のトラックの6割まで）。いっぱいの日は はじめ運輸が運びます。</small></div>
     <h4>運送業：ほかの会社の荷物を運ぶ</h4><div class="bzrow"><span><b>運送料 1kg ${b.hRate}円＋1km 1.2円</b><small>自分のほかの会社は いつでも たのめます。ほかのプレイヤーにも出すと、その人たちの荷物も運べます（代金はその人の決算のあとで届く）。あいたトラックは はじめ運輸の下うけ（1kg 15円）</small></span><span class="trade">${btn('hRate', -1, '−')}${btn('hRate', 1, '＋')}${btn('svcH', '', b.svcH ? 'みんなに出している ✓' : 'みんなに出す', b.svcH ? 'on' : '', !b.fleet.length)}</span></div>`;
@@ -13443,7 +13474,7 @@ window.__world = {
   hullGround, findWaterSpot, rescueBoat, get periscope() { return periscope; }, toggleLight, setPeriscope,
   teleport(x, z, y) { player.pos.set(x, y ?? heightAt(x, z), z); player.vy = 0; },
   torps, tube, ord, booms, get clockT() { return clock.elapsedTime; },
-  get BIZ() { return BIZ; }, get BIZS() { return BIZS; }, RUNS, stepRuns, runCheck, cargoAction, doCargo, coSites, parkAt, myGltfTrucks, truckKey, BIZX, BIZ_RECIPE, bizById, bizProcBy, bizCarrier, grpList, bizTradeIn, bizTradeFlush, BIZ_NET, carRegister, carBuy, carTry, trialEnd, TRIAL, carSaleIn, carList, dlrSync, DLR_SHOW, dlrLayout, myMachines, MACH, BIZ_BLD, bizNetLoad, bizNetEvent, bizPush, bizAct, bizDay, bizSettle, bizHtml, drawBizOnMap, TOWN, COMPANIES, ECON, makePaper, openTown, closeTown, townNearAction, get myStocks() { return myStocks; }, weatherAt, wxDay, calOf, gameDayN, setDayOffset(d) { dayOffset = d; }, setGameTime(n, hr) { dayOffset = 0; const real = (Date.now() % DAY_MS) / DAY_MS * 24; hourOffset = ((hr - real) % 24 + 24) % 24; dayOffset = n - Math.floor(gameDayF()); }, townMeshes, townBlds, townBoats, fieldStage,
+  get BIZ() { return BIZ; }, get BIZS() { return BIZS; }, equipFee, tonCls, PAIDV, RUNS, stepRuns, runCheck, cargoAction, doCargo, coSites, parkAt, myGltfTrucks, truckKey, BIZX, BIZ_RECIPE, bizById, bizProcBy, bizCarrier, grpList, bizTradeIn, bizTradeFlush, BIZ_NET, carRegister, carBuy, carTry, trialEnd, TRIAL, carSaleIn, carList, dlrSync, DLR_SHOW, dlrLayout, myMachines, MACH, BIZ_BLD, bizNetLoad, bizNetEvent, bizPush, bizAct, bizDay, bizSettle, bizHtml, drawBizOnMap, TOWN, COMPANIES, ECON, makePaper, openTown, closeTown, townNearAction, get myStocks() { return myStocks; }, weatherAt, wxDay, calOf, gameDayN, setDayOffset(d) { dayOffset = d; }, setGameTime(n, hr) { dayOffset = 0; const real = (Date.now() % DAY_MS) / DAY_MS * 24; hourOffset = ((hr - real) % 24 + 24) % 24; dayOffset = n - Math.floor(gameDayF()); }, townMeshes, townBlds, townBoats, fieldStage,
   AUTO, SEMI, semiGo, semiHalt, setSemi, semiTurnReq, semiTurnCand, semiNext, setApMin, startAuto, stopAuto, planAuto, stepHwTraffic, autoSpeed, autoLaneReq, autoTurnReq, get myCar() { return myCar; }, makeVehicle, rideFromMenu, putAwayMini, renderMoveList, makeMiniCar, CARL, setTurnSignal, cycleLampMode, autoBlinkDir, stepTraffic, stepVehicle, camera, signalState,
 };
 
