@@ -11221,7 +11221,7 @@ function bizDay(b, n, x, G) {
   for (const o of offers) {
     const kg = Math.floor(Math.min(inv[o.g], o.cap)); if (kg <= 0) continue;
     inv[o.g] -= kg; aR(`卸（${companyBy(o.q.code).short}）`, kg * bizMkt(o.g, x) * o.mul); aK('卸した', kg);
-    if (!o.q.free) moves.push([kg, baseL ? bizDist(baseL, coAt(o.q.code)) : 0]);
+    if (!o.q.free && baseL) moves.push([kg, bizDist(baseL, coAt(o.q.code))]);   // 店・畑がないときは、仕入れ先から卸す先へ じかに運ぶ（仕入れのときに数えた）
   }
   // 売れ残り：次の日まで持つのは一部（倉庫があれば多く、置ける量もふえる）
   let room = 300 + wares.reduce((q, m) => q + BIZ_BLD.ware.cap * (m.bld.scale || 1), 0) * sf, lost = 0;
