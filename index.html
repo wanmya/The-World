@@ -3925,7 +3925,7 @@ function removeVehicle(v) {
    小分けにして入れ、全員の画面の同じ場所に出す（入りなおしても残る）。
    自動車を選ぶと、ボディ＋4 タイヤのルールで読み取って、みんなで乗れる車になる。 */
 const props = [];   // { item, box, id(共有なら), name, cat }
-const SHARE_MAX = 10 * 1024 * 1024, CHUNK = 180000, TRI_MAX = 30000;
+const SHARE_MAX = 10 * 1024 * 1024, CHUNK = 180000, TRI_MAX = 450000;
 const CATS = { building: '建物', plant: '植物', prop: '置物', car: '自動車', ship: '船', sub: '潜水艦', plane: '航空機', robot: '人型ロボット' };
 const VEHICLE_CATS = new Set(['car', 'ship', 'sub', 'plane', 'robot']);
 function bufToB64(buf) {
@@ -4427,7 +4427,7 @@ async function addPropFromBuffer(buf, name, cat, wheels, sub, strict) {
         : `みんなの世界に置けなかったので、自分の画面だけに置きます（${em.slice(0, 60) || '理由不明'}）`);
     }
   } else if (net.db) {
-    showMsg(buf.byteLength > SHARE_MAX ? `${name} は大きすぎるので（10MB まで）自分の画面だけに置きます` : `${name} は細かすぎるので（3 万三角形まで）自分の画面だけに置きます`);
+    showMsg(buf.byteLength > SHARE_MAX ? `${name} は大きすぎるので（10MB まで）自分の画面だけに置きます` : `${name} は細かすぎるので（45 万三角形まで）自分の画面だけに置きます`);
   } else {
     showMsg(veh ? `${name}（${label}）を置きました（自分の画面だけ）。${kindInfo(V)}近づいて「乗る」で${cat === 'car' ? '運転' : '操縦'}できます` : `${name}（${label}）を置きました（${sizeText()}・自分の画面だけ）`);
   }
@@ -4475,7 +4475,7 @@ const HELP_BASE = `<details><summary>はじめに：Blender の基本（どの�
 <li><b>名前</b>：右上のアウトライナーで、部品（オブジェクト）をダブルクリックして名前をつける。<b>メッシュの名前ではなくオブジェクトの名前</b>です。頭が合っていればよく、<code>タイヤ右前.001</code> のように後ろに何かついてもかまいません。</li>
 <li><b>原点</b>：動く部品は原点が回る中心になることがあります。原点を動かすには、編集モード（Tab）で中心にしたい点・辺を選び <code>Shift+S</code> →「カーソル→選択物」、オブジェクトモードにもどって 右クリック →「原点を設定」→「原点を 3D カーソルへ」。</li>
 <li><b>親子</b>（なくてもよい）：子にしたい部品 → 最後に親を <code>Shift</code>＋クリック → <code>Ctrl+P</code> →「オブジェクト（トランスフォーム維持）」。</li>
-<li><b>軽く</b>：10MB・3 万三角形まで（こえると自分の画面だけに置かれます）。色は「マテリアル」のベースカラーで。画像を使うときは 1024px まで。</li>
+<li><b>軽く</b>：10MB・45 万三角形まで（こえると自分の画面だけに置かれます）。色は「マテリアル」のベースカラーで。画像を使うときは 1024px まで。</li>
 </ol></details>
 <details><summary>カスタムプロパティのつけ方</summary>
 <ol>
