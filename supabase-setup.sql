@@ -9,7 +9,7 @@ create table if not exists public.props (
   x double precision not null check (x between -5000 and 5000),
   z double precision not null check (z between -5000 and 5000),
   rot double precision not null default 0 check (rot between -100 and 100),
-  bytes integer not null check (bytes between 1 and 1572864),
+  bytes integer not null check (bytes between 1 and 10485760),
   by text check (char_length(by) <= 40),
   created_at timestamptz not null default now()
 );
@@ -46,10 +46,10 @@ do $$ begin
 exception when duplicate_object then null;
 end $$;
 
--- 2. 形のファイル（.glb）の保存場所。1 個 1.5MB まで
+-- 2. 形のファイル（.glb）の保存場所。1 個 10MB まで
 insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
-values ('props', 'props', true, 1572864, array['model/gltf-binary', 'application/octet-stream'])
-on conflict (id) do update set public = true, file_size_limit = 1572864,
+values ('props', 'props', true, 10485760, array['model/gltf-binary', 'application/octet-stream'])
+on conflict (id) do update set public = true, file_size_limit = 10485760,
   allowed_mime_types = array['model/gltf-binary', 'application/octet-stream'];
 
 drop policy if exists "props files read" on storage.objects;
