@@ -295,6 +295,12 @@ body.apMinOn #prompt, body.apMinOn #hint { display: none !important; }
 #pgFire[aria-pressed="true"] { background: #555 !important; }
 #pachi label { flex: 1; display: flex; gap: 8px; align-items: center; min-width: 140px; }
 #pachi input[type=range] { flex: 1; accent-color: #ffd23f; }
+#pachi .pginfo { font: 700 13px var(--font-ui); color: #e8f0ff; display: flex; gap: 6px 12px; flex-wrap: wrap; }
+#pachi .pginfo b { color: #ffd23f; font-size: 14px; }
+#pachi .pginfo .warn { color: #ff8a5c; }
+#pachi .pgaim { display: flex; gap: 6px; }
+#pachi .pgaim button { padding: 8px 12px; font-size: 14px; }
+#pachi .pgaim button[aria-pressed="true"] { background: #ffd23f; }
 #map { position: fixed; z-index: 3; right: max(16px, env(safe-area-inset-right, 0px)); top: calc(52px + env(safe-area-inset-top, 0px));
   width: 160px; padding: 6px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; cursor: pointer; }
 #map canvas { display: block; width: 100%; aspect-ratio: 1; border-radius: 50%; }
@@ -514,7 +520,8 @@ body.helmOn .subbtns { flex-wrap: wrap; justify-content: flex-end; max-width: ca
   <div class="pgbox">
     <div class="pgtop"><b id="pgNum">1番台</b><span>持ち玉 <b id="pgBalls">0玉</b></span><span id="pgP">0P</span></div>
     <canvas id="pgBoard" width="360" height="440"></canvas>
-    <div class="pgrow"><button type="button" id="pgFire" aria-pressed="false">打つ</button><label>弱<input type="range" id="pgPow" min="0" max="100" value="35" aria-label="打つ強さ">強</label></div>
+    <div class="pginfo" id="pgInfo" hidden></div>
+    <div class="pgrow"><button type="button" id="pgFire" aria-pressed="false">打つ</button><label>弱<input type="range" id="pgPow" min="0" max="100" value="35" aria-label="打つ強さ">強</label><span class="pgaim" id="pgAim" hidden><button type="button" id="pgAimL">左打ち</button><button type="button" id="pgAimR">右打ち ➡</button></span></div>
     <div class="pgrow"><button type="button" id="pgLend">玉を借りる（500P＝125玉）</button><button type="button" id="pgQuit">精算して立つ</button></div>
   </div>
 </div>
@@ -4652,7 +4659,7 @@ let driving = false;
 document.addEventListener('keydown', (e) => {
   if (PG.open) {   // パチンコの画面：Space で打つ・止める、Esc で精算して立つ
     if (e.code === 'Space' && !e.repeat) { e.preventDefault(); document.getElementById('pgFire').click(); }
-    if (e.code === 'Escape') standUp();
+    if (e.code === 'Escape') pgTryQuit();
     return;
   }
   if (e.target.tagName === 'INPUT' || !placeEl.hidden || TP.open) return;
@@ -6677,6 +6684,388 @@ function makePachi(pV, rnd, lay, pS) {
   S.step = step;
   return S;
 }
+// ===== デジパチ（P 蒼天ブレイカー）の盤面・抽選・玉の動き。画面とは別で、node でも動く =====
+// 仕組み：ヘソ（特図1）・電チュー（特図2）に入ると保留（各 4 個まで）がたまり、液晶の数字がまわって大当たりを抽選する。
+// 大当たり 1/319.7。ヘソは 3%＝10R 確変・56%＝3R 確変・41%＝3R 通常、電チューは 100%＝10R 確変。
+// 確変は V に入ると ST（1/99.4 を 163 回）、通常は時短 100 回（ST 中に当たったときは 500 回）。ST・時短のあいだは電チューがよく開く（電サポ）。右打ちで遊ぶ
+const DIGI_SPEC = {
+  p1: 1 / 319.7, p2: 1 / 99.4, st: 163, jt: 100, jtST: 500, count: 10, attPay: 15, roundMax: 29.5, hold: 4,
+  heso: [{ p: 0.03, r: 10, kk: true }, { p: 0.56, r: 3, kk: true }, { p: 0.41, r: 3, kk: false }],
+  den: [{ p: 1, r: 10, kk: true }],
+};
+function makeDigi(rnd, lay, opt) {
+  rnd = rnd || Math.random; lay = lay || rnd; opt = opt || {};
+  const SP = DIGI_SPEC;
+  const W = 360, H = 440, CX = 180, CY = 220, R = 168, BR = 4, NR = 1.8, G = 700;
+  const LCD = { x0: 108, x1: 252, y0: 96, y1: 200 };
+  const HESO = { x: 176, y: 262, pay: 1 };
+  const GATE = { x: 296, y: 214, r: 7 };
+  const DEN = { x: 296, y: 244, pay: 1 };
+  const ATT = { x0: 238, x1: 282, y: 336 };
+  const POCKETS = [{ x: 62, y: 300, pay: 5 }, { x: 116, y: 330, pay: 5 }, { x: 330, y: 352, pay: 5 }];
+  const OUT = { x: CX, y: CY + R - 6, r: 20 };
+  const RUBBER = { x: CX + (R - 7) * Math.cos(-0.45), y: CY + (R - 7) * Math.sin(-0.45), r: 7 };
+  const nails = [];
+  // 道釘：左の上から落ちた玉をヘソのほうへころがす（左から右下へ）
+  const ROAD = [];
+  for (let x = 26; x < (opt.roadEnd || 120); x += 8.5) ROAD.push({ x, y: 206 + (x - 26) * 0.34, r: NR });
+  const segD = (x, y, L) => { let m = 1e9; for (const n of L) m = Math.min(m, Math.hypot(x - n.x, y - n.y)); return m; };
+  // 右の上のじょうご（スルーへあつめる）
+  const FUN = [];
+  for (let i = 0; i < 6; i++) FUN.push({ x: 260 + i * 5, y: 178 + i * 5, r: NR });
+  for (let i = 0; i < 8; i++) FUN.push({ x: 336 - i * 4.4, y: 168 + i * 5, r: NR });
+  for (let y = 210; y < 226; y += 6) FUN.push({ x: 286, y, r: NR }, { x: 306, y, r: NR });   // スルーから電チューへの通り道
+  const keep = (x, y) => {
+    if (Math.hypot(x - CX, y - CY) > R - 22) return false;
+    if (x > LCD.x0 - 14 && x < LCD.x1 + 14 && y > LCD.y0 - 12 && y < LCD.y1 + 12) return false;
+    if (Math.hypot(x - HESO.x, y - HESO.y) < 20) return false;
+    if (Math.hypot(x - DEN.x, y - DEN.y) < 18) return false;
+    if (x > 250 && y > 160 && y < 262) return false;   // じょうごとスルーのまわり
+    if (x > ATT.x0 - 12 && x < ATT.x1 + 12 && y > ATT.y - 18 && y < ATT.y + 14) return false;
+    for (const p of POCKETS) if (Math.hypot(x - p.x, y - p.y) < 16) return false;
+    if (Math.hypot(x - OUT.x, y - OUT.y) < 34) return false;
+    if (x > 200 && x < 240 && y > 200 && y < 320) return false;   // 右と左のしきりのまわり
+    if (segD(x, y, ROAD) < 13 || (x < HESO.x - 10 && y > 190 && y < 206 + (x - 26) * 0.34 + 4)) return false;
+    return y > 54 && y < 392;
+  };
+  for (let row = 0, y = 58; y < 392; row++, y += 17) for (let x = 20 + (row % 2) * 11; x < W; x += 22) if (keep(x, y)) nails.push({ x: x + (lay() - 0.5) * 2.4, y: y + (lay() - 0.5) * 2, r: NR });
+  nails.push(...ROAD, ...FUN);
+  // ヘソ・一般入賞口の両わきの釘
+  const side = (c, o) => { nails.push({ x: c.x - o, y: c.y - 2, r: NR }, { x: c.x + o, y: c.y - 2, r: NR }); };
+  const hesoO = opt.hesoO || 5.7 + 0.6 * lay();   // ヘソの釘のひらき（台ごとにすこしちがう）
+  side(HESO, hesoO); for (const p of POCKETS) side(p, 6.3);
+  nails.push({ x: HESO.x + 9, y: HESO.y - 13, r: NR });   // ヘソの右上の釘（ころがってきた玉をはじく）
+  // 右と左のしきり（液晶の右下から下へ）。右打ちの玉はここより右を落ちる
+  const WALL = [];
+  for (let y = LCD.y1 + 6; y < 320; y += 7) WALL.push({ x: 222 - (y - LCD.y1) * 0.05, y, r: 2.6 });
+  nails.push(...WALL);
+  // アタッカーへの道（右の下を左へ流す）
+  for (let i = 0; i < 7; i++) nails.push({ x: 340 - i * 8, y: 312 + i * 3.4, r: NR });
+  const CELL = 16, grid = new Map();
+  const gk = (i, j) => i * 1000 + j;
+  for (const n of nails) { const k = gk(Math.floor(n.x / CELL), Math.floor(n.y / CELL)); let a = grid.get(k); if (!a) grid.set(k, (a = [])); a.push(n); }
+  const S = {
+    W, H, CX, CY, R, BR, LCD, HESO, DEN, GATE, ATT, POCKETS, OUT, RUBBER, WALL, nails, SP,
+    balls: [], fireT: 0, events: [],
+    mode: 'normal', left: 0,          // normal・st（確変）・jt（時短）と、のこりの回数
+    h1: [], h2: [],                   // 保留（特図1・特図2）
+    spin: null,                       // まわっている数字
+    last: [7, 3, 5],                  // 止まっている数字
+    bonus: null,                      // 大当たりのラウンド
+    fu: { n: 0, t: 0, ph: 'idle', hit: false, opens: 0, ot: 0 },   // 普図（スルー → 電チュー）
+    den: false, att: false,
+    cnt: { spins: 0, total: 0, hits: 0, st: 0, chain: 0, hist: [] },
+    stats: { shot: 0, won: 0, heso: 0, den: 0, gate: 0, att: 0, pocket: 0, out: 0, foul: 0, right: 0 },
+  };
+  const ev = (e) => S.events.push(e);
+  const support = () => S.mode !== 'normal';
+  const prob = () => S.mode === 'st' ? SP.p2 : SP.p1;
+  function collide(b, cx, cy, r, e, jit) {
+    const dx = b.x - cx, dy = b.y - cy, d = Math.hypot(dx, dy), m = r + BR;
+    if (d >= m || d < 1e-6) return false;
+    const nx = dx / d, ny = dy / d;
+    b.x = cx + nx * m; b.y = cy + ny * m;
+    const vn = b.vx * nx + b.vy * ny;
+    if (vn < 0) { b.vx -= (1 + e) * vn * nx; b.vy -= (1 + e) * vn * ny; if (jit) { const j = (rnd() - 0.5) * jit; b.vx += -ny * j; b.vy += nx * j; } }
+    return true;
+  }
+  // 先読み：入ったときに、保留の色だけ先に決める（当たりなら色が変わりやすい）
+  function peekColor(r) {
+    const hit = r < prob(), q = rnd();
+    if (hit) return q < 0.3 ? 0 : q < 0.5 ? 1 : q < 0.75 ? 2 : 3;
+    return q < 0.94 ? 0 : q < 0.98 ? 1 : q < 0.998 ? 2 : 3;
+  }
+  function addHold(tz) {
+    const H = tz === 2 ? S.h2 : S.h1;
+    if (H.length >= SP.hold) { ev({ t: 'over', tz }); return; }
+    const r = rnd();
+    H.push({ r, k: rnd(), col: peekColor(r) });
+    ev({ t: 'hold', tz, col: H[H.length - 1].col });
+  }
+  function pick(tab, k) { let a = 0; for (const e of tab) { a += e.p; if (k < a) return e; } return tab[tab.length - 1]; }
+  const d9 = () => 1 + Math.floor(rnd() * 9);
+  // 数字をまわしはじめる（特図2 が先）
+  function startSpin() {
+    const tz = S.h2.length ? 2 : 1, H = tz === 2 ? S.h2 : S.h1, q = H.shift();
+    const mode = S.mode, sup = support();
+    const hit = q.r < prob();
+    const kind = hit ? pick(tz === 2 ? SP.den : SP.heso, q.k) : null;
+    if (sup) S.left--;
+    S.cnt.spins++; S.cnt.total++;
+    // リーチの種類（0 なし・1 ノーマル・2 流星・3 決戦・4 全回転）と時間
+    let reach = 0;
+    if (hit) { const z = rnd(); reach = sup ? (z < 0.5 ? 9 : z < 0.8 ? 1 : 3) : (z < 0.05 ? 1 : z < 0.4 ? 2 : z < 0.95 ? 3 : 4); }
+    else if (rnd() < (sup ? 1 / 30 : 1 / 14)) { const z = rnd(); reach = sup ? 1 : (z < 0.7 ? 1 : z < 0.95 ? 2 : 3); }
+    const rest = S.h1.length + S.h2.length;
+    let dur;
+    if (reach === 9) dur = 2.5;                       // 一発告知（電サポ中）
+    else if (reach === 1) dur = sup ? 7 : 13;
+    else if (reach === 2) dur = 22;
+    else if (reach === 3) dur = 32;
+    else if (reach === 4) dur = 16;
+    else if (sup) dur = tz === 2 ? 1.6 : 10;
+    else dur = rest >= 3 ? 4.5 : rest >= 1 ? 7.5 : 11;
+    // 止まる数字
+    let fin;
+    if (hit) { const a = kind.r === 10 ? 7 : [1, 2, 3, 4, 5, 6, 8, 9][Math.floor(rnd() * 8)]; fin = [a, a, a]; }
+    else if (reach) { const a = d9(); let c = d9(); if (c === a) c = a % 9 + 1; if (rnd() < 0.5) c = (a % 9) + 1; fin = [a, c, a]; }
+    else { const a = d9(); let b = d9(); if (b === a) b = a % 9 + 1; fin = [a, d9(), b]; }
+    // 左 → 右 → 中 の順に止まる（全回転は 3 つ同時）
+    const stop = reach === 4 ? [dur - 0.4, dur - 0.4, dur - 0.4] : reach && reach !== 9 ? [1.6, 2.6, dur - 0.3] : [dur * 0.45, dur * 0.7, dur - 0.25];
+    S.spin = { tz, hit, kind, reach, dur, t: 0, fin, stop, mode, col: q.col, reachShown: false };
+    ev({ t: 'spin', tz, reach });
+  }
+  function endSpin() {
+    const s = S.spin; S.spin = null; S.last = s.fin.slice();
+    if (s.hit) { startBonus(s); return; }
+    ev({ t: 'miss' });
+    if (support() && S.left <= 0) {
+      const was = S.mode; S.mode = 'normal'; S.left = 0;
+      ev({ t: 'supEnd', was });
+      S.cnt.hist.unshift({ chain: S.cnt.chain }); S.cnt.chain = 0;   // 連チャンおわり
+    }
+  }
+  function startBonus(s) {
+    S.cnt.hits++; S.cnt.chain++;
+    S.bonus = { kind: s.kind, tz: s.tz, from: s.mode, R: s.kind.r, round: 0, count: 0, t: 0, ph: 'op', v: false, vRound: s.kind.r === 10 ? 1 : 3 };
+    S.cnt.spinsAtHit = S.cnt.spins; S.cnt.spins = 0;
+    S.mode = 'normal'; S.left = 0; S.den = false; S.fu.ph = 'idle'; S.fu.t = 0;   // 大当たり中は電サポなし
+    ev({ t: 'bonus', r: s.kind.r, tz: s.tz });
+  }
+  function stepBonus(dt) {
+    const B = S.bonus; B.t += dt;
+    if (B.ph === 'op' && B.t >= 3) { B.ph = 'open'; B.t = 0; B.round = 1; B.count = 0; S.att = true; ev({ t: 'round', n: 1, R: B.R }); }
+    else if (B.ph === 'open' && (B.count >= SP.count || B.t >= SP.roundMax)) {
+      S.att = false;
+      if (B.round === B.vRound && !B.vDone) { B.vDone = true; B.v = B.kind.kk && B.count > 0; ev({ t: B.v ? 'vIn' : 'vMiss', kk: B.kind.kk }); }   // 確変でも、このラウンドで右打ちしていないと V に入らない
+      B.ph = B.round >= B.R ? 'ed' : 'int'; B.t = 0;
+    } else if (B.ph === 'int' && B.t >= 1.6) { B.ph = 'open'; B.t = 0; B.round++; B.count = 0; S.att = true; ev({ t: 'round', n: B.round, R: B.R }); }
+    else if (B.ph === 'ed' && B.t >= 3.5) {
+      S.bonus = null;
+      if (B.v) { S.mode = 'st'; S.left = SP.st; S.cnt.st++; }
+      else { S.mode = 'jt'; S.left = B.from === 'st' ? SP.jtST : SP.jt; }
+      ev({ t: 'bonusEnd', mode: S.mode, left: S.left });
+    }
+  }
+  // 普図：スルーを通ると抽選。電サポ中はほぼ当たって、電チューが長く 3 回ひらく
+  function stepFu(dt) {
+    const F = S.fu;
+    if (F.ph === 'idle') {
+      if (F.n > 0 && !S.bonus) { F.n--; F.ph = 'spin'; F.t = 0; F.hit = support() ? rnd() < 254 / 255 : rnd() < 1 / 12; F.dur = support() ? 0.5 : 12; }
+      return;
+    }
+    F.t += dt;
+    if (F.ph === 'spin' && F.t >= F.dur) {
+      if (F.hit) { F.ph = 'open'; F.t = 0; F.opens = support() ? 3 : 1; F.ot = support() ? 2.5 : 0.15; S.den = true; ev({ t: 'den' }); }
+      else F.ph = 'idle';
+    } else if (F.ph === 'open') {
+      // 開く → 0.3 秒とじる → 開く…
+      const cyc = F.ot + 0.3, k = Math.floor(F.t / cyc);
+      if (k >= F.opens) { S.den = false; F.ph = 'idle'; return; }
+      S.den = (F.t - k * cyc) < F.ot;
+    }
+  }
+  function step(dt, ctl) {
+    S.fireT -= dt;
+    if (ctl.fire && S.fireT <= 0 && S.balls.length < 14 && ctl.take()) {
+      S.fireT = 0.6;
+      const th = Math.PI * 150 / 180, v = (505 + 110 * ctl.power) * (1 + (rnd() - 0.5) * 0.06);
+      S.balls.push({ x: CX + (R - BR - 1) * Math.cos(th), y: CY + (R - BR - 1) * Math.sin(th), vx: -Math.sin(th) * v, vy: Math.cos(th) * v, age: 0, slow: 0 });
+      S.stats.shot++; ev({ t: 'shot' });
+    }
+    if (S.bonus) stepBonus(dt);
+    else if (S.spin) { S.spin.t += dt; const sp = S.spin; if (sp.reach && sp.reach !== 9 && !sp.reachShown && sp.t >= sp.stop[1]) { sp.reachShown = true; ev({ t: 'reach', k: sp.reach }); } if (sp.t >= sp.dur) endSpin(); }
+    else if (S.h1.length || S.h2.length) startSpin();
+    stepFu(dt);
+    const h = 1 / 240;
+    for (let t = 0; t < dt - 1e-9; t += h) {
+      const hh = Math.min(h, dt - t);
+      for (let i = S.balls.length - 1; i >= 0; i--) {
+        const b = S.balls[i];
+        b.vy += G * hh; b.x += b.vx * hh; b.y += b.vy * hh; b.age += hh;
+        const dx = b.x - CX, dy = b.y - CY, d = Math.hypot(dx, dy);
+        if (d > R - BR) { const nx = dx / d, ny = dy / d; b.x = CX + nx * (R - BR); b.y = CY + ny * (R - BR); const vn = b.vx * nx + b.vy * ny; if (vn > 0) { b.vx -= 1.3 * vn * nx; b.vy -= 1.3 * vn * ny; } b.vx *= 0.9995; b.vy *= 0.9995; }
+        collide(b, RUBBER.x, RUBBER.y, RUBBER.r, 0.55, 30);
+        const gi = Math.floor(b.x / CELL), gj = Math.floor(b.y / CELL);
+        for (let a = gi - 1; a <= gi + 1; a++) for (let c = gj - 1; c <= gj + 1; c++) { const L = grid.get(gk(a, c)); if (L) for (const n of L) collide(b, n.x, n.y, n.r, 0.45, 45); }
+        // 液晶のわく
+        const qx = Math.max(LCD.x0, Math.min(LCD.x1, b.x)), qy = Math.max(LCD.y0, Math.min(LCD.y1, b.y));
+        collide(b, qx, qy, 0, 0.3, 12);
+        if (!b.side && b.vy > 0 && b.age > 0.25 && b.y > LCD.y0 && b.y < LCD.y1 + 20) { b.side = b.x > CX ? 'R' : 'L'; if (b.side === 'R') S.stats.right++; }
+        // アタッカー（とじているときは板）
+        if (!S.att) { const ax = Math.max(ATT.x0, Math.min(ATT.x1, b.x)), ay = Math.max(ATT.y - 1, Math.min(ATT.y + 2, b.y)); collide(b, ax, ay, 0, 0.25, 8); }
+        if (!S.den) { const ax = Math.max(DEN.x - 8, Math.min(DEN.x + 8, b.x)), ay = Math.max(DEN.y - 2, Math.min(DEN.y + 1, b.y)); if (collide(b, ax, ay, 0, 0.3, 30) && Math.abs(b.vx) < 50) b.vx = (b.x === DEN.x ? (rnd() < 0.5 ? -1 : 1) : Math.sign(b.x - DEN.x)) * 70; }   // とじた電チュー（山形のふた。玉は左右へころがり落ちる）
+        // スルー（通るだけ）
+        if (!b.gate && Math.hypot(b.x - GATE.x, b.y - GATE.y) < GATE.r) { b.gate = true; S.stats.gate++; if (S.fu.n < 4) S.fu.n++; ev({ t: 'gate' }); }
+        let gone = null;
+        if (S.att && b.x > ATT.x0 && b.x < ATT.x1 && b.y > ATT.y - 3 && b.y < ATT.y + 6) {
+          gone = 'att'; S.stats.att++; S.stats.won += SP.attPay; ev({ t: 'pay', n: SP.attPay, why: 'att', x: b.x, y: ATT.y });
+          if (S.bonus) S.bonus.count++;
+        }
+        if (!gone && S.den && Math.abs(b.x - DEN.x) < 7 && b.y > DEN.y - 3 && b.y < DEN.y + 5 && b.vy > 0) {
+          gone = 'den'; S.stats.den++; S.stats.won += DEN.pay; ev({ t: 'pay', n: DEN.pay, why: 'den', x: DEN.x, y: DEN.y }); addHold(2);
+        }
+        if (!gone && Math.abs(b.x - HESO.x) < 2.6 && b.y > HESO.y - 3 && b.y < HESO.y + 5 && b.vy > 0) {
+          gone = 'heso'; S.stats.heso++; S.stats.won += HESO.pay; ev({ t: 'pay', n: HESO.pay, why: 'heso', x: HESO.x, y: HESO.y }); addHold(1);
+        }
+        if (!gone) for (const p of POCKETS) if (Math.abs(b.x - p.x) < 2.5 && b.y > p.y - 3 && b.y < p.y + 5 && b.vy > 0) {
+          if (rnd() > 0.5) { const sd = rnd() < 0.5 ? -1 : 1; b.x = p.x + sd * 13; b.y = p.y - 4; b.vy = -40; b.vx = sd * 60; break; }
+          gone = 'pocket'; S.stats.pocket++; S.stats.won += p.pay; ev({ t: 'pay', n: p.pay, why: 'pocket', x: p.x, y: p.y }); break;
+        }
+        if (!gone && (b.y > 384 || Math.hypot(b.x - OUT.x, b.y - OUT.y) < OUT.r)) gone = 'out';
+        if (!gone && b.vy > 0 && b.x < 70 && b.y > 285 && Math.hypot(dx, dy) > R - 14) { gone = 'foul'; ctl.give(1); S.stats.foul++; }
+        if (!gone) { if (Math.hypot(b.vx, b.vy) < 8) b.slow += hh; else b.slow = 0; if (b.slow > 2 || b.age > 30) gone = 'out'; }
+        if (gone) { S.balls.splice(i, 1); if (gone === 'out') { S.stats.out++; ev({ t: 'out' }); } }
+      }
+    }
+  }
+  S.step = step; S.support = support; S.addHold = addHold;
+  return S;
+}
+// デジパチの画面（盤面・液晶・演出）。絵と演出はこのワールドのオリジナル
+const DIGI_FROM = 11;   // 11 番台から上はデジパチ（P 蒼天ブレイカー）、10 番台までは羽根もの
+const DIGI_NAME = 'P 蒼天ブレイカー';
+const DG_HOLDC = ['#ffffff', '#3fa9ff', '#3fdc6a', '#ff3b4f'];
+function digiModeText(S) {
+  if (S.bonus) return `大当たり ${S.bonus.R}R${S.bonus.round ? `（${S.bonus.round}/${S.bonus.R}）` : ''}`;
+  if (S.mode === 'st') return `ブレイクラッシュ 残り ${S.left} 回`;
+  if (S.mode === 'jt') return `チャンスタイム 残り ${S.left} 回`;
+  return '通常';
+}
+function digiDraw(t, dt) {
+  const S = PG.S, c = pgCx, cv = pgCv;
+  const dpr = Math.min(2, window.devicePixelRatio || 1), cw = cv.clientWidth || 360, chh = cv.clientHeight || 440;
+  if (cv.width !== Math.round(cw * dpr) || cv.height !== Math.round(chh * dpr)) { cv.width = Math.round(cw * dpr); cv.height = Math.round(chh * dpr); }
+  const k = Math.min(cv.width / S.W, cv.height / S.H);
+  c.setTransform(k, 0, 0, k, (cv.width - S.W * k) / 2, (cv.height - S.H * k) / 2);
+  c.textAlign = 'center';
+  const B = S.bonus, rush = S.mode === 'st', fl = Math.floor(t * 6) % 2;
+  // 台のわく
+  c.fillStyle = '#0d1b3a'; c.fillRect(0, 0, S.W, S.H);
+  c.fillStyle = B ? (fl ? '#ffd23f' : '#ff7a2f') : rush ? (fl ? '#b46bff' : '#4f7bff') : S.mode === 'jt' ? '#2fc4b2' : '#3b6fd8';
+  c.beginPath(); c.arc(S.CX, S.CY, S.R + 9, 0, Math.PI * 2); c.fill();
+  const gr = c.createRadialGradient(S.CX, S.CY - 40, 20, S.CX, S.CY, S.R);
+  gr.addColorStop(0, '#f4f9ff'); gr.addColorStop(1, '#cfe0f5');
+  c.fillStyle = gr; c.beginPath(); c.arc(S.CX, S.CY, S.R, 0, Math.PI * 2); c.fill();
+  // 発射レール・ゴム・アウト口
+  c.strokeStyle = '#9aa4ae'; c.lineWidth = 2; c.beginPath(); c.arc(S.CX, S.CY, S.R - 13, Math.PI * 0.84, Math.PI * 1.62); c.stroke();
+  c.fillStyle = '#e45'; c.beginPath(); c.arc(S.RUBBER.x, S.RUBBER.y, S.RUBBER.r, 0, Math.PI * 2); c.fill();
+  c.fillStyle = '#2b2b2b'; c.beginPath(); c.ellipse(S.OUT.x, S.OUT.y + 2, 18, 9, 0, 0, Math.PI * 2); c.fill();
+  c.fillStyle = '#fff'; c.font = '700 8px sans-serif'; c.fillText('OUT', S.OUT.x, S.OUT.y + 5);
+  // 釘（しきりは太く）
+  c.fillStyle = '#8b939c';
+  for (const n of S.nails) { c.beginPath(); c.arc(n.x, n.y, n.r > 2 ? 2.6 : 2, 0, Math.PI * 2); c.fill(); }
+  c.fillStyle = '#e8edf2'; for (const n of S.nails) c.fillRect(n.x - 0.9, n.y - 0.9, 0.9, 0.9);
+  // ヘソ（特図1）
+  const Hs = S.HESO;
+  c.fillStyle = '#ffcc33'; c.beginPath(); c.moveTo(Hs.x - 8, Hs.y - 2); c.lineTo(Hs.x + 8, Hs.y - 2); c.lineTo(Hs.x + 5, Hs.y + 8); c.lineTo(Hs.x - 5, Hs.y + 8); c.closePath(); c.fill();
+  c.fillStyle = '#333'; c.font = '800 6px sans-serif'; c.fillText('START', Hs.x, Hs.y + 6);
+  // 一般入賞口
+  for (const p of S.POCKETS) { c.fillStyle = '#3fbf7f'; c.beginPath(); c.moveTo(p.x - 7, p.y - 2); c.lineTo(p.x + 7, p.y - 2); c.lineTo(p.x + 4, p.y + 7); c.lineTo(p.x - 4, p.y + 7); c.closePath(); c.fill(); c.fillStyle = '#123'; c.fillText('5', p.x, p.y + 5); }
+  // スルー
+  const Gt = S.GATE; c.strokeStyle = '#ff8c1a'; c.lineWidth = 2.5; c.beginPath(); c.arc(Gt.x, Gt.y + 3, 8, Math.PI, 0); c.stroke();
+  c.fillStyle = '#ff8c1a'; c.font = '800 6px sans-serif'; c.fillText('GATE', Gt.x, Gt.y - 8);
+  // 電チュー（特図2）：ひらくと左右の羽が倒れる
+  const Dn = S.DEN, op = S.den ? 1 : 0;
+  c.fillStyle = '#ffe14d'; c.strokeStyle = '#a07a10'; c.lineWidth = 1;
+  for (const sd of [-1, 1]) { c.save(); c.translate(Dn.x + sd * 8, Dn.y + 4); c.rotate(sd * (op ? 0.9 : 0)); c.beginPath(); c.roundRect(-2.5, -14, 5, 14, 2); c.fill(); c.stroke(); c.restore(); }
+  c.fillStyle = op ? '#ff5a3c' : '#c9a227'; c.beginPath(); c.moveTo(Dn.x - 8, Dn.y - 1); c.lineTo(Dn.x, Dn.y - 4); c.lineTo(Dn.x + 8, Dn.y - 1); c.lineTo(Dn.x + 8, Dn.y + 3); c.lineTo(Dn.x - 8, Dn.y + 3); c.closePath(); c.fill();
+  // アタッカー（大入賞口）
+  const At = S.ATT;
+  c.fillStyle = '#222'; c.fillRect(At.x0 - 2, At.y - 1, At.x1 - At.x0 + 4, 9);
+  c.fillStyle = S.att ? (fl ? '#ff3b4f' : '#ffd23f') : '#c0392b';
+  if (S.att) { c.save(); c.translate(At.x0, At.y + 8); c.rotate(-0.0); c.fillRect(0, 0, At.x1 - At.x0, 4); c.restore(); }
+  else c.fillRect(At.x0, At.y - 1, At.x1 - At.x0, 4);
+  // 液晶
+  drawDigiLcd(c, S, t);
+  // 玉
+  for (const b of S.balls) pgBall(c, b.x, b.y);
+  c.font = '800 11px sans-serif';
+  for (const p of PG.pops) { p.t -= dt; p.y -= dt * 18; c.fillStyle = `rgba(230,40,60,${Math.max(0, Math.min(1, p.t))})`; c.fillText(p.txt || `+${p.n}`, p.x, p.y); }
+  PG.pops = PG.pops.filter((p) => p.t > 0);
+  // 右打ち・左打ちの案内
+  const wantR = !!B || S.support();
+  if (wantR) { c.fillStyle = fl ? '#ff5a1f' : '#ffb000'; c.font = '900 12px sans-serif'; c.fillText('右打ち ➡', 282, 146); }
+  if (PG.msgT > 0 && PG.msg) {
+    c.font = '800 15px sans-serif'; const w = c.measureText(PG.msg).width + 24;
+    c.fillStyle = B ? 'rgba(200,0,60,0.88)' : 'rgba(20,30,60,0.85)'; c.beginPath(); c.roundRect(S.CX - w / 2, 18, w, 26, 13); c.fill();
+    c.fillStyle = '#fff'; c.fillText(PG.msg, S.CX, 36);
+  }
+  if (PG.flash > 0) { c.fillStyle = `rgba(255,230,80,${0.3 * (Math.floor(t * 10) % 2)})`; c.fillRect(0, 0, S.W, S.H); }
+}
+function drawDigiLcd(c, S, t) {
+  const L = S.LCD, w = L.x1 - L.x0, h = L.y1 - L.y0, sp = S.spin, B = S.bonus;
+  const reach = sp && sp.reachShown ? sp.reach : 0;
+  // 背景：通常は空、ラッシュは夜空、決戦リーチは赤
+  const g = c.createLinearGradient(0, L.y0, 0, L.y1);
+  if (B) { g.addColorStop(0, '#5a1200'); g.addColorStop(1, '#ff9a1f'); }
+  else if (reach === 3) { const f = 0.5 + 0.5 * Math.sin(t * 8); g.addColorStop(0, `rgb(${120 + 80 * f},0,20)`); g.addColorStop(1, '#200008'); }
+  else if (S.mode === 'st') { g.addColorStop(0, '#120a3a'); g.addColorStop(1, '#3a1b7a'); }
+  else if (S.mode === 'jt') { g.addColorStop(0, '#0b3a3a'); g.addColorStop(1, '#1d7a6e'); }
+  else { g.addColorStop(0, '#0c2f6b'); g.addColorStop(1, '#5aa8e8'); }
+  c.fillStyle = '#111'; c.beginPath(); c.roundRect(L.x0 - 4, L.y0 - 4, w + 8, h + 8, 8); c.fill();
+  c.save(); c.beginPath(); c.roundRect(L.x0, L.y0, w, h, 6); c.clip();
+  c.fillStyle = g; c.fillRect(L.x0, L.y0, w, h);
+  // 飾り：ラッシュ中は星、流星リーチは流れ星
+  if (S.mode === 'st' || reach === 2) {
+    for (let i = 0; i < 14; i++) {
+      const sx = L.x0 + ((i * 53 + t * (reach === 2 ? 160 : 12)) % (w + 40)) - 20, sy = L.y0 + ((i * 37 + (reach === 2 ? t * 90 : 0)) % h);
+      c.strokeStyle = `rgba(255,255,255,${reach === 2 ? 0.8 : 0.35})`; c.lineWidth = reach === 2 ? 1.5 : 1;
+      c.beginPath(); c.moveTo(sx, sy); c.lineTo(sx - (reach === 2 ? 14 : 1.5), sy - (reach === 2 ? 8 : 1.5)); c.stroke();
+    }
+  }
+  c.fillStyle = 'rgba(255,255,255,0.85)'; c.font = '800 9px sans-serif'; c.textAlign = 'left';
+  c.fillText(B ? 'BONUS' : S.mode === 'st' ? 'BREAK RUSH' : S.mode === 'jt' ? 'CHANCE TIME' : DIGI_NAME, L.x0 + 5, L.y0 + 11);
+  c.textAlign = 'right';
+  if (S.support() && !B) c.fillText(`残り ${S.left}`, L.x1 - 5, L.y0 + 11);
+  c.textAlign = 'center';
+  if (B) {   // 大当たり中：ラウンドとカウント
+    const lit = Math.floor(t * 5) % 2;
+    c.fillStyle = lit ? '#fff6b0' : '#ffffff'; c.font = '900 22px sans-serif';
+    c.fillText(B.ph === 'op' ? (B.R === 10 ? '10R 大当たり！' : '大当たり！') : B.ph === 'ed' ? (B.v ? 'ラッシュ突入！' : 'チャンスタイムへ') : `ROUND ${B.round}/${B.R}`, (L.x0 + L.x1) / 2, L.y0 + 56);
+    c.font = '800 12px sans-serif';
+    if (B.ph === 'open' || B.ph === 'int') c.fillText(`${Math.min(B.count, S.SP.count)} / ${S.SP.count} カウント`, (L.x0 + L.x1) / 2, L.y0 + 78);
+    if (B.round === B.vRound && !B.vDone && B.ph === 'open') { c.fillStyle = lit ? '#ff3b4f' : '#fff'; c.font = '900 14px sans-serif'; c.fillText('V を狙え！', (L.x0 + L.x1) / 2, L.y0 + 98); }
+    else if (B.vDone) { c.fillStyle = B.v ? '#ffe14d' : '#cfe0f5'; c.font = '900 13px sans-serif'; c.fillText(B.v ? 'V 入賞！ ラッシュ確定' : 'V ならず… 時短へ', (L.x0 + L.x1) / 2, L.y0 + 98); }
+  } else {
+    // 3 つの数字（左・中・右）
+    const digs = [0, 1, 2].map((i) => {
+      if (!sp) return { d: S.last[i], run: false };
+      if (sp.reach === 4 && sp.t < sp.stop[i]) return { d: (Math.floor(sp.t * 3) % 9) + 1, run: false, all: true };   // 全回転：3 つそろったまま回る
+      if (sp.t >= sp.stop[i]) return { d: sp.fin[i], run: false };
+      const slow = i === 1 && sp.reachShown && sp.stop[1] - sp.t < 2.2 ? 0.25 : 1;
+      return { d: (Math.floor(sp.t * 14 * slow + i * 3) % 9) + 1, run: true, off: (sp.t * 14 * slow) % 1 };
+    });
+    const bw = 40, gap = 6, x0 = (L.x0 + L.x1) / 2 - (bw * 1.5 + gap);
+    digs.forEach((q, i) => {
+      const x = x0 + i * (bw + gap), y = L.y0 + 22;
+      c.fillStyle = 'rgba(0,0,0,0.35)'; c.beginPath(); c.roundRect(x, y, bw, 52, 6); c.fill();
+      const col = q.d === 7 ? '#ff3b4f' : q.d % 2 ? '#ffd23f' : '#7fd3ff';
+      c.font = '900 38px sans-serif';
+      if (q.all) { c.fillStyle = `hsl(${(t * 300 + i * 40) % 360},90%,60%)`; c.fillText(String(q.d), x + bw / 2, y + 41); }
+      else if (q.run) { c.fillStyle = 'rgba(255,255,255,0.7)'; c.fillText(String(q.d), x + bw / 2, y + 41 + (q.off - 0.5) * 30); }
+      else { c.fillStyle = col; c.fillText(String(q.d), x + bw / 2, y + 41); }
+    });
+    if (reach) {
+      const name = ['', 'リーチ', '流星リーチ', '決戦リーチ', '全回転'][reach] || '';
+      c.fillStyle = Math.floor(t * 4) % 2 ? '#fff' : '#ffe14d'; c.font = '900 14px sans-serif';
+      c.fillText(name, (L.x0 + L.x1) / 2, L.y0 + 92);
+    }
+  }
+  // 保留（特図1 は丸・特図2 はひし形）。下の段
+  const hy = L.y1 - 10;
+  for (let i = 0; i < 4; i++) {
+    const x = L.x0 + 14 + i * 13, q = S.h1[i];
+    c.fillStyle = q ? DG_HOLDC[q.col] : 'rgba(255,255,255,0.15)'; c.beginPath(); c.arc(x, hy, 4.5, 0, Math.PI * 2); c.fill();
+  }
+  for (let i = 0; i < 4; i++) {
+    const x = L.x1 - 14 - (3 - i) * 13, q = S.h2[i];
+    c.fillStyle = q ? DG_HOLDC[q.col] : 'rgba(255,255,255,0.15)'; c.beginPath(); c.moveTo(x, hy - 5); c.lineTo(x + 5, hy); c.lineTo(x, hy + 5); c.lineTo(x - 5, hy); c.closePath(); c.fill();
+  }
+  // いま回っている保留（真ん中）
+  if (sp) { c.fillStyle = DG_HOLDC[sp.col] || '#fff'; c.beginPath(); c.arc((L.x0 + L.x1) / 2, hy, 6, 0, Math.PI * 2); c.fill(); }
+  c.restore();
+}
 /* ================= パチンコ（座ると遊べる） =================
    パチンコ台_NN の前のイス（カスタムプロパティ 台番号）に座ると開く。玉は 500P で 125 玉（1 玉 4P）。精算すると玉を P にもどして立つ
    当たりやすさ（V に入る確率）は台ごとにちがい、日本時間の日付が変わると入れかわる。同じ店・同じ台・同じ日なら、みんな同じ */
@@ -6690,7 +7079,7 @@ function pachiPV(b, num) {
   let k = 0, acc = 0; for (; k < PACHI_W.length - 1; k++) { acc += PACHI_W[k]; if (r < acc) break; }
   return PACHI_CLASS[k];
 }
-const PG = { open: false, S: null, num: 0, balls: 0, fire: false, power: 0.35, msg: '', msgT: 0, flash: 0, pops: [], last: 0 };
+const PG = { open: false, S: null, kind: 'hane', num: 0, balls: 0, fire: false, power: 0.35, msg: '', msgT: 0, flash: 0, pops: [], last: 0, quitT: 0 };
 // 開いたまま閉じてしまったときの玉は、つぎに開いたとき P にもどす
 try { const v = Number(localStorage.getItem('world.pachiBalls')); if (v > 0) { addPoints(v * PACHI_BALL_P); localStorage.removeItem('world.pachiBalls'); } } catch (e) { /* そのまま */ }
 const pgEl = document.getElementById('pachi'), pgCv = document.getElementById('pgBoard'), pgCx = pgCv.getContext('2d');
@@ -6701,6 +7090,26 @@ function pgUi() {
   document.getElementById('pgP').textContent = fmtP(wallet.p);
   const f = document.getElementById('pgFire'); f.textContent = PG.fire ? '止める' : '打つ'; f.setAttribute('aria-pressed', PG.fire ? 'true' : 'false');
   document.getElementById('pgLend').disabled = wallet.p < PACHI_LEND;
+  const info = document.getElementById('pgInfo'), aim = document.getElementById('pgAim'), digi = PG.kind === 'digi';
+  info.hidden = !digi; aim.hidden = !digi;
+  if (digi && PG.S) {
+    const S = PG.S, c = S.cnt, wantR = !!S.bonus || S.support(), isR = PG.power >= 0.7;
+    const tip = wantR && !isR ? '<span class="warn">右打ちしてください</span>' : !wantR && isR ? '<span class="warn">左打ちにもどしてください</span>' : '';
+    info.innerHTML = `<b>${digiModeText(S)}</b><span>${c.spins} 回転</span><span>大当たり ${c.hits} 回${c.chain > 1 ? `（${c.chain} 連）` : ''}</span><span>保留 ${S.h1.length}+${S.h2.length}</span>${tip}`;
+    document.getElementById('pgAimL').setAttribute('aria-pressed', isR ? 'false' : 'true');
+    document.getElementById('pgAimR').setAttribute('aria-pressed', isR ? 'true' : 'false');
+  }
+}
+function pgSetPower(v) { PG.power = v; document.getElementById('pgPow').value = String(Math.round(v * 100)); pgUi(); }
+document.getElementById('pgAimL').addEventListener('click', () => pgSetPower(0.4));
+document.getElementById('pgAimR').addEventListener('click', () => pgSetPower(0.9));
+// 大当たり中・ST 中・時短中・保留があるときは、1 回目は注意だけ（もう一度で精算して立つ）
+function pgTryQuit() {
+  const S = PG.S;
+  if (PG.kind === 'digi' && S && (S.bonus || S.support() || S.spin || S.h1.length || S.h2.length) && PG.quitT <= 0) {
+    PG.quitT = 3; PG.msg = S.bonus ? '大当たり中です。もう一度押すと立ちます' : S.support() ? 'ラッシュ・時短は消えます。もう一度で立つ' : '保留が消えます。もう一度で立つ'; PG.msgT = 3; return;
+  }
+  standUp();
 }
 function pgTone(f, len, vol, type) {
   const c = actx; if (!c || c.state !== 'running') return;
@@ -6710,6 +7119,16 @@ function pgTone(f, len, vol, type) {
   o.connect(g); g.connect(c.destination); o.start(t); o.stop(t + len + 0.02);
 }
 function openPachi(b, ch) {
+  if (ch.num >= DIGI_FROM) {   // デジパチ。釘（ヘソのひらき）は台ごと・日ごとにちがう
+    const lay = seededRnd(hash32(`${b.pr.id || b.pr.name}|${ch.num}|${jstDay()}|デジ`));
+    PG.S = makeDigi(Math.random, lay); PG.kind = 'digi'; PG.num = ch.num; PG.balls = 0; PG.fire = false; PG.pops = []; PG.quitT = 0;
+    PG.msg = `${DIGI_NAME}　大当たり 1/319.7`; PG.msgT = 4;
+    PG.open = true; pgEl.hidden = false; PG.last = performance.now();
+    for (const k in keys) keys[k] = false;
+    audioCtx(); pgSetPower(0.4); requestAnimationFrame(pgFrame);
+    return;
+  }
+  PG.kind = 'hane'; pgSetPower(0.35);
   const pV = pachiPV(b, ch.num);
   const lay = seededRnd(hash32(`${b.pr.id || b.pr.name}|${ch.num}|${jstDay()}|釘`));
   const pS = 0.06 + 0.08 * seededRnd(hash32(`${b.pr.id || b.pr.name}|${ch.num}|${jstDay()}|スロット`))();   // スロットはだいたい 10%（6〜14%）
@@ -6728,14 +7147,16 @@ document.getElementById('pgLend').addEventListener('click', () => {
   addPoints(-PACHI_LEND); PG.balls += PACHI_BALLS; pgSaveBalls(); pgUi();
 });
 document.getElementById('pgFire').addEventListener('click', () => { PG.fire = !PG.fire; if (PG.fire && PG.balls <= 0) { PG.fire = false; PG.msg = '玉がありません。玉を借りてください'; PG.msgT = 2.5; } pgUi(); });
-document.getElementById('pgPow').addEventListener('input', (e) => { PG.power = Number(e.target.value) / 100; });
-document.getElementById('pgQuit').addEventListener('click', () => standUp());
+document.getElementById('pgPow').addEventListener('input', (e) => { PG.power = Number(e.target.value) / 100; pgUi(); });
+document.getElementById('pgQuit').addEventListener('click', () => pgTryQuit());
 function pgFrame(now) {
   if (!PG.open) return;
   const dt = Math.min(0.1, (now - PG.last) / 1000); PG.last = now;
   const S = PG.S;
   S.step(dt, { fire: PG.fire, power: PG.power, take: () => { if (PG.balls <= 0) return false; PG.balls--; return true; }, give: (n) => { PG.balls += n; } });
   let changed = false;
+  if (PG.kind === 'digi') changed = digiEvents(S);
+  PG.quitT -= dt;
   for (const e of S.events) {
     if (e.t === 'pay') { PG.balls += e.n; changed = true; if (e.x != null) PG.pops.push({ x: e.x, y: e.y - 10, n: e.n, t: 1 }); pgTone(e.why === 'v' ? 1320 : 990, 0.12, 0.04); }
     else if (e.t === 'shot') changed = true;
@@ -6755,8 +7176,29 @@ function pgFrame(now) {
   if (PG.fire && PG.balls <= 0 && !S.balls.length) { PG.fire = false; PG.msg = '玉がなくなりました'; PG.msgT = 2.5; changed = true; }
   if (changed) { pgUi(); if ((pgFrame.save = (pgFrame.save || 0) + 1) % 10 === 0) pgSaveBalls(); }
   PG.msgT -= dt; PG.flash = Math.max(0, PG.flash - dt);
-  pgDraw(now / 1000, dt);
+  if (PG.kind === 'digi') digiDraw(now / 1000, dt); else pgDraw(now / 1000, dt);
   requestAnimationFrame(pgFrame);
+}
+// デジパチのできごと → 音・お知らせ
+function digiEvents(S) {
+  let changed = false;
+  const tones = (fs, gap, len, vol) => fs.forEach((f, i) => setTimeout(() => pgTone(f, len || 0.2, vol || 0.05), i * (gap || 120)));
+  for (const e of S.events) {
+    if (e.t === 'pay') { PG.balls += e.n; changed = true; if (e.why !== 'att') PG.pops.push({ x: e.x, y: e.y - 10, n: e.n, t: 1 }); pgTone(e.why === 'att' ? 1180 : 990, 0.08, 0.035); }
+    else if (e.t === 'shot') changed = true;
+    else if (e.t === 'hold') { changed = true; pgTone([660, 760, 900, 1200][e.col], 0.1, 0.04, e.col ? 'sawtooth' : 'square'); if (e.col === 3) PG.flash = 0.4; }
+    else if (e.t === 'spin' || e.t === 'miss') changed = true;
+    else if (e.t === 'reach') { tones(e.k === 3 ? [440, 330, 440, 330] : e.k === 2 ? [1320, 1568, 1760] : [880, 1100], 140, 0.18); }
+    else if (e.t === 'bonus') { PG.msg = e.r === 10 ? '10R 大当たり！ 右打ち ➡' : '大当たり！ 右打ち ➡'; PG.msgT = 4; PG.flash = 3; tones([784, 988, 1175, 1568, 1976], 140, 0.25, 0.06); changed = true; }
+    else if (e.t === 'round') { PG.msg = `ラウンド ${e.n}/${e.R}`; PG.msgT = 1.5; pgTone(880, 0.2, 0.05); changed = true; }
+    else if (e.t === 'vIn') { PG.msg = 'V 入賞！ ブレイクラッシュ確定'; PG.msgT = 3; PG.flash = 1.5; tones([1047, 1319, 1568, 2093], 110, 0.2, 0.06); }
+    else if (e.t === 'vMiss') { PG.msg = e.kk ? 'V に入らなかった…（右打ちしてね）' : 'V ならず… チャンスタイムへ'; PG.msgT = 3; tones([523, 440], 200, 0.25); }
+    else if (e.t === 'bonusEnd') { PG.msg = e.mode === 'st' ? `ブレイクラッシュ ${e.left} 回 スタート！` : `チャンスタイム ${e.left} 回`; PG.msgT = 3; changed = true; }
+    else if (e.t === 'supEnd') { PG.msg = e.was === 'st' ? 'ラッシュ終了… 左打ちにもどしてください' : 'チャンスタイム終了。左打ちにもどしてください'; PG.msgT = 4; changed = true; }
+    else if (e.t === 'den') pgTone(1500, 0.05, 0.025);
+  }
+  S.events.length = 0;
+  return changed;
 }
 function pgDraw(t, dt) {
   const S = PG.S, c = pgCx, cv = pgCv;
@@ -13658,7 +14100,7 @@ window.__world = {
   get driving() { return driving; },
   set camYaw(v) { camYaw = v; }, set camPitch(v) { camPitch = v; }, set camDist(v) { camDist = v; }, get camDist() { return camDist; },
   keys, touch, toggleRide, loadItem, ITEM_DEFS, heightAt, player, net, syncPeers,
-  addPropFromBuffer, wallet, addPoints, PG, touch, insideB: () => insideBld(), setCamYaw: (v) => { camYaw = v; }, bgmState: () => ({ name: bgm.name, vol: +bgm.vol.toFixed(2), playing: !!(bgm.el && !bgm.el.paused), t: bgm.el ? +bgm.el.currentTime.toFixed(1) : 0 }), blds, bldFloor, bldPush, roadNear, nearBldAction, placeAt, get bldSeat() { return bldSeat; }, get dayLight() { return dayLight; },
+  addPropFromBuffer, wallet, addPoints, PG, openPachi, touch, insideB: () => insideBld(), setCamYaw: (v) => { camYaw = v; }, bgmState: () => ({ name: bgm.name, vol: +bgm.vol.toFixed(2), playing: !!(bgm.el && !bgm.el.paused), t: bgm.el ? +bgm.el.currentTime.toFixed(1) : 0 }), blds, bldFloor, bldPush, roadNear, nearBldAction, placeAt, get bldSeat() { return bldSeat; }, get dayLight() { return dayLight; },
   HWY, groundAt, deckNear, roadSurf, hwExtra, hwSigns, hwTunnels, hwZone, TOLL, HW_LOTS, stepHwRules, hwDraw, HWT, scene, THREE, get rinfo() { return { calls: renderer.info.render.calls, tris: renderer.info.render.triangles }; },
   get aboard() { return aboard; }, get ride() { return ride; }, buses, get busRide() { return busRide; }, nearBusDoor, traffic, roadNet, worldHour, setHourOffset(h) { hourOffset = h; },
   hullGround, findWaterSpot, rescueBoat, get periscope() { return periscope; }, toggleLight, setPeriscope,
