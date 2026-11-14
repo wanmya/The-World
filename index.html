@@ -1104,7 +1104,7 @@ function carKmh(model, ex, dflt) {
   if (body) v = read(body.userData);
   if (v == null) model.traverse((o) => { if (v == null) v = read(o.userData); });
   if (v == null) v = read(ex);
-  return v == null ? (dflt || 60) : THREE.MathUtils.clamp(v, 10, 300);
+  return v == null ? (dflt || 60) : THREE.MathUtils.clamp(v, 10, 400);
 }
 
 /* ---- 車のライト：部品の名前で見つける。ヘッドライト・テールランプ・ブレーキランプ・ウインカー（左右）
@@ -1115,6 +1115,7 @@ const LAMP_DEFS = {
   brake: /^(左|右)?(ブレーキランプ|ブレーキライト|制動灯|stop[ _-]?(light|lamp)|brake[ _-]?(light|lamp))/i,
   turn: /^(左|右)?(ウインカー|ウィンカー|方向指示器|turn[ _-]?(signal|light|lamp)|blinker|indicator)/i,
 };
+const LAMP_MAT = { head: /ヘッドライト|ヘッドランプ|head/i, tail: /テール|tail/i, brake: /ブレーキ|brake|stop/i, turn: /ウインカー|ウィンカー|turn|blinker|indicator/i };
 const LENS_RE = /レンズ|lens/i, POP_RE = /リトラクタブル|ポップアップ|retractable|pop[ _-]?up/i, POP_KEYS = ['開く角度', 'open_angle'];
 const LAMP_COL = { head: 0xfff4dc, tail: 0xff2414, brake: 0xff2414, turn: 0xffa018 };
 let lampHaloTex = null, lampPoolTex = null;
@@ -1140,22 +1141,28 @@ function rigCarLamps(root, model) {
   }
   const L = { head: [], tail: [], brake: [], turnL: [], turnR: [], halos: [], pool: null, bits: -1, dark: -1, has: {}, pops: [] };
   // リトラクタブルヘッドライト：名前に「リトラクタブル」か、カスタムプロパティ「開く角度」（度）があるヘッドライト。
-  //   原点がちょうつがい。ライトをつけると、部品のローカルの X 軸（Blender の X）のまわりに、Blender の回転と同じ向き・同じ角度だけ回る
-  //   （Blender で開いたときの回転の数をそのまま書く。マイナスもそのまま）。ないときは -60°（車の前が Blender の −Y なら前のふちが上がる）。
+  //   原点がちょうつがい。開く角度は、Blender で開いた形にしたときの、その部品の X 回転の数（マイナスもそのまま）。
+  //   閉じた形は書き出したときの回転。ライトをつけると閉じた形から開いた形まで回る。名前だけのときは、閉じた形から -60° 回す。
   //   カスタムプロパティ「回転軸」= X・Y・Z（Blender の軸）でほかの向きのちょうつがいにもできる
   for (const p of parts) {
     if (p.k !== 'head') continue;
     const deg = numOf(p.o.userData, POP_KEYS) ?? (() => { for (const k of POP_KEYS) { const t = p.o.userData && p.o.userData[k]; if (t != null) { const n = parseFloat(String(t).replace(/[０-９．－]/g, (c) => c === '－' ? '-' : String.fromCharCode(c.charCodeAt(0) - 0xfee0))); if (isFinite(n)) return n; } } return null; })();
     if (deg == null && !POP_RE.test(p.n)) continue;
-    const a = THREE.MathUtils.degToRad(THREE.MathUtils.clamp(deg ?? -60, -360, 360));
-    if (!a || !p.o.parent) continue;
+    if (!p.o.parent) continue;
     const ax = String((p.o.userData && (p.o.userData['回転軸'] ?? p.o.userData.hinge_axis)) ?? 'X').trim().toUpperCase().replace(/[ＸＹＺ]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0xfee0));
     const axis = /^-?Y/.test(ax) ? new THREE.Vector3(0, 0, -1) : /^-?Z/.test(ax) ? new THREE.Vector3(0, 1, 0) : new THREE.Vector3(1, 0, 0);   // Blender の Y＝glTF の −Z、Blender の Z＝glTF の Y
     if (/^-/.test(ax)) axis.negate();
+    const q0 = p.o.quaternion.clone(), q1 = q0.clone();
+    if (deg != null) {   // Blender の回転（XYZ オイラー）に直して、ちょうつがいの軸の数だけ開いたときの数にする。glTF では Blender の X＝X・Y＝−Z・Z＝Y
+      const e = new THREE.Euler().setFromQuaternion(q0, 'YZX'), r = THREE.MathUtils.degToRad(THREE.MathUtils.clamp(deg, -360, 360));
+      if (/Y/.test(ax)) e.z = -r; else if (/Z/.test(ax)) e.y = r; else e.x = r;
+      q1.setFromEuler(e);
+    } else q1.multiply(new THREE.Quaternion().setFromAxisAngle(axis, THREE.MathUtils.degToRad(-60)));
+    if (q0.angleTo(q1) < 0.01) continue;
     const g = new THREE.Group(); g.name = 'ヒンジ';
     g.position.copy(p.o.position); g.quaternion.copy(p.o.quaternion);
     p.o.parent.add(g); root.updateMatrixWorld(true); g.attach(p.o);
-    p.pivot = g; L.pops.push({ g, a, axis, q0: g.quaternion.clone(), t: 0, at: 0 });
+    p.pivot = g; L.pops.push({ g, q0, q1, t: 0, at: 0 });
   }
   // 左右まとめた 1 つの部品（ウインカー・ヘッドライト・テールランプ…）は、車のまん中で左右に分ける（ウインカーは左右べつに点滅、光も左右に）
   const sideOfName = (n) => (/左|left|(^|[ _.-])l($|[ _.\d-])/i.test(n) ? 1 : /右|right|(^|[ _.-])r($|[ _.\d-])/i.test(n) ? -1 : 0);
@@ -1182,8 +1189,10 @@ function rigCarLamps(root, model) {
     if (b.isEmpty()) continue;
     // 光るのは、名前に「レンズ」（lens）がつくマテリアルだけ。部品にレンズのマテリアルがなければ、部品ぜんぶが光る
     let lensy = false;
-    p.o.traverse((o) => { if (o.isMesh) for (const m of [].concat(o.material)) if (m && LENS_RE.test(m.name || '')) lensy = true; });
-    const lit = (m) => !lensy || LENS_RE.test(m.name || '');
+    // （「ウインカー」の部品の中の「ウインカー」のマテリアルのように、ライトと同じ名前のマテリアルも光る所。ほかのマテリアル（バックランプなど）は光らない）
+    const isLit = (m) => !!m && (LENS_RE.test(m.name || '') || LAMP_MAT[p.k].test(m.name || ''));
+    p.o.traverse((o) => { if (o.isMesh) for (const m of [].concat(o.material)) if (isLit(m)) lensy = true; });
+    const lit = (m) => !lensy || isLit(m);
     if (lensy) { const lb = new THREE.Box3(); p.o.traverse((o) => { if (o.isMesh && [].concat(o.material).some((m) => m && lit(m))) lb.expandByObject(o); }); if (!lb.isEmpty()) b.copy(lb); }
     const c = b.getCenter(new THREE.Vector3()), sz = b.getSize(new THREE.Vector3());
     let g = p.k;
@@ -1290,11 +1299,10 @@ function stepCarLamps(v) {
       if (q.t === goal) continue;
       q.t = goal > q.t ? Math.min(1, q.t + dt * 1.4) : Math.max(0, q.t - dt * 1.4);
       const e = q.t * q.t * (3 - 2 * q.t);
-      q.g.quaternion.copy(q.q0).multiply(_popQ.setFromAxisAngle(q.axis, q.a * e));
+      q.g.quaternion.slerpQuaternions(q.q0, q.q1, e);
     }
   }
 }
-const _popQ = new THREE.Quaternion();
 // 毎コマ：種類ごとに動く部品（ダンプの荷台・ミキサーのドラム・重機の腕・回る部品）。作業中かどうかは bits の 16（みんなの画面でそろう）
 function stepCarWork(v, dt) {
   const W = v.item.work;
@@ -4876,16 +4884,16 @@ const HELP_CAR = `<h4>自動車のきまり（どの種類も同じ）</h4>
 <h4>どの車にもつけられる物</h4>
 <table><tr><th>部品の名前</th><th>はたらき</th></tr>
 <tr><td><code>ヘッドライト</code></td><td>夜・雨・自動運転で白く光る</td></tr>
-<tr><td><code>リトラクタブルヘッドライト</code></td><td>ライトをつけると開いて光る。<b>原点をちょうつがいに置く</b>。カスタムプロパティ <code>開く角度</code> に、<b>Blender で開いた形にしたときの X 回転の数をそのまま</b>書く（マイナスもそのまま。数でも文字列の <code>-45</code> <code>-45度</code> でもよい。ないときは -60）。ほかの向きに回るちょうつがいなら <code>回転軸</code> = <code>Y</code> か <code>Z</code>（Blender の軸）。<code>ヘッドライト</code> という名前に <code>開く角度</code> をつけても同じ</td></tr>
+<tr><td><code>リトラクタブルヘッドライト</code></td><td>ライトをつけると開いて光る。<b>原点をちょうつがいに置く</b>。カスタムプロパティ <code>開く角度</code> に、<b>Blender で開いた形にしたときの X 回転の数をそのまま</b>書く（マイナスもそのまま。数でも文字列の <code>-45</code> <code>-45度</code> でもよい）。<b>書き出すときは閉じた形にしておく</b>（閉じた形から、その角度の形まで回ります）。プロパティがなく名前だけなら、閉じた形から -60° 回ります。ほかの向きに回るちょうつがいなら <code>回転軸</code> = <code>Y</code> か <code>Z</code>（Blender の軸）。<code>ヘッドライト</code> という名前に <code>開く角度</code> をつけても同じ</td></tr>
 <tr><td><code>テールランプ</code></td><td>ライトでうすく赤、ブレーキで明るく</td></tr>
 <tr><td><code>ブレーキランプ</code></td><td>ブレーキのときだけ赤く</td></tr>
 <tr><td><code>ウインカー左</code> <code>ウインカー右</code></td><td>オレンジに点滅</td></tr>
-<tr><td colspan="2">ライトは<b>左右（前後も）を 1 つの部品にまとめてもよい</b>（<code>ウインカー</code> <code>テールランプ</code> など）。ワールドが車のまん中で左右に分けるので、ウインカーは左右べつに点滅します。<br><b>光る所</b>：部品の中に、名前に <code>レンズ</code> がつくマテリアルがあれば、そこだけが光ります（ボディ色のカバーは光らない）。なければ部品ぜんぶが光ります。</td></tr>
+<tr><td colspan="2">ライトは<b>左右（前後も）を 1 つの部品にまとめてもよい</b>（<code>ウインカー</code> <code>テールランプ</code> など）。ワールドが車のまん中で左右に分けるので、ウインカーは左右べつに点滅します。<br><b>光る所</b>：部品の中に、名前に <code>レンズ</code> がつくマテリアルか、ライトと同じ名前のマテリアル（<code>ウインカー</code> の部品の <code>ウインカー</code> のマテリアルなど）があれば、そこだけが光ります（ボディ色のカバーやバックランプは光らない）。なければ部品ぜんぶが光ります。<br><b>カスタムプロパティ（最高速度・開く角度）は、書き出しの「含む」→「カスタムプロパティ」にチェックしないと .glb に入りません。</b></td></tr>
 <tr><td><code>座席_1</code> <code>座席_2</code>…</td><td>運転席のほかの席。だれかが運転しているとき、ほかの人が「相乗り」で座れる</td></tr>
 <tr><td><code>回転灯</code> <code>回転_1</code>…</td><td>「作業」ボタンを押すと回る（部品の縦の軸＝円柱を足したときの軸で回る）</td></tr></table>
 <table><tr><th>カスタムプロパティ（ボディにつける）</th><th>はたらき</th></tr>
 <tr><td><code>種類</code> = <code>ダンプ</code> など</td><td>車の種類。つけておくと、ほかの人の画面や販売店でもその種類になる（ここで選んだ種類もみんなに伝わります）</td></tr>
-<tr><td><code>最高速度</code> = <code>120</code></td><td>km/h（10〜300）。ないときは 60（重機・コンバイン 15、トラクター 35、バス 80）</td></tr>
+<tr><td><code>最高速度</code> = <code>120</code></td><td>km/h（10〜400）。ないときは 60（重機・コンバイン 15、トラクター 35、バス 80）</td></tr>
 <tr><td><code>定員</code> = <code>40</code></td><td>乗れる人数（表示用。相乗りできるのは座席の数まで）</td></tr></table>`;
 const HELP_KIND = {
   pass: `<h4>乗用車・軽・スポーツ・ワゴン・バイク</h4><p>人が乗るだけの車です。上のきまり（ボディ＋タイヤ）だけで走れます。助手席や後ろの席に <code>座席_1</code>… を置くと、友だちが相乗りできます。バイクは 2 輪か 3 輪を選んでください。</p>`,
