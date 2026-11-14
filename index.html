@@ -468,7 +468,7 @@ body.jetOn #map { display: none !important; }
     <p class="mh">旅客機</p>
     <div class="mgrid">
       <button class="mi" type="button" id="mGpws">GPWS の声・警報音：オン</button>
-      <button class="mi" type="button" id="mInvert">スティック：上で機首上げ</button>
+      <button class="mi" type="button" id="mInvert">スティック：前で降下・後ろで上昇（操縦かん式）</button>
     </div>
   </div>
   <div id="aiMenu" hidden>
@@ -2497,7 +2497,8 @@ const stars = new THREE.Points((() => {
 stars.renderOrder = -2;
 scene.add(stars);
 let dayLight = 1, lastClock = '';
-const FOG_NEAR = coarse ? 450 : 500, FOG_FAR = coarse ? 950 : 1100;
+const FAR_R = 3000;   // 3km 先まで描く（2026-11-14）。細かい地面は VIEW_R まで、その先は粗い地面（farLand）
+const FOG_NEAR = coarse ? 1300 : 1600, FOG_FAR = FAR_R;
 function updateAtmosphere() {
   const hr = worldHour(), ang = ((hr - 6) / 24) * Math.PI * 2;   // 6 時に日の出、12 時に真上、18 時に日の入り
   const elev = Math.sin(ang);
@@ -2824,7 +2825,7 @@ function waterTexture() {
   t.repeat.set(WATER_W / 5, WATER_W / 5);
   return t;
 }
-const WATER_W = 2600;   // 海面はカメラについて動く（5m ごとにずらすので、もようはずれない）
+const WATER_W = 6400;   // 海面はカメラについて動く（5m ごとにずらすので、もようはずれない）
 const waterTex = waterTexture();
 const water = new THREE.Mesh(new THREE.PlaneGeometry(WATER_W, WATER_W), new THREE.MeshPhongMaterial({
   color: 0x2f8fd6, map: waterTex, transparent: true, opacity: 0.7, shininess: 90, specular: 0xffffff, side: THREE.DoubleSide, depthWrite: false,
@@ -8253,7 +8254,74 @@ function rigJet(item, root, model, gltf, size) {
   root.updateMatrixWorld(true);
   model.traverse((o) => { if (!o.isMesh) return; let q = o, g = false; while (q && q !== model) { if (gears.some((G) => G.o === q)) g = true; q = q.parent; } if (!g) body.union(new THREE.Box3().setFromObject(o)); });
   item.jet = { P, gears, flaps, slats, spoilers, bellyY: body.isEmpty() ? 1 : Math.max(0.3, body.min.y), hasGear: gears.length > 0, hit: jetHitGrid(root, model) };
+  item.jet.lights = jetLightsRig(root, model, gears);
   return P;
+}
+/* ---- 機体のライト（2026-11-14）：実機と同じ並び。翼端の航法灯（左＝赤・右＝緑）と尾部の白、
+   白いストロボ（翼端・尾部で点滅）、赤い衝突防止灯（胴体の上と下で交互に点滅）、着陸灯（翼の付け根）。
+   位置は形から自動で探す（いちばん外の翼端・胴体のいちばん後ろ・上・下）。.glb に部品はいらない ---- */
+const JL_MAT = new THREE.ShaderMaterial({
+  transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, fog: false, toneMapped: false,
+  uniforms: { uPx: { value: renderer.getPixelRatio() } },
+  vertexShader: 'attribute float aS; attribute vec3 color; varying vec3 vC; uniform float uPx; void main(){ vec4 mv = modelViewMatrix * vec4(position, 1.0); gl_Position = projectionMatrix * mv; vC = color; float on = step(0.001, color.r + color.g + color.b); gl_PointSize = on * aS * uPx * clamp(260.0 / max(1.0, -mv.z), 0.9, 4.0); }',
+  fragmentShader: 'varying vec3 vC; void main(){ float r = length(gl_PointCoord - 0.5) * 2.0; if (r > 1.0) discard; float a = exp(-r * r * 3.5); float core = smoothstep(0.45, 0.0, r); gl_FragColor = vec4(vC * a + vec3(core) * max(vC.r, max(vC.g, vC.b)) * 0.8, 1.0); }',
+});
+function jetLightsRig(root, model, gears) {
+  root.updateMatrixWorld(true);
+  const isGear = (o) => { for (let q = o; q && q !== model; q = q.parent) if (gears.some((g) => g.pv === q || g.o === q)) return true; return false; };
+  const V = new THREE.Vector3();
+  let tipL = null, tipR = null, tail = null, top = null, bot = null, landL = null, landR = null;
+  model.traverse((o) => {
+    if (!o.isMesh || !o.geometry || !o.geometry.attributes.position || isGear(o)) return;
+    const P = o.geometry.attributes.position, M = o.matrixWorld;
+    for (let i = 0; i < P.count; i++) {
+      V.fromBufferAttribute(P, i).applyMatrix4(M);
+      const ax = Math.abs(V.x);
+      if (!tipL || V.x > tipL.x) tipL = V.clone();
+      if (!tipR || V.x < tipR.x) tipR = V.clone();
+      if (ax < 1 && (!tail || V.z < tail.z)) tail = V.clone();
+      if (ax < 1.2 && Math.abs(V.z - 4) < 3 && (!top || V.y > top.y)) top = V.clone();
+      if (ax < 1.2 && Math.abs(V.z - 12) < 3 && (!bot || V.y < bot.y)) bot = V.clone();
+      if (V.x > 3.6 && V.x < 4.8 && (!landL || V.z > landL.z)) landL = V.clone();
+      if (V.x < -3.6 && V.x > -4.8 && (!landR || V.z > landR.z)) landR = V.clone();
+    }
+  });
+  if (!tipL || !tipR) return null;
+  const L = [];
+  const add = (p, dx, dy, dz, c, sz, kind, ph) => { if (p) L.push({ x: p.x + dx, y: p.y + dy, z: p.z + dz, c, sz, kind, ph: ph || 0 }); };
+  const RED = [1, 0.08, 0.04], GRN = [0.1, 1, 0.35], WHT = [1, 1, 1], WARM = [1, 0.93, 0.78];
+  add(tipL, 0.25, 0, 0, RED, 5, 'nav'); add(tipR, -0.25, 0, 0, GRN, 5, 'nav'); add(tail, 0, 0, -0.3, WHT, 4, 'nav');
+  add(tipL, 0.3, 0, -0.6, WHT, 13, 'strobe'); add(tipR, -0.3, 0, -0.6, WHT, 13, 'strobe'); add(tail, 0, 0.3, -0.4, WHT, 10, 'strobe');
+  add(top, 0, 0.25, 0, RED, 9, 'beacon', 0); add(bot, 0, -0.25, 0, RED, 9, 'beacon', 0.5);
+  add(landL, -0.2, -0.3, 0.3, WARM, 11, 'land'); add(landR, 0.2, -0.3, 0.3, WARM, 11, 'land');
+  const pos = new Float32Array(L.length * 3), col = new Float32Array(L.length * 3), sz = new Float32Array(L.length);
+  L.forEach((l, i) => { pos.set([l.x, l.y, l.z], i * 3); sz[i] = l.sz; });
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  g.setAttribute('aS', new THREE.BufferAttribute(sz, 1));
+  const pts = new THREE.Points(g, JL_MAT);
+  pts.frustumCulled = false; pts.renderOrder = 5;
+  root.add(pts);
+  return { pts, L, seed: Math.random() * 10 };
+}
+// ライトの点け方：乗っている人がいるときだけ。航法灯と衝突防止灯はいつも、ストロボは滑走・飛行中、着陸灯は動いていて 10,000ft より下
+function jetLightsStep(v, J) {
+  const R = v.item.jet.lights;
+  if (!R) return;
+  const occ = !!(v.fly || v.remote || (v === ride && driving));
+  const air = v.fly ? true : v.remote ? v.y - heightAt(v.pos.x, v.pos.y) > 4 : !J.ground;
+  const moving = air || J.V > 12;
+  const st = { nav: occ, beacon: occ, strobe: occ && moving, land: occ && moving && v.y * FT < 10000 };
+  const t = clock.elapsedTime + R.seed, col = R.pts.geometry.attributes.color, a = col.array;
+  let ch = false;
+  R.L.forEach((l, i) => {
+    let k = st[l.kind] ? 1 : 0;
+    if (k && l.kind === 'strobe') k = t % 1.3 < 0.07 ? 1 : 0;
+    else if (k && l.kind === 'beacon') k = (t + l.ph) % 1.0 < 0.14 ? 1 : 0;
+    for (let c = 0; c < 3; c++) { const x = l.c[c] * k; if (a[i * 3 + c] !== x) { a[i * 3 + c] = x; ch = true; } }
+  });
+  if (ch) col.needsUpdate = true;
 }
 /* ---- 当たり判定：機体の形そのもの（2026-11-13）。上から見て 0.5m ごとのマスに、そこにある形のいちばん下と上の高さを入れる。
    人は「頭（1.7m）より下に形があるマス」に入れない（翼の下・胴体の横まで歩ける）。車は 2m ごとの円でぶつかる ---- */
@@ -8328,8 +8396,8 @@ const jetRide = () => (driving && ride && ride.item.jet && !ride.remote ? ride :
 const jetOf = (v) => v.jet || jetInit(v);
 
 // ---- 操縦の入力：W/S 推力、A/D・←→ かたむき（地上ではハンドル）、Space・↓ 機首上げ、C・↑ 機首下げ。スマホはスティックと「出力＋−」 ----
-let jetInvert = false;
-try { jetInvert = localStorage.getItem('jetInvert') === '1'; } catch (e) {}
+let jetInvert = true;   // 前（上）に倒すと機首下げ・降下、後ろ（下）で機首上げ・上昇（操縦かんと同じ）。☰ で反対にできる
+try { const s = localStorage.getItem('jetStick'); if (s) jetInvert = s !== 'arcade'; } catch (e) {}
 function jetInput() {
   const k = { pitch: 0, roll: 0, thr: 0, stick: false };
   k.thr = (keys.KeyW || touch.act ? 1 : 0) - (keys.KeyS || touch.dive ? 1 : 0);
@@ -8492,6 +8560,7 @@ function jetAnim(v, J, dt) {
   for (const f of R.flaps) f.pv.rotation.x = f.dir * J.flapDeg * D2R;
   for (const f of R.slats) f.pv.rotation.x = f.dir * J.slat * 18 * D2R;
   for (const f of R.spoilers) f.pv.rotation.x = f.dir * Math.max(J.sbPos * 30, J.gsp ? 50 : 0) * D2R;
+  jetLightsStep(v, J);
 }
 // ほかの人の旅客機：ギアとフラップだけ合わせる（cl の 32 = ギアを上げた、64〜448 = フラップの段）
 function jetRemote(v, dt) {
@@ -8886,11 +8955,11 @@ function jetPanelInit() {
   el('mGpws').textContent = `GPWS の声・警報音：${gpwsPref ? 'オン' : 'オフ'}`;
   el('mInvert').addEventListener('click', () => {
     jetInvert = !jetInvert;
-    try { localStorage.setItem('jetInvert', jetInvert ? '1' : '0'); } catch (e) {}
-    el('mInvert').textContent = `スティック：${jetInvert ? '上で機首下げ（操縦かん式）' : '上で機首上げ'}`;
+    try { localStorage.setItem('jetStick', jetInvert ? 'yoke' : 'arcade'); } catch (e) {}
+    el('mInvert').textContent = `スティック：${jetInvert ? '前で降下・後ろで上昇（操縦かん式）' : '前で上昇・後ろで降下'}`;
     setMenu(false);
   });
-  el('mInvert').textContent = `スティック：${jetInvert ? '上で機首下げ（操縦かん式）' : '上で機首上げ'}`;
+  el('mInvert').textContent = `スティック：${jetInvert ? '前で降下・後ろで上昇（操縦かん式）' : '前で上昇・後ろで降下'}`;
 }
 // キー：G ギア、, . フラップ、/ スピードブレーキ、U オートパイロット、Y オートスロットル
 function jetKey(code) {
@@ -9392,7 +9461,7 @@ function updateCamera(dt) {
   if (busRide && busRide.out) {   // バスの車外視点：バスのまわりを回って見る（バスが曲がると、いっしょに回る）
     const b = busRide.b, dist = Math.max(camDist, b.D.hl * 1.8 + 3);
     if (camera.near !== 0.1) { camera.near = 0.1; camera.updateProjectionMatrix(); }
-    camera.far = Math.max(VIEW_R + 200, dist * 6);
+    camera.far = Math.max(FAR_R + 300, dist * 6);
     camTarget.set(b.x, b.y + 2, b.z);
     camPos.set(Math.sin(camYaw) * Math.cos(camPitch), Math.sin(camPitch), Math.cos(camYaw) * Math.cos(camPitch)).multiplyScalar(dist).add(camTarget);
     camPos.y = Math.max(heightAt(camPos.x, camPos.z) + 0.4, camPos.y);
@@ -9407,7 +9476,7 @@ function updateCamera(dt) {
   if (busRide) {   // バスの中は一人称：目の高さから、見ている向きへ
     const b = busRide.b, e = busLocalToWorld(b, busRide.lx, b.D.floor + (busRide.seat ? b.D.sitEye : b.D.eye), busRide.lz);
     camera.position.copy(e);
-    camera.near = 0.05; camera.far = VIEW_R + 200; camera.updateProjectionMatrix();
+    camera.near = 0.05; camera.far = FAR_R + 300; camera.updateProjectionMatrix();
     const cp = Math.cos(camPitch);
     camera.lookAt(e.x - Math.sin(camYaw) * cp, e.y - Math.sin(camPitch), e.z - Math.cos(camYaw) * cp);
     underwater = false;
@@ -9452,7 +9521,7 @@ function updateCamera(dt) {
   const jetCam = driving && ride.item.jet;
   if (jetCam) camTarget.y += 5;
   const dist = driving ? Math.max(camDist, jetCam ? ride.item.def.vehicle.halfLength * 2.4 : vtype(ride) === 'plane' ? 13 : isBoat(ride) ? Math.max(10, ride.item.def.vehicle.halfLength * 1.6) : 7.5) : camDist;
-  const farW = Math.max(VIEW_R + 200, dist * 6, VIEW_R + 200 + Math.max(0, camera.position.y - 150) * 8);   // 高い所からは遠くまで
+  const farW = Math.max(FAR_R + 300, dist * 6, VIEW_R + 200 + Math.max(0, camera.position.y - 150) * 8);   // 高い所からは遠くまで
   if (Math.abs(camera.far - farW) > 30) { camera.far = farW; camera.updateProjectionMatrix(); }
   camPos.set(Math.sin(camYaw) * Math.cos(camPitch), Math.sin(camPitch), Math.cos(camYaw) * Math.cos(camPitch)).multiplyScalar(dist).add(camTarget);
   const inTn = camTunnel(camTarget, camPos);   // トンネルの中：カメラもトンネルの中に
@@ -9495,7 +9564,7 @@ const HINT = {
   ship: '下半分をなぞって操縦（上で前へ・下で後ろへ）、上半分をなぞって視点',
   sub: '左下の板で進路・速力・深度を指示。「魚雷」で方位と深度を決めて発射。潜望鏡は画面をなぞって回す',
   plane: '下半分を上になぞると出力アップ、下でダウン。「上昇」「下降」で高さ',
-  jet: '下をなぞって操縦（左右でかたむけ・上で機首上げ）。「出力＋−」で推力、地上で出力ゼロから「出力−」でブレーキ',
+  jet: '下をなぞって操縦（左右でかたむけ・前〈上〉に倒すと降下、後ろ〈下〉で上昇）。「出力＋−」で推力、地上で出力ゼロから「出力−」でブレーキ',
   ride: '相乗り中。画面をなぞって見回せます',
   bus: '下半分をなぞって車内を歩く、上半分をなぞって見回す。「車外視点」で外から見る。座席の近くで「座る」。止まってドアがあいたら「降りる」',
   robot: '下半分をなぞって操縦（上で加速・下でブレーキ）。足のスキーですべって進む。「脱出」でコックピットごと飛び出す',
@@ -13776,7 +13845,7 @@ function frame() {
   updateTerrain(firstFrame); firstFrame = false;
   updateAtmosphere();
   updateUi();
-  jetHud(); stepPapi(); stepFarLand();
+  jetHud(); stepPapi(); stepFarLand(); stepFlyby(); stepFarCull();
   updateMap(dt);
   updateHelm();
   stepTorps(dt);
@@ -15039,7 +15108,7 @@ function goAirport() {
   showMsg('なか海空港のエプロンに来ました。☰「glTF を置く」→「航空機」で飛行機を置けます。滑走路は 09/27（3500m）');
 }
 
-/* ---- 高い所から：世界ぜんたいの粗い地面（62.5m ごと）を下に敷く。近く（細かい地面がある所）は描かない ---- */
+/* ---- 遠く（VIEW_R の外〜3km 先、高い所からは世界ぜんたい）：粗い地面（62.5m ごと）を下に敷く。近く（細かい地面がある所）は描かない ---- */
 const farLand = { mesh: null, uC: { value: new THREE.Vector2() }, uR: { value: VIEW_R - 140 } };
 function buildFarLand() {
   const st = 62.5, n = Math.round(XW / st), N1 = n + 1;
@@ -15067,11 +15136,115 @@ function buildFarLand() {
   farLand.mesh = m;
 }
 function stepFarLand() {
-  const hy = camera.position.y;
-  if (hy < 220) { if (farLand.mesh) farLand.mesh.visible = false; return; }
+  if (underwater) { if (farLand.mesh) farLand.mesh.visible = false; return; }   // 3km 先まで：地上からも、細かい地面の外は粗い地面を見せる
   if (!farLand.mesh) buildFarLand();
   farLand.mesh.visible = true;
   farLand.uC.value.set(camera.position.x, camera.position.z);
+}
+
+/* ---- 通過する旅客機（2026-11-14）：ゲームの演出。だれも操縦しない DC-10-30 が、実時間で 3 分ごとに
+   東の海から来て、はじめの浜の上空 700ft を西へ通り、左へ旋回しながら上昇して南のはしから出ていく。
+   時刻（Date.now）だけで決まるので、みんなの画面で同じ時に同じ所を飛ぶ。モデルは models/dc10-30.glb ---- */
+const FLY = { period: 180, V: 108, R: 2600, x0: 5300, zb: -95, alt: 213, item: null, loading: false, failed: false, J: { gear: 0, flapDeg: 0, slat: 0, sbPos: 0, gsp: 0, V: 108, ground: false }, snd: null };
+FLY.L1 = FLY.x0; FLY.L2 = FLY.R * Math.PI / 2; FLY.L3 = 5300 - (FLY.zb + FLY.R); FLY.dur = (FLY.L1 + FLY.L2 + FLY.L3) / FLY.V;
+// 出てから s 秒後の位置・向き（h：+z が 0、+x が π/2）・高さ
+function flyAt(s, o) {
+  const F = FLY, d = s * F.V;
+  let x, z, h, turn = 0;
+  if (d < F.L1) { x = F.x0 - d; z = F.zb; h = -Math.PI / 2; }
+  else if (d < F.L1 + F.L2) { const a = (d - F.L1) / F.R; x = -F.R * Math.sin(a); z = F.zb + F.R * (1 - Math.cos(a)); h = -Math.PI / 2 + a; turn = 1; }
+  else { x = -F.R; z = F.zb + F.R + (d - F.L1 - F.L2); h = 0; }
+  // 高さ：東では 2,000ft から 3° くらいで降りて、浜の 1.2km 手前から 700ft で水平。浜を 400m すぎたら 1,500fpm で上昇
+  const before = F.L1 - d;
+  const y = before > 0 ? F.alt + Math.max(0, before - 1200) * 0.094 : F.alt + Math.max(0, -before - 400) * 0.07;
+  const gam = before > 1200 ? -0.094 : before > 0 ? 0 : -before > 400 ? 0.07 : 0;
+  // かたむき：旋回に入る・出るときは 4 秒かけて
+  const sIn = (d - F.L1) / F.V, sOut = (F.L1 + F.L2 - d) / F.V, bank = Math.atan(F.V * F.V / (G0 * F.R));
+  const roll = turn || (sIn > -4 && sOut > -4) ? -bank * THREE.MathUtils.smoothstep(sIn, -2, 2) * THREE.MathUtils.smoothstep(sOut, -2, 2) : 0;
+  return Object.assign(o || {}, { x, z, y, h, pitch: Math.atan(gam) + 3.5 * D2R, roll });
+}
+const flyPose = {}, flyEar = {};
+function stepFlyby() {
+  const s = window.__flyS ?? (Date.now() / 1000) % FLY.period, on = s < FLY.dur;   // __flyS：テスト用
+  if (!FLY.item) {
+    if (!FLY.loading && !FLY.failed && (s > FLY.period - 25 || on)) {   // 出る少し前に読み込む
+      FLY.loading = true;
+      fetch('models/dc10-30.glb').then((r) => { if (!r.ok) throw new Error(r.status); return r.arrayBuffer(); })
+        .then((buf) => buildThing(buf, 'DC-10-30', 'plane'))
+        .then((item) => {
+          FLY.item = item; item.root.rotation.order = 'YXZ'; item.root.visible = false; scene.add(item.root);
+          FLY.v = { item, fly: true, pos: new THREE.Vector2(), y: 0 };
+          jetAnim(FLY.v, FLY.J, 0);   // ギアはしまう
+        })
+        .catch((e) => { FLY.failed = true; console.warn('flyby model', e); })
+        .finally(() => { FLY.loading = false; });
+    }
+    return;
+  }
+  const root = FLY.item.root;
+  root.visible = on;
+  if (!on) { flySound(0, 0); return; }
+  const p = flyAt(s, flyPose);
+  root.position.set(p.x, p.y, p.z); root.rotation.set(-p.pitch, p.h, p.roll);
+  FLY.v.pos.set(p.x, p.z); FLY.v.y = p.y;
+  jetLightsStep(FLY.v, FLY.J);
+  // 音：音は遅れて届く（音速 340m/s）。遠いほど小さく、こもる
+  const cp = camera.position;
+  let d = Math.hypot(p.x - cp.x, p.y - cp.y, p.z - cp.z);
+  if (d < 6000) { const e = flyAt(Math.max(0, s - d / 340), flyEar); d = Math.hypot(e.x - cp.x, e.y - cp.y, e.z - cp.z); }
+  flySound(d < 6000 ? Math.min(0.5, 90 / Math.max(60, d)) : 0, d);
+}
+// ジェットの音：ゴーという低い音（ろ過したノイズ）。近いほど大きく、高い音も聞こえる
+function flySound(vol, d) {
+  const c = actx;
+  if (!c || c.state !== 'running') return;
+  if (!FLY.snd) {
+    if (vol <= 0.001) return;
+    const n = c.sampleRate * 2, b = c.createBuffer(1, n, c.sampleRate), ch = b.getChannelData(0);
+    let last = 0; for (let i = 0; i < n; i++) { last = (last + 0.04 * (Math.random() * 2 - 1)) / 1.04; ch[i] = last * 3.2; }
+    const src = c.createBufferSource(); src.buffer = b; src.loop = true;
+    const lp = c.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 600;
+    const g = c.createGain(); g.gain.value = 0;
+    src.connect(lp); lp.connect(g); g.connect(c.destination); src.start();
+    FLY.snd = { src, lp, g };
+  }
+  const S = FLY.snd, t = c.currentTime;
+  S.g.gain.setTargetAtTime(vol, t, 0.25);
+  S.lp.frequency.setTargetAtTime(THREE.MathUtils.clamp(2400 - d * 0.6, 280, 2400), t, 0.25);
+}
+
+/* ---- 3km 先まで描くかわりに：遠い小さな物（標識・街灯・看板など、半径 15m より小さく、動かない物）は、
+   VIEW_R より遠ければ描かない（前も霧で見えていなかった物）。0.5 秒ごとに見直す ---- */
+const farCull = { t: 0, info: new WeakMap(), hidden: new Set() };
+function stepFarCull() {
+  const now = clock.elapsedTime;
+  if (now - farCull.t < 0.5) return;
+  farCull.t = now;
+  const cp = camera.position, lim = VIEW_R + 100, skip = new Set([sky, water, clouds, stars, avatar]);
+  for (const v of vehicles) skip.add(v.item.root);
+  if (FLY.item) skip.add(FLY.item.root);
+  if (farLand.mesh) skip.add(farLand.mesh);
+  for (const o of scene.children) {
+    if (skip.has(o) || o.isLight || o.material === TERRAIN_MAT) continue;
+    let I = farCull.info.get(o);
+    if (!I) {
+      if (!o.visible) continue;   // 見えていない物は、いまは調べない
+      const bb = new THREE.Box3().setFromObject(o);
+      if (bb.isEmpty()) { farCull.info.set(o, { big: true }); continue; }
+      const c = bb.getCenter(new THREE.Vector3()), r = bb.getSize(new THREE.Vector3()).length() / 2;
+      I = { big: r > 15, c, p: o.position.clone() };
+      farCull.info.set(o, I);
+    }
+    if (I.big) continue;
+    if (!o.position.equals(I.p)) {   // 動く物は扱わない
+      I.big = true;
+      if (farCull.hidden.delete(o)) o.visible = true;
+      continue;
+    }
+    const far = Math.hypot(I.c.x - cp.x, I.c.z - cp.z) > lim;
+    if (far && o.visible) { o.visible = false; farCull.hidden.add(o); }
+    else if (!far && farCull.hidden.has(o)) { o.visible = true; farCull.hidden.delete(o); }
+  }
 }
 
 buildAirport();
@@ -15094,7 +15267,7 @@ window.__world = {
   teleport(x, z, y) { player.pos.set(x, y ?? heightAt(x, z), z); player.vy = 0; },
   torps, tube, ord, booms, get clockT() { return clock.elapsedTime; },
   get BIZ() { return BIZ; }, get BIZS() { return BIZS; }, equipFee, tonCls, PAIDV, RUNS, stepRuns, runCheck, cargoAction, doCargo, coSites, parkAt, myGltfTrucks, truckKey, BIZX, BIZ_RECIPE, bizById, bizProcBy, bizCarrier, grpList, bizTradeIn, bizTradeFlush, BIZ_NET, carRegister, carBuy, carTry, trialEnd, TRIAL, carSaleIn, carList, dlrSync, DLR_SHOW, dlrLayout, myMachines, MACH, BIZ_BLD, bizNetLoad, bizNetEvent, bizPush, bizAct, bizDay, bizSettle, bizHtml, drawBizOnMap, TOWN, COMPANIES, ECON, makePaper, openTown, closeTown, townNearAction, get myStocks() { return myStocks; }, weatherAt, wxDay, calOf, gameDayN, setDayOffset(d) { dayOffset = d; }, setGameTime(n, hr) { dayOffset = 0; hourOffset = 0; const real = worldHour(); hourOffset = ((hr - real) % 24 + 24) % 24; dayOffset = n - Math.floor(gameDayF()); }, townMeshes, townBlds, townBoats, fieldStage,
-  AIRPORT, AIRLINERS, isa, jetOf, jetHits, stepJet, jetApButton, jetApAdjust, jetGearLever, jetFlapLever, jetSpeedbrake, ilsInfo, jetVs, jetVref, jetTO, get jetRideV() { return jetRide(); }, farLand,
+  AIRPORT, AIRLINERS, isa, jetOf, jetHits, FLY, flyAt, stepJet, jetApButton, jetApAdjust, jetGearLever, jetFlapLever, jetSpeedbrake, ilsInfo, jetVs, jetVref, jetTO, get jetRideV() { return jetRide(); }, farLand,
   AUTO, SEMI, semiGo, semiHalt, setSemi, semiTurnReq, semiTurnCand, semiNext, setApMin, startAuto, stopAuto, planAuto, stepHwTraffic, autoSpeed, autoLaneReq, autoTurnReq, get myCar() { return myCar; }, makeVehicle, rideFromMenu, putAwayMini, renderMoveList, makeMiniCar, CARL, setTurnSignal, cycleLampMode, autoBlinkDir, stepTraffic, stepVehicle, camera, signalState,
 };
 
