@@ -4626,7 +4626,7 @@ async function addPropFromBuffer(buf, name, cat, wheels, sub, strict) {
       const em = String((err && (err.message || err.error)) || err || '');
       console.warn('props add', err);
       showMsg(/full/i.test(em) ? '置ける数がいっぱいです（200 個まで）。メニューの「自分が出した物」から消してから置いてください'
-        : /props_[xz]_check/.test(em) ? 'この場所はまだ保存できません（Supabase で supabase-update-6.sql を実行すると置けます）。自分の画面だけに置きます'
+        : /props_[xz]_check/.test(em) ? 'この場所はまだ保存できません（Supabase で supabase-update-14.sql を実行すると置けます）。自分の画面だけに置きます'
         : buf.byteLength > 1572864 && /size|large|exceed|bytes_check|413/i.test(em) ? '1.5MB をこえる物はまだ保存できません（Supabase で supabase-update-13.sql を実行すると 10MB まで置けます）。自分の画面だけに置きます'
         : `みんなの世界に置けなかったので、自分の画面だけに置きます（${em.slice(0, 60) || '理由不明'}）`);
     }
