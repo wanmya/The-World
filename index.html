@@ -485,6 +485,7 @@ body.jetOn #map { display: none !important; }
       <button class="mi" type="button" id="mAtcVoice">管制の声：オン</button>
       <button class="mi" type="button" id="mCam">視点を後ろにもどす（V）</button>
       <button class="mi" type="button" id="mGpws">GPWS の声・警報音：オン</button>
+      <button class="mi" type="button" id="mJetSnd">旅客機の音：外の音</button>
       <button class="mi" type="button" id="mInvert">スティック：前で降下・後ろで上昇（操縦かん式）</button>
     </div>
   </div>
@@ -8888,6 +8889,142 @@ function jetWail() {
   g.gain.setValueAtTime(0.18, t); g.gain.setValueAtTime(0.18, t + 1.45); g.gain.linearRampToValueAtTime(0, t + 1.5);
   o.connect(g); g.connect(c.destination); o.start(t); o.stop(t + 1.55);
 }
+/* ---- 旅客機の音（2026-11-14）：すべて WebAudio で作る（音のファイルなし）。自分が操縦している旅客機だけ。
+   エンジン（低いゴー・ジェットの吹き出し・ファンのキーン。推力で変わる）、風切り音（速さ・ギア・フラップで大きく）、
+   地上のタイヤのゴロゴロ、滑走路の中心線灯を前輪がふむ「ゴン、ゴン、ゴン」（15m ごと。速いほど間がつまる。前輪が浮いたら止まる）、
+   ギアの油圧の音と「ガコン」（ドア・ロック）、フラップのモーター音、接地のキュッ。
+   ☰「旅客機の音」で 外の音 → 機内の音 → 消す。localStorage の jetSound ---- */
+const JSND = { mode: 'out', g: null, prev: null, dist: 0, n: {} };
+window.__jsnd = JSND;   // テスト用
+try { const m = localStorage.getItem('jetSound'); if (m === 'cabin' || m === 'off' || m === 'out') JSND.mode = m; } catch (e) {}
+const JSND_MIX = {   // 外の音／機内の音で、それぞれの音の大きさ
+  out: { rumble: 1, roar: 1, whine: 1, wind: 0.45, roll: 0.6, hyd: 0.55, thump: 0.75, lp: 16000 },
+  cabin: { rumble: 0.75, roar: 0.12, whine: 0.3, wind: 1, roll: 0.9, hyd: 1, thump: 1, lp: 2600 },
+};
+function jsndBuild(c) {
+  const n = c.sampleRate * 2, wb = c.createBuffer(1, n, c.sampleRate), bb = c.createBuffer(1, n, c.sampleRate), w = wb.getChannelData(0), br = bb.getChannelData(0);
+  let last = 0;
+  for (let i = 0; i < n; i++) { const r = Math.random() * 2 - 1; w[i] = r; last = (last + 0.04 * r) / 1.04; br[i] = last * 3.2; }
+  const master = c.createGain(); master.gain.value = 0;
+  const lp = c.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 16000;
+  const lim = c.createDynamicsCompressor(); lim.threshold.value = -10; lim.knee.value = 6; lim.ratio.value = 12; lim.attack.value = 0.003; lim.release.value = 0.2;   // 大きすぎるときだけおさえる
+  master.connect(lp); lp.connect(lim); lim.connect(c.destination);
+  const noise = (buf, type, f, q) => {
+    const s = c.createBufferSource(); s.buffer = buf; s.loop = true; s.playbackRate.value = 0.9 + Math.random() * 0.2;
+    const fl = c.createBiquadFilter(); fl.type = type; fl.frequency.value = f; if (q) fl.Q.value = q;
+    const g = c.createGain(); g.gain.value = 0;
+    s.connect(fl); fl.connect(g); g.connect(master); s.start(c.currentTime + Math.random() * 0.5);
+    return { f: fl, g };
+  };
+  const tone = (type, f, ft, ff, fq) => {
+    const o = c.createOscillator(); o.type = type; o.frequency.value = f;
+    const g = c.createGain(); g.gain.value = 0;
+    if (ft) { const fl = c.createBiquadFilter(); fl.type = ft; fl.frequency.value = ff; if (fq) fl.Q.value = fq; o.connect(fl); fl.connect(g); } else o.connect(g);
+    g.connect(master); o.start();
+    return { o, g };
+  };
+  return {
+    master, lp, wb,
+    rumble: noise(bb, 'lowpass', 150),          // エンジンの低いゴー
+    roar: noise(wb, 'bandpass', 700, 0.6),       // ジェットの吹き出し（外で大きい）
+    fan: tone('sine', 600),                      // ファンのキーン（推力で高くなる）
+    fan2: tone('sawtooth', 300, 'bandpass', 900, 4),   // ファンのうなり（離陸推力でバリバリ）
+    core: tone('sine', 2600),                    // コアの高い音
+    wind: noise(wb, 'bandpass', 500, 0.5),       // 風切り音
+    gearW: noise(bb, 'lowpass', 220),            // 出したギアに当たる風のゴーー
+    roll: noise(bb, 'lowpass', 120),             // タイヤのゴロゴロ
+    hyd: tone('sawtooth', 190, 'lowpass', 700, 2),     // 油圧ポンプ（ギア）
+    flapM: tone('square', 118, 'lowpass', 420, 3),     // フラップのモーター
+  };
+}
+const jsSet = (p, v, t, tc) => p.setTargetAtTime(v, t, tc || 0.12);
+// 1 回だけの音：ゴン（中心線灯）・ガコン（ギア）・キュッ（接地）
+function jsndHit(kind, lvl, at) {
+  const c = actx, S = JSND.g; if (!c || !S) return;
+  JSND.n[kind] = (JSND.n[kind] || 0) + 1;
+  const t = Math.max(c.currentTime, at || 0), M = JSND_MIX[JSND.mode] || JSND_MIX.out;
+  const out = c.createGain(); out.connect(S.master);
+  const nz = (type, f, q, a, len) => {
+    const s = c.createBufferSource(); s.buffer = S.wb; s.playbackRate.value = 0.7 + Math.random() * 0.6;
+    const fl = c.createBiquadFilter(); fl.type = type; fl.frequency.value = f; if (q) fl.Q.value = q;
+    const g = c.createGain(); g.gain.setValueAtTime(a, t); g.gain.exponentialRampToValueAtTime(0.0001, t + len);
+    s.connect(fl); fl.connect(g); g.connect(out); s.start(t, Math.random() * 1.5); s.stop(t + len + 0.02);
+  };
+  const thud = (f0, f1, a, len) => {
+    const o = c.createOscillator(), g = c.createGain(); o.type = 'sine';
+    o.frequency.setValueAtTime(f0, t); o.frequency.exponentialRampToValueAtTime(f1, t + len * 0.7);
+    g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(a, t + 0.004); g.gain.exponentialRampToValueAtTime(0.0001, t + len);
+    o.connect(g); g.connect(out); o.start(t); o.stop(t + len + 0.02);
+  };
+  let len = 0.3;
+  if (kind === 'thump') { const a = lvl * M.thump; thud(105, 52, 0.8 * a, 0.2); thud(190, 90, 0.45 * a, 0.12); nz('lowpass', 900, 0, 0.45 * a, 0.06); len = 0.25; }   // スマホのスピーカーでも聞こえるよう、少し高い音も
+  else if (kind === 'clunk') { const a = lvl * M.hyd; thud(70, 38, 0.8 * a, 0.35); nz('bandpass', 900, 1.2, 0.5 * a, 0.12); nz('lowpass', 300, 0, 0.6 * a, 0.25); len = 0.4; }
+  else if (kind === 'chirp') { const a = lvl; nz('bandpass', 2300, 3, 0.35 * a * (JSND.mode === 'cabin' ? 0.3 : 1), 0.35); thud(80, 40, 0.9 * a * M.thump, 0.4); len = 0.45; }
+  setTimeout(() => { try { out.disconnect(); } catch (e) {} }, (t - c.currentTime + len + 0.2) * 1000);
+}
+// 滑走路の中心線からのずれ（m）。滑走路の上でなければ 99
+function jsndCenter(x, z) {
+  const A = aptNear(x, z, 3000); if (!A) return 99;
+  const [u, w] = A.toLocal(x, z);
+  return u < A.xw - 2 || u > A.xe + 2 ? 99 : Math.abs(w - A.zc);
+}
+function jetSoundStep(dt) {
+  const c = actx, v = driving && ride && ride.item.jet ? ride : null;
+  if (!c || c.state !== 'running') return;
+  const on = !!v && JSND.mode !== 'off' && !document.hidden;
+  if (!JSND.g) { if (!on) return; JSND.g = jsndBuild(c); }
+  const S = JSND.g, t = c.currentTime;
+  if (!on) { jsSet(S.master.gain, 0, t, 0.3); JSND.prev = null; return; }
+  const J = jetOf(v), P = v.item.jet.P, M = JSND_MIX[JSND.mode];
+  jsSet(S.master.gain, 0.55, t, 0.4); jsSet(S.lp.frequency, M.lp, t, 0.2);
+  // エンジン：J.n1 は 0（アイドル）〜 1（最大）。ファンの回転はアイドルで 25%
+  const n1 = THREE.MathUtils.clamp(J.n1, 0, 1), rpm = 0.25 + 0.75 * n1, rev = J.rev ? 1 : 0;
+  // 外の音：カメラが機体の後ろなら吹き出し、前ならファンの音が大きい
+  let back = 0.5;
+  if (JSND.mode === 'out') { const dx = camera.position.x - v.pos.x, dz = camera.position.z - v.pos.y, d = Math.hypot(dx, dz) || 1; back = 0.5 - 0.5 * (dx * Math.sin(v.h) + dz * Math.cos(v.h)) / d; }
+  jsSet(S.rumble.g.gain, M.rumble * (0.1 + 0.45 * n1 * n1 + 0.2 * rev), t, 0.2); jsSet(S.rumble.f.frequency, 110 + 260 * n1, t, 0.3);
+  jsSet(S.roar.g.gain, M.roar * (0.015 + 0.2 * n1 * n1 * n1 + 0.12 * rev) * (0.5 + back), t, 0.2); jsSet(S.roar.f.frequency, 450 + 900 * n1, t, 0.3);
+  const fwd = 1.5 - back;
+  jsSet(S.fan.o.frequency, 2150 * rpm, t, 0.3); jsSet(S.fan.g.gain, M.whine * (0.012 + 0.03 * rpm) * fwd, t, 0.2);
+  jsSet(S.fan2.o.frequency, 2150 * rpm / 7, t, 0.3); jsSet(S.fan2.g.gain, M.whine * 0.06 * Math.max(0, n1 - 0.55) * fwd, t, 0.2);
+  jsSet(S.core.o.frequency, 2600 + 3200 * rpm, t, 0.4); jsSet(S.core.g.gain, M.whine * 0.008 * fwd, t, 0.2);
+  // 風切り：表示の速さ（ノット）で。ギアを出すと低いゴーーが足される。フラップ・スポイラーでも少し
+  const ias = Math.max(0, J.ias || 0), q = Math.min(1.4, (ias / 250) ** 2);
+  jsSet(S.wind.g.gain, M.wind * 0.32 * q * (1 + 0.12 * (J.flapDeg / 35) + 0.3 * J.sbPos), t, 0.25); jsSet(S.wind.f.frequency, 350 + ias * 3.5, t, 0.3);
+  jsSet(S.gearW.g.gain, (JSND.mode === 'cabin' ? 0.5 : 0.25) * J.gear * Math.min(1.2, (ias / 180) ** 2) * (J.ground ? 0 : 1), t, 0.3);
+  // タイヤ
+  const gv = J.ground && J.gear > 0.5 && !J.wet ? J.V : 0;
+  jsSet(S.roll.g.gain, M.roll * Math.min(0.35, gv / 120), t, 0.15); jsSet(S.roll.f.frequency, 80 + gv * 2.2, t, 0.2);
+  // ギアの油圧・フラップのモーター（動いている間だけ）
+  const pr = JSND.prev || { gear: J.gear, flapDeg: J.flapDeg, slat: J.slat, gearDn: J.gearDn, ground: J.ground, vs: 0 };
+  const gearMov = Math.abs(J.gear - pr.gear) > 1e-5 && J.gear > 0 && J.gear < 1;
+  jsSet(S.hyd.g.gain, gearMov ? M.hyd * 0.05 : 0, t, gearMov ? 0.15 : 0.35);
+  if (gearMov) jsSet(S.hyd.o.frequency, 175 + 70 * (J.gearDn ? J.gear : 1 - J.gear), t, 0.3);
+  const F = P.flaps[J.flap], flapMov = Math.abs(J.flapDeg - F.deg) > 0.05 || Math.abs(J.slat - F.slat) > 0.002;
+  jsSet(S.flapM.g.gain, flapMov ? M.hyd * 0.045 : 0, t, flapMov ? 0.2 : 0.3);
+  if (flapMov) jsSet(S.flapM.o.frequency, 112 + 10 * Math.sin(t * 1.3), t, 0.5);
+  if (J.gearDn !== pr.gearDn) jsndHit('clunk', 0.55);                          // レバー：ドアが開く
+  if ((pr.gear < 1 && J.gear >= 1) || (pr.gear > 0 && J.gear <= 0)) jsndHit('clunk', 1);   // ロック：ガコン
+  // 接地のキュッ（降りてくる速さで大きく）
+  if (!pr.ground && J.ground && J.gear > 0.5) jsndHit('chirp', THREE.MathUtils.clamp(-pr.vs / 3, 0.35, 1.2));
+  // 中心線灯：前輪が中心線から 3m 以内で、前輪が地面についているとき（機首上げ 1.5° まで）。15m ごとに 1 回
+  const off = J.ground && J.gear > 0.5 && J.th < 1.5 * D2R && J.V > 1.5 ? jsndCenter(v.pos.x, v.pos.y) : 99;
+  if (off < 3) {
+    JSND.dist += J.V * dt;
+    if (JSND.dist >= 15) { JSND.dist %= 15; jsndHit('thump', Math.min(1, 0.45 + J.V / 90) * (off < 1.5 ? 1 : 0.6)); }
+  } else JSND.dist = 15 * 0.6;
+  JSND.prev = { gear: J.gear, flapDeg: J.flapDeg, slat: J.slat, gearDn: J.gearDn, ground: J.ground, vs: J.ground ? 0 : J.V * Math.sin(J.gam) };
+}
+function jsndMenuTxt() { el('mJetSnd').textContent = `旅客機の音：${{ out: '外の音', cabin: '機内の音', off: '消す' }[JSND.mode]}`; }
+function jsndMenuInit() {
+  el('mJetSnd').addEventListener('click', () => {
+    JSND.mode = JSND.mode === 'out' ? 'cabin' : JSND.mode === 'cabin' ? 'off' : 'out';
+    try { localStorage.setItem('jetSound', JSND.mode); } catch (e) {}
+    audioCtx(); jsndMenuTxt(); showMsg(`旅客機の音：${{ out: '外の音（エンジンが大きい）', cabin: '機内の音（風の音・ゴンゴンが大きい）', off: '消しました' }[JSND.mode]}`);
+    setMenu(false);
+  });
+  jsndMenuTxt();
+}
 const GPWS_JA = {
   'PULL UP': '機首を上げて！', 'TERRAIN': '地面が近い', 'SINK RATE': '降下率が大きすぎ', "DON'T SINK": '高度が下がっています', 'TOO LOW GEAR': 'ギアが出ていません',
   'TOO LOW FLAPS': 'フラップが足りません', 'TOO LOW TERRAIN': '低すぎます', 'BANK ANGLE': 'かたむきすぎ', 'STALL': '失速！機首を下げて出力を上げる', 'OVERSPEED': '速すぎます',
@@ -9081,6 +9218,7 @@ function jetPanelInit() {
     setMenu(false);
   });
   el('mGpws').textContent = `GPWS の声・警報音：${gpwsPref ? 'オン' : 'オフ'}`;
+  jsndMenuInit();
   el('mInvert').addEventListener('click', () => {
     jetInvert = !jetInvert;
     try { localStorage.setItem('jetStick', jetInvert ? 'yoke' : 'arcade'); } catch (e) {}
@@ -13981,7 +14119,7 @@ function frame() {
   updateTerrain(firstFrame); firstFrame = false;
   updateAtmosphere();
   updateUi();
-  jetHud(); atcStep(dt); stepPapi(); stepFarLand(); stepAir(); stepFarCull();
+  jetHud(); atcStep(dt); stepPapi(); stepFarLand(); stepAir(); jetSoundStep(dt); stepFarCull();
   updateMap(dt);
   updateHelm();
   stepTorps(dt);
