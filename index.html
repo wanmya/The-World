@@ -178,7 +178,7 @@ body.mapOn #msg { top: max(145px, 30vh); }
 #townBody input#bizName { font: 600 15px var(--font-ui); padding: 7px 9px; border: 1px solid var(--line); border-radius: 8px; width: min(100%, 240px); box-sizing: border-box; }
 #townBody .bzmsg { background: #fff3cd; border: 1px solid #ecd9b0; font-weight: 700; }
 #menu .mi .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); margin-left: 4px; vertical-align: middle; }
-#wmap #homeBtn, #wmap #aptBtn { background: #fff4dc; border-color: #e8c98a; }
+#wmap #homeBtn, #wmap #aptBtn, #wmap #apt2Btn { background: #fff4dc; border-color: #e8c98a; }
 #wmap .wbar button { font: 800 13px var(--font-ui); color: var(--ink); background: #f3f6f9; border: 1px solid var(--line); border-radius: 999px; padding: 7px 12px; cursor: pointer; }
 #wmap .wbar button[aria-pressed="true"] { background: var(--ink); color: #fff; }
 #wmap #wmapClose { margin-left: auto; }
@@ -513,7 +513,8 @@ body.jetOn #map { display: none !important; }
   <div class="wbar">
     <button type="button" data-wm="all">全体</button><button type="button" data-wm="near">近く</button><button type="button" data-wm="routes">路線図</button>
     <button type="button" id="homeBtn">🏖️ 砂浜に戻る</button>
-    <button type="button" id="aptBtn">✈ 空港へ</button>
+    <button type="button" id="aptBtn">✈ なか海空港</button>
+    <button type="button" id="apt2Btn">✈ みなみ野空港</button>
     <button type="button" id="wmapClose" aria-label="閉じる">✕</button>
   </div>
   <div class="wbody"><canvas id="wmapCv"></canvas><div id="wmapZoom"><button type="button" data-z="1" aria-label="拡大">＋</button><button type="button" data-z="-1" aria-label="縮小">−</button></div><div id="wmapLegend" hidden></div><div id="wmapGoBox" hidden><div id="wmapToll" hidden></div><div class="gos"><button type="button" id="wmapGo">自動運転で行く</button><button type="button" id="wmapGoLocal" hidden>一般道で行く</button></div></div></div>
@@ -1380,12 +1381,13 @@ function rigRobot(item, root, model, gltf, def) {
 const RIGS = { car: rigAutoCar, ship: rigBoat, sub: rigBoat, plane: rigPlane, robot: rigRobot };
 
 /* ================= ワールドの形 =================
+   2026-11-14 から 50km × 50km（まん中の 10km は下の説明のまま。外は newHeight0 の「50km の世界」）。
    10km × 10km。北の半分は陸（平原・小高い山・川）、南の半分は海（いちばん深い所で 100m）。海の向こうに新しい大陸がある。
    まん中の 1km は前の世界そのまま。近くだけ地形を作って描き、500m より遠くはだんだん霞む。
    （前の説明）1km × 1km（高さ 200m）の箱。はじめの 200m の陸と入り江はそのままに、南（-z）と左右の海へ広げた。
    y=0 が海面、箱の底は y=-110、天井は y=150。沖へ行くほど深く、いちばん深い所は 100m。海には小島がいくつかと、潜水艦がくぐれるトンネルの島がある。
    地形は「決まった種のノイズ」から作るので、だれの画面でも同じ形になる（送る必要がない）。 */
-const X0 = -5000, X1 = 5000, Z0 = -5000, Z1 = 5000, Y_BOTTOM = -110, Y_TOP = 150, SEA = 0;   // 10km × 10km
+const X0 = -25000, X1 = 25000, Z0 = -25000, Z1 = 25000, Y_BOTTOM = -110, Y_TOP = 800, SEA = 0;   // 50km × 50km（2026-11-14。前は 10km × 10km、天井 150m）。まん中は はじめの浜
 const OLD = { x0: -500, x1: 500, z0: -900, z1: 100 };   // 前の 1km の世界（島・トンネル・入り江はそのまま）
 const XW = X1 - X0, ZW = Z1 - Z0, XC = (X0 + X1) / 2, ZC = (Z0 + Z1) / 2;
 const CELL = 2;   // 高さは 2m ごとの格子
@@ -1501,30 +1503,108 @@ function river(x, z, h) {
   if (h > 1.4) h = 1.4 + (h - 1.4) * Math.pow(valley, 1.4);
   return Math.min(h, -2.6 + (h + 2.6) * ss(0.006, 0.016, d));   // 水路（深さ 2〜3m）
 }
+/* ---- 50km の世界（2026-11-14）：まん中の 10km（|x|,|z| ≦ 5000）は前とまったく同じ。その外に
+   大きな陸（はじめ市の南と東西へつづく本土。南に みなみ連山、西に おお湖）・北の大洋の島（きた島・ひがし島ほか）を足す。
+   世界のはし（±25km）のまわり 3〜5km は海。外の分は |x|,|z| > 5000 でしか効かない ---- */
+const OUT_IN = 5000;
+const cheb = (x, z) => Math.max(Math.abs(x), Math.abs(z));
+// 本土の北の海岸（10km の中は coastZ と同じ。外は大きな湾と岬）
+const coastZb = (x) => coastZ(x) + (2400 * vnoise(x / 5200 + 3.7, 1.9) + 900 * vnoise(x / 2100 + 8.1, 4.4) + 1200) * ss(5000, 9000, Math.abs(x));
+// 東・西・南の海岸（世界のはしから 3〜5km 内側）
+const coastE = (z) => 20800 + 1500 * vnoise(z / 4200 + 1.3, 2.2) + 500 * vnoise(z / 1300 + 4, 5.1);
+const coastW = (z) => -20800 - 1500 * vnoise(z / 4200 + 6.1, 8.4) - 500 * vnoise(z / 1300 + 2, 0.7);
+const coastS = (x) => 20600 + 1600 * vnoise(x / 4600 + 2.6, 3.3) + 500 * vnoise(x / 1500 + 9, 1.2) - 3200 * Math.exp(-(((x - 3000) / 2600) ** 2));   // みなみ湾（南の大きな湾）
+// 北の大洋の島：q はだ円の大きさを 1 とした距離。peak：まん中の山の高さ
+const OUT_ISLES = [
+  { name: 'きた島', x: -11500, z: -14500, rx: 5200, rz: 3200, peak: 480, sx: 1.7 },
+  { name: 'ひがし島', x: 13500, z: -11500, rx: 3600, rz: 2300, peak: 160, sx: 4.1 },
+  { name: 'とおい島', x: 3500, z: -18500, rx: 1700, rz: 1100, peak: 90, sx: 6.3 },
+  { name: 'にし島', x: -18500, z: -5200, rx: 1400, rz: 2400, peak: 120, sx: 2.9 },
+  { name: 'ふたご島', x: 18500, z: -19000, rx: 1100, rz: 900, peak: 60, sx: 8.8 },
+];
+// みなみ連山：本土の南を東西にのびる山なみ（いちばん高い所で 600m くらい）
+function rangeLift(x, z) {
+  const zc = 13600 + 2200 * vnoise(x / 7000 + 2.2, 6.6), w = 3300 + 900 * vnoise(x / 3000 + 1, 3);
+  const band = Math.exp(-(((z - zc) / w) ** 2)) * ss(-19000, -15000, x) * (1 - ss(3000, 7500, x));
+  if (band < 0.01) return 0;
+  const r1 = 1 - Math.abs(vnoise(x / 1900 + 3.3, z / 1900 + 1.1)), r2 = 1 - Math.abs(vnoise(x / 700 + 7.7, z / 700 + 4.4));
+  return band * (110 + 300 * r1 * r1 + 70 * r2 * r2 * r1 + 30 * vnoise(x / 400, z / 400 + 9));
+}
+// おお湖（本土の西の大きな湖。湖面は海と同じ高さ、深さ 12m）
+const BIG_LAKE = { x: -10500, z: 7200, rx: 2300, rz: 1500 };
+function outerHeight(x, z, h, n) {
+  // 北の大洋の島
+  for (const I of OUT_ISLES) {
+    const dx = (x - I.x) / I.rx, dz = (z - I.z) / I.rz;
+    if (dx * dx + dz * dz > 2.6) continue;
+    const q = Math.hypot(dx, dz) + 0.2 * vnoise(x / 900 + I.sx, z / 900 + 1) + 0.07 * vnoise(x / 260 + 3, z / 260 + I.sx);
+    const r = 80 + (1 - q) * Math.min(I.rx, I.rz) * 0.9;
+    if (r < -700) continue;
+    let hi = coastProfile(r + n * 9, x, z, n) + landRelief(r, x + I.sx * 1000, z) * 0.7;
+    if (q < 1) hi += I.peak * Math.pow(Math.max(0, 1 - q / 0.95), 1.6) * (0.8 + 0.2 * vnoise(x / 500 + I.sx, z / 500));
+    h = Math.max(h, hi);
+  }
+  if (h > 2) {
+    h += rangeLift(x, z) * ss(2, 30, h);
+    // おお湖
+    const lq = Math.hypot((x - BIG_LAKE.x) / BIG_LAKE.rx, (z - BIG_LAKE.z) / BIG_LAKE.rz) + 0.12 * vnoise(x / 700 + 5, z / 700 + 2);
+    if (lq < 1.3) { const t = ss(0.78, 1.25, lq); h = h * t + (-12 + 14 * ss(0.5, 0.95, lq)) * (1 - t); }
+  }
+  return h;
+}
 function newHeight0(x, z) {
-  const n = fbm(x, z);
-  const r = 80 + (z - coastZ(x)) + fbm(x * 0.4 + 200, 3) * 10 + n * 9;
+  const n = fbm(x, z), out = cheb(x, z) > OUT_IN;
+  let r = 80 + (z - (out ? coastZb(x) : coastZ(x))) + fbm(x * 0.4 + 200, 3) * 10 + n * 9;
+  if (out) r = Math.min(r, 80 + coastE(z) - x + n * 9, 80 + x - coastW(z) + n * 9, 80 + coastS(x) - z + n * 9);
   let h = coastProfile(r, x, z, n) + landRelief(r, x, z);
   const rc = continentR(x, z);
   if (rc > -700) h = Math.max(h, coastProfile(rc + n * 9, x, z, n) + landRelief(rc, x + 3000, z));
+  if (out) h = outerHeight(x, z, h, n);
   h = river(x, z, h);
-  return THREE.MathUtils.clamp(h, -100, 140);
+  return THREE.MathUtils.clamp(h, -100, 700);
 }
 /* ================= 道路の網 =================
    交差点（NODES）を道（EDGES）でつなぐ。via は途中の曲がり角（r：まるみの半径 m。小さいと角、大きいとカーブ）。
    w は道のはば：7＝片側 1 車線、14＝片側 2 車線。左側通行。地面は道の高さにならす。川と海は橋でわたる
    （はじめの浜と大陸のあいだは長い海の橋。船がくぐれるよう高さ 30m）。 */
-// なか海空港（2026-11-13）：海の上の島。滑走路 09/27 は x -4150〜-650、z -1600 の東西。島の高さ 5m（草地）
-const AIRPORT = (() => {
-  const y = 5, zc = -1600, xw = -4150, xe = -650, aimD = 300;
-  const rw = (name, course, thX, dx) => ({ name, course, th: [thX, zc], dir: [dx, 0], aim: [thX + dx * aimD, zc] });
-  return { y, zc, xw, xe, taxiZ: zc + 200, isl: { x0: -4450, x1: -350, z0: -1820, z1: -1250 }, rwys: [rw('09', 90, xw, 1), rw('27', 270, xe, -1)] };
-})();
-function aptLift(x, z, h) {   // 島をもり上げる（まわりは 45° の護岸）
-  const I = AIRPORT.isl;
-  if (x < I.x0 - 130 || x > I.x1 + 130 || z < I.z0 - 130 || z > I.z1 + 130) return h;
-  const d = Math.hypot(Math.max(I.x0 - x, 0, x - I.x1), Math.max(I.z0 - z, 0, z - I.z1));
-  return d <= 0 ? AIRPORT.y : Math.max(h, AIRPORT.y - d);
+// 空港（2026-11-13 なか海空港、2026-11-14 みなみ野空港）。なか海空港の形（「配置の座標」＝前の世界の座標）を
+//   ほかの空港では回して置く。toWorld(lx, lz)：配置の座標 → その空港の世界の x, z。rot：向き（h）に足す角度。
+//   なか海空港：海の上の島。滑走路 09/27 は x -4150〜-650、z -1600 の東西。島の高さ 5m（草地）。南のはしに はじめの浜からの道（2026-11-14）
+const APT_C = [-2400, -1600];   // 配置の座標の中心（なか海空港の滑走路のまん中）
+function makeAirport(o) {
+  const y = o.y, zc = -1600, xw = -4150, xe = -650, aimD = 300;
+  const b = o.bearing * Math.PI / 180, f = [Math.sin(b), -Math.cos(b)], r = [Math.cos(b), Math.sin(b)];
+  const toWorld = (lx, lz) => { const dx = lx - APT_C[0], dz = lz - APT_C[1]; return [o.cx + dx * f[0] + dz * r[0], o.cz + dx * f[1] + dz * r[1]]; };
+  const toLocal = (x, z) => { const dx = x - o.cx, dz = z - o.cz; return [APT_C[0] + dx * f[0] + dz * f[1], APT_C[1] + dx * r[0] + dz * r[1]]; };
+  const A = { id: o.id, name: o.name, short: o.short || o.name.replace('空港', ''), y, zc, xw, xe, taxiZ: zc + 200, isl: o.isl, land: !!o.land, bearing: o.bearing, rot: Math.PI / 2 - b, toWorld, toLocal, rwys: [] };
+  const rw = (sgn, thX) => {
+    const course = ((o.bearing + (sgn > 0 ? 0 : 180)) % 360 + 360) % 360, no = Math.round(course / 10) || 36;
+    return { name: String(no).padStart(2, '0'), course, th: toWorld(thX, zc), dir: [f[0] * sgn, f[1] * sgn], aim: toWorld(thX + sgn * aimD, zc), apt: A, lth: [thX, zc], ldir: [sgn, 0] };
+  };
+  A.rwys.push(rw(1, xw), rw(-1, xe));
+  // 地面をならす範囲（世界の x, z の四角）
+  const pts = [[o.isl.x0, o.isl.z0], [o.isl.x1, o.isl.z0], [o.isl.x0, o.isl.z1], [o.isl.x1, o.isl.z1], [xw - 1000, zc], [xe + 1000, zc]].map(([u, v]) => toWorld(u, v));
+  A.bb = { x0: Math.min(...pts.map((p) => p[0])) - 400, x1: Math.max(...pts.map((p) => p[0])) + 400, z0: Math.min(...pts.map((p) => p[1])) - 400, z1: Math.max(...pts.map((p) => p[1])) + 400 };
+  return A;
+}
+const AIRPORTS = [
+  makeAirport({ id: 'naka', name: 'なか海空港', cx: APT_C[0], cz: APT_C[1], bearing: 90, y: 5, isl: { x0: -4450, x1: -350, z0: -1820, z1: -1150 } }),
+  // みなみ野空港：はじめ市の南東の平野（なか海空港から 19km）。滑走路 14/32。地面を 18m にならす（陸の空港。進入灯の所も平らに）
+  makeAirport({ id: 'minami', name: 'みなみ野空港', cx: 13200, cz: 9200, bearing: 140, y: 18, land: true, isl: { x0: -4450, x1: -350, z0: -1820, z1: -1250 } }),
+];
+const AIRPORT = AIRPORTS[0];
+function aptLift(x, z, h) {   // 空港の地面：海の島はもり上げる（まわりは 45° の護岸）。陸の空港は平らにけずる（まわりは 1:2 の坂）
+  for (const A of AIRPORTS) {
+    const B = A.bb;
+    if (x < B.x0 || x > B.x1 || z < B.z0 || z > B.z1) continue;
+    const I = A.isl, [u, v] = A.toLocal(x, z);
+    let d = Math.hypot(Math.max(I.x0 - u, 0, u - I.x1), Math.max(I.z0 - v, 0, v - I.z1));
+    if (A.land) d = Math.min(d, Math.hypot(Math.max(A.xw - 960 - u, 0, u - A.xe - 960), Math.max(Math.abs(v - A.zc) - 30, 0)));   // 進入灯の帯
+    if (d > 300) continue;
+    if (d <= 0) return A.y;
+    h = h < A.y ? Math.max(h, A.y - d) : A.land ? Math.min(h, A.y + d * 0.5) : h;
+  }
+  return h;
 }
 function rawHeight0(x, z) { return aptLift(x, z, rawHeight00(x, z)); }
 function rawHeight00(x, z) {   // 道を作る前の地面（前の世界の中はそのまま。外へ 400m かけて新しい地形へつなぐ）
@@ -1554,6 +1634,8 @@ const NODES = {
   ETW: { x: 4100, z: 700, name: '東浜の海' }, WST: { x: -3100, z: 1750, name: '西山町' },
   MB: { x: MB_C[0], z: MB_C[1], name: 'みさき はなれ島ロータリー', plaza: 24 },
   ME: { x: mbPt(MB_IN)[0], z: mbPt(MB_IN)[1], name: 'みさき はなれ島ロータリー', inPlazaOf: 'MB', jr0: 10.5 },
+  // なか海空港のターミナルの前（2026-11-14）。浜の交差点から空港大橋でわたる
+  AP: { x: -2300, z: -1212, name: 'なか海空港', plaza: 24 },
 };
 const EDGES = [
   { a: 'K', b: 'SW', w: 14, via: [[300, -2880, 30]] },
@@ -1603,6 +1685,9 @@ const EDGES = [
   // みさき はなれ島ロータリー（2026-11-01）：東の交差点から東へ。広場の中の輪は時計回り
   { a: 'ME', b: 'EJ', w: 7, via: [[2420, -3600, 120]], tag: 'misakiRoad' },
   { a: 'ME', b: 'ME', w: 7, via: Array.from({ length: 35 }, (_, k) => [...mbPt(MB_IN + 10 + k * 10), 0]), inPlaza: true, tag: 'misakiRing' },
+  // 空港大橋（2026-11-14）：浜の交差点から北へ、なか海をわたって なか海空港の島へ（船がくぐれる高さ 30m）。島の南のはしをターミナルの前まで。
+  //   沿道に家は建てない（noTown）
+  { a: 'J', b: 'AP', w: 14, via: [[-330, -180, 220], [-470, -1020, 300], [-760, -1212, 150]], sea: true, noTown: true, tag: 'aptRoad' },
 ];
 // バス停：何番の道の、どのあたり（0〜1）か。道の両側にある（one：片側だけ）。
 //   bay：寄せる幅、r0／r1：広げる長さ（ロータリーは 1 周が短いので短く）
@@ -1634,6 +1719,7 @@ const PLACES = [
   { city: 'みなと市', name: 'みさき', poly: [[2500,-5000],[3700,-5000],[3700,-2200],[2500,-2200]], lx: 2874, lz: -3726 },
   { city: 'はじめ市', name: 'はじめ町', poly: [[-800,-200],[1200,-200],[1200,450],[-800,450]], lx: 209, lz: 163 },
   { city: 'はじめ市', name: 'はじめ諸島', poly: [[-500,-900],[500,-900],[500,-200],[-500,-200]], lx: 0, lz: -550, sea: true },
+  { city: 'はじめ市', name: 'なか海空港', poly: [[-4450,-1820],[-350,-1820],[-350,-1150],[-4450,-1150]], lx: -2400, lz: -1480 },   // 2026-11-14
   { city: 'はじめ市', name: 'みどり台', poly: [[-1800,-1200],[-800,-1200],[-800,450],[-200,450],[-200,1200],[-1800,1200]], lx: -1095, lz: 599 },
   { city: 'はじめ市', name: 'ひろ野', poly: [[-1800,1200],[-200,1200],[-200,450],[400,450],[400,3000],[0,4200],[-1800,4200]], lx: -685, lz: 2522 },
   { city: 'はじめ市', name: '西山町', poly: [[-5000,-1200],[-1800,-1200],[-1800,5000],[-5000,5000]], lx: -3417, lz: 2308 },
@@ -1641,6 +1727,12 @@ const PLACES = [
   { city: 'はじめ市', name: '東浜', poly: [[1200,-1200],[5000,-1200],[5000,1600],[2700,1600],[2700,300],[1200,300]], lx: 3661, lz: 600 },
   { city: 'はじめ市', name: 'みずうみ町', poly: [[2700,1600],[5000,1600],[5000,5000],[1000,5000],[1000,3000],[2400,2950]], lx: 3214, lz: 3497 },
   { city: 'はじめ市', name: '輪の里', poly: [[-1800,4200],[0,4200],[400,3000],[1000,3000],[1000,5000],[-1800,5000]], lx: -98, lz: 4300 },
+  // 50km の世界の外の陸（2026-11-14）。道がまだないので家は建たない
+  ...OUT_ISLES.map((I) => ({ city: '', name: I.name, poly: [[I.x - I.rx * 1.6, I.z - I.rz * 1.6], [I.x + I.rx * 1.6, I.z - I.rz * 1.6], [I.x + I.rx * 1.6, I.z + I.rz * 1.6], [I.x - I.rx * 1.6, I.z + I.rz * 1.6]], lx: I.x, lz: I.z })),
+  { city: 'みなみ市', name: 'みなみ野', poly: [[5000,-3000],[25000,-3000],[25000,25000],[5000,25000]], lx: 12500, lz: 6500 },
+  { city: 'みなみ市', name: 'ふもと', poly: [[-5000,5000],[5000,5000],[5000,9000],[-5000,9000]], lx: 0, lz: 7400 },
+  { city: 'みなみ市', name: 'みなみ連山', poly: [[-25000,9000],[5000,9000],[5000,25000],[-25000,25000]], lx: -5500, lz: 13500 },
+  { city: 'みなみ市', name: '西の原', poly: [[-25000,-3000],[-5000,-3000],[-5000,9000],[-25000,9000]], lx: -13500, lz: 3500 },
 ];
 const LANDMARKS = [
   { name: 'はじめの浜', kind: '浜', x: 0, z: -95 },
@@ -1666,8 +1758,13 @@ const LANDMARKS = [
   { name: '大川', kind: '川', x: 4560, z: 900 },
   { name: 'かがみ湖', kind: '湖', x: 3600, z: 3560 },
   { name: 'わの中島', kind: '島', x: 300, z: 4400 },
+  { name: 'みなみ野空港', kind: '空港', x: 13200, z: 9200 },
+  { name: 'おお湖', kind: '湖', x: BIG_LAKE.x, z: BIG_LAKE.z },
+  { name: 'みなみ湾', kind: '海', x: 3000, z: 19800 },
+  { name: '空港大橋', kind: '橋', x: -420, z: -700 },
 ];
-const SEAS = [{ name: 'なか海', x: -2300, z: -2150 }, { name: '西の外海', x: -3700, z: -3600 }, { name: '北の外海', x: 700, z: -4800 }, { name: '東の外海', x: 4300, z: -3300 }];
+const SEAS = [{ name: 'なか海', x: -2300, z: -2150 }, { name: '西の外海', x: -3700, z: -3600 }, { name: '北の外海', x: 700, z: -4800 }, { name: '東の外海', x: 4300, z: -3300 },
+  { name: '北の大洋', x: 0, z: -12000 }, { name: 'みなみの海', x: -9000, z: 23300 }];
 function inPoly(x, z, poly) {
   let ins = false;
   for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
@@ -1676,7 +1773,8 @@ function inPoly(x, z, poly) {
   }
   return ins;
 }
-const seaNameAt = (x, z) => z > -2500 ? 'なか海' : x < -2000 ? '西の外海' : x > 3700 ? '東の外海' : '北の外海';
+const seaNameAt = (x, z) => cheb(x, z) > OUT_IN ? (z < -5000 ? '北の大洋' : z > 12000 ? 'みなみの海' : x < 0 ? '西の外海' : '東の外海')
+  : z > -2500 ? 'なか海' : x < -2000 ? '西の外海' : x > 3700 ? '東の外海' : '北の外海';
 // その場所の地名：{ city, name }（海なら city は ''）
 function placeAt(x, z) {
   const land = heightAt(x, z) > 0;
@@ -2136,7 +2234,7 @@ const roadNet = (() => {
     }
     A.deg++; B.deg++;
     const e = { id: ei, a: A, b: B, w: E.w, N, X, Z, Y, W, WB: Float32Array.from(W), S, L: S[N - 1], NX, NZ, BR, base, sea: !!E.sea, inPlaza: !!E.inPlaza,
-      hw: E.hw || null, EL, TN: E._tn || null, loop: E.a === E.b, name: E.name || '', gate: E.gate || null, ic: E.ic || '', pa: E.pa || '', jct: E.jct || '', jto: E.jto || '' };
+      hw: E.hw || null, EL, TN: E._tn || null, loop: E.a === E.b, noTown: !!E.noTown, name: E.name || '', gate: E.gate || null, ic: E.ic || '', pa: E.pa || '', jct: E.jct || '', jto: E.jto || '' };
     A.ends.push({ e, end: 0 }); B.ends.push({ e, end: 1 });
     built[ei] = e;
     return e;
@@ -2556,12 +2654,14 @@ const COL = {
   dirt: C(0x8a5f3c), dirt2: C(0x6d4a30), stone: C(0x5a5552), bedrock: C(0x3b3840),
 };
 const tmpC = new THREE.Color();
+const PEAK_SNOW = new THREE.Color(0xf2f5f8);
 function surfaceColor(cx, cy, cz, ny, out) {
   const v = hash(Math.floor(cx * 3.1), Math.floor(cz * 2.7));
   const grassLine = 3.0 + fbm(cx * 2, cz * 2) * 0.9;
   if (cy > grassLine) {
     if (ny < 0.74) out.copy(COL.cliff);
     else out.copy(COL.grass1).lerp(COL.grass2, v).lerp(COL.grassHigh, ss(8, 24, cy) * 0.7).lerp(COL.rock, ss(45, 95, cy) * 0.85);   // 高い山は岩っぽく
+    if (cy > 300) out.lerp(PEAK_SNOW, ss(330, 480, cy) * 0.9);   // みなみ連山・きた島のいちばん上は雪（2026-11-14）
   } else if (cy > 0.35) out.copy(COL.sand).lerp(COL.sandWet, ss(1.2, 0.35, cy) * 0.5);
   else if (cy > -1.5) out.copy(COL.sandWet);
   else {
@@ -8613,7 +8713,7 @@ function ilsInfo(v, rw) {
   const dx = v.pos.x - rw.aim[0], dz = v.pos.y - rw.aim[1];
   const s = -(dx * rw.dir[0] + dz * rw.dir[1]);   // 接地点の手前の距離（手前が＋）
   const xt = dx * rw.dir[1] * -1 + dz * rw.dir[0];  // 中心線から右（着陸の向きに見て）が＋
-  return { s, xt, gsY: AIRPORT.y + Math.max(0, s) * Math.tan(3 * D2R) };
+  return { s, xt, gsY: rw.apt.y + Math.max(0, s) * Math.tan(3 * D2R) };
 }
 function jetAutopilot(v, J, P, c, dt) {
   const A = J.ap, b = bearingOf(v.h), ra = Math.max(0, v.y - floorAt(v.pos.x, v.pos.y));
@@ -8706,10 +8806,10 @@ function jetApButton(what) {
   if (what === 'app') {
     if (A.app) { A.app = null; if (A.lat === 'LOC') { A.lat = 'HDG'; A.hdg = b; } if (A.vert === 'GS') { A.vert = 'ALT'; A.alt = Math.round(v.y * FT / 100) * 100; } showMsg('APP を取り消しました'); return; }
     let best = null;
-    for (const rw of AIRPORT.rwys) { const I = ilsInfo(v, rw); if (I.s > 2000 && I.s < 40000 && Math.abs(I.xt) < I.s * 0.6 + 2000 && (!best || Math.abs(wrapDeg(b - rw.course)) < Math.abs(wrapDeg(b - best.course)))) best = rw; }
+    for (const rw of AIRPORTS.flatMap((a) => a.rwys)) { const I = ilsInfo(v, rw); if (I.s > 2000 && I.s < 40000 && Math.abs(I.xt) < I.s * 0.6 + 2000 && (!best || Math.abs(wrapDeg(b - rw.course)) < Math.abs(wrapDeg(b - best.course)))) best = rw; }
     if (!best) { showMsg('滑走路の手前（2〜40km）から、滑走路の向きに近い方位で APP を押してください'); return; }
     A.on = true; A.app = best; if (!A.lat) { A.lat = 'HDG'; A.hdg = b; } if (!A.vert) { A.vert = 'ALT'; A.alt = Math.round(v.y * FT / 100) * 100; }
-    showMsg(`APP：なか海空港 滑走路 ${best.name} の ILS を待ちます（LOC→グライドスロープ→自動着陸）。フラップ・ギアは自分で出してください`);
+    showMsg(`APP：${best.apt.name} 滑走路 ${best.name} の ILS を待ちます（LOC→グライドスロープ→自動着陸）。フラップ・ギアは自分で出してください`);
   }
 }
 function jetApAdjust(what, d) {
@@ -9677,7 +9777,7 @@ function mapColor(h, x, z, out, k) {
   let r, gg, b;
   if (h < SEA) { const t = Math.min(1, (SEA - h) / 100); r = 70 - 55 * t; gg = 170 - 110 * t; b = 215 - 95 * t; }
   else if (h < 1.6) { r = 236; gg = 218; b = 168; }
-  else { const t = Math.min(1, h / 60); r = 120 - 50 * t; gg = 185 - 60 * t; b = 95 - 40 * t; if (h > 70) { r = gg = b = 150; } }
+  else { const t = Math.min(1, h / 60); r = 120 - 50 * t; gg = 185 - 60 * t; b = 95 - 40 * t; if (h > 70) { r = gg = b = 150 + 95 * Math.min(1, Math.max(0, (h - 150) / 300)); } }   // 150m より高い山（みなみ連山）は白っぽく
   if (archTop(x, z) > h) { r = 150; gg = 142; b = 130; }   // トンネルの屋根
   out[k] = r; out[k + 1] = gg; out[k + 2] = b; out[k + 3] = 255;
 }
@@ -11262,7 +11362,7 @@ const TOWN = (() => {
   // 道路に沿って候補の場所をならべる：f(e, i, side, x, z, rot)
   function alongRoads(step, fn) {
     for (const e of R.edges) {
-      if (e.hw || e.inPlaza) continue;
+      if (e.hw || e.inPlaza || e.noTown) continue;
       for (let s = step / 2; s < e.L - 4; s += step) {
         let i = Math.min(e.N - 2, Math.round(s / RD_STEP)); while (i > 0 && e.S[i] > s) i--; while (i < e.N - 2 && e.S[i + 1] < s) i++;
         if (e.BR[i]) continue;
@@ -11286,7 +11386,7 @@ const TOWN = (() => {
     const [w, d, h] = BLD_SIZE[kind];
     let best = null;
     for (const e of R.edges) {
-      if (e.hw || e.inPlaza) continue;
+      if (e.hw || e.inPlaza || e.noTown) continue;
       for (let i = 0; i < e.N - 1; i += 4) {
         if (Math.abs(e.X[i] - at[0]) > 900 || Math.abs(e.Z[i] - at[1]) > 900 || e.BR[i]) continue;
         for (const side of [1, -1]) {
@@ -14578,8 +14678,8 @@ function autoDrive(car, dt) {
 const wmapEl = el('wmap'), wmapCv = el('wmapCv'), wmapCx = wmapCv.getContext('2d');
 // 拡大縮小：WMAP.mpp（画面 1 ドットが何 m か）と、まん中（cx, cz）。「近く」は自分について動く。ドラッグ・ピンチ・ホイール・＋−で変えられる
 const WMAP = { mode: 'all', routes: false, img: { all: null, det: null }, build: { all: null, det: null }, open: false, mpp: 0, cx: 0, cz: 0 };
-const WMAP_ALL = { x0: -5000, x1: 5000, z0: -5000, z1: 5000, m: 20 };   // 全体：ワールドぜんぶ、20m で 1 ドット
-const wmapFitMpp = () => Math.max(10000 / Math.max(1, wmapCv.width), 10000 / Math.max(1, wmapCv.height));   // ワールドぜんぶが入る
+const WMAP_ALL = { x0: X0, x1: X1, z0: Z0, z1: Z1, m: 100 };   // 全体：ワールドぜんぶ（50km）、100m で 1 ドット
+const wmapFitMpp = () => Math.max(XW / Math.max(1, wmapCv.width), ZW / Math.max(1, wmapCv.height));   // ワールドぜんぶが入る
 const wmapNearMpp = () => 1200 / Math.max(1, Math.min(wmapCv.width, wmapCv.height));   // 近く：短いほうが 1.2km
 const wmapMinMpp = () => 0.35 / Math.min(window.devicePixelRatio || 1, 2);   // いちばん大きく：1 ドット 35cm くらい
 function wmapSetMode(m) {
@@ -14589,7 +14689,7 @@ function wmapSetMode(m) {
 }
 function wmapClamp() {
   WMAP.mpp = Math.min(wmapFitMpp() * 1.2, Math.max(wmapMinMpp(), WMAP.mpp || wmapFitMpp()));
-  WMAP.cx = Math.min(5000, Math.max(-5000, WMAP.cx)); WMAP.cz = Math.min(5000, Math.max(-5000, WMAP.cz));
+  WMAP.cx = Math.min(X1, Math.max(X0, WMAP.cx)); WMAP.cz = Math.min(Z1, Math.max(Z0, WMAP.cz));
 }
 // いま見えている範囲（世界の座標）
 function wmapVis() {
@@ -14598,11 +14698,11 @@ function wmapVis() {
   const hw = wmapCv.width * WMAP.mpp / 2, hh = wmapCv.height * WMAP.mpp / 2;
   return { x0: WMAP.cx - hw, x1: WMAP.cx + hw, z0: WMAP.cz - hh, z1: WMAP.cz + hh };
 }
-// くわしい地図：見えている範囲が 3.6km より小さいとき、そのまわりだけ細かく作る
+// くわしい地図：見えている範囲が 20km より小さいとき、そのまわりだけ細かく作る（3.6km より小さければ 2.5〜10m、大きければ 20〜40m）
 function wmapDetView(Vis) {
   const span = Math.max(Vis.x1 - Vis.x0, Vis.z1 - Vis.z0);
-  if (span > 3600) return null;
-  const area = (Vis.x1 - Vis.x0 + 200) * (Vis.z1 - Vis.z0 + 200), m = [2.5, 5, 10].find((q) => area / (q * q) <= 70000) || 10;   // 1 枚 7 万点まで
+  if (span > 20000) return null;
+  const area = (Vis.x1 - Vis.x0 + 200) * (Vis.z1 - Vis.z0 + 200), m = span <= 3600 ? ([2.5, 5, 10].find((q) => area / (q * q) <= 70000) || 10) : ([20, 30, 40].find((q) => area / (q * q) <= 160000) || 50);   // 1 枚 7 万点（広いときは 16 万点）まで
   const I = WMAP.img.det;   // 前に作ったのが見えている所をぜんぶおおっていれば、それを使う
   if (I && I.V.m === m && I.V.x0 <= Vis.x0 && I.V.x1 >= Vis.x1 && I.V.z0 <= Vis.z0 && I.V.z1 >= Vis.z1) return I.V;
   const cx = Math.round(WMAP.cx / 100) * 100, cz = Math.round(WMAP.cz / 100) * 100;
@@ -14655,9 +14755,12 @@ function drawWmap() {
   // 高速道路の IC・PA・JCT の名前
   g.font = `800 ${det ? 13 : 11}px ` + getComputedStyle(document.body).fontFamily; g.textAlign = 'left'; g.textBaseline = 'middle';
   const hwLabel = (t, x, z) => { const [X, Y] = P(x, z); if (X < -50 || Y < -20 || X > W + 50 || Y > H + 20) return; g.fillStyle = '#1f6b3a'; g.beginPath(); g.arc(X, Y, 4, 0, 7); g.fill(); g.lineWidth = 3; g.strokeStyle = 'rgba(255,255,255,.9)'; g.strokeText(t, X + 6, Y); g.fillText(t, X + 6, Y); };
+  const huge = span > 15000;   // 50km ぜんたいを見ているとき：まん中の小さな名前は出さない（2026-11-14）
+  if (!huge) {
   for (const ic of HWY.ics) { const n = roadNet.nodeOf[ic.node]; hwLabel(ic.name, n.x, n.z); }
   for (const pa of HWY.pas) if (!pa.name.includes('内回り')) hwLabel(pa.name.replace(/（.*）/, ''), pa.f.x, pa.f.z);
   for (const j of HWY.jcts) hwLabel(j.name, j.f.x, j.f.z);
+  }
   // 路線（路線図のとき）
   if (WMAP.routes) {
     const seen = new Set();
@@ -14691,7 +14794,11 @@ function drawWmap() {
     }
   }
   // なか海空港の滑走路
-  { const [ax, ay] = P(AIRPORT.xw, AIRPORT.zc - 23), [bx, by] = P(AIRPORT.xe, AIRPORT.zc + 23); g.fillStyle = '#54585e'; g.fillRect(Math.min(ax, bx), Math.min(ay, by), Math.max(2, Math.abs(bx - ax)), Math.max(2, Math.abs(by - ay))); }
+  for (const A of AIRPORTS) {   // 滑走路（細くても 2 ドットは見えるように）と空港の名前
+    const a = P(...A.toWorld(A.xw, A.zc)), b = P(...A.toWorld(A.xe, A.zc));
+    g.strokeStyle = '#54585e'; g.lineCap = 'butt'; g.lineWidth = Math.max(2.5, 46 * sc); g.beginPath(); g.moveTo(...a); g.lineTo(...b); g.stroke(); g.lineCap = 'round';
+    if (!det) { const [X, Y] = P(...A.toWorld(-2400, A.zc + 420)); g.font = '800 12px ' + getComputedStyle(document.body).fontFamily; g.textAlign = 'center'; g.lineWidth = 3; g.strokeStyle = 'rgba(255,255,255,.9)'; g.strokeText('✈ ' + A.name, X, Y); g.fillStyle = '#2c3640'; g.fillText('✈ ' + A.name, X, Y); }
+  }
   // 信号のある交差点
   for (const n of roadNet.nodes) if (n.signal) { const [x, y] = P(n.x, n.z); g.fillStyle = '#333'; g.beginPath(); g.arc(x, y, Math.max(2.5, n.jr * sc), 0, 7); g.fill(); }
   const NEAR_SKIP = new Set(['はじめの浜', 'はじめの浜バスターミナル', 'はじめの入り江']);   // バス停などと重なるので出さない
@@ -14701,9 +14808,9 @@ function drawWmap() {
   const nameAt = (txt, x, z, px, fill, stroke) => { const [X, Y] = P(x, z); if (X < -60 || Y < -20 || X > W + 60 || Y > H + 20) return;
     g.font = `800 ${px}px ` + fam; if (stroke) { g.lineWidth = 3; g.strokeStyle = stroke; g.strokeText(txt, X, Y); } g.fillStyle = fill; g.fillText(txt, X, Y); };
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
-  for (const s of SEAS) nameAt(s.name, s.x, s.z, 12 * dpr, 'rgba(230,245,255,.85)', null);
-  if (wide) { nameAt('みなと市', -1000, -2250, 17 * dpr, '#fff', 'rgba(15,40,60,.8)'); nameAt('はじめ市', -2300, -450, 17 * dpr, '#fff', 'rgba(15,40,60,.8)'); }
-  if (!WMAP.routes) for (const p of PLACES) nameAt(p.name, p.lx, p.lz, (det ? 15 : 11) * dpr, '#1b2a22', 'rgba(255,255,255,.9)');
+  for (const s of SEAS) if (!huge || cheb(s.x, s.z) > OUT_IN) nameAt(s.name, s.x, s.z, 12 * dpr, 'rgba(230,245,255,.85)', null);
+  if (wide) { nameAt('みなと市', -1000, -2250, 17 * dpr, '#fff', 'rgba(15,40,60,.8)'); nameAt('はじめ市', -2300, -450, 17 * dpr, '#fff', 'rgba(15,40,60,.8)'); nameAt('みなみ市', 2000, 10500, 17 * dpr, '#fff', 'rgba(15,40,60,.8)'); }
+  if (!WMAP.routes) for (const p of PLACES) if (!p.name.endsWith('空港') && !(huge && (p.city === 'みなと市' || p.city === 'はじめ市'))) nameAt(p.name, p.lx, p.lz, (det ? 15 : 11) * dpr, '#1b2a22', 'rgba(255,255,255,.9)');
   if (det) for (const m of LANDMARKS) if (!NEAR_SKIP.has(m.name)) nameAt((m.kind === '山' ? '▲' : '') + m.name, m.x, m.z, 11 * dpr, '#3a2a10', 'rgba(255,255,255,.85)');
   g.textBaseline = 'alphabetic';
   // バス停
@@ -14990,10 +15097,10 @@ document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && WMAP.ope
 /* ================= なか海空港（2026-11-13）：海の上の空港。滑走路 09/27（3500m×45m）・誘導路・エプロン・ターミナル・管制塔 =================
    地面の島は rawHeight0（aptLift）でもり上げてある。ここでは舗装・白線・灯火（進入灯・滑走路灯・PAPI）を描く。
    PAPI：滑走路の左の 4 つの灯。正しい 3° の進入角なら 白 2・赤 2。高すぎると白が増え、低すぎると赤が増える */
-const apLights = { papi: [] };
-function buildAirport() {
-  const A = AIRPORT, Y = A.y, g = new THREE.Group();
-  g.name = 'airport';
+const apLights = { papi: [], pts: [] };
+function buildAirport(A) {   // A の配置の座標で作って、グループごと回して置く（なか海空港はそのまま）
+  const Y = A.y, g = new THREE.Group();
+  g.name = 'airport-' + A.id;
   const mat = (color, off) => new THREE.MeshLambertMaterial({ color, polygonOffset: true, polygonOffsetFactor: off, polygonOffsetUnits: off });
   const rectGeo = (list, yy) => {
     const pos = [];
@@ -15013,7 +15120,7 @@ function buildAirport() {
   const wl = [[A.xw, A.xe, zc - 21.9, zc - 21.0], [A.xw, A.xe, zc + 21.0, zc + 21.9]];
   for (let x = A.xw + 120; x < A.xe - 150; x += 50) wl.push([x, x + 30, zc - 0.45, zc + 0.45]);
   for (const rw of A.rwys) {
-    const d = rw.dir[0], at = (s0, s1, z0, z1) => wl.push([Math.min(rw.th[0] + d * s0, rw.th[0] + d * s1), Math.max(rw.th[0] + d * s0, rw.th[0] + d * s1), z0, z1]);
+    const d = rw.ldir[0], at = (s0, s1, z0, z1) => wl.push([Math.min(rw.lth[0] + d * s0, rw.lth[0] + d * s1), Math.max(rw.lth[0] + d * s0, rw.lth[0] + d * s1), z0, z1]);
     for (const zz of [2.7, 5.4, 8.1, 10.8, 13.5, 16.2, 18.9]) for (const sg of [-1, 1]) at(6, 36, zc + sg * zz - 0.9, zc + sg * zz + 0.9);
     for (const sg of [-1, 1]) at(300, 360, zc + sg * 6, zc + sg * 15);
     for (const [s, k] of [[150, 3], [450, 2], [600, 2], [750, 1], [900, 1]]) for (let i = 0; i < k; i++) for (const sg of [-1, 1]) at(s, s + 22.5, zc + sg * (6 + i * 2.7), zc + sg * (7.8 + i * 2.7));
@@ -15024,7 +15131,7 @@ function buildAirport() {
     const tex = new THREE.CanvasTexture(c);
     const num = new THREE.Mesh(new THREE.PlaneGeometry(14, 28), new THREE.MeshLambertMaterial({ map: tex, transparent: true, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4, depthWrite: false }));
     num.rotation.order = 'YXZ'; num.rotation.set(-Math.PI / 2, d > 0 ? -Math.PI / 2 : Math.PI / 2, 0);
-    num.position.set(rw.th[0] + d * 70, Y + 0.08, zc);
+    num.position.set(rw.lth[0] + d * 70, Y + 0.08, zc);
     g.add(num);
   }
   g.add(new THREE.Mesh(rectGeo(wl, Y + 0.07), mat(0xf2f2ee, -4)));
@@ -15051,7 +15158,7 @@ function buildAirport() {
   for (let x = A.xw + 80; x <= A.xe - 80; x += 60) { put(x, Y + 0.3, tz - 12.5, Bc); put(x, Y + 0.3, tz + 12.5, Bc); }
   const poles = [];
   for (const rw of A.rwys) for (let s = 90; s <= 900; s += 30) {
-    const x = rw.th[0] - rw.dir[0] * s;
+    const x = rw.lth[0] - rw.ldir[0] * s;
     for (const z of [-6, -3, 0, 3, 6]) put(x, Y + 0.6, zc + z, W);
     if (s % 300 === 0) for (const z of [-15, -12, 12, 15]) put(x, Y + 0.6, zc + z, W);   // 横の棒（300m ごと）
     poles.push(x);
@@ -15069,77 +15176,122 @@ function buildAirport() {
   poles.forEach((x, i) => { m4.makeTranslation(x, Y + 0.4, zc); bars.setMatrixAt(i, m4); m4.makeScale(1, Y + 3, 1).setPosition(x, (Y - 3) / 2, zc); legs.setMatrixAt(i, m4); });
   g.add(bars, legs);
   // PAPI（滑走路ごとに 4 つ。着陸の向きに見て左）
-  const pp = [], pc = [];
+  const pp = [], pc = [], papi = [];
   for (const rw of A.rwys) {
-    const left = [rw.dir[1], -rw.dir[0]];   // 右 =（-dz, dx）の反対
+    const left = [rw.ldir[1], -rw.ldir[0]];   // 右 =（-dz, dx）の反対
     for (let k = 0; k < 4; k++) {
-      const x = rw.th[0] + rw.dir[0] * 330 + left[0] * (31 + k * 9), z = zc + rw.dir[1] * 330 + left[1] * (31 + k * 9);
+      const x = rw.lth[0] + rw.ldir[0] * 330 + left[0] * (31 + k * 9), z = zc + rw.ldir[1] * 330 + left[1] * (31 + k * 9);
       pp.push(x, Y + 0.8, z); pc.push(1, 1, 1);
-      apLights.papi.push({ x, z, set: [3.5, 3.17, 2.83, 2.5][k] });
+      const [wx, wz] = A.toWorld(x, z);
+      papi.push({ x: wx, z: wz, y: Y + 0.8, set: [3.5, 3.17, 2.83, 2.5][k] });
     }
   }
   const papiGeo = new THREE.BufferGeometry();
   papiGeo.setAttribute('position', new THREE.Float32BufferAttribute(pp, 3));
   papiGeo.setAttribute('color', new THREE.Float32BufferAttribute(pc, 3));
-  apLights.papiPts = new THREE.Points(papiGeo, new THREE.PointsMaterial({ size: coarse ? 5 : 6, sizeAttenuation: false, vertexColors: true, fog: false, toneMapped: false }));
-  g.add(apLights.papiPts);
+  const papiPts = new THREE.Points(papiGeo, new THREE.PointsMaterial({ size: coarse ? 5 : 6, sizeAttenuation: false, vertexColors: true, fog: false, toneMapped: false }));
+  g.add(papiPts);
+  apLights.pts.push({ A, P: papiPts, papi });
+  if (A.id === 'naka') { apLights.papiPts = papiPts; apLights.papi = papi; }
+  const [ox, oz] = A.toWorld(0, 0);
+  g.position.set(ox, 0, oz); g.rotation.y = A.rot;
   scene.add(g);
-  AIRPORT.group = g;
+  A.group = g;
 }
 // PAPI の色：見ている目（旅客機を操縦中なら操縦席）からの角度で白か赤
 function stepPapi() {
-  const P = apLights.papiPts; if (!P) return;
   const v = jetRide();
   const ex = v ? v.pos.x : camera.position.x, ey = v ? v.y + 6 : camera.position.y, ez = v ? v.pos.y : camera.position.z;
-  if (Math.abs(ez - AIRPORT.zc) > 20000) return;
-  const c = P.geometry.attributes.color;
-  apLights.papi.forEach((u, i) => {
-    const ang = Math.atan2(ey - AIRPORT.y - 0.8, Math.hypot(ex - u.x, ez - u.z)) / D2R;
-    if (ang > u.set) c.setXYZ(i, 1, 0.97, 0.9); else c.setXYZ(i, 1, 0.16, 0.12);
-  });
-  c.needsUpdate = true;
+  for (const { P, papi } of apLights.pts) {
+    if (Math.hypot(ex - papi[0].x, ez - papi[0].z) > 25000) continue;
+    const c = P.geometry.attributes.color;
+    papi.forEach((u, i) => {
+      const ang = Math.atan2(ey - u.y, Math.hypot(ex - u.x, ez - u.z)) / D2R;
+      if (ang > u.set) c.setXYZ(i, 1, 0.97, 0.9); else c.setXYZ(i, 1, 0.16, 0.12);
+    });
+    c.needsUpdate = true;
+  }
 }
 // 空港へ行く（地図のボタン）：エプロンに立つ
-function goAirport() {
+function goAirport(A = AIRPORT) {
   setMenu(false); closeWmap();
   if (driving || aboard || busRide) { showMsg('降りてから使ってください'); return; }
-  const x = -2400, z = AIRPORT.taxiZ + 40;
-  player.pos.set(x, heightAt(x, z), z); player.face = Math.PI; camYaw = player.face + Math.PI; player.vy = 0; camPitch = 0.3;
-  showMsg('なか海空港のエプロンに来ました。☰「glTF を置く」→「航空機」で飛行機を置けます。滑走路は 09/27（3500m）');
+  const [x, z] = A.toWorld(-2400, A.taxiZ + 40);
+  player.pos.set(x, heightAt(x, z), z); player.face = Math.PI + A.rot; camYaw = player.face + Math.PI; player.vy = 0; camPitch = 0.3;
+  showMsg(`${A.name}のエプロンに来ました。☰「glTF を置く」→「航空機」で飛行機を置けます。滑走路は ${A.rwys[0].name}/${A.rwys[1].name}（3500m）`);
 }
 
-/* ---- 遠く（VIEW_R の外〜3km 先、高い所からは世界ぜんたい）：粗い地面（62.5m ごと）を下に敷く。近く（細かい地面がある所）は描かない ---- */
-const farLand = { mesh: null, uC: { value: new THREE.Vector2() }, uR: { value: VIEW_R - 140 } };
-function buildFarLand() {
-  const st = 62.5, n = Math.round(XW / st), N1 = n + 1;
-  const pos = new Float32Array(N1 * N1 * 3), col = new Float32Array(N1 * N1 * 3), idx = [];
-  const cc = new THREE.Color();
-  for (let j = 0; j <= n; j++) for (let i = 0; i <= n; i++) {
-    const x = X0 + i * st, z = Z0 + j * st, h = rawHeight0(x, z), k = (j * N1 + i) * 3;
-    pos[k] = x; pos[k + 1] = h; pos[k + 2] = z;
-    surfaceColor(x, h, z, 0.9, cc); col[k] = cc.r; col[k + 1] = cc.g; col[k + 2] = cc.b;
-  }
-  for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) { const a = j * N1 + i, b = a + 1, c = a + N1, d = c + 1; idx.push(a, c, b, b, c, d); }
-  const geo = new THREE.BufferGeometry();
-  geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-  geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
-  geo.setIndex(idx); geo.computeVertexNormals();
+/* ---- 遠く（VIEW_R の外〜3km 先、高い所からは世界ぜんたい）：粗い地面を下に敷く。近く（細かい地面がある所）は描かない。
+   50km になったので（2026-11-14）2 まい：カメラのまわり 8km 四方（62.5m ごと。1km 動いたら少しずつ作り直す）と、
+   高い所から見るときだけの世界ぜんたい（250m ごと。まわり 8km の所は描かない） ---- */
+const farLand = { mesh: null, far: null, uC: { value: new THREE.Vector2() }, uR: { value: VIEW_R - 140 }, uN: { value: new THREE.Vector3(0, 0, -1) }, NH: 4000, ST: 62.5, cx: null, cz: null, job: null };
+function farLandMat(isFar) {
   const mat = new THREE.MeshLambertMaterial({ vertexColors: true });
   mat.onBeforeCompile = (sh) => {
-    sh.uniforms.uC = farLand.uC; sh.uniforms.uR = farLand.uR;
+    sh.uniforms.uC = farLand.uC; sh.uniforms.uR = farLand.uR; sh.uniforms.uN = farLand.uN;
     sh.vertexShader = 'varying vec3 vFarW;\n' + sh.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\n vFarW = (modelMatrix * vec4(position, 1.0)).xyz;');
-    sh.fragmentShader = 'uniform vec2 uC; uniform float uR; varying vec3 vFarW;\n' + sh.fragmentShader.replace('void main() {', 'void main() {\n if (distance(vFarW.xz, uC) < uR) discard;');
+    sh.fragmentShader = 'uniform vec2 uC; uniform float uR; uniform vec3 uN; varying vec3 vFarW;\n' + sh.fragmentShader.replace('void main() {', isFar
+      ? 'void main() {\n if (max(abs(vFarW.x - uN.x), abs(vFarW.z - uN.y)) < uN.z) discard;'   // まわり 8km の粗い地面がある所
+      : 'void main() {\n if (distance(vFarW.xz, uC) < uR) discard;');
   };
+  return mat;
+}
+// x0, z0 から st ごとに n×n マスの地面（すそなし）。row0 から rows 行だけ高さと色を入れる（少しずつ作るため）
+function farGrid(n) {
+  const N1 = n + 1, idx = new (N1 * N1 > 65535 ? Uint32Array : Uint16Array)(n * n * 6);
+  let k = 0;
+  for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) { const a = j * N1 + i, b = a + 1, c = a + N1, d = c + 1; idx[k++] = a; idx[k++] = c; idx[k++] = b; idx[k++] = b; idx[k++] = c; idx[k++] = d; }
+  return { n, N1, pos: new Float32Array(N1 * N1 * 3), col: new Float32Array(N1 * N1 * 3), idx };
+}
+function farFill(G, x0, z0, st, row0, rows) {
+  const cc = new THREE.Color();
+  for (let j = row0; j < Math.min(G.N1, row0 + rows); j++) for (let i = 0; i < G.N1; i++) {
+    const x = x0 + i * st, z = z0 + j * st, h = outsideBox(x, z) ? -100 : rawHeight0(x, z), k = (j * G.N1 + i) * 3;
+    G.pos[k] = x; G.pos[k + 1] = h; G.pos[k + 2] = z;
+    surfaceColor(x, h, z, 0.9, cc); G.col[k] = cc.r; G.col[k + 1] = cc.g; G.col[k + 2] = cc.b;
+  }
+}
+function farMesh(G, mat) {
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(G.pos, 3));
+  geo.setAttribute('color', new THREE.BufferAttribute(G.col, 3));
+  geo.setIndex(new THREE.BufferAttribute(G.idx, 1)); geo.computeVertexNormals();
   const m = new THREE.Mesh(geo, mat);
-  m.position.y = -3; m.frustumCulled = false;
-  scene.add(m);
-  farLand.mesh = m;
+  m.frustumCulled = false; m.matrixAutoUpdate = false;
+  return m;
+}
+function buildFarLand() {   // 世界ぜんたい（250m ごと）
+  const st = 250, G = farGrid(Math.round(XW / st));
+  farFill(G, X0, Z0, st, 0, G.N1);
+  const m = farMesh(G, farLandMat(true));
+  m.position.y = -5; m.updateMatrix(); m.visible = false;
+  scene.add(m); farLand.far = m;
+}
+// まわり 8km：1 コマ 4ms まで作って、できたら入れかえる
+function stepFarNear(all) {
+  const F = farLand, cx = camera.position.x, cz = camera.position.z;
+  if (!F.job && (F.cx == null || Math.max(Math.abs(cx - F.cx), Math.abs(cz - F.cz)) > 1000)) {
+    const nx = Math.round(cx / 1000) * 1000, nz = Math.round(cz / 1000) * 1000;
+    F.job = { G: farGrid(Math.round(F.NH * 2 / F.ST)), nx, nz, row: 0, now: F.cx == null || Math.max(Math.abs(cx - F.cx), Math.abs(cz - F.cz)) > F.NH * 0.7 };   // 遠くへ飛んだ（地図のボタンなど）ときはすぐ作る
+  }
+  const J = F.job; if (!J) return;
+  const t0 = performance.now();
+  while (J.row < J.G.N1 && (all || J.now || performance.now() - t0 < 4)) { farFill(J.G, J.nx - F.NH, J.nz - F.NH, F.ST, J.row, 4); J.row += 4; }
+  if (J.row < J.G.N1) return;
+  const m = farMesh(J.G, F.mat || (F.mat = farLandMat(false)));
+  m.position.y = -3; m.updateMatrix();
+  if (F.mesh) { scene.remove(F.mesh); F.mesh.geometry.dispose(); }
+  scene.add(m); F.mesh = m; F.cx = J.nx; F.cz = J.nz; F.job = null;
+  F.uN.value.set(F.cx, F.cz, F.NH - 150);
 }
 function stepFarLand() {
-  if (underwater) { if (farLand.mesh) farLand.mesh.visible = false; return; }   // 3km 先まで：地上からも、細かい地面の外は粗い地面を見せる
-  if (!farLand.mesh) buildFarLand();
-  farLand.mesh.visible = true;
-  farLand.uC.value.set(camera.position.x, camera.position.z);
+  const F = farLand;
+  if (underwater) { if (F.mesh) F.mesh.visible = false; if (F.far) F.far.visible = false; return; }   // 3km 先まで：地上からも、細かい地面の外は粗い地面を見せる
+  if (!F.far) buildFarLand();
+  stepFarNear(!F.mesh);
+  if (F.mesh) F.mesh.visible = true;
+  F.far.visible = camera.far > F.NH - 300 || !F.mesh;   // 高い所から（遠くまで見えるとき）だけ
+  F.uC.value.set(camera.position.x, camera.position.z);
 }
 
 /* ---- 通過する旅客機（2026-11-14）：ゲームの演出。だれも操縦しない DC-10-30 が、実時間で 3 分ごとに
@@ -15224,6 +15376,7 @@ function stepFarCull() {
   for (const v of vehicles) skip.add(v.item.root);
   if (FLY.item) skip.add(FLY.item.root);
   if (farLand.mesh) skip.add(farLand.mesh);
+  if (farLand.far) skip.add(farLand.far);
   for (const o of scene.children) {
     if (skip.has(o) || o.isLight || o.material === TERRAIN_MAT) continue;
     let I = farCull.info.get(o);
@@ -15247,9 +15400,10 @@ function stepFarCull() {
   }
 }
 
-buildAirport();
+for (const A of AIRPORTS) buildAirport(A);
 jetPanelInit();
-el('aptBtn').addEventListener('click', goAirport);
+el('aptBtn').addEventListener('click', () => goAirport(AIRPORTS[0]));
+el('apt2Btn').addEventListener('click', () => goAirport(AIRPORTS[1]));
 
 window.__world = {
   addPropFromBuffer, buildThing, VKINDS, toggleWork, toggleRide, get rideV() { return ride; },
@@ -15267,7 +15421,7 @@ window.__world = {
   teleport(x, z, y) { player.pos.set(x, y ?? heightAt(x, z), z); player.vy = 0; },
   torps, tube, ord, booms, get clockT() { return clock.elapsedTime; },
   get BIZ() { return BIZ; }, get BIZS() { return BIZS; }, equipFee, tonCls, PAIDV, RUNS, stepRuns, runCheck, cargoAction, doCargo, coSites, parkAt, myGltfTrucks, truckKey, BIZX, BIZ_RECIPE, bizById, bizProcBy, bizCarrier, grpList, bizTradeIn, bizTradeFlush, BIZ_NET, carRegister, carBuy, carTry, trialEnd, TRIAL, carSaleIn, carList, dlrSync, DLR_SHOW, dlrLayout, myMachines, MACH, BIZ_BLD, bizNetLoad, bizNetEvent, bizPush, bizAct, bizDay, bizSettle, bizHtml, drawBizOnMap, TOWN, COMPANIES, ECON, makePaper, openTown, closeTown, townNearAction, get myStocks() { return myStocks; }, weatherAt, wxDay, calOf, gameDayN, setDayOffset(d) { dayOffset = d; }, setGameTime(n, hr) { dayOffset = 0; hourOffset = 0; const real = worldHour(); hourOffset = ((hr - real) % 24 + 24) % 24; dayOffset = n - Math.floor(gameDayF()); }, townMeshes, townBlds, townBoats, fieldStage,
-  AIRPORT, AIRLINERS, isa, jetOf, jetHits, FLY, flyAt, stepJet, jetApButton, jetApAdjust, jetGearLever, jetFlapLever, jetSpeedbrake, ilsInfo, jetVs, jetVref, jetTO, get jetRideV() { return jetRide(); }, farLand,
+  AIRPORT, AIRPORTS, goAirport, AIRLINERS, isa, jetOf, jetHits, FLY, flyAt, stepJet, jetApButton, jetApAdjust, jetGearLever, jetFlapLever, jetSpeedbrake, ilsInfo, jetVs, jetVref, jetTO, get jetRideV() { return jetRide(); }, farLand,
   AUTO, SEMI, semiGo, semiHalt, setSemi, semiTurnReq, semiTurnCand, semiNext, setApMin, startAuto, stopAuto, planAuto, stepHwTraffic, autoSpeed, autoLaneReq, autoTurnReq, get myCar() { return myCar; }, makeVehicle, rideFromMenu, putAwayMini, renderMoveList, makeMiniCar, CARL, setTurnSignal, cycleLampMode, autoBlinkDir, stepTraffic, stepVehicle, camera, signalState,
 };
 
