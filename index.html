@@ -398,6 +398,10 @@ body.helmOn .subbtns { flex-wrap: wrap; justify-content: flex-end; max-width: ca
 #gpws.red { background: #d22d1e; animation: gpwsBlink 0.6s steps(2) infinite; }
 #gpws.amber { background: #d98a00; }
 @keyframes gpwsBlink { 50% { background: #8a1a10; } }
+/* 姿勢指示器（ADI）：左上の計器の下。操作はできない（下を通す） */
+#adi { position: fixed; z-index: 3; left: max(10px, env(safe-area-inset-left, 0px)); width: 118px; height: 118px; border-radius: 50%; pointer-events: none; box-shadow: 0 2px 8px rgba(0,0,0,0.25); }
+#adi[hidden] { display: none; }
+@media (pointer: coarse) { #adi { width: 96px; height: 96px; } }
 body.jetOn #map { display: none !important; }
 @media (pointer: coarse) { #jetPanel button { padding: 6px 8px; } #jAp b { min-width: 52px; } }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
@@ -480,6 +484,7 @@ body.jetOn #map { display: none !important; }
 </div>
 <div id="msg" hidden></div>
 <div id="gpws" hidden aria-live="assertive"></div>
+<canvas id="adi" hidden role="img" aria-label="姿勢指示器"></canvas>
 <div id="jetPanel" hidden aria-label="旅客機の操作">
   <button type="button" id="jGear" title="G キー">ギア ⬇</button>
   <span class="jgrp"><button type="button" id="jFlapUp" aria-label="フラップを上げる" title=", キー">−</button><b id="jFlap">フラップ UP</b><button type="button" id="jFlapDn" aria-label="フラップを下げる" title=". キー">＋</button></span>
@@ -7609,7 +7614,7 @@ function stepPlayer(dt) {
   if (player.pos.y <= g2) { player.pos.y = g2; player.vy = Math.max(0, player.vy); player.onGround = true; if (!inWater) player.mode = 'walk'; }
 
   // 車にめり込まない（車の高さより上なら乗り越えられる）。自分の車も、ほかの人の車も
-  for (const v of vehicles) if (!(aboard && aboard.v === v)) pushFromCar(v.item.def.vehicle, v.pos.x, v.pos.y, v.y, visYaw(v));
+  for (const v of vehicles) if (!(aboard && aboard.v === v)) { if (v.item.jet && v.item.jet.hit) jetPushPlayer(v, ox, oz); else pushFromCar(v.item.def.vehicle, v.pos.x, v.pos.y, v.y, visYaw(v)); }
   pushFromTraffic();   // 路線バスや車にははね飛ばされず、押しのけられる
   for (const o of net.others.values()) {
     if (o.carObj) pushFromCar(ITEM_DEFS.mini.vehicle, o.carObj.position.x, o.carObj.position.z, o.carObj.position.y, o.carObj.rotation.y);
@@ -7741,7 +7746,13 @@ function stepCar(car, dt) {
       if (o.avatar.visible && Math.abs(o.pos.y - car.y) < 2) circles.push([o.pos.x, o.pos.z, P_R]);
       if (o.carObj && Math.abs(o.carObj.position.y - car.y) < 2) carCircles(o.carObj.position.x, o.carObj.position.z, o.carObj.rotation.y, ITEM_DEFS.mini.vehicle);
     }
-    for (const v of vehicles) if (v !== car && Math.abs(v.y - car.y) < 2) carCircles(v.pos.x, v.pos.y, v.h, v.item.def.vehicle);
+    for (const v of vehicles) if (v !== car && Math.abs(v.y - car.y) < 2) {
+      const G = v.item.jet && v.item.jet.hit;
+      if (!G) { carCircles(v.pos.x, v.pos.y, v.h, v.item.def.vehicle); continue; }
+      if (Math.hypot(v.pos.x - car.pos.x, v.pos.y - car.pos.y) > G.R + 10) continue;
+      const h2 = visYaw(v), s2 = Math.sin(h2), c2 = Math.cos(h2);   // 旅客機：形にそった円（翼の下はくぐれない高さの所だけ）
+      for (const [lx, lz] of G.circ) circles.push([v.pos.x + lx * c2 + lz * s2, v.pos.y - lx * s2 + lz * c2, 1.3]);
+    }
     const myR = Math.min(V.halfWidth, V.halfLength), myF = Math.max(0, V.halfLength - myR);
     for (const [x, z, r] of circles) {
       for (const f of [-myF, myF]) {
@@ -8241,8 +8252,65 @@ function rigJet(item, root, model, gltf, size) {
   const body = new THREE.Box3();
   root.updateMatrixWorld(true);
   model.traverse((o) => { if (!o.isMesh) return; let q = o, g = false; while (q && q !== model) { if (gears.some((G) => G.o === q)) g = true; q = q.parent; } if (!g) body.union(new THREE.Box3().setFromObject(o)); });
-  item.jet = { P, gears, flaps, slats, spoilers, bellyY: body.isEmpty() ? 1 : Math.max(0.3, body.min.y), hasGear: gears.length > 0 };
+  item.jet = { P, gears, flaps, slats, spoilers, bellyY: body.isEmpty() ? 1 : Math.max(0.3, body.min.y), hasGear: gears.length > 0, hit: jetHitGrid(root, model) };
   return P;
+}
+/* ---- 当たり判定：機体の形そのもの（2026-11-13）。上から見て 0.5m ごとのマスに、そこにある形のいちばん下と上の高さを入れる。
+   人は「頭（1.7m）より下に形があるマス」に入れない（翼の下・胴体の横まで歩ける）。車は 2m ごとの円でぶつかる ---- */
+const HIT_C = 0.5;
+function jetHitGrid(root, model) {
+  root.updateMatrixWorld(true);
+  const bb = new THREE.Box3().setFromObject(model);
+  const i0 = Math.floor(bb.min.x / HIT_C), k0 = Math.floor(bb.min.z / HIT_C), nx = Math.floor(bb.max.x / HIT_C) - i0 + 1, nz = Math.floor(bb.max.z / HIT_C) - k0 + 1;
+  const lo = new Float32Array(nx * nz).fill(Infinity), hi = new Float32Array(nx * nz).fill(-Infinity);
+  const a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3();
+  const mark = (x, y, z) => { const i = Math.floor(x / HIT_C) - i0, k = Math.floor(z / HIT_C) - k0; if (i < 0 || k < 0 || i >= nx || k >= nz) return; const q = k * nx + i; if (y < lo[q]) lo[q] = y; if (y > hi[q]) hi[q] = y; };
+  model.traverse((o) => {
+    if (!o.isMesh || !o.geometry || !o.geometry.attributes.position) return;
+    const P = o.geometry.attributes.position, I = o.geometry.index, M = o.matrixWorld, n = I ? I.count : P.count;
+    for (let t = 0; t + 2 < n; t += 3) {
+      a.fromBufferAttribute(P, I ? I.getX(t) : t).applyMatrix4(M); b.fromBufferAttribute(P, I ? I.getX(t + 1) : t + 1).applyMatrix4(M); c.fromBufferAttribute(P, I ? I.getX(t + 2) : t + 2).applyMatrix4(M);
+      const L = Math.max(Math.hypot(a.x - b.x, a.z - b.z), Math.hypot(b.x - c.x, b.z - c.z), Math.hypot(c.x - a.x, c.z - a.z));
+      const m = Math.min(200, Math.max(1, Math.ceil(L / (HIT_C * 0.6))));
+      for (let u = 0; u <= m; u++) for (let w = 0; w <= m - u; w++) {
+        const fu = u / m, fw = w / m, fv = 1 - fu - fw;
+        mark(a.x * fv + b.x * fu + c.x * fw, a.y * fv + b.y * fu + c.y * fw, a.z * fv + b.z * fu + c.z * fw);
+      }
+    }
+  });
+  // 車用：2m ごとに、低い所（3m より下）に形があれば円をおく
+  const circ = [];
+  for (let k = 0; k < nz; k += 4) for (let i = 0; i < nx; i += 4) {
+    let low = false;
+    for (let dk = 0; dk < 4 && !low; dk++) for (let di = 0; di < 4 && !low; di++) { const q = (k + dk) * nx + i + di; if (k + dk < nz && i + di < nx && lo[q] < 3) low = true; }
+    if (low) circ.push([(i0 + i + 2) * HIT_C, (k0 + k + 2) * HIT_C]);
+  }
+  return { i0, k0, nx, nz, lo, hi, circ, R: Math.hypot(Math.max(-bb.min.x, bb.max.x), Math.max(-bb.min.z, bb.max.z)) };
+}
+// (x, z) に人（半径 r、足もと y0〜頭 y1）が入れないか
+function jetHits(v, x, z, y0, y1, r) {
+  const G = v.item.jet.hit, h = visYaw(v), s = Math.sin(h), c = Math.cos(h), dx = x - v.pos.x, dz = z - v.pos.y;
+  if (dx * dx + dz * dz > (G.R + r + 1) * (G.R + r + 1)) return false;
+  const lx = dx * c - dz * s, lz = dx * s + dz * c;
+  const ia = Math.floor((lx - r) / HIT_C) - G.i0, ib = Math.floor((lx + r) / HIT_C) - G.i0, ka = Math.floor((lz - r) / HIT_C) - G.k0, kb = Math.floor((lz + r) / HIT_C) - G.k0;
+  for (let k = Math.max(0, ka); k <= Math.min(G.nz - 1, kb); k++) for (let i = Math.max(0, ia); i <= Math.min(G.nx - 1, ib); i++) {
+    const q = k * G.nx + i;
+    if (G.lo[q] + v.y < y1 && G.hi[q] + v.y > y0) return true;
+  }
+  return false;
+}
+// 人を旅客機の形から出す：すべるように（横か前後だけ動く）、それもだめなら元の場所、それでもだめなら近いすき間へ
+function jetPushPlayer(v, ox, oz) {
+  const y0 = player.pos.y + 0.3, y1 = player.pos.y + P_H, hit = (x, z) => jetHits(v, x, z, y0, y1, P_R);
+  const x = player.pos.x, z = player.pos.z;
+  if (!hit(x, z)) return;
+  if (!hit(x, oz)) { player.pos.z = oz; return; }
+  if (!hit(ox, z)) { player.pos.x = ox; return; }
+  if (!hit(ox, oz)) { player.pos.x = ox; player.pos.z = oz; return; }
+  for (let r = 0.5; r < 12; r += 0.5) for (let a = 0; a < 16; a++) {
+    const px = x + Math.cos(a / 16 * 6.283) * r, pz = z + Math.sin(a / 16 * 6.283) * r;
+    if (!hit(px, pz)) { player.pos.x = px; player.pos.z = pz; return; }
+  }
 }
 
 // ---- 状態 ----
@@ -8697,7 +8765,7 @@ function jetGpws(v, J, P, dt) {
   G.warn = warn;
 }
 // 降りるとき・ほかの乗り物になったとき：音を止める
-function jetQuiet() { jetShaker(false); el('gpws').hidden = true; el('jetPanel').hidden = true; document.body.classList.remove('jetOn'); }
+function jetQuiet() { jetShaker(false); el('gpws').hidden = true; el('jetPanel').hidden = true; el('adi').hidden = true; document.body.classList.remove('jetOn'); }
 
 // ---- 表示：計器（速さ・高度・昇降率・方位）と、ギア・フラップ・オートパイロットのパネル ----
 const jetHudLast = {};
@@ -8735,11 +8803,60 @@ function jetHud() {
     on('jmApp', A.on && A.app); on('jmAp', A.on);
     setTxt('jmApp', A.app ? (A.vert === 'ROLL' ? 'ROLLOUT' : A.vert === 'FLARE' ? 'FLARE' : A.vert === 'GS' ? 'LOC G/S' : A.lat === 'LOC' ? 'LOC' : `APP ${A.app.name}`) : 'APP');
   }
+  jetAdi(J);
   // 警報
   const w = J.gp.warn, g = el('gpws');
   const txt = w ? `${w}　${GPWS_JA[w] || ''}` : J.gp.limit || '';
   if (txt) { setTxt('gpws', txt); g.hidden = false; g.className = w && (w === 'PULL UP' || w === 'STALL' || w === 'OVERSPEED') ? 'red' : 'amber'; }
   else if (!g.hidden) g.hidden = true;
+}
+// 姿勢指示器（ADI）：空と地面の境目が、機首の上げ下げで上下し、かたむきで回る。上の目盛りはバンク角
+const adiLast = { th: 9, phi: 9, top: -1, px: 0 };
+function jetAdi(J) {
+  const c = el('adi');
+  if (c.hidden) c.hidden = false;
+  const top = Math.round(document.querySelector('.hud').getBoundingClientRect().bottom + 8);
+  if (top !== adiLast.top) { c.style.top = `${top}px`; adiLast.top = top; }
+  const css = c.clientWidth, dpr = Math.min(2, window.devicePixelRatio || 1), px = Math.round(css * dpr);
+  if (!px) return;
+  if (c.width !== px) { c.width = c.height = px; adiLast.px = 0; }
+  const th = J.th, phi = J.phi;
+  if (adiLast.px === px && Math.abs(th - adiLast.th) < 0.002 && Math.abs(phi - adiLast.phi) < 0.002) return;
+  Object.assign(adiLast, { th, phi, px });
+  const x = c.getContext('2d'), R = px / 2, k = R / 28;   // 1 度ぶんのずれ（半径で ±28°）
+  const deg = 180 / Math.PI, pd = th * deg;
+  x.setTransform(1, 0, 0, 1, 0, 0); x.clearRect(0, 0, px, px);
+  x.save(); x.beginPath(); x.arc(R, R, R, 0, Math.PI * 2); x.clip();
+  x.translate(R, R); x.rotate(-phi); x.translate(0, pd * k);
+  x.fillStyle = '#2f86d6'; x.fillRect(-px * 2, -px * 4, px * 4, px * 4);
+  x.fillStyle = '#8a5a2b'; x.fillRect(-px * 2, 0, px * 4, px * 4);
+  x.strokeStyle = '#fff'; x.fillStyle = '#fff'; x.lineWidth = Math.max(1, px / 90);
+  x.beginPath(); x.moveTo(-px * 2, 0); x.lineTo(px * 2, 0); x.stroke();
+  x.font = `700 ${Math.round(px / 11)}px system-ui, sans-serif`; x.textBaseline = 'middle';
+  for (let d = -90; d <= 90; d += 5) {
+    if (!d || Math.abs(d - pd) > 19) continue;
+    const y = -d * k, w = d % 10 ? R * 0.14 : R * 0.3;
+    x.beginPath(); x.moveTo(-w, y); x.lineTo(w, y); x.stroke();
+    if (!(d % 10)) { x.textAlign = 'right'; x.fillText(String(Math.abs(d)), -w - 3, y); x.textAlign = 'left'; x.fillText(String(Math.abs(d)), w + 3, y); }
+  }
+  x.restore();
+  // バンク角の目盛り（上の弧）と、いまのかたむきを指す三角
+  x.save(); x.translate(R, R); x.strokeStyle = '#fff'; x.lineWidth = Math.max(1, px / 70);
+  for (const b of [-60, -45, -30, -20, -10, 10, 20, 30, 45, 60]) {
+    const a = b / deg, l = Math.abs(b) % 30 ? 0.08 : 0.14;
+    x.beginPath(); x.moveTo(Math.sin(a) * R * 0.97, -Math.cos(a) * R * 0.97); x.lineTo(Math.sin(a) * R * (0.97 - l), -Math.cos(a) * R * (0.97 - l)); x.stroke();
+  }
+  x.fillStyle = '#fff'; x.beginPath(); x.moveTo(0, -R * 0.8); x.lineTo(-R * 0.07, -R * 0.97); x.lineTo(R * 0.07, -R * 0.97); x.fill();
+  x.save(); x.rotate(-phi);
+  x.fillStyle = '#ffd400'; x.beginPath(); x.moveTo(0, -R * 0.8); x.lineTo(-R * 0.07, -R * 0.66); x.lineTo(R * 0.07, -R * 0.66); x.fill();
+  x.restore();
+  // 機体の印（動かない）
+  x.strokeStyle = '#111'; x.fillStyle = '#ffd400'; x.lineWidth = Math.max(1, px / 120);
+  const bar = (x0, x1, y0) => { x.beginPath(); x.rect(x0, y0 - R * 0.035, x1 - x0, R * 0.07); x.fill(); x.stroke(); };
+  bar(-R * 0.62, -R * 0.2, 0); bar(R * 0.2, R * 0.62, 0);
+  x.beginPath(); x.rect(-R * 0.05, -R * 0.05, R * 0.1, R * 0.1); x.fill(); x.stroke();
+  x.restore();
+  x.beginPath(); x.arc(R, R, R - x.lineWidth / 2, 0, Math.PI * 2); x.strokeStyle = 'rgba(0,0,0,0.6)'; x.lineWidth = Math.max(1, px / 60); x.stroke();
 }
 // パネルのボタンをつなぐ（押し続けるとくり返す）
 function jetPanelInit() {
@@ -14977,7 +15094,7 @@ window.__world = {
   teleport(x, z, y) { player.pos.set(x, y ?? heightAt(x, z), z); player.vy = 0; },
   torps, tube, ord, booms, get clockT() { return clock.elapsedTime; },
   get BIZ() { return BIZ; }, get BIZS() { return BIZS; }, equipFee, tonCls, PAIDV, RUNS, stepRuns, runCheck, cargoAction, doCargo, coSites, parkAt, myGltfTrucks, truckKey, BIZX, BIZ_RECIPE, bizById, bizProcBy, bizCarrier, grpList, bizTradeIn, bizTradeFlush, BIZ_NET, carRegister, carBuy, carTry, trialEnd, TRIAL, carSaleIn, carList, dlrSync, DLR_SHOW, dlrLayout, myMachines, MACH, BIZ_BLD, bizNetLoad, bizNetEvent, bizPush, bizAct, bizDay, bizSettle, bizHtml, drawBizOnMap, TOWN, COMPANIES, ECON, makePaper, openTown, closeTown, townNearAction, get myStocks() { return myStocks; }, weatherAt, wxDay, calOf, gameDayN, setDayOffset(d) { dayOffset = d; }, setGameTime(n, hr) { dayOffset = 0; hourOffset = 0; const real = worldHour(); hourOffset = ((hr - real) % 24 + 24) % 24; dayOffset = n - Math.floor(gameDayF()); }, townMeshes, townBlds, townBoats, fieldStage,
-  AIRPORT, AIRLINERS, isa, jetOf, stepJet, jetApButton, jetApAdjust, jetGearLever, jetFlapLever, jetSpeedbrake, ilsInfo, jetVs, jetVref, jetTO, get jetRideV() { return jetRide(); }, farLand,
+  AIRPORT, AIRLINERS, isa, jetOf, jetHits, stepJet, jetApButton, jetApAdjust, jetGearLever, jetFlapLever, jetSpeedbrake, ilsInfo, jetVs, jetVref, jetTO, get jetRideV() { return jetRide(); }, farLand,
   AUTO, SEMI, semiGo, semiHalt, setSemi, semiTurnReq, semiTurnCand, semiNext, setApMin, startAuto, stopAuto, planAuto, stepHwTraffic, autoSpeed, autoLaneReq, autoTurnReq, get myCar() { return myCar; }, makeVehicle, rideFromMenu, putAwayMini, renderMoveList, makeMiniCar, CARL, setTurnSignal, cycleLampMode, autoBlinkDir, stepTraffic, stepVehicle, camera, signalState,
 };
 
