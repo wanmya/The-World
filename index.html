@@ -1576,7 +1576,7 @@ function makeAirport(o) {
   const b = o.bearing * Math.PI / 180, f = [Math.sin(b), -Math.cos(b)], r = [Math.cos(b), Math.sin(b)];
   const toWorld = (lx, lz) => { const dx = lx - APT_C[0], dz = lz - APT_C[1]; return [o.cx + dx * f[0] + dz * r[0], o.cz + dx * f[1] + dz * r[1]]; };
   const toLocal = (x, z) => { const dx = x - o.cx, dz = z - o.cz; return [APT_C[0] + dx * f[0] + dz * f[1], APT_C[1] + dx * r[0] + dz * r[1]]; };
-  const A = { id: o.id, name: o.name, y, zc, xw, xe, taxiZ: zc + 200, isl: o.isl, land: !!o.land, bearing: o.bearing, rot: Math.PI / 2 - b, toWorld, toLocal, rwys: [] };
+  const A = { id: o.id, name: o.name, short: o.short || o.name.replace('空港', ''), y, zc, xw, xe, taxiZ: zc + 200, isl: o.isl, land: !!o.land, bearing: o.bearing, rot: Math.PI / 2 - b, toWorld, toLocal, rwys: [] };
   const rw = (sgn, thX) => {
     const course = ((o.bearing + (sgn > 0 ? 0 : 180)) % 360 + 360) % 360, no = Math.round(course / 10) || 36;
     return { name: String(no).padStart(2, '0'), course, th: toWorld(thX, zc), dir: [f[0] * sgn, f[1] * sgn], aim: toWorld(thX + sgn * aimD, zc), apt: A, lth: [thX, zc], ldir: [sgn, 0] };
