@@ -1103,6 +1103,7 @@ function carKmh(model, ex, dflt) {
   model.traverse((o) => { if (!body && /^(ボディ|車体|body)/i.test(o.name || '')) body = o; });
   if (body) v = read(body.userData);
   if (v == null) model.traverse((o) => { if (v == null) v = read(o.userData); });
+  if (v == null) model.traverse((o) => { if (v == null && o.isMesh) for (const m of [].concat(o.material)) if (v == null && m) v = read(m.userData); });   // マテリアルにつけたとき
   if (v == null) v = read(ex);
   return v == null ? (dflt || 60) : THREE.MathUtils.clamp(v, 10, 400);
 }
@@ -1115,6 +1116,13 @@ const LAMP_DEFS = {
   brake: /^(左|右)?(ブレーキランプ|ブレーキライト|制動灯|stop[ _-]?(light|lamp)|brake[ _-]?(light|lamp))/i,
   turn: /^(左|右)?(ウインカー|ウィンカー|方向指示器|turn[ _-]?(signal|light|lamp)|blinker|indicator)/i,
 };
+// 部品の中（オブジェクト・メッシュ・マテリアル）から、keys のカスタムプロパティを集める（オブジェクトが先）
+function propsOf(obj, keys) {
+  const out = {}, take = (u) => { if (u) for (const k of keys) if (out[k] == null && u[k] != null && typeof u[k] !== 'object') out[k] = u[k]; };
+  obj.traverse((o) => take(o.userData));
+  obj.traverse((o) => { if (o.isMesh) for (const m of [].concat(o.material)) if (m) take(m.userData); });
+  return out;
+}
 const LAMP_MAT = { head: /ヘッドライト|ヘッドランプ|head/i, tail: /テール|tail/i, brake: /ブレーキ|brake|stop/i, turn: /ウインカー|ウィンカー|turn|blinker|indicator/i };
 const LENS_RE = /レンズ|lens/i, POP_RE = /リトラクタブル|ポップアップ|retractable|pop[ _-]?up/i, POP_KEYS = ['開く角度', 'open_angle'];
 const LAMP_COL = { head: 0xfff4dc, tail: 0xff2414, brake: 0xff2414, turn: 0xffa018 };
@@ -1146,10 +1154,12 @@ function rigCarLamps(root, model) {
   //   カスタムプロパティ「回転軸」= X・Y・Z（Blender の軸）でほかの向きのちょうつがいにもできる
   for (const p of parts) {
     if (p.k !== 'head') continue;
-    const deg = numOf(p.o.userData, POP_KEYS) ?? (() => { for (const k of POP_KEYS) { const t = p.o.userData && p.o.userData[k]; if (t != null) { const n = parseFloat(String(t).replace(/[０-９．－]/g, (c) => c === '－' ? '-' : String.fromCharCode(c.charCodeAt(0) - 0xfee0))); if (isFinite(n)) return n; } } return null; })();
+    // カスタムプロパティは、部品（オブジェクト）・メッシュ・マテリアルのどこにつけてもよい
+    const ud = propsOf(p.o, [...POP_KEYS, '回転軸', 'hinge_axis']);
+    const deg = (() => { for (const k of POP_KEYS) { const t = ud[k]; if (t != null) { const n = parseFloat(String(t).replace(/[０-９．－]/g, (c) => c === '－' ? '-' : String.fromCharCode(c.charCodeAt(0) - 0xfee0))); if (isFinite(n)) return n; } } return null; })();
     if (deg == null && !POP_RE.test(p.n)) continue;
     if (!p.o.parent) continue;
-    const ax = String((p.o.userData && (p.o.userData['回転軸'] ?? p.o.userData.hinge_axis)) ?? 'X').trim().toUpperCase().replace(/[ＸＹＺ]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0xfee0));
+    const ax = String(ud['回転軸'] ?? ud.hinge_axis ?? 'X').trim().toUpperCase().replace(/[ＸＹＺ]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0xfee0));
     const axis = /^-?Y/.test(ax) ? new THREE.Vector3(0, 0, -1) : /^-?Z/.test(ax) ? new THREE.Vector3(0, 1, 0) : new THREE.Vector3(1, 0, 0);   // Blender の Y＝glTF の −Z、Blender の Z＝glTF の Y
     if (/^-/.test(ax)) axis.negate();
     const q0 = p.o.quaternion.clone(), q1 = q0.clone();
@@ -4888,7 +4898,7 @@ const HELP_CAR = `<h4>自動車のきまり（どの種類も同じ）</h4>
 <tr><td><code>テールランプ</code></td><td>ライトでうすく赤、ブレーキで明るく</td></tr>
 <tr><td><code>ブレーキランプ</code></td><td>ブレーキのときだけ赤く</td></tr>
 <tr><td><code>ウインカー左</code> <code>ウインカー右</code></td><td>オレンジに点滅</td></tr>
-<tr><td colspan="2">ライトは<b>左右（前後も）を 1 つの部品にまとめてもよい</b>（<code>ウインカー</code> <code>テールランプ</code> など）。ワールドが車のまん中で左右に分けるので、ウインカーは左右べつに点滅します。<br><b>光る所</b>：部品の中に、名前に <code>レンズ</code> がつくマテリアルか、ライトと同じ名前のマテリアル（<code>ウインカー</code> の部品の <code>ウインカー</code> のマテリアルなど）があれば、そこだけが光ります（ボディ色のカバーやバックランプは光らない）。なければ部品ぜんぶが光ります。<br><b>カスタムプロパティ（最高速度・開く角度）は、書き出しの「含む」→「カスタムプロパティ」にチェックしないと .glb に入りません。</b></td></tr>
+<tr><td colspan="2">ライトは<b>左右（前後も）を 1 つの部品にまとめてもよい</b>（<code>ウインカー</code> <code>テールランプ</code> など）。ワールドが車のまん中で左右に分けるので、ウインカーは左右べつに点滅します。<br><b>光る所</b>：部品の中に、名前に <code>レンズ</code> がつくマテリアルか、ライトと同じ名前のマテリアル（<code>ウインカー</code> の部品の <code>ウインカー</code> のマテリアルなど）があれば、そこだけが光ります（ボディ色のカバーやバックランプは光らない）。なければ部品ぜんぶが光ります。<br><b>カスタムプロパティ（最高速度・開く角度）は、書き出しの「含む」→「カスタムプロパティ」にチェックしないと .glb に入りません。</b>部品（オブジェクト）・メッシュ・マテリアルのどこにつけても読みます。</td></tr>
 <tr><td><code>座席_1</code> <code>座席_2</code>…</td><td>運転席のほかの席。だれかが運転しているとき、ほかの人が「相乗り」で座れる</td></tr>
 <tr><td><code>回転灯</code> <code>回転_1</code>…</td><td>「作業」ボタンを押すと回る（部品の縦の軸＝円柱を足したときの軸で回る）</td></tr></table>
 <table><tr><th>カスタムプロパティ（ボディにつける）</th><th>はたらき</th></tr>
