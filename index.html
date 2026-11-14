@@ -483,6 +483,7 @@ body.jetOn #map { display: none !important; }
       <button class="mi" type="button" id="mAtc">管制：地図で行き先をえらぶ</button>
       <button class="mi" type="button" id="mAtcEnd" hidden>管制をやめる</button>
       <button class="mi" type="button" id="mAtcVoice">管制の声：オン</button>
+      <button class="mi" type="button" id="mAtcLang">管制の言葉：日本語</button>
       <button class="mi" type="button" id="mCam">視点を後ろにもどす（V）</button>
       <button class="mi" type="button" id="mGpws">GPWS の声・警報音：オン</button>
       <button class="mi" type="button" id="mInvert">スティック：前で降下・後ろで上昇（操縦かん式）</button>
@@ -505,7 +506,7 @@ body.jetOn #map { display: none !important; }
 <canvas id="adi" hidden role="img" aria-label="姿勢指示器"></canvas>
 <div id="jetPanel" hidden aria-label="旅客機の操作">
   <button type="button" id="jPush" hidden title="地上係員にトーイングカーで押してもらう">プッシュバック</button>
-  <button type="button" id="jCam" title="視点を進む向きの後ろにもどす（V キー）">視点⟲</button>
+  <button type="button" id="jCam" title="操縦席の目線と外からの視点を切りかえる（V キー）">視点：操縦席</button>
   <button type="button" id="jGear" title="G キー">ギア ⬇</button>
   <span class="jgrp"><button type="button" id="jFlapUp" aria-label="フラップを上げる" title=", キー">−</button><b id="jFlap">フラップ UP</b><button type="button" id="jFlapDn" aria-label="フラップを下げる" title=". キー">＋</button></span>
   <button type="button" id="jSb" aria-pressed="false" title="スピードブレーキ（/ キー）">減速板</button>
@@ -5151,7 +5152,7 @@ function takeWheel(v) {   // 運転席に座る
   v.settled = false;
   if (v.noPod) showPod(v);   // 脱出したロボットには、新しいコックピットがつく
   if (isBoat(v) && !v.item.def.vehicle.fixedBow) chooseBow(v);
-  if (v.item.jet) { camYaw = visYaw(v) + Math.PI; camBoatYaw = visYaw(v); }   // 旅客機：乗ったときは後ろから
+  if (v.item.jet) { camYaw = visYaw(v) + Math.PI; camBoatYaw = visYaw(v); jetView = 'chase'; jetCamLabel(); }   // 旅客機：乗ったときは後ろから
   if (vtype(v) === 'sub' || v.item.def.vehicle.aegis) initOrders(v);
 }
 
@@ -8626,7 +8627,8 @@ function jetPhys(v, J, P, c, dt) {
     if (J.wet) a -= 2.5 + J.V * 0.2;   // 着水：水がおさえる
     J.V = Math.max(0, J.V + a * dt);
     // 地上の向き：前輪のハンドル（ゆっくりなら小回り）・速いときは方向舵
-    const yaw = c.steer * Math.min(J.V / 38, 0.07);
+    // 前輪のハンドル（2026-11-14）：ゆっくりなら小回り（最小の半径 約 25m）。速くなるほど大きく回る（高速では方向舵）
+    const yaw = c.steer * J.V / (25 + 0.25 * J.V * J.V);
     v.h -= yaw * dt;
     v.pos.x += Math.sin(v.h) * J.V * dt; v.pos.y += Math.cos(v.h) * J.V * dt;
     const fl = jetFloor(v, J);
@@ -9058,7 +9060,7 @@ function jetAdi(J) {
 function jetPanelInit() {
   if (canSpeak) { pickEnVoice(); speechSynthesis.addEventListener?.('voiceschanged', pickEnVoice); }
   el('jGear').addEventListener('click', jetGearLever);
-  el('jCam').addEventListener('click', jetCamReset); el('mCam').addEventListener('click', jetCamReset);
+  el('jCam').addEventListener('click', jetCamCycle); el('mCam').addEventListener('click', jetCamReset); jetCamLabel();
   el('jFlapUp').addEventListener('click', () => jetFlapLever(-1));
   el('jFlapDn').addEventListener('click', () => jetFlapLever(1));
   el('jSb').addEventListener('click', jetSpeedbrake);
@@ -9091,12 +9093,38 @@ function jetPanelInit() {
 }
 // キー：G ギア、, . フラップ、/ スピードブレーキ、U オートパイロット、Y オートスロットル
 // 視点（2026-11-14）：旅客機ではカメラは機体といっしょに回るだけ。ドラッグで横・前・斜めにすると、その向きのまま。
-// 「視点⟲」・☰・V キーで、進む向きの後ろからの視点にもどす
+// ☰「視点を後ろにもどす」・操縦席から「視点：外へ」で、進む向きの後ろからの視点にもどす
 function jetCamReset() {
   const v = jetRide(); if (!v) return;
-  camYaw = visYaw(v) + Math.PI; camPitch = 0.3; camBoatYaw = visYaw(v);
-  setMenu(false); showMsg('視点を後ろにもどしました');
+  camYaw = visYaw(v) + Math.PI; camPitch = 0.3; camBoatYaw = visYaw(v); jetView = 'chase';
+  setMenu(false); showMsg('視点を後ろにもどしました'); jetCamLabel();
 }
+// 操縦席の目線（2026-11-14）：「視点」ボタン・V キーで 外から → 操縦席 → 外から（後ろ）… と切りかえる。操縦席でもドラッグで見回せる
+let jetView = 'chase';
+function jetCamCycle() {
+  const v = jetRide(); if (!v) return;
+  if (jetView === 'pit') { jetCamReset(); return; }
+  jetView = 'pit'; camYaw = visYaw(v) + Math.PI; camPitch = 0.3; camBoatYaw = visYaw(v);
+  setMenu(false); showMsg('操縦席の目線です。もう一度押すと外から（後ろ）'); jetCamLabel();
+}
+function jetCamLabel() { const b = el('jCam'); if (b) b.textContent = jetView === 'pit' ? '視点：外へ' : '視点：操縦席'; }
+// 操縦席の目の位置：機首の先から 4.5m 後ろ、天井より 0.9m 下、左の席（+x）。形から一度だけ探す
+function jetEye(v) {
+  const J = v.item.jet;
+  if (J.eye) return J.eye;
+  const root = v.item.root; root.updateMatrixWorld(true);
+  const inv = new THREE.Matrix4().copy(root.matrixWorld).invert(), V = new THREE.Vector3();
+  const pts = [];
+  root.traverse((o) => { if (!o.isMesh || !o.geometry || !o.geometry.attributes.position) return; const P = o.geometry.attributes.position, M = new THREE.Matrix4().multiplyMatrices(inv, o.matrixWorld);
+    for (let i = 0; i < P.count; i += 1) { V.fromBufferAttribute(P, i).applyMatrix4(M); if (Math.abs(V.x) < 2) pts.push(V.x, V.y, V.z); } });
+  let zMax = -Infinity; for (let i = 2; i < pts.length; i += 3) zMax = Math.max(zMax, pts[i]);
+  const ez = zMax - 4.5; let top = -Infinity, bot = Infinity;
+  for (let i = 0; i < pts.length; i += 3) if (Math.abs(pts[i + 2] - ez) < 1 && Math.abs(pts[i]) < 1.2) { top = Math.max(top, pts[i + 1]); bot = Math.min(bot, pts[i + 1]); }
+  if (!isFinite(top)) { top = 6; bot = 2; }
+  J.eye = new THREE.Vector3(0.55, Math.max(bot + 1, top - 0.9), ez);
+  return J.eye;
+}
+const pitQ = new THREE.Quaternion(), pitE = new THREE.Euler(0, 0, 0, 'YXZ');
 function jetKey(code) {
   if (!jetRide()) return false;
   if (code === 'KeyG') jetGearLever();
@@ -9105,7 +9133,7 @@ function jetKey(code) {
   else if (code === 'Slash') jetSpeedbrake();
   else if (code === 'KeyU') jetApButton('ap');
   else if (code === 'KeyY') jetApButton('athr');
-  else if (code === 'KeyV') jetCamReset();
+  else if (code === 'KeyV') jetCamCycle();
   else return false;
   return true;
 }
@@ -9636,6 +9664,22 @@ function updateCamera(dt) {
   if (fpView) { fpView = false; camPitch = 0.35; }
   const nearW = camera.position.y > 200 ? 1 : 0.1;   // 高い所では遠くまで描くので、手前の面を少し先に
   if (camera.near !== nearW) { camera.near = nearW; camera.updateProjectionMatrix(); }
+  if (driving && ride.item.jet && jetView === 'pit') {   // 旅客機の操縦席から（機体のかたむきもいっしょ）
+    const car = ride, R = car.item.root;
+    if (camBoatYaw != null) camYaw += wrapA(visYaw(car) - camBoatYaw);
+    camBoatYaw = visYaw(car);
+    R.updateMatrixWorld(true);
+    eyeW.copy(jetEye(car)).applyMatrix4(R.matrixWorld);
+    camera.position.copy(eyeW); camTarget.copy(eyeW);
+    // 機体の中に目があるので、目の前 3.5m までは描かない（操縦席の壁・天井が消えて、窓の外が見える。機首の先だけ下に残る）
+    if (camera.near !== 3.5) { camera.near = 3.5; camera.updateProjectionMatrix(); }
+    camPitch = THREE.MathUtils.clamp(camPitch, -0.9, 1.4);
+    pitE.set(0.3 - camPitch, Math.PI + wrapA(camYaw - visYaw(car) - Math.PI), 0);
+    camera.quaternion.copy(R.quaternion).multiply(pitQ.setFromEuler(pitE));
+    underwater = camera.position.y < SEA;
+    sun.target.position.copy(eyeW); sun.position.set(eyeW.x + SUN_DIR.x, eyeW.y + SUN_DIR.y, eyeW.z + SUN_DIR.z);
+    return;
+  }
   if (driving) {
     const car = ride;
     camTarget.set(car.pos.x, car.y + 1.1, car.pos.y);
@@ -15489,7 +15533,7 @@ function jetPushback() {
   J.lever = 0; J.brake = 0;
   const dirTxt = ['北', '北東', '東', '南東', '南', '南西', '西', '北西'][Math.round(bearingOf(Math.atan2(F.x, F.z)) / 45) % 8];
   showMsg(`地上係員：了解。トーイングカーをつなぎます。機首を${dirTxt}向きにします${rw ? `（滑走路 ${rw.name} へ）` : ''}`);
-  atcEvent('push', { dirTxt });
+  atcEvent('push', { dirTxt, dirEn: ['north', 'northeast', 'east', 'southeast', 'south', 'southwest', 'west', 'northwest'][Math.round(bearingOf(Math.atan2(F.x, F.z)) / 45) % 8] });
 }
 // プッシュバック中の 1 コマ（押している間は、ほかの操作はしない）
 function jetPushStep(v, J, dt) {
@@ -15677,27 +15721,48 @@ function stepAir() {
 }
 
 // ---- 管制 ----
-const ATC = { plan: null, ph: '', t: 0, tick: 0, vecT: -99, hdg: null, alt: null, set: null, said: {}, last: null, endT: 0, pref: true };
-try { ATC.pref = localStorage.getItem('atcVoice') !== 'off'; } catch (e) {}
+// 航路は機体の旋回半径（いまの速さ・バンク 25°）に合わせる：経由地や入口の手前から曲がりはじめる（フライバイ）、
+// ILS には横から 45° で入る（後ろや真横から来たら、まず「アプローチの入口」へ）。言葉は日本語か英語（☰）
+const ATC = { plan: null, ph: '', t: 0, tick: 0, vecT: -99, hdg: null, alt: null, set: null, said: {}, last: null, endT: 0, pref: true, lang: 'ja' };
+try { ATC.pref = localStorage.getItem('atcVoice') !== 'off'; ATC.lang = localStorage.getItem('atcLang') === 'en' ? 'en' : 'ja'; } catch (e) {}
 const fmtAlt = (ft) => (ft >= 14000 ? `FL${Math.round(ft / 100)}` : `${Math.round(ft).toLocaleString()}ft`);
-function atcCall() { return `ワールド${100 + (hash32(String(net.myId || 'me')) % 900)}`; }
-function atcSay(who, text, set, quiet) {
-  ATC.last = { who, text }; ATC.set = set || null;
-  setTxt('atcWho', `📻 ${who}`); setTxt('atcTxt', text);
+const atcR = (V) => Math.max(900, V * V / (G0 * Math.tan(25 * D2R)));   // 旋回半径（m）
+const aptEn = (a) => a.en || ({ naka: 'Nakaumi', minami: 'Minamino' })[a.id] || a.id;
+const FAC = { del: ['デリバリー', 'Delivery'], gnd: ['グランド', 'Ground'], twr: ['タワー', 'Tower'], dep: ['ディパーチャー', 'Departure'], app: ['アプローチ', 'Approach'] };
+const fac = (a, k) => (a ? { ja: a.short + FAC[k][0], en: `${aptEn(a)} ${FAC[k][1]}` } : { ja: 'ワールドコントロール', en: 'World Control' });
+const CTL = { ja: 'ワールドコントロール', en: 'World Control' };
+const atcNum = () => 100 + (hash32(String(net.myId || 'me')) % 900);
+const hd3 = (h) => fmtB(h);   // 方位は 3 けた
+const nm = (o) => (ATC.lang === 'en' && !/^[\x20-\x7e]*$/.test(o.name) ? o.en || 'the waypoint' : o.name);
+function atcSay(who, msg, set, quiet) {
+  const en = ATC.lang === 'en', w = en ? who.en : who.ja, text = en ? msg.en : msg.ja;
+  ATC.last = { who, msg }; ATC.set = set || null;
+  setTxt('atcWho', `📻 ${w}`); setTxt('atcTxt', text);
   el('atcSet').hidden = !set;
   el('atcStrip').classList.remove('flash'); void el('atcStrip').offsetWidth; el('atcStrip').classList.add('flash');
   if (quiet || !ATC.pref || !canSpeak) return;
-  const spoken = `${who}。${text}`.replace(/FL(\d+)/g, 'フライトレベル $1').replace(/([\d,]+)ft/g, '$1フィート').replace(/(\d+)°/g, '$1度').replace(/(\d+)kt/g, '$1ノット')
-    .replace(/ILS/g, 'アイエルエス').replace(/AP/g, 'エーピー');
-  try { const u = new SpeechSynthesisUtterance(spoken); u.lang = 'ja-JP'; if (jaVoice) u.voice = jaVoice; u.rate = 1.15; u.pitch = 1; speechSynthesis.speak(u); } catch (e) {}
+  try {
+    let u;
+    if (en) {
+      const D = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'niner'], dig = (s) => s.split('').map((c) => D[+c]).join(' ');
+      const spoken = `${w}, ${text}`.replace(/FL(\d+)/g, (_, n) => 'flight level ' + dig(n)).replace(/(heading|runway|squawk|wind) (\d+)/g, (_, k, n) => `${k} ${dig(n)}`)
+        .replace(/([\d,]+) ?ft/g, (_, n) => n.replace(/,/g, '') + ' feet').replace(/(\d+) ?kt/g, '$1 knots').replace(/ILS/g, 'I L S').replace(/°/g, '');
+      u = new SpeechSynthesisUtterance(spoken); u.lang = 'en-US'; if (enVoice) u.voice = enVoice; u.rate = 1.1; u.pitch = 0.95;
+    } else {
+      const spoken = `${w}。${text}`.replace(/FL(\d+)/g, 'フライトレベル $1').replace(/([\d,]+)ft/g, '$1フィート').replace(/(\d+)°/g, '$1度').replace(/(\d+)kt/g, '$1ノット')
+        .replace(/ILS/g, 'アイエルエス').replace(/AP/g, 'エーピー');
+      u = new SpeechSynthesisUtterance(spoken); u.lang = 'ja-JP'; if (jaVoice) u.voice = jaVoice; u.rate = 1.15; u.pitch = 1;
+    }
+    speechSynthesis.speak(u);
+  } catch (e) {}
 }
 // 地図でタップした所への飛行計画
 function atcMakePlan(v, x, z) {
-  const J = jetOf(v), sec = nowSec(), arr = aptNear(x, z), call = atcCall();
+  const J = jetOf(v), sec = nowSec(), arr = aptNear(x, z), num = atcNum(), call = { ja: `ワールド${num}`, en: `World ${num}` };
   if (!arr) return { err: '空港がありません' };
   const r0 = arr.rwys[0], ex = r0.dir[0] * APT_LAY.len, ez = r0.dir[1] * APT_LAY.len, k = THREE.MathUtils.clamp(((x - r0.th[0]) * ex + (z - r0.th[1]) * ez) / (ex * ex + ez * ez), 0, 1);
   const onApt = Math.hypot(x - r0.th[0] - ex * k, z - r0.th[1] - ez * k) < 700;   // 滑走路のそば（700m 以内）をタップ：その空港へ
-  const wp = onApt ? null : { x, z, name: placeAt(x, z).name || '指定の地点' };
+  const wp = onApt ? null : { x, z, name: placeAt(x, z).name || '指定の地点', en: 'the waypoint' };
   let dep = null;
   if (J.ground) { dep = aptNear(v.pos.x, v.pos.y, 5000); if (!dep) return { err: '空港の中か、飛んでいるときに申請してください' }; }
   const depRw = dep && activeRwy(dep, sec), arrRw = activeRwy(arr, sec), G = appGeo(arrRw);
@@ -15706,7 +15771,7 @@ function atcMakePlan(v, x, z) {
   // 巡航高度：上昇（約 700ft/NM）と降下（3NM で 1,000ft）が入る高さの 3/4。千フィートに切り下げ
   const crz = THREE.MathUtils.clamp(Math.floor(D / 1852 * 260 / 1000) * 1000, Math.max(3000, Math.ceil((G.ft + 1000) / 1000) * 1000), 37000);
   const sq = '2' + Array.from({ length: 3 }, () => Math.floor(Math.random() * 8)).join('');
-  return { dep, depRw, arr, arrRw, wp, crz, init: Math.min(crz, 5000), sq, D, call };
+  return { dep, depRw, arr, arrRw, wp, crz, init: Math.min(crz, 5000), sq, D, call, fx: null, fi: 0 };
 }
 function atcFile(P) {
   const v = jetRide(); if (!v || !P || P.err) return;
@@ -15714,8 +15779,11 @@ function atcFile(P) {
   el('atcStrip').hidden = false; el('mAtcEnd').hidden = false;
   if (P.dep) {
     ATC.ph = 'clr'; ATC.alt = P.init;
-    atcSay(`${P.dep.short}デリバリー`, `${P.call}、${P.wp ? `${P.wp.name} 経由で ` : ''}${P.arr.name}まで承認します。滑走路 ${P.depRw.name} から出発、離陸後は滑走路方位で ${fmtAlt(P.init)} まで上昇。巡航 ${fmtAlt(P.crz)}。スコーク ${P.sq}。`,
-      { hdg: P.depRw.course, alt: P.init, spd: 250 });
+    const via = P.wp ? { ja: `${P.wp.name} 経由で `, en: ` via ${nm(P.wp)}` } : { ja: '', en: '' };
+    atcSay(fac(P.dep, 'del'), {
+      ja: `${P.call.ja}、${via.ja}${P.arr.name}まで承認します。滑走路 ${P.depRw.name} から出発、離陸後は滑走路方位で ${fmtAlt(P.init)} まで上昇。巡航 ${fmtAlt(P.crz)}。スコーク ${P.sq}。`,
+      en: `${P.call.en}, cleared to ${aptEn(P.arr)} airport${via.en}, runway ${P.depRw.name} departure, fly runway heading, climb and maintain ${fmtAlt(P.init)}, expect ${fmtAlt(P.crz)}, squawk ${P.sq}.`,
+    }, { hdg: P.depRw.course, alt: P.init, spd: 250 });
     setTimeout(() => { if (ATC.plan === P && ATC.ph === 'clr') showMsg('前向きに止めているときは ☰「プッシュバックを頼む」。押し出したら出力を上げて地上走行へ'); }, 6000);
   } else { ATC.ph = 'enr'; ATC.alt = P.crz; atcVector(v, true); }
 }
@@ -15723,133 +15791,278 @@ function atcEnd(why) { ATC.plan = null; ATC.ph = ''; el('atcStrip').hidden = tru
 // プッシュバックの知らせ（地上係員から）
 function atcEvent(what, o) {
   const P = ATC.plan; if (!P || !P.dep) return;
-  if (what === 'push' && ATC.ph === 'clr') atcSay(`${P.dep.short}グランド`, `${P.call}、プッシュバックを承認します。機首は${o.dirTxt}向き。`);
+  if (what === 'push' && ATC.ph === 'clr') atcSay(fac(P.dep, 'gnd'), { ja: `${P.call.ja}、プッシュバックを承認します。機首は${o.dirTxt}向き。`, en: `${P.call.en}, pushback approved, facing ${o.dirEn}.` });
   if (what === 'pushed' && (ATC.ph === 'clr' || ATC.ph === 'taxi')) atcTaxi();
 }
 function atcTaxi() {
-  const P = ATC.plan; ATC.ph = 'taxi';
-  atcSay(`${P.dep.short}グランド`, `${P.call}、滑走路 ${P.depRw.name} へ地上走行してください。誘導路 A、${holdName(P.depRw)} 経由。滑走路の手前で待機。`);
+  const P = ATC.plan, h = holdName(P.depRw); ATC.ph = 'taxi';
+  atcSay(fac(P.dep, 'gnd'), { ja: `${P.call.ja}、滑走路 ${P.depRw.name} へ地上走行してください。誘導路 A、${h} 経由。滑走路の手前で待機。`,
+    en: `${P.call.en}, taxi to holding point runway ${P.depRw.name} via Alpha, ${h.replace('A', 'Alpha ')}. Hold short of runway ${P.depRw.name}.` });
 }
-// いま向かう所：経由地 → 到着空港の ILS の入口（IF）→ 最終進入フィックス（FAF）
-function atcTarget(v) {
-  const P = ATC.plan;
-  if (P.wp && !P.wpDone) return { x: P.wp.x, z: P.wp.z, name: P.wp.name };
-  const G = appGeo(P.arrRw), I = ilsInfo(v, P.arrRw);
-  if (P.atIf || (I.s > G.Dint * 0.8 && Math.abs(I.xt) < I.s * 0.5)) { P.atIf = true; return { x: G.faf.x, z: G.faf.z, name: `ILS ${P.arrRw.name} の最終進入フィックス` }; }
-  return { x: G.iff.x, z: G.iff.z, name: `ILS ${P.arrRw.name} の入口` };
+// 進入の点：（入口 Q）→ ILS の入口（IF）→ 最終進入フィックス（FAF）。いまの位置と旋回半径 R から決める
+function atcAppFixes(P, x, z, R) {
+  const rw = P.arrRw, G = appGeo(rw), d = rw.dir, r = [-d[1], d[0]];
+  const ax = x - rw.aim[0], az = z - rw.aim[1], xt = ax * r[0] + az * r[1], s = -(ax * d[0] + az * d[1]);
+  const sIF = Math.hypot(G.iff.x - rw.aim[0], G.iff.z - rw.aim[1]), L = Math.max(2.5 * R, 4000), side = Math.sign(xt) || 1;
+  const fx = [];
+  if (!(s > sIF + 0.5 * L && Math.abs(xt) < s - sIF)) fx.push({ x: G.iff.x - d[0] * L + r[0] * side * L, z: G.iff.z - d[1] * L + r[1] * side * L, name: 'アプローチの入口', en: 'the approach entry point', k: 'Q' });
+  fx.push({ x: G.iff.x, z: G.iff.z, name: `ILS ${rw.name} の入口`, en: `the ILS runway ${rw.name} initial fix`, k: 'IF' });
+  if (sIF - G.Dint > 300) fx.push({ x: G.faf.x, z: G.faf.z, name: `ILS ${rw.name} の最終進入フィックス`, en: `the final approach fix`, k: 'FAF' });
+  return fx;
 }
+// いま向かう点と、その次の点。区間（前の点 → いまの点）にそって飛ぶ針路も出す：
+// 区間からずれていたら、ずれに合わせて最大 45° で区間にもどる（旋回半径 R の 2 倍のずれで 45°）
+function atcFixList(v) {
+  const P = ATC.plan, J = jetOf(v), R = atcR(Math.max(80, J.V)), x = v.pos.x, z = v.pos.y;
+  if (!P.fx) { P.fx = atcAppFixes(P, P.wp && !P.wpDone ? P.wp.x : x, P.wp && !P.wpDone ? P.wp.z : z, R); if (!(P.wp && !P.wpDone)) P.from = { x, z }; }
+  if (!P.from) P.from = { x, z };
+  const list = P.wp && !P.wpDone ? [P.wp, ...P.fx.slice(P.fi)] : P.fx.slice(P.fi), T = list[0], N = list[1] || null;
+  const F = P.from, lx = T.x - F.x, lz = T.z - F.z, L = Math.hypot(lx, lz) || 1, ux = lx / L, uz = lz / L;
+  const along = (T.x - x) * ux + (T.z - z) * uz, xt = (x - F.x) * -uz + (z - F.z) * ux;   // 残り・区間の右へのずれ
+  const crs = T.k === 'FAF' ? P.arrRw.course : brgTo(F.x, F.z, T);
+  const hdg = (Math.round((crs - THREE.MathUtils.clamp(xt / (2 * R) * 45, -45, 45)) / 5) * 5 % 360 + 360) % 360 || 360;
+  return { T, N, R, along, xt, crs, hdg };
+}
+function atcNext(v) { const P = ATC.plan, { T } = atcFixList(v); P.from = { x: T.x, z: T.z }; if (T === P.wp) { P.wpDone = true; P.fx = null; P.fi = 0; P.from = { x: T.x, z: T.z }; } else P.fi++; }
 function atcVector(v, first) {
-  const P = ATC.plan, T = atcTarget(v), b = bearingOf(v.h), brg = Math.round(brgTo(v.pos.x, v.pos.y, T) / 5) * 5 % 360 || 360;
-  const turn = Math.abs(wrapDeg(brg - b)) < 8 ? '' : wrapDeg(brg - b) > 0 ? '右旋回、' : '左旋回、';
+  const P = ATC.plan, { T, hdg } = atcFixList(v), b = bearingOf(v.h), brg = hdg;
+  const dh = wrapDeg(brg - b), turn = Math.abs(dh) < 8 ? null : dh > 0 ? 'right' : 'left';
   ATC.hdg = brg; ATC.vecT = ATC.t;
-  const who = first ? (P.dep ? `${P.dep.short}ディパーチャー` : 'ワールドコントロール') : P.desc ? `${P.arr.short}アプローチ` : 'ワールドコントロール';
-  atcSay(who, `${P.call}、${first ? 'レーダー捕捉。' : ''}${turn}針路 ${fmtB(brg)}°。${ATC.alt != null ? `${fmtAlt(ATC.alt)} へ。` : ''}${T.name}へ向かってください。`, { hdg: brg, alt: ATC.alt, spd: P.desc ? 210 : 250 });
+  const who = first ? (P.dep ? fac(P.dep, 'dep') : CTL) : P.desc ? fac(P.arr, 'app') : CTL;
+  const spd = P.desc ? (T.k === 'Q' ? 210 : 180) : 250;
+  atcSay(who, {
+    ja: `${P.call.ja}、${first ? 'レーダー捕捉。' : ''}${turn ? (turn === 'right' ? '右旋回、' : '左旋回、') : ''}針路 ${hd3(brg)}°。${ATC.alt != null ? `${fmtAlt(ATC.alt)} へ。` : ''}${T.name}へ向かってください。`,
+    en: `${P.call.en}, ${first ? 'radar contact, ' : ''}${turn ? `turn ${turn} ` : 'fly '}heading ${hd3(brg)}, ${ATC.alt != null ? `${v.y * FT < ATC.alt - 200 ? 'climb and maintain' : v.y * FT > ATC.alt + 200 ? 'descend and maintain' : 'maintain'} ${fmtAlt(ATC.alt)}, ` : ''}for ${nm(T)}.`,
+  }, { hdg: brg, alt: ATC.alt, spd });
+}
+// 着陸したのに管制の計画が無い・許可が無い：近くの空港のタワーが受けて、駐機場まで誘導する
+function atcLanded(v) {
+  const x = v.pos.x, z = v.pos.y, arr = aptNear(x, z, 6000); if (!arr) return false;
+  let P = ATC.plan;
+  if (!P) {
+    const num = atcNum();
+    P = ATC.plan = { dep: null, arr, call: { ja: `ワールド${num}`, en: `World ${num}` }, fx: null, fi: 0 };
+    ATC.said = {}; ATC.t = 0; ATC.endT = 0; ATC.set = null;
+    el('atcStrip').hidden = false; el('mAtcEnd').hidden = false;
+  }
+  const b = bearingOf(v.h);
+  P.arr = arr; P.arrRw = arr.rwys.reduce((a, r) => (Math.abs(wrapDeg(b - r.course)) < Math.abs(wrapDeg(b - a.course)) ? r : a));
+  ATC.ph = 'land';
+  atcSay(fac(arr, 'twr'), { ja: `${P.call.ja}、着陸の許可は出していませんでした。次からはタワーの許可を待ってください。減速して、次の誘導路で滑走路を出てください。`,
+    en: `${P.call.en}, you landed without a landing clearance. Next time wait for my clearance. Slow down and vacate at the next taxiway.` });
+  return true;
+}
+// 駐機場の番号を決める：定期便の場所と、ほかの機体・車が止まっている場所はよける。いまいる所に近い順
+function atcPickStand(apt, v) {
+  const L = APT_LAY;
+  let best = -1, bd = Infinity;
+  L.standX.forEach((sx, i) => {
+    if (L.aiStands.includes(i)) return;
+    const S = aptW(apt, sx, L.standZ);
+    if (vehicles.some((o) => o !== v && Math.hypot(o.pos.x - S.x, o.pos.y - S.z) < 25)) return;
+    const d = Math.hypot(S.x - v.pos.x, S.z - v.pos.y) + i * 5;
+    if (d < bd) { bd = d; best = i; }
+  });
+  return best < 0 ? 1 : best;
+}
+// 駐機場の地上係員（マーシャラー）：両手のパドルで「まっすぐ」「右へ」「左へ」「ゆっくり」「止まれ」を出す
+const MAR = { g: null, armL: null, armR: null, pads: [], sig: '', t: 0 };
+function makeMarshaller() {
+  const g = new THREE.Group(), M = (c, e) => new THREE.MeshLambertMaterial({ color: c, emissive: e || 0x000000 });
+  const vest = M(0xff7a10, 0x331100), dark = M(0x283040), skin = M(0xe8c09a), helm = M(0xf4f4f0);
+  const box = (w, h, d, m, x, y, z) => { const o = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m); o.position.set(x, y, z); g.add(o); return o; };
+  box(0.16, 0.85, 0.2, dark, -0.12, 0.43, 0); box(0.16, 0.85, 0.2, dark, 0.12, 0.43, 0);
+  box(0.46, 0.62, 0.26, vest, 0, 1.17, 0);
+  const hd = new THREE.Mesh(new THREE.SphereGeometry(0.13, 12, 8), skin); hd.position.set(0, 1.62, 0); g.add(hd);
+  const hm = new THREE.Mesh(new THREE.SphereGeometry(0.145, 12, 6, 0, Math.PI * 2, 0, Math.PI / 2), helm); hm.position.set(0, 1.65, 0); g.add(hm);
+  const pm = new THREE.MeshBasicMaterial({ color: 0xff3b1f, side: THREE.DoubleSide }), hp = new THREE.MeshBasicMaterial({ color: 0xc8c8c8 });
+  const arm = (s) => {
+    const a = new THREE.Group(); a.position.set(s * 0.29, 1.44, 0);
+    const u = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.66, 0.12), vest); u.position.y = -0.33; a.add(u);
+    const st = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.22, 0.04), hp); st.position.y = -0.76; a.add(st);
+    const pd = new THREE.Mesh(new THREE.CircleGeometry(0.2, 20), pm); pd.position.set(0, -0.98, 0.03); a.add(pd); MAR.pads.push(pd);
+    g.add(a); return a;
+  };
+  MAR.armR = arm(1); MAR.armL = arm(-1);   // 係員の +x ＝ 操縦席から見て右
+  g.scale.setScalar(1.5); g.visible = false; scene.add(g); MAR.g = g; MAR.pm = pm;
+}
+// 毎フレーム：係員を置いて、合図に合わせて腕を動かす
+function marshStep(dt, v) {
+  const P = ATC.plan && ATC.ph === 'in' && ATC.plan.stand != null ? ATC.plan : MAR.hold > performance.now() ? MAR.last : null;
+  if (!v || !P) { if (MAR.g) MAR.g.visible = false; return; }
+  MAR.last = P;
+  if (!MAR.g) makeMarshaller();
+  const L = APT_LAY, sx = L.standX[P.stand], S = aptW(P.arr, sx, L.standZ), S2 = aptW(P.arr, sx, L.standZ + 10);
+  const fl = Math.hypot(S2.x - S.x, S2.z - S.z), fx = (S2.x - S.x) / fl, fz = (S2.z - S.z) / fl, nz = (v.item.jet && v.item.jet.noseZ) || 20;
+  const mx = S.x + fx * (nz + 12), mz = S.z + fz * (nz + 12), d = Math.hypot(mx - v.pos.x, mz - v.pos.y);
+  MAR.g.visible = d < 600;
+  MAR.g.position.set(mx, P.arr.y, mz); MAR.g.rotation.y = Math.atan2(-fx, -fz);
+  MAR.pm.color.setHex(dayLight < 0.35 ? 0xff6a3a : 0xff3b1f);
+  MAR.t += dt;
+  const t = MAR.t, w = Math.sin(t * 6), R = MAR.armR, Lf = MAR.armL;
+  let r, l;
+  switch (MAR.sig) {
+    case 'stop': r = Math.PI + 0.5; l = -(Math.PI + 0.5); break;
+    case 'slow': r = 0.55 + 0.25 * w; l = -(0.55 + 0.25 * w); break;
+    case 'right': r = Math.PI / 2; l = -(Math.PI * 0.8 + 0.3 * w); break;
+    case 'left': l = -Math.PI / 2; r = Math.PI * 0.8 + 0.3 * w; break;
+    case 'ahead': r = Math.PI * 0.8 + 0.3 * w; l = -(Math.PI * 0.8 + 0.3 * w); break;
+    default: r = Math.PI; l = -Math.PI;   // ここです（両手をまっすぐ上）
+  }
+  R.rotation.z += (r - R.rotation.z) * Math.min(1, dt * 10); Lf.rotation.z += (l - Lf.rotation.z) * Math.min(1, dt * 10);
+}
+// 駐機場の誘導：止まる位置までの残り・横のずれ・合図
+function standInfo(v, P) {
+  const L = APT_LAY, sx = L.standX[P.stand], S = aptW(P.arr, sx, L.standZ), S2 = aptW(P.arr, sx, L.standZ + 10), E = aptW(P.arr, sx, L.taxiZ);
+  const fl = Math.hypot(S2.x - S.x, S2.z - S.z), fx = (S2.x - S.x) / fl, fz = (S2.z - S.z) / fl, x = v.pos.x, z = v.pos.y;
+  const rem = (S.x - x) * fx + (S.z - z) * fz, lat = (x - S.x) * -fz + (z - S.z) * fx;   // lat：止まる線の右（操縦席から見て）が＋
+  const inLead = rem > -10 && rem < (S.x - E.x) * fx + (S.z - E.z) * fz + 25 && Math.abs(lat) < 25;
+  // 合図：係員（中心線の先）に向かって、機首が右・左にずれていたら
+  const nz = (v.item.jet && v.item.jet.noseZ) || 20, mx = S.x + fx * (nz + 12), mz = S.z + fz * (nz + 12);
+  const dx = mx - x, dz = mz - z, dl = Math.hypot(dx, dz) || 1, side = (dx * -Math.cos(v.h) + dz * Math.sin(v.h)) / dl;
+  let sig = 'here';
+  if (inLead) sig = rem < 1.5 ? 'stop' : side > 0.05 ? 'right' : side < -0.05 ? 'left' : rem < 25 ? 'slow' : 'ahead';
+  return { S, E, rem, lat, inLead, sig };
 }
 function atcStep(dt) {
-  const v = jetRide(), P = ATC.plan;
+  const v = jetRide();
   if (ATC.endT && performance.now() > ATC.endT) { ATC.endT = 0; if (!ATC.plan) el('atcStrip').hidden = true; }
+  marshStep(dt, v);
+  if (v) {   // 計画なしで着陸した：タワーが受ける
+    const Jv = jetOf(v);
+    if (!ATC.plan && ATC.wasAir && Jv.ground) atcLanded(v);
+    ATC.wasAir = !Jv.ground;
+  } else ATC.wasAir = false;
+  const P = ATC.plan;
   if (!P) return;
   if (!v) { if (!el('atcStrip').hidden) el('atcStrip').hidden = true; return; }
   if (el('atcStrip').hidden) el('atcStrip').hidden = false;
   ATC.t += dt; ATC.tick -= dt;
   if (ATC.tick > 0) return;
   ATC.tick = 0.25;
-  const J = jetOf(v), x = v.pos.x, z = v.pos.y, sec = nowSec(), b = bearingOf(v.h);
+  const J = jetOf(v), x = v.pos.x, z = v.pos.y, sec = nowSec(), b = bearingOf(v.h), en = ATC.lang === 'en', C = P.call;
   let guide = '';
   if (['clr', 'taxi', 'hold'].includes(ATC.ph) && !J.ground) {
-    atcSay(`${P.dep.short}タワー`, `${P.call}、離陸の許可はまだでした。次からはタワーの許可を待ってください。`, null, true);
+    atcSay(fac(P.dep, 'twr'), { ja: `${C.ja}、離陸の許可はまだでした。次からはタワーの許可を待ってください。`, en: `${C.en}, you took off without a clearance. Wait for takeoff clearance next time.` }, null, true);
     ATC.ph = 'to';
   }
   switch (ATC.ph) {
     case 'clr':
-      guide = J.push ? 'プッシュバック中' : '準備ができたらプッシュバック（☰）か地上走行';
+      guide = J.push ? (en ? 'Pushing back' : 'プッシュバック中') : (en ? 'Ready: request pushback (☰) or taxi' : '準備ができたらプッシュバック（☰）か地上走行');
       if (!J.push && J.ground && J.V > 2) atcTaxi();
       break;
     case 'taxi': {
       const H = aptHold(P.depRw), d = Math.hypot(H.x - x, H.z - z);
-      guide = `→ 滑走路 ${P.depRw.name} の手前（${holdName(P.depRw)}）まで ${fmtDist(d)}・方位 ${fmtB(brgTo(x, z, H))}°`;
+      guide = en ? `→ holding point ${holdName(P.depRw)} rwy ${P.depRw.name}: ${fmtDist(d)}, bearing ${fmtB(brgTo(x, z, H))}°` : `→ 滑走路 ${P.depRw.name} の手前（${holdName(P.depRw)}）まで ${fmtDist(d)}・方位 ${fmtB(brgTo(x, z, H))}°`;
       if (d < 80 && J.V < 8 * KT) { ATC.ph = 'hold'; ATC.said.hb = false; }
       break;
     }
     case 'hold': {
       const busy = aiRunwayBusy(P.dep, sec - 5, sec + 80);
       if (busy) {
-        guide = `待機中：${busy.kind === 'arr' ? '到着機' : '出発機'} ${busy.a.name}`;
-        if (!ATC.said.hb) { ATC.said.hb = true; atcSay(`${P.dep.short}タワー`, `${P.call}、滑走路の手前で待機してください。${busy.kind === 'arr' ? '着陸してくる' : '先に出発する'} ${busy.a.name} があります。`); }
+        guide = en ? `Holding: ${busy.kind === 'arr' ? 'landing' : 'departing'} traffic` : `待機中：${busy.kind === 'arr' ? '到着機' : '出発機'} ${busy.a.name}`;
+        if (!ATC.said.hb) { ATC.said.hb = true; atcSay(fac(P.dep, 'twr'), { ja: `${C.ja}、滑走路の手前で待機してください。${busy.kind === 'arr' ? '着陸してくる' : '先に出発する'} ${busy.a.name} があります。`, en: `${C.en}, hold short of runway ${P.depRw.name}, ${busy.kind === 'arr' ? 'landing traffic on final' : 'traffic departing ahead'}.` }); }
       } else {
         const w = aptWind(P.dep, sec);
-        atcSay(`${P.dep.short}タワー`, `${P.call}、風 ${fmtB(w.dir)}° ${w.kt}kt。滑走路 ${P.depRw.name}、離陸を許可します。`, { hdg: P.depRw.course, alt: P.init, spd: 250 });
+        atcSay(fac(P.dep, 'twr'), { ja: `${C.ja}、風 ${fmtB(w.dir)}° ${w.kt}kt。滑走路 ${P.depRw.name}、離陸を許可します。`, en: `${C.en}, wind ${fmtB(w.dir)} at ${w.kt}kt, runway ${P.depRw.name}, cleared for takeoff.` }, { hdg: P.depRw.course, alt: P.init, spd: 250 });
         ATC.ph = 'to';
       }
       break;
     }
     case 'to':
-      guide = `滑走路 ${P.depRw.name} から離陸。${fmtAlt(P.init)} まで上昇`;
+      guide = en ? `Take off runway ${P.depRw.name}, climb ${fmtAlt(P.init)}` : `滑走路 ${P.depRw.name} から離陸。${fmtAlt(P.init)} まで上昇`;
       if (!J.ground && v.y - P.dep.y > 300) { ATC.ph = 'enr'; ATC.alt = P.crz; atcVector(v, true); }
       break;
     case 'enr': {
-      const T = atcTarget(v), d = Math.hypot(T.x - x, T.z - z), brg = brgTo(x, z, T);
-      guide = `→ ${T.name}まで ${fmtDist(d)}・方位 ${fmtB(brg)}°・${fmtAlt(ATC.alt)}`;
-      if (P.wp && !P.wpDone && d < 1500) {
-        P.wpDone = true;
-        atcSay('ワールドコントロール', `${P.call}、${P.wp.name}の上空です。${P.arr.name}へ向かいます。`, null, true);
+      if (J.ground) { atcLanded(v); break; }
+      let F = atcFixList(v);
+      const { T, N, R } = F, d = Math.hypot(T.x - x, T.z - z);
+      guide = en ? `→ ${nm(T)}: ${fmtDist(d)}, heading ${hd3(F.hdg)}, ${fmtAlt(ATC.alt)}` : `→ ${T.name}まで ${fmtDist(d)}・針路 ${hd3(F.hdg)}°・${fmtAlt(ATC.alt)}`;
+      // 点の手前から曲がりはじめる（次の区間との角度が大きいほど早く）
+      const turnN = N ? Math.abs(wrapDeg(brgTo(T.x, T.z, N) - F.crs)) : 0, lead = Math.max(400, R * Math.tan(Math.min(150, turnN) / 2 * D2R) + 200);
+      if (F.along < lead) {
+        if (!N) {   // 最後の点（FAF）：進入許可
+          const rw = P.arrRw, G = appGeo(rw);
+          ATC.ph = 'app'; ATC.hdg = rw.course;
+          atcSay(fac(P.arr, 'app'), { ja: `${C.ja}、針路 ${hd3(rw.course)}°、滑走路 ${rw.name}、ILS 進入を許可します。`, en: `${C.en}, fly heading ${hd3(rw.course)}, cleared ILS runway ${rw.name} approach.` }, { hdg: rw.course, alt: G.ft, spd: 160, app: rw });
+          break;
+        }
+        const wasWp = T === P.wp;
+        atcNext(v);
+        if (wasWp) atcSay(CTL, { ja: `${C.ja}、${P.wp.name}を通過。${P.arr.name}へ向かいます。`, en: `${C.en}, passing ${nm(P.wp)}, proceed to ${aptEn(P.arr)}.` }, null, true);
+        F = atcFixList(v);
+        if (P.desc && F.T.k === 'FAF') {   // IF を過ぎた：ILS に会合する針路で進入許可
+          const rw = P.arrRw, G = appGeo(rw), I = ilsInfo(v, rw);
+          const hh = ((Math.round((rw.course - Math.sign(I.xt) * Math.min(30, Math.abs(I.xt) / 60)) / 5) * 5 % 360) + 360) % 360 || 360;
+          ATC.ph = 'app'; ATC.hdg = hh;
+          atcSay(fac(P.arr, 'app'), { ja: `${C.ja}、針路 ${hd3(hh)}°、${fmtAlt(G.ft)} を保って ILS に会合。滑走路 ${rw.name}、ILS 進入を許可します。（AP の APP で自動で降りられます）`,
+            en: `${C.en}, turn heading ${hd3(hh)}, maintain ${fmtAlt(G.ft)} until established on the localizer, cleared ILS runway ${rw.name} approach.` }, { hdg: hh, alt: G.ft, spd: 160, app: rw });
+          break;
+        }
         atcVector(v); break;
       }
-      // 降下：残りの距離が「高さ 1,000ft ごとに 3NM」より短くなったら
+      // 降下：残りの道のりが「高さ 1,000ft ごとに 3NM」より短くなったら
       if (!P.desc && (!P.wp || P.wpDone)) {
-        P.arrRw = activeRwy(P.arr, sec);
-        const G = appGeo(P.arrRw), rem = Math.hypot(G.faf.x - x, G.faf.z - z), need = Math.max(0, v.y * FT - G.ft) / 1000 * 3 * 1852;
-        if (rem < need + 2500) {
-          P.desc = true; ATC.alt = G.ft; P.atIf = false;
-          atcSay(`${P.arr.short}アプローチ`, `${P.call}、降下して ${fmtAlt(G.ft)}。ILS 滑走路 ${P.arrRw.name} 進入を予定してください。`, { hdg: ATC.hdg, alt: G.ft, spd: 210 });
+        const nr = activeRwy(P.arr, sec); if (nr !== P.arrRw) { P.arrRw = nr; P.fx = null; P.fi = 0; P.from = null; }   // 風で滑走路が変わったら、進入の点を作り直す
+        const G = appGeo(P.arrRw), F2 = atcFixList(v), pts = [{ x, z }, ...P.fx.slice(P.fi)];
+        let rem = 0; for (let i = 1; i < pts.length; i++) rem += Math.hypot(pts[i].x - pts[i - 1].x, pts[i].z - pts[i - 1].z);
+        const need = Math.max(0, v.y * FT - G.ft) / 1000 * 3 * 1852;
+        if (rem < need + 4000) {
+          P.desc = true; ATC.alt = G.ft;
+          atcSay(fac(P.arr, 'app'), { ja: `${C.ja}、降下して ${fmtAlt(G.ft)}。ILS 滑走路 ${P.arrRw.name} 進入を予定してください。${F2.T.name}へ向かってください。`,
+            en: `${C.en}, descend and maintain ${fmtAlt(G.ft)}, expect ILS runway ${P.arrRw.name} approach, proceed to ${nm(F2.T)}.` }, { hdg: ATC.hdg, alt: G.ft, spd: 210 });
           ATC.vecT = ATC.t; break;
         }
       }
-      // 進入許可：滑走路の手前で、向きが合ってきたら
-      if (P.desc) {
-        const G = appGeo(P.arrRw), I = ilsInfo(v, P.arrRw), dF = Math.hypot(G.faf.x - x, G.faf.z - z), crs = P.arrRw.course;
-        if ((dF < 3500 || (I.s > 2500 && I.s < G.Dint + 6000 && Math.abs(I.xt) < 3500)) && Math.abs(wrapDeg(b - crs)) < 75 && I.s > 1500) {
-          const hi = Math.round((crs - Math.sign(I.xt) * Math.min(30, Math.abs(I.xt) / 60)) / 5) * 5;
-          const hh = ((hi % 360) + 360) % 360 || 360;
-          ATC.ph = 'app'; ATC.hdg = hh;
-          atcSay(`${P.arr.short}アプローチ`, `${P.call}、針路 ${fmtB(hh)}°、${fmtAlt(G.ft)} を保って ILS に会合。滑走路 ${P.arrRw.name}、ILS 進入を許可します。（AP の APP で自動で降りられます）`, { hdg: hh, alt: G.ft, spd: 170, app: P.arrRw });
-          break;
-        }
-      }
-      if (Math.abs(wrapDeg(brg - ATC.hdg)) > 15 && ATC.t - ATC.vecT > 15) atcVector(v);
+      // 針路を直す：区間にそう針路が 15° 以上変わったら（20 秒に 1 回まで）
+      if (Math.abs(wrapDeg(F.hdg - ATC.hdg)) >= 15 && ATC.t - ATC.vecT > 20) atcVector(v);
       break;
     }
     case 'app': case 'land': {
-      const rw = P.arrRw, I = ilsInfo(v, rw), G = appGeo(rw);
-      guide = J.ground ? '着陸。減速して誘導路へ' : `ILS ${rw.name}：接地点まで ${fmtDist(Math.max(0, I.s))}・中心線の${I.xt > 0 ? '右' : '左'} ${Math.round(Math.abs(I.xt))}m`;
-      const goAround = (txt) => {
-        ATC.ph = 'enr'; ATC.alt = G.ft + 1000; P.atIf = false; ATC.said = {};
-        atcSay(`${P.arr.short}タワー`, `${P.call}、${txt}滑走路の方位で ${fmtAlt(ATC.alt)} まで上昇してください。`, { hdg: rw.course, alt: ATC.alt, spd: 210 });
-        ATC.hdg = rw.course; ATC.vecT = ATC.t + 30;
+      const rw = P.arrRw, I = ilsInfo(v, rw), G = appGeo(rw), tw = fac(P.arr, 'twr');
+      guide = J.ground ? (en ? 'Landed. Slow down and vacate' : '着陸。減速して誘導路へ') : en ? `ILS ${rw.name}: ${fmtDist(Math.max(0, I.s))} to touchdown, ${Math.round(Math.abs(I.xt))}m ${I.xt > 0 ? 'right' : 'left'} of centerline` : `ILS ${rw.name}：接地点まで ${fmtDist(Math.max(0, I.s))}・中心線の${I.xt > 0 ? '右' : '左'} ${Math.round(Math.abs(I.xt))}m`;
+      const goAround = (ja, enTxt) => {
+        ATC.ph = 'enr'; ATC.alt = G.ft + 1000; P.fx = null; P.fi = 0; ATC.said = {};
+        atcSay(tw, { ja: `${C.ja}、${ja}滑走路の方位で ${fmtAlt(ATC.alt)} まで上昇してください。`, en: `${C.en}, ${enTxt}fly runway heading, climb and maintain ${fmtAlt(ATC.alt)}.` }, { hdg: rw.course, alt: ATC.alt, spd: 210 });
+        ATC.hdg = rw.course; ATC.vecT = ATC.t + 40;
       };
-      if (!J.ground && ATC.ph === 'land' && (I.s < -400 || (J.vs > 700 && v.y - rw.apt.y > 60))) { goAround('ゴーアラウンドを了解。'); break; }
-      if (!J.ground && ATC.ph === 'app' && I.s < 0) { goAround('ゴーアラウンドしてください。'); break; }
+      if (!J.ground && ATC.ph === 'land' && (I.s < -400 || (J.vs > 700 && v.y - rw.apt.y > 60))) { goAround('ゴーアラウンドを了解。', 'go around acknowledged, '); break; }
+      if (!J.ground && ATC.ph === 'app' && I.s < 0) { goAround('ゴーアラウンドしてください。', 'go around, '); break; }
       if (ATC.ph === 'app' && I.s < Math.min(9000, G.Dint) && Math.abs(I.xt) < 800) {
         const eta = I.s / Math.max(50, J.V), busy = aiRunwayBusy(rw.apt, sec + eta - 40, sec + eta + 50);
         if (!busy) {
           const w = aptWind(rw.apt, sec);
           ATC.ph = 'land';
-          atcSay(`${P.arr.short}タワー`, `${P.call}、風 ${fmtB(w.dir)}° ${w.kt}kt。滑走路 ${rw.name}、着陸を許可します。`);
-        } else if (I.s < 2500) goAround(`${busy.a.name} が滑走路を使っています。ゴーアラウンドしてください。`);
-        else if (!ATC.said.cont) { ATC.said.cont = true; atcSay(`${P.arr.short}タワー`, `${P.call}、進入を続けてください。先に ${busy.a.name} があります。着陸許可はあとで出します。`); }
+          atcSay(tw, { ja: `${C.ja}、風 ${fmtB(w.dir)}° ${w.kt}kt。滑走路 ${rw.name}、着陸を許可します。`, en: `${C.en}, wind ${fmtB(w.dir)} at ${w.kt}kt, runway ${rw.name}, cleared to land.` });
+        } else if (I.s < 2500) goAround(`${busy.a.name} が滑走路を使っています。ゴーアラウンドしてください。`, 'traffic on the runway, go around, ');
+        else if (!ATC.said.cont) { ATC.said.cont = true; atcSay(tw, { ja: `${C.ja}、進入を続けてください。先に ${busy.a.name} があります。着陸許可はあとで出します。`, en: `${C.en}, continue approach, traffic on the runway, expect late landing clearance.` }); }
       }
+      if (ATC.ph === 'app' && J.ground) { atcLanded(v); break; }
       if (ATC.ph === 'land' && J.ground && J.V < 35 * KT) {
-        ATC.ph = 'in';
-        atcSay(`${P.arr.short}グランド`, `${P.call}、次の誘導路で滑走路を出て、駐機場へ地上走行してください。`);
+        ATC.ph = 'in'; P.stand = atcPickStand(P.arr, v); ATC.said.lead = false;
+        const n = P.stand + 1;
+        atcSay(fac(P.arr, 'gnd'), { ja: `${C.ja}、次の誘導路で滑走路を出て、誘導路 A でスポット ${n} へ地上走行してください。スポットでは係員の合図に従ってください。`,
+          en: `${C.en}, vacate at the next taxiway, taxi to stand ${n} via Alpha. Follow the marshaller at the stand.` });
       }
       break;
     }
     case 'in': {
-      const L = APT_LAY, A = aptW(P.arr, (L.apron.x0 + L.apron.x1) / 2, L.taxiZ), d = Math.hypot(A.x - x, A.z - z);
-      guide = inApron(P.arr, x, z) ? '駐機場：止まってブレーキ' : `→ 駐機場まで ${fmtDist(d)}・方位 ${fmtB(brgTo(x, z, A))}°`;
-      if (inApron(P.arr, x, z) && J.V < 0.5) {
-        atcSay(`${P.arr.short}グランド`, `${P.call}、到着を確認しました。お疲れさまでした。`);
+      if (P.stand == null) P.stand = atcPickStand(P.arr, v);
+      const n = P.stand + 1, Si = standInfo(v, P), dE = Math.hypot(Si.E.x - x, Si.E.z - z);
+      MAR.sig = Si.sig;
+      const SG = { here: ['係員：ここです', 'Marshaller: this stand'], ahead: ['合図：まっすぐ進んで', 'Signal: come ahead'], right: ['合図：右へ曲がって', 'Signal: turn right'],
+        left: ['合図：左へ曲がって', 'Signal: turn left'], slow: ['合図：ゆっくり', 'Signal: slow down'], stop: ['合図：止まれ', 'Signal: stop'] }[Si.sig];
+      if (Si.inLead) {
+        if (!ATC.said.lead) { ATC.said.lead = true; atcSay(fac(P.arr, 'gnd'), { ja: `${C.ja}、スポット ${n}。係員の合図に従ってください。`, en: `${C.en}, stand ${n}, follow the marshaller.` }, null, true); }
+        guide = en ? `Stand ${n}: ${Math.max(0, Si.rem).toFixed(Si.rem < 20 ? 1 : 0)}m to stop line · ${SG[1]}` : `スポット ${n}：止まる線まで ${Math.max(0, Si.rem).toFixed(Si.rem < 20 ? 1 : 0)}m・${SG[0]}`;
+      } else guide = en ? `→ stand ${n}: ${fmtDist(dE)}, bearing ${fmtB(brgTo(x, z, Si.E))}° (via Alpha)` : `→ スポット ${n} の入口まで ${fmtDist(dE)}・方位 ${fmtB(brgTo(x, z, Si.E))}°（誘導路 A）`;
+      if (Si.inLead && Si.rem < -4 && !ATC.said.over) { ATC.said.over = true; showMsg(en ? 'Past the stop line. Pushback (☰) to back up' : '止まる線を越えました。下がるときは ☰ プッシュバック'); }
+      if (Si.inLead && Math.abs(Si.rem) < 4 && Math.abs(Si.lat) < 4 && J.V < 0.5) {
+        atcSay(fac(P.arr, 'gnd'), { ja: `${C.ja}、スポット ${n} に駐機しました。お疲れさまでした。`, en: `${C.en}, parked on stand ${n}. Welcome to ${aptEn(P.arr)}.` });
+        MAR.sig = 'stop'; MAR.hold = performance.now() + 30000;
         ATC.plan = null; ATC.ph = ''; el('mAtcEnd').hidden = true; ATC.endT = performance.now() + 9000;
+      } else if (!Si.inLead && inApron(P.arr, x, z) && J.V < 0.5 && !ATC.said.wrong) {
+        ATC.said.wrong = true; atcSay(fac(P.arr, 'gnd'), { ja: `${C.ja}、そこはスポット ${n} ではありません。スポット ${n} へ進んでください。`, en: `${C.en}, that is not stand ${n}. Continue to stand ${n}.` }, null, true);
       }
       break;
     }
@@ -15887,7 +16100,8 @@ function drawAtcMap(g, P, sc) {
   if (fp) {
     const G = appGeo(fp.arrRw), me = myPose(), pts = [{ x: me.x, z: me.z }];
     if (fp.wp && !fp.wpDone) pts.push(fp.wp);
-    pts.push(G.iff, G.faf, { x: fp.arrRw.th[0], z: fp.arrRw.th[1] });
+    const lp = pts[pts.length - 1];
+    pts.push(...(fp.fx ? fp.fx.slice(fp.fi) : atcAppFixes(fp, lp.x, lp.z, 2000)), { x: fp.arrRw.th[0], z: fp.arrRw.th[1] });
     g.beginPath(); pts.forEach((q, i) => { const [X, Y] = P(q.x, q.z); i ? g.lineTo(X, Y) : g.moveTo(X, Y); });
     g.setLineDash([10, 6]); g.strokeStyle = 'rgba(255,255,255,.9)'; g.lineWidth = 6; g.stroke(); g.strokeStyle = '#1d6fd6'; g.lineWidth = 3; g.stroke(); g.setLineDash([]);
     if (fp.wp && !fp.wpDone) { const [X, Y] = P(fp.wp.x, fp.wp.z); g.fillStyle = '#1d6fd6'; g.strokeStyle = '#fff'; g.lineWidth = 2; g.beginPath(); g.moveTo(X, Y - 8); g.lineTo(X + 7, Y); g.lineTo(X, Y + 8); g.lineTo(X - 7, Y); g.closePath(); g.fill(); g.stroke(); }
@@ -15932,8 +16146,11 @@ function jetPushBtnInit() {
   const vt = () => { el('mAtcVoice').textContent = `管制の声：${ATC.pref ? 'オン' : 'オフ'}`; };
   el('mAtcVoice').addEventListener('click', () => { ATC.pref = !ATC.pref; try { localStorage.setItem('atcVoice', ATC.pref ? 'on' : 'off'); } catch (e) {} vt(); setMenu(false); });
   vt();
+  const lt = () => { el('mAtcLang').textContent = `管制の言葉：${ATC.lang === 'en' ? 'English' : '日本語'}`; };
+  el('mAtcLang').addEventListener('click', () => { ATC.lang = ATC.lang === 'en' ? 'ja' : 'en'; try { localStorage.setItem('atcLang', ATC.lang); } catch (e) {} lt(); setMenu(false); if (ATC.last && ATC.plan) atcSay(ATC.last.who, ATC.last.msg, ATC.set, true); });
+  lt();
   el('atcSet').addEventListener('click', atcApply);
-  el('atcRep').addEventListener('click', () => { if (ATC.last) atcSay(ATC.last.who, ATC.last.text, ATC.set); });
+  el('atcRep').addEventListener('click', () => { if (ATC.last) atcSay(ATC.last.who, ATC.last.msg, ATC.set); });
   el('wmapFly').addEventListener('click', () => { const P = WMAP.fly; if (!P) return; closeWmap(); atcFile(P); });
 }
 // プッシュバックのボタン：地上で止まっていて、空港の中にいるときだけ右に出す
@@ -16020,7 +16237,7 @@ window.__world = {
   teleport(x, z, y) { player.pos.set(x, y ?? heightAt(x, z), z); player.vy = 0; },
   torps, tube, ord, booms, get clockT() { return clock.elapsedTime; },
   get BIZ() { return BIZ; }, get BIZS() { return BIZS; }, equipFee, tonCls, PAIDV, RUNS, stepRuns, runCheck, cargoAction, doCargo, coSites, parkAt, myGltfTrucks, truckKey, BIZX, BIZ_RECIPE, bizById, bizProcBy, bizCarrier, grpList, bizTradeIn, bizTradeFlush, BIZ_NET, carRegister, carBuy, carTry, trialEnd, TRIAL, carSaleIn, carList, dlrSync, DLR_SHOW, dlrLayout, myMachines, MACH, BIZ_BLD, bizNetLoad, bizNetEvent, bizPush, bizAct, bizDay, bizSettle, bizHtml, drawBizOnMap, TOWN, COMPANIES, ECON, makePaper, openTown, closeTown, townNearAction, get myStocks() { return myStocks; }, weatherAt, wxDay, calOf, gameDayN, setDayOffset(d) { dayOffset = d; }, setGameTime(n, hr) { dayOffset = 0; hourOffset = 0; const real = worldHour(); hourOffset = ((hr - real) % 24 + 24) % 24; dayOffset = n - Math.floor(gameDayF()); }, townMeshes, townBlds, townBoats, fieldStage,
-  AIRPORT, AIRPORTS, goAirport, AIRLINERS, isa, jetOf, jetHits, AIR, ATC, APT_LAY, aiTrack, aiCycle, aiRunwayBusy, atcMakePlan, atcFile, atcMapPick, jetPushback, activeRwy, appGeo, pathMake, stepJet, jetApButton, jetApAdjust, jetGearLever, jetFlapLever, jetSpeedbrake, ilsInfo, jetVs, jetVref, jetTO, get jetRideV() { return jetRide(); }, farLand,
+  AIRPORT, AIRPORTS, goAirport, AIRLINERS, isa, jetOf, jetHits, AIR, ATC, APT_LAY, aiTrack, aiCycle, aiRunwayBusy, atcMakePlan, atcFile, atcMapPick, atcStep, atcApply, MAR, standInfo, atcPickStand, jetCamCycle, get jetView() { return jetView; }, jetPushback, activeRwy, appGeo, pathMake, stepJet, jetApButton, jetApAdjust, jetGearLever, jetFlapLever, jetSpeedbrake, ilsInfo, jetVs, jetVref, jetTO, get jetRideV() { return jetRide(); }, farLand,
   AUTO, SEMI, semiGo, semiHalt, setSemi, semiTurnReq, semiTurnCand, semiNext, setApMin, startAuto, stopAuto, planAuto, stepHwTraffic, autoSpeed, autoLaneReq, autoTurnReq, get myCar() { return myCar; }, makeVehicle, rideFromMenu, putAwayMini, renderMoveList, makeMiniCar, CARL, setTurnSignal, cycleLampMode, autoBlinkDir, stepTraffic, stepVehicle, camera, signalState,
 };
 
