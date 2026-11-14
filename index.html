@@ -567,7 +567,7 @@ body.jetOn #map { display: none !important; }
   <div class="pcats" data-screen="car" hidden>
     <button type="button" data-cat="car" data-wheels="2" class="pveh"><b>2 輪</b><small>タイヤ前・タイヤ後</small></button>
     <button type="button" data-cat="car" data-wheels="3" class="pveh"><b>3 輪</b><small>前 1＋後ろ 2、または前 2＋後ろ 1</small></button>
-    <button type="button" data-cat="car" data-wheels="4" class="pveh"><b>4 輪</b><small>右前・右後・左前・左後</small></button>
+    <button type="button" data-cat="car" data-wheels="4" class="pveh"><b>4 輪</b><small>右前・右後・左前・左後（または 左右まとめた 前・後）</small></button>
     <button type="button" data-cat="car" data-wheels="6" class="pveh"><b>6 輪</b><small>右前・右中・右後（左も）。曲がるのは前だけ</small></button>
     <button type="button" data-cat="car" data-wheels="8" class="pveh"><b>8 輪</b><small>右前1・右前2・右中・右後（左も）。前1・前2 が曲がる</small></button>
   </div>
@@ -845,6 +845,75 @@ const WHEEL_DEFS = {
   R2L: ['タイヤ左後2', /^(タイヤ左後2|左後2タイヤ|(wheel|tire)[ _-]?(rl|bl|rear[ _-]?left|left[ _-]?rear)[ _-]?2)/i],
 };
 const LAYOUTS = { 2: [['F', 'R']], 3: [['F', 'RR', 'RL'], ['FR', 'FL', 'R']], 4: [['FR', 'RR', 'FL', 'RL']], 6: [['FR', 'MR', 'RR', 'FL', 'ML', 'RL']], 8: [['FR', 'F2R', 'MR', 'RR', 'FL', 'F2L', 'ML', 'RL'], ['FR', 'MR', 'RR', 'R2R', 'FL', 'ML', 'RL', 'R2L']] };   // 8 輪：前1・前2・中・後（前の古いならべ方 前・中・後・後2 も読める）
+// 左右をまとめた 1 つの部品（タイヤ前・タイヤ中・タイヤ後…）。ワールドが左右に分けて、右・左のタイヤとして使う
+const WHEEL_PAIRS = [
+  ['タイヤ前2', 'F2R', 'F2L', /^(タイヤ前[2２]|前[2２]タイヤ|(wheel|tire)[ _-]?(f|front)[ _-]?2(?![a-z]))/i],
+  ['タイヤ前', 'FR', 'FL', new RegExp(`^(タイヤ前(?![2２])|前[1１]?タイヤ|(wheel|tire)[ _-]?(f|front)(?![ _-]?2)${SIDE})`, 'i')],
+  ['タイヤ中', 'MR', 'ML', new RegExp(`^(タイヤ中|中タイヤ|(wheel|tire)[ _-]?(m|c|mid|middle|center)${SIDE})`, 'i')],
+  ['タイヤ後2', 'R2R', 'R2L', /^(タイヤ後[2２]|後[2２]タイヤ|(wheel|tire)[ _-]?(r|rear|b|back)[ _-]?2(?![a-z]))/i],
+  ['タイヤ後', 'RR', 'RL', new RegExp(`^(タイヤ後(?![2２])|後タイヤ|(wheel|tire)[ _-]?(r|rear|b|back)(?![ _-]?2)${SIDE})`, 'i')],
+];
+// 左右をまとめた部品を、まん中の X（cx：root の中の座標）で 2 つに分ける。三角形ごとに、まん中より −X か +X かで分ける（axis 'z' なら前後で分ける）。
+// 分けた形は元の部品と同じ親に入れ、元の部品ははずす。返り値は [−X 側, +X 側]（形がない側は null）
+function splitBySide(root, obj, cx, axis = 'x') {
+  root.updateMatrixWorld(true);
+  const parent = obj.parent; if (!parent) return [null, null];
+  const inv = new THREE.Matrix4().copy(root.matrixWorld).invert(), pInv = new THREE.Matrix4().copy(parent.matrixWorld).invert();
+  const out = [new THREE.Group(), new THREE.Group()], used = [false, false];
+  out[0].name = (obj.name || '') + '·−' + axis; out[1].name = (obj.name || '') + '·+' + axis;
+  const meshes = []; obj.traverse((m) => { if (m.isMesh && m.geometry && m.geometry.attributes.position) meshes.push(m); });
+  const v = new THREE.Vector3(), M = new THREE.Matrix4(), L = new THREE.Matrix4();
+  for (const m of meshes) {
+    const g = m.geometry, pos = g.attributes.position, idx = g.index, n = idx ? idx.count : pos.count;
+    const at = (i) => (idx ? idx.getX(i) : i);
+    M.multiplyMatrices(inv, m.matrixWorld);
+    const side = new Uint8Array(Math.floor(n / 3));
+    for (let t = 0; t < side.length; t++) { let x = 0; for (let j = 0; j < 3; j++) x += v.fromBufferAttribute(pos, at(t * 3 + j)).applyMatrix4(M)[axis]; side[t] = x / 3 > cx ? 1 : 0; }
+    const groups = g.groups.length ? g.groups : [{ start: 0, count: n, materialIndex: 0 }];
+    for (const s of [0, 1]) {
+      const map = new Map(), order = [], index = [], ngroups = [];
+      for (const gr of groups) {
+        const st = index.length, end = Math.min(n, gr.start + gr.count);
+        for (let i = gr.start; i + 2 < end; i += 3) {
+          if (side[i / 3 | 0] !== s) continue;
+          for (let j = 0; j < 3; j++) { const o = at(i + j); let k = map.get(o); if (k == null) { k = order.length; map.set(o, k); order.push(o); } index.push(k); }
+        }
+        if (index.length > st) ngroups.push({ start: st, count: index.length - st, materialIndex: gr.materialIndex });
+      }
+      if (!index.length) continue;
+      const ng = new THREE.BufferGeometry();
+      for (const name in g.attributes) {
+        const a = g.attributes[name], sz = a.itemSize, il = !!a.isInterleavedBufferAttribute;
+        const raw = il ? a.data.array : a.array, stride = il ? a.data.stride : sz, off = il ? a.offset : 0;
+        const arr = new raw.constructor(order.length * sz);
+        for (let i = 0; i < order.length; i++) for (let c = 0; c < sz; c++) arr[i * sz + c] = raw[order[i] * stride + off + c];
+        ng.setAttribute(name, new THREE.BufferAttribute(arr, sz, a.normalized));
+      }
+      ng.setIndex(new THREE.BufferAttribute(order.length > 65535 ? new Uint32Array(index) : new Uint16Array(index), 1));
+      if (g.groups.length) for (const gr of ngroups) ng.addGroup(gr.start, gr.count, gr.materialIndex);
+      const nm = new THREE.Mesh(ng, m.material);
+      nm.name = m.name; nm.castShadow = m.castShadow; nm.receiveShadow = m.receiveShadow; nm.userData = m.userData; nm.renderOrder = m.renderOrder;
+      L.multiplyMatrices(pInv, m.matrixWorld).decompose(nm.position, nm.quaternion, nm.scale);
+      out[s].add(nm); used[s] = true;
+    }
+  }
+  parent.remove(obj);
+  for (const s of [0, 1]) if (used[s]) parent.add(out[s]);
+  parent.updateMatrixWorld(true);
+  return [used[0] ? out[0] : null, used[1] ? out[1] : null];
+}
+// 左右まとめた部品か：幅が 0.5m 以上で、まん中にすき間がある（左右のタイヤのあいだ）か、高さより横にずっと長い
+function looksLikePair(root, obj) {
+  root.updateMatrixWorld(true);
+  const b = new THREE.Box3().setFromObject(obj); if (b.isEmpty()) return null;
+  const sz = b.getSize(new THREE.Vector3()), cx = (b.min.x + b.max.x) / 2;
+  if (sz.x < 0.5) return null;
+  if (sz.x > 1.2 * Math.max(sz.y, sz.z)) return cx;
+  const inv = new THREE.Matrix4().copy(root.matrixWorld).invert(), M = new THREE.Matrix4(), v = new THREE.Vector3(), band = sz.x * 0.15;
+  let gap = true;
+  obj.traverse((m) => { if (!gap || !m.isMesh || !m.geometry || !m.geometry.attributes.position) return; const p = m.geometry.attributes.position; M.multiplyMatrices(inv, m.matrixWorld); for (let i = 0; i < p.count && gap; i++) if (Math.abs(v.fromBufferAttribute(p, i).applyMatrix4(M).x - cx) < band) gap = false; });
+  return gap ? cx : null;
+}
 // ハンドルで曲がるのは、名前に「前」がつくタイヤだけ（6 輪・8 輪の中・後ろは曲がらない）
 const FRONT_W = new Set(['F', 'FR', 'FL', 'F2R', 'F2L']), REAR_W = new Set(['R', 'RR', 'RL', 'R2R', 'R2L']);
 const CAR_LIMITS = { length: 7, width: 3.5, height: 4, rMin: 0.1, rMax: 1.0 }, TRUCK_LIMITS = { length: 12.5, width: 3.5, height: 4.2 };
@@ -887,14 +956,39 @@ function modelBox(root, model) { root.updateMatrixWorld(true); return new THREE.
 
 function rigAutoCar(item, root, model, gltf, def) {
   const found = {}, reasons = [];
-  model.traverse((o) => { for (const k in WHEEL_DEFS) if (!found[k] && WHEEL_DEFS[k][1].test(o.name || '')) found[k] = o; });
+  // 1) 右・左のついた名前（タイヤ右前…）  2) 左右まとめた名前（タイヤ前・タイヤ後…）を左右に分ける  3) 1 本だけのタイヤ（2 輪・3 輪の タイヤ前・タイヤ後）
+  const PAIR_KEYS = new Set(WHEEL_PAIRS.flatMap((q) => [q[1], q[2]]));
+  model.traverse((o) => { for (const k in WHEEL_DEFS) if (PAIR_KEYS.has(k) && !found[k] && WHEEL_DEFS[k][1].test(o.name || '')) found[k] = o; });
+  const pairs = [], cands = [];
+  model.traverse((o) => { const q = WHEEL_PAIRS.find((q) => q[3].test(o.name || '')); if (q && !found[q[1]] && !found[q[2]] && !cands.some((c) => c.q === q || c.o.getObjectById(o.id))) cands.push({ q, o }); });
+  for (const { q, o } of cands) {
+    if (def.wheels === 2) continue;   // 2 輪：タイヤ前・タイヤ後は 1 本ずつ
+    let cx = looksLikePair(root, o);
+    if (cx == null && def.wheels >= 4) { const b = new THREE.Box3().setFromObject(o); if (!b.isEmpty()) cx = (b.min.x + b.max.x) / 2; }   // 4 輪より多いと選んだときは、かならず左右まとめ
+    if (cx == null) continue;
+    const [neg, pos] = splitBySide(root, o, cx);
+    if (!neg || !pos) { reasons.push(`「${q[0]}」は左右のタイヤをまとめた部品として読みましたが、片方にしか形がありません（左右のタイヤを 1 つの部品に入れてください）`); continue; }
+    found[q[1]] = neg; found[q[2]] = pos;   // 前が +Z なら −X が右（あとで前の向きを見て直す）
+    pairs.push(q);
+  }
+  if (reasons.length) throw new RuleError('car', reasons);
+  model.traverse((o) => { for (const k in WHEEL_DEFS) if (!PAIR_KEYS.has(k) && !found[k] && WHEEL_DEFS[k][1].test(o.name || '')) found[k] = o; });
+  if (pairs.length) {   // 前が −Z 向きの車なら、分けた左右を入れかえる（運転席から見て +X が左）
+    root.updateMatrixWorld(true);
+    const zOf = (keys) => { const zs = keys.filter((k) => found[k]).map((k) => new THREE.Box3().setFromObject(found[k]).getCenter(new THREE.Vector3()).z); return zs.length ? zs.reduce((a, b) => a + b, 0) / zs.length : null; };
+    const fz = zOf(['F', 'FR', 'FL', 'F2R', 'F2L']), rz = zOf(['R', 'RR', 'RL', 'R2R', 'R2L']);
+    if (fz != null && rz != null && fz < rz) for (const q of pairs) [found[q[1]], found[q[2]]] = [found[q[2]], found[q[1]]];
+  }
   // 選んだタイヤの数のならべ方（読み込み直すときは、名前から多い順に見つける）
   let lay = null;
   for (const n of def.wheels ? [def.wheels] : [8, 6, 4, 3, 2]) for (const l of LAYOUTS[n] || []) if (!lay && l.every((k) => found[k])) lay = l;
   if (!lay) {
     const n = def.wheels || 4;
     if (n === 3) reasons.push('3 輪は「タイヤ前・タイヤ右後・タイヤ左後」か「タイヤ右前・タイヤ左前・タイヤ後」という名前の部品が必要です');
-    else for (const k of LAYOUTS[n][0]) if (!found[k]) reasons.push(`「${WHEEL_DEFS[k][0]}」という名前の部品がありません`);
+    else {
+      for (const k of LAYOUTS[n][0]) if (!found[k]) reasons.push(`「${WHEEL_DEFS[k][0]}」という名前の部品がありません`);
+      if (n >= 4) reasons.push(`左右のタイヤを 1 つの部品にまとめるなら ${n === 4 ? '「タイヤ前」「タイヤ後」' : n === 6 ? '「タイヤ前」「タイヤ中」「タイヤ後」' : '「タイヤ前1」「タイヤ前2」「タイヤ中」「タイヤ後」'} という名前でも走れます`);
+    }
     throw new RuleError('car', reasons);
   }
   const measure = () => {
@@ -1016,11 +1110,12 @@ function carKmh(model, ex, dflt) {
 /* ---- 車のライト：部品の名前で見つける。ヘッドライト・テールランプ・ブレーキランプ・ウインカー（左右）
    光らせ方は世界のほうで決める（.glb は名前だけ）。左右は名前の 左/右（left/right）、なければ置いてある場所で決める（+X が左） ---- */
 const LAMP_DEFS = {
-  head: /^(左|右)?(ヘッドライト|ヘッドランプ|前照灯|head[ _-]?(light|lamp))/i,
+  head: /^(左|右)?(リトラクタブル|ポップアップ|retractable[ _-]?|pop[ _-]?up[ _-]?)?(ヘッドライト|ヘッドランプ|前照灯|head[ _-]?(light|lamp))/i,
   tail: /^(左|右)?(テールランプ|テールライト|尾灯|tail[ _-]?(light|lamp)|rear[ _-]?(light|lamp))/i,
   brake: /^(左|右)?(ブレーキランプ|ブレーキライト|制動灯|stop[ _-]?(light|lamp)|brake[ _-]?(light|lamp))/i,
   turn: /^(左|右)?(ウインカー|ウィンカー|方向指示器|turn[ _-]?(signal|light|lamp)|blinker|indicator)/i,
 };
+const LENS_RE = /レンズ|lens/i, POP_RE = /リトラクタブル|ポップアップ|retractable|pop[ _-]?up/i, POP_KEYS = ['開く角度', 'open_angle'];
 const LAMP_COL = { head: 0xfff4dc, tail: 0xff2414, brake: 0xff2414, turn: 0xffa018 };
 let lampHaloTex = null, lampPoolTex = null;
 function lampTex(w, h, stops) {
@@ -1043,32 +1138,77 @@ function rigCarLamps(root, model) {
     lampHaloTex = lampTex(64, 64, [[0, 1], [0.25, 0.55], [1, 0]]);
     lampPoolTex = lampTex(64, 64, [[0, 0.9], [0.5, 0.35], [1, 0]]);
   }
-  const L = { head: [], tail: [], brake: [], turnL: [], turnR: [], halos: [], pool: null, bits: -1, dark: -1, has: {} };
+  const L = { head: [], tail: [], brake: [], turnL: [], turnR: [], halos: [], pool: null, bits: -1, dark: -1, has: {}, pops: [] };
+  // リトラクタブルヘッドライト：名前に「リトラクタブル」か、カスタムプロパティ「開く角度」（度）があるヘッドライト。
+  //   原点がちょうつがい。ライトをつけると、部品のローカルの X 軸（Blender の X）のまわりに、Blender の回転と同じ向き・同じ角度だけ回る
+  //   （Blender で開いたときの回転の数をそのまま書く。マイナスもそのまま）。ないときは -60°（車の前が Blender の −Y なら前のふちが上がる）。
+  //   カスタムプロパティ「回転軸」= X・Y・Z（Blender の軸）でほかの向きのちょうつがいにもできる
+  for (const p of parts) {
+    if (p.k !== 'head') continue;
+    const deg = numOf(p.o.userData, POP_KEYS) ?? (() => { for (const k of POP_KEYS) { const t = p.o.userData && p.o.userData[k]; if (t != null) { const n = parseFloat(String(t).replace(/[０-９．－]/g, (c) => c === '－' ? '-' : String.fromCharCode(c.charCodeAt(0) - 0xfee0))); if (isFinite(n)) return n; } } return null; })();
+    if (deg == null && !POP_RE.test(p.n)) continue;
+    const a = THREE.MathUtils.degToRad(THREE.MathUtils.clamp(deg ?? -60, -360, 360));
+    if (!a || !p.o.parent) continue;
+    const ax = String((p.o.userData && (p.o.userData['回転軸'] ?? p.o.userData.hinge_axis)) ?? 'X').trim().toUpperCase().replace(/[ＸＹＺ]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0xfee0));
+    const axis = /^-?Y/.test(ax) ? new THREE.Vector3(0, 0, -1) : /^-?Z/.test(ax) ? new THREE.Vector3(0, 1, 0) : new THREE.Vector3(1, 0, 0);   // Blender の Y＝glTF の −Z、Blender の Z＝glTF の Y
+    if (/^-/.test(ax)) axis.negate();
+    const g = new THREE.Group(); g.name = 'ヒンジ';
+    g.position.copy(p.o.position); g.quaternion.copy(p.o.quaternion);
+    p.o.parent.add(g); root.updateMatrixWorld(true); g.attach(p.o);
+    p.pivot = g; L.pops.push({ g, a, axis, q0: g.quaternion.clone(), t: 0, at: 0 });
+  }
+  // 左右まとめた 1 つの部品（ウインカー・ヘッドライト・テールランプ…）は、車のまん中で左右に分ける（ウインカーは左右べつに点滅、光も左右に）
+  const sideOfName = (n) => (/左|left|(^|[ _.-])l($|[ _.\d-])/i.test(n) ? 1 : /右|right|(^|[ _.-])r($|[ _.\d-])/i.test(n) ? -1 : 0);
+  for (let i = 0; i < parts.length; i++) {
+    const p = parts[i];
+    if (sideOfName(p.n)) continue;
+    const b = new THREE.Box3().setFromObject(p.o);
+    if (b.isEmpty() || !(b.min.x < mid.x - 0.1 && b.max.x > mid.x + 0.1 && b.max.x - b.min.x > 0.4)) continue;
+    const [neg, pos] = splitBySide(root, p.o, mid.x);
+    const add = [];
+    if (pos) add.push(Object.assign({}, p, { o: pos, side: 1 }));
+    if (neg) add.push(Object.assign({}, p, { o: neg, side: -1 }));
+    parts.splice(i, 1, ...add); i += add.length - 1;
+  }
+  // 前と後ろのウインカーを 1 つにまとめたときは、前後にも分ける
+  for (let i = 0; i < parts.length; i++) {
+    const p = parts[i], b = new THREE.Box3().setFromObject(p.o);
+    if (b.isEmpty() || !(b.min.z < mid.z - 0.5 && b.max.z > mid.z + 0.5)) continue;
+    const pv = splitBySide(root, p.o, mid.z, 'z').filter(Boolean).map((o) => Object.assign({}, p, { o }));
+    parts.splice(i, 1, ...pv); i += pv.length - 1;
+  }
   for (const p of parts) {
     const b = new THREE.Box3().setFromObject(p.o);
     if (b.isEmpty()) continue;
+    // 光るのは、名前に「レンズ」（lens）がつくマテリアルだけ。部品にレンズのマテリアルがなければ、部品ぜんぶが光る
+    let lensy = false;
+    p.o.traverse((o) => { if (o.isMesh) for (const m of [].concat(o.material)) if (m && LENS_RE.test(m.name || '')) lensy = true; });
+    const lit = (m) => !lensy || LENS_RE.test(m.name || '');
+    if (lensy) { const lb = new THREE.Box3(); p.o.traverse((o) => { if (o.isMesh && [].concat(o.material).some((m) => m && lit(m))) lb.expandByObject(o); }); if (!lb.isEmpty()) b.copy(lb); }
     const c = b.getCenter(new THREE.Vector3()), sz = b.getSize(new THREE.Vector3());
     let g = p.k;
     if (g === 'turn') {
-      const side = /左|left|(^|[ _.-])l($|[ _.\d-])/i.test(p.n) ? 1 : /右|right|(^|[ _.-])r($|[ _.\d-])/i.test(p.n) ? -1 : (c.x >= mid.x ? 1 : -1);
+      const side = p.side || sideOfName(p.n) || (c.x >= mid.x ? 1 : -1);
       g = side > 0 ? 'turnL' : 'turnR';
     }
     // 光る部品：材料を自分用に写して、元の光り方をおぼえておく
     const mats = [];
     p.o.traverse((o) => {
       if (!o.isMesh) return;
-      o.material = [].concat(o.material).map((m) => m.clone()); if (o.material.length === 1) o.material = o.material[0];
-      for (const m of [].concat(o.material)) mats.push({ m, e: m.emissive ? m.emissive.getHex() : null, ei: m.emissiveIntensity ?? 1, c: m.color ? m.color.getHex() : 0xffffff });
+      if (![].concat(o.material).some(lit)) return;
+      o.material = [].concat(o.material).map((m) => (lit(m) ? m.clone() : m)); if (o.material.length === 1) o.material = o.material[0];
+      for (const m of [].concat(o.material)) if (lit(m)) mats.push({ m, e: m.emissive ? m.emissive.getHex() : null, ei: m.emissiveIntensity ?? 1, c: m.color ? m.color.getHex() : 0xffffff });
     });
     // まわりのぼんやりした光（夜によく見える）。少し外側に出しておく
     const out = new THREE.Vector3(g === 'turnL' ? 1 : g === 'turnR' ? -1 : 0, 0, g === 'head' ? 1 : g === 'tail' || g === 'brake' ? -1 : Math.sign(c.z - mid.z));
     const halo = new THREE.Sprite(new THREE.SpriteMaterial({ map: lampHaloTex, color: LAMP_COL[p.k], transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, opacity: 0 }));
     const r = THREE.MathUtils.clamp(Math.max(sz.x, sz.y, sz.z) * 2.2, 0.35, 1.6);
     halo.scale.set(r, r, 1); halo.position.copy(c).addScaledVector(out, 0.06); halo.visible = false; halo.renderOrder = 3;
-    root.add(halo);
+    if (p.pivot) { root.updateMatrixWorld(true); p.pivot.worldToLocal(halo.position); p.pivot.add(halo); } else root.add(halo);   // 開くライトは光もいっしょに動く
     L[g].push({ mats, halo });
     L.has[g] = true;
   }
+  if (!L.pops.length) delete L.pops;
   if (!L.head.length && !L.tail.length && !L.brake.length && !L.turnL.length && !L.turnR.length) return null;
   if (L.head.length) {   // ヘッドライトが道を照らす（地面にうすい光をのせる。本物のライトは使わない：重くならないように）
     const w = Math.max(2.4, all.max.x - all.min.x + 1.2), len = 16;
@@ -1141,7 +1281,20 @@ function stepCarLamps(v) {
   const bits = v.remote ? (v.remote.cl | 0) : v === ride && driving ? myLampBits(v) : 0;
   v.lampBits = bits;
   showCarLamps(v, bits);
+  const P = v.item.lamps.pops;
+  if (P) {   // リトラクタブルヘッドライト：ライトをつけると開き、消すと閉じる（約 0.7 秒）
+    const now = performance.now();
+    for (const q of P) {
+      const dt = Math.min(0.1, q.at ? (now - q.at) / 1000 : 0); q.at = now;
+      const goal = bits & 1 ? 1 : 0;
+      if (q.t === goal) continue;
+      q.t = goal > q.t ? Math.min(1, q.t + dt * 1.4) : Math.max(0, q.t - dt * 1.4);
+      const e = q.t * q.t * (3 - 2 * q.t);
+      q.g.quaternion.copy(q.q0).multiply(_popQ.setFromAxisAngle(q.axis, q.a * e));
+    }
+  }
 }
+const _popQ = new THREE.Quaternion();
 // 毎コマ：種類ごとに動く部品（ダンプの荷台・ミキサーのドラム・重機の腕・回る部品）。作業中かどうかは bits の 16（みんなの画面でそろう）
 function stepCarWork(v, dt) {
   const W = v.item.work;
@@ -4716,15 +4869,18 @@ const HELP_CAR = `<h4>自動車のきまり（どの種類も同じ）</h4>
 <li>前の軸が 2 本あるときは、前から順に <code>1</code> <code>2</code> をつける。<code>タイヤ右前</code> は <code>タイヤ右前1</code> と同じです。</li>
 <li>名前は頭が合っていればよい（<code>タイヤ右前.001</code> も OK）。英語なら <code>wheel_fr</code> <code>wheel_fr2</code> <code>wheel_mr</code> <code>wheel_rr</code>（左は l）。</li>
 <li>前に作った 8 輪（<code>タイヤ右後2</code> <code>タイヤ左後2</code> がある車）もそのまま走れます（そのときは 前 だけ曲がる）。</li></ul></li>
+<li><b>左右のタイヤを 1 つの部品にまとめてもよい</b>（Ctrl+J で結合）：4 輪は <code>タイヤ前</code> <code>タイヤ後</code>、6 輪は <code>タイヤ前</code> <code>タイヤ中</code> <code>タイヤ後</code>、8 輪は <code>タイヤ前1</code> <code>タイヤ前2</code> <code>タイヤ中</code> <code>タイヤ後</code>。ワールドが車のまん中で左右に分けて、それぞれのタイヤの中心で回し、前はハンドルで曲げます（原点はどこでもよい）。2 輪の <code>タイヤ前</code> <code>タイヤ後</code> は 1 本ずつです。</li>
 <li>地面の高さ・車の中心は、ワールドがタイヤから決めます（いちばん低いタイヤの下が地面）。</li>
 <li>大きさ：全長 7m・全幅 3.5m・高さ 4m まで。バス・トラック・ダンプ・ミキサー・タンクローリー・重機は全長 12.5m・高さ 4.2m まで。</li>
 </ol>
 <h4>どの車にもつけられる物</h4>
 <table><tr><th>部品の名前</th><th>はたらき</th></tr>
 <tr><td><code>ヘッドライト</code></td><td>夜・雨・自動運転で白く光る</td></tr>
+<tr><td><code>リトラクタブルヘッドライト</code></td><td>ライトをつけると開いて光る。<b>原点をちょうつがいに置く</b>。カスタムプロパティ <code>開く角度</code> に、<b>Blender で開いた形にしたときの X 回転の数をそのまま</b>書く（マイナスもそのまま。数でも文字列の <code>-45</code> <code>-45度</code> でもよい。ないときは -60）。ほかの向きに回るちょうつがいなら <code>回転軸</code> = <code>Y</code> か <code>Z</code>（Blender の軸）。<code>ヘッドライト</code> という名前に <code>開く角度</code> をつけても同じ</td></tr>
 <tr><td><code>テールランプ</code></td><td>ライトでうすく赤、ブレーキで明るく</td></tr>
 <tr><td><code>ブレーキランプ</code></td><td>ブレーキのときだけ赤く</td></tr>
 <tr><td><code>ウインカー左</code> <code>ウインカー右</code></td><td>オレンジに点滅</td></tr>
+<tr><td colspan="2">ライトは<b>左右（前後も）を 1 つの部品にまとめてもよい</b>（<code>ウインカー</code> <code>テールランプ</code> など）。ワールドが車のまん中で左右に分けるので、ウインカーは左右べつに点滅します。<br><b>光る所</b>：部品の中に、名前に <code>レンズ</code> がつくマテリアルがあれば、そこだけが光ります（ボディ色のカバーは光らない）。なければ部品ぜんぶが光ります。</td></tr>
 <tr><td><code>座席_1</code> <code>座席_2</code>…</td><td>運転席のほかの席。だれかが運転しているとき、ほかの人が「相乗り」で座れる</td></tr>
 <tr><td><code>回転灯</code> <code>回転_1</code>…</td><td>「作業」ボタンを押すと回る（部品の縦の軸＝円柱を足したときの軸で回る）</td></tr></table>
 <table><tr><th>カスタムプロパティ（ボディにつける）</th><th>はたらき</th></tr>
@@ -16222,7 +16378,7 @@ el('aptBtn').addEventListener('click', () => goAirport(AIRPORTS[0]));
 el('apt2Btn').addEventListener('click', () => goAirport(AIRPORTS[1]));
 
 window.__world = {
-  addPropFromBuffer, buildThing, VKINDS, toggleWork, toggleRide, get rideV() { return ride; },
+  addPropFromBuffer, buildThing, VKINDS, stepCarLamps, toggleWork, toggleRide, get rideV() { return ride; },
   get player() { return player.pos.toArray(); },
   get mode() { return driving ? 'drive' : player.mode; },
   get car() { const car = ride || myCar; return car && { x: car.pos.x, z: car.pos.y, y: car.y, h: car.h, vF: car.vF, pitch: car.pitch, name: car.name }; },
