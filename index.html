@@ -483,6 +483,7 @@ body.jetOn #map { display: none !important; }
       <button class="mi" type="button" id="mAtc">管制：地図で行き先をえらぶ</button>
       <button class="mi" type="button" id="mAtcEnd" hidden>管制をやめる</button>
       <button class="mi" type="button" id="mAtcVoice">管制の声：オン</button>
+      <button class="mi" type="button" id="mCam">視点を後ろにもどす（V）</button>
       <button class="mi" type="button" id="mGpws">GPWS の声・警報音：オン</button>
       <button class="mi" type="button" id="mInvert">スティック：前で降下・後ろで上昇（操縦かん式）</button>
     </div>
@@ -504,6 +505,7 @@ body.jetOn #map { display: none !important; }
 <canvas id="adi" hidden role="img" aria-label="姿勢指示器"></canvas>
 <div id="jetPanel" hidden aria-label="旅客機の操作">
   <button type="button" id="jPush" hidden title="地上係員にトーイングカーで押してもらう">プッシュバック</button>
+  <button type="button" id="jCam" title="視点を進む向きの後ろにもどす（V キー）">視点⟲</button>
   <button type="button" id="jGear" title="G キー">ギア ⬇</button>
   <span class="jgrp"><button type="button" id="jFlapUp" aria-label="フラップを上げる" title=", キー">−</button><b id="jFlap">フラップ UP</b><button type="button" id="jFlapDn" aria-label="フラップを下げる" title=". キー">＋</button></span>
   <button type="button" id="jSb" aria-pressed="false" title="スピードブレーキ（/ キー）">減速板</button>
@@ -5149,6 +5151,7 @@ function takeWheel(v) {   // 運転席に座る
   v.settled = false;
   if (v.noPod) showPod(v);   // 脱出したロボットには、新しいコックピットがつく
   if (isBoat(v) && !v.item.def.vehicle.fixedBow) chooseBow(v);
+  if (v.item.jet) { camYaw = visYaw(v) + Math.PI; camBoatYaw = visYaw(v); }   // 旅客機：乗ったときは後ろから
   if (vtype(v) === 'sub' || v.item.def.vehicle.aegis) initOrders(v);
 }
 
@@ -9055,6 +9058,7 @@ function jetAdi(J) {
 function jetPanelInit() {
   if (canSpeak) { pickEnVoice(); speechSynthesis.addEventListener?.('voiceschanged', pickEnVoice); }
   el('jGear').addEventListener('click', jetGearLever);
+  el('jCam').addEventListener('click', jetCamReset); el('mCam').addEventListener('click', jetCamReset);
   el('jFlapUp').addEventListener('click', () => jetFlapLever(-1));
   el('jFlapDn').addEventListener('click', () => jetFlapLever(1));
   el('jSb').addEventListener('click', jetSpeedbrake);
@@ -9086,6 +9090,13 @@ function jetPanelInit() {
   el('mInvert').textContent = `スティック：${jetInvert ? '前で降下・後ろで上昇（操縦かん式）' : '前で上昇・後ろで降下'}`;
 }
 // キー：G ギア、, . フラップ、/ スピードブレーキ、U オートパイロット、Y オートスロットル
+// 視点（2026-11-14）：旅客機ではカメラは機体といっしょに回るだけ。ドラッグで横・前・斜めにすると、その向きのまま。
+// 「視点⟲」・☰・V キーで、進む向きの後ろからの視点にもどす
+function jetCamReset() {
+  const v = jetRide(); if (!v) return;
+  camYaw = visYaw(v) + Math.PI; camPitch = 0.3; camBoatYaw = visYaw(v);
+  setMenu(false); showMsg('視点を後ろにもどしました');
+}
 function jetKey(code) {
   if (!jetRide()) return false;
   if (code === 'KeyG') jetGearLever();
@@ -9094,6 +9105,7 @@ function jetKey(code) {
   else if (code === 'Slash') jetSpeedbrake();
   else if (code === 'KeyU') jetApButton('ap');
   else if (code === 'KeyY') jetApButton('athr');
+  else if (code === 'KeyV') jetCamReset();
   else return false;
   return true;
 }
@@ -9559,7 +9571,7 @@ let underwater = false;
 let camBoatYaw = null;
 let fpView = false, fpYaw = 0;   // 建物の中の一人称
 function updateCamera(dt) {
-  if (!(driving && ride && (isBoat(ride) || AUTO.on))) camBoatYaw = null;
+  if (!(driving && ride && (isBoat(ride) || AUTO.on || ride.item.jet))) camBoatYaw = null;
   if (periscope && !subRide()) setPeriscope(false);
   if (periscope) {
     // 潜望鏡のいちばん上から、潜望鏡の向きに見る
@@ -9627,7 +9639,7 @@ function updateCamera(dt) {
   if (driving) {
     const car = ride;
     camTarget.set(car.pos.x, car.y + 1.1, car.pos.y);
-    if (isBoat(car) || AUTO.on) {   // 船・潜水艦・自動運転中：カメラは乗り物といっしょに回るだけ（後ろへ戻さない）。横や斜めから見つづけられる
+    if (isBoat(car) || AUTO.on || car.item.jet) {   // 船・潜水艦・旅客機・自動運転中：カメラは乗り物といっしょに回るだけ（後ろへ戻さない）。横や斜めから見つづけられる
       if (camBoatYaw != null) camYaw += wrapA(visYaw(car) - camBoatYaw);
       camBoatYaw = visYaw(car);
     } else if (clock.elapsedTime - camDrag.last > 1.2 && Math.abs(car.vF) > 1) {
@@ -15999,7 +16011,7 @@ window.__world = {
   get car() { const car = ride || myCar; return car && { x: car.pos.x, z: car.pos.y, y: car.y, h: car.h, vF: car.vF, pitch: car.pitch, name: car.name }; },
   vehicles,
   get driving() { return driving; },
-  set camYaw(v) { camYaw = v; }, set camPitch(v) { camPitch = v; }, set camDist(v) { camDist = v; }, get camDist() { return camDist; },
+  set camYaw(v) { camYaw = v; }, get camYaw() { return camYaw; }, set camPitch(v) { camPitch = v; }, set camDist(v) { camDist = v; }, get camDist() { return camDist; },
   keys, touch, toggleRide, loadItem, ITEM_DEFS, heightAt, player, net, syncPeers,
   addPropFromBuffer, wallet, addPoints, PG, openPachi, touch, insideB: () => insideBld(), setCamYaw: (v) => { camYaw = v; }, bgmState: () => ({ name: bgm.name, vol: +bgm.vol.toFixed(2), playing: !!(bgm.el && !bgm.el.paused), t: bgm.el ? +bgm.el.currentTime.toFixed(1) : 0 }), blds, bldFloor, bldPush, roadNear, nearBldAction, placeAt, get bldSeat() { return bldSeat; }, get dayLight() { return dayLight; },
   HWY, groundAt, deckNear, roadSurf, hwExtra, hwSigns, hwTunnels, hwZone, TOLL, HW_LOTS, stepHwRules, hwDraw, HWT, scene, THREE, get rinfo() { return { calls: renderer.info.render.calls, tris: renderer.info.render.triangles }; },
