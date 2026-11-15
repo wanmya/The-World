@@ -1292,7 +1292,7 @@ function mpApply(M) {
     p.o.quaternion.copy(p.q0); p.o.position.copy(p.p0);
     for (const a of p.axes) {
       if (p.type === 'rot') p.o.quaternion.multiply(_mpQ.setFromAxisAngle(a.vec, a.val * Math.PI / 180));
-      else p.o.position.addScaledVector(_mpV.copy(a.vec).applyQuaternion(p.q0), a.val);
+      else p.o.position.addScaledVector(a.vec, a.val);   // 移動は親の軸（Blender の「位置 X・Y・Z」と同じ向き）。部品が回してあっても、Y なら Y の向きにすべる
     }
   }
   M.dirty = false;
@@ -5596,6 +5596,7 @@ const HELP_BASE = `<details><summary>はじめに：Blender の基本（どの�
 <ol>
 <li><b>角度は「書き出した形」を 0 として数えます</b>。砲塔は、前を向いた形で書き出してください。</li>
 <li><b>原点が回る中心</b>になります（上の「原点」のやり方で、砲塔なら回る軸の真ん中、砲身なら砲塔とつながる所へ）。</li>
+<li><b>移動</b>の軸は、Blender の「位置」の X・Y・Z と同じ向きです（親がなければ画面の X・Y・Z。部品を回してあっても変わりません）。</li>
 <li>回るのは部品自身の軸です。部品の回転を 0 にしておくと Blender の X・Y・Z と同じ向きになります（回転を 0 にするには Ctrl+A →「回転」を適用）。</li>
 <li><b>子の部品はいっしょに動きます</b>：砲身を砲塔の子にすると、砲塔が回ると砲身もついてきます。砲身には <code>動作</code>=<code>回転</code>・<code>軸</code>=<code>X</code>・<code>最小</code>=<code>-20</code>・<code>最大</code>=<code>10</code>（上へ 20°・下へ 10°） などをつけます。</li>
 <li>＋の向きは Blender で値を増やした向き：<b>Z は上から見て左回り</b>、X は前が下がる向き（砲身なら下向き。上に向けたいときは −）。</li>
