@@ -583,20 +583,12 @@ body.jetOn #map { display: none !important; }
     <button type="button" data-go="vehicle" class="pveh"><b>乗り物</b><small>自動車・船舶・航空機</small></button>
   </div>
   <div class="pcats" data-screen="vehicle" hidden>
-    <button type="button" data-go="ctype" class="pveh"><b>自動車</b><small>乗用車・バス・トラック・重機など</small></button>
+    <button type="button" data-go="ctype" class="pveh"><b>自動車</b><small>車・トラック・フォークリフト・戦車など</small></button>
     <button type="button" data-go="boat" class="pveh"><b>船舶</b><small>船・潜水艦</small></button>
     <button type="button" data-cat="plane" class="pveh"><b>航空機</b><small>前を +Z に向けた形</small></button>
     <button type="button" data-cat="robot" class="pveh"><b>人型ロボット</b><small>胴体・コックピット・手足（前を +Z）</small></button>
   </div>
   <div class="pcats kinds" data-screen="ctype" hidden></div>
-  <div class="pcats" data-screen="car" hidden>
-    <button type="button" data-cat="car" data-wheels="0" class="pveh" id="placeNoWheel"><b>タイヤなし</b><small>キャタピラ（戦車）。いちばん下が地面、前は −Y</small></button>
-    <button type="button" data-cat="car" data-wheels="2" class="pveh"><b>2 輪</b><small>タイヤ前・タイヤ後</small></button>
-    <button type="button" data-cat="car" data-wheels="3" class="pveh"><b>3 輪</b><small>前 1＋後ろ 2、または前 2＋後ろ 1</small></button>
-    <button type="button" data-cat="car" data-wheels="4" class="pveh"><b>4 輪</b><small>右前・右後・左前・左後（または 左右まとめた 前・後）</small></button>
-    <button type="button" data-cat="car" data-wheels="6" class="pveh"><b>6 輪</b><small>右前・右中・右後（左も）。曲がるのは前だけ</small></button>
-    <button type="button" data-cat="car" data-wheels="8" class="pveh"><b>8 輪</b><small>右前1・右前2・右中・右後（左も）。前1・前2 が曲がる</small></button>
-  </div>
   <div class="pcats" data-screen="boat" hidden>
     <button type="button" data-cat="ship" class="pveh"><b>船</b><small>海の上を走る・相乗りできる</small></button>
     <button type="button" data-cat="sub" class="pveh"><b>潜水艦</b><small>水にもぐれる・相乗りできる</small></button>
@@ -978,6 +970,56 @@ const VKINDS = {
   other: { name: 'その他', icon: '🚘', re: /^$/, g: 'pass', note: 'どれでもない車' },
 };
 const VKIND_ORDER = ['tank', 'combine', 'tractor', 'mixer', 'tanker', 'dump', 'heavy', 'bus', 'truck', 'sports', 'kei', 'van', 'bike', 'sedan'];
+/* ---- 自動車の動き方（「glTF を置く」→ 乗り物 → 自動車 で選ぶ）。バスかダンプかではなく、どのタイヤで曲がるか ----
+   front：前のタイヤで曲がる（ふつうの車）  rear：後ろのタイヤで曲がる（フォークリフト。後ろがふられる）
+   both：前と後ろで曲がる（小回り）  track：キャタピラ（その場で回れる。戦車・ショベルカー）
+   保存は props.kind（front 以外のとき）。前の種類（sedan・dump…）で置いた車は front */
+const STEERS = {
+  front: { name: '前輪で曲がる', icon: '🚗', note: 'ふつうの車・バス・トラックなど' },
+  rear: { name: '後輪で曲がる', icon: '🏭', note: 'フォークリフトなど（後ろがふられる）' },
+  both: { name: '前後で曲がる', icon: '🔄', note: '小回りがきく特殊な車' },
+  track: { name: 'キャタピラ', icon: '🛡️', note: 'その場で回れる（戦車・ショベルカーなど）' },
+};
+const STEER_KEYS = ['操舵', '曲がり方', 'steer', 'steering'];
+// カスタムプロパティ「操舵」の文字から動き方（なければ null）
+function steerFromText(t) {
+  t = String(t || '');
+  if (!t) return null;
+  if (/キャタピラ|履帯|クローラ|無限軌道|戦車|track|crawler/i.test(t)) return 'track';
+  if (/前後|四輪|4ws|all|both/i.test(t)) return 'both';
+  if (/後|リア|rear|back|フォーク/i.test(t)) return 'rear';
+  if (/前|フロント|front|ふつう|普通/i.test(t)) return 'front';
+  return null;
+}
+const STEER_DIR = { front: { f: 1, r: 0 }, rear: { f: 0, r: -1 }, both: { f: 1, r: -1 }, track: { f: 0, r: 0 } };
+// キャタピラの部品のマテリアル（模様）を、走った分だけ流すための準備。UV の u・v のどちらが前後（Z）に合っているかを頂点から調べる
+function trackTread(root, obj, side) {
+  root.updateMatrixWorld(true);
+  const inv = new THREE.Matrix4().copy(root.matrixWorld).invert(), M = new THREE.Matrix4(), v = new THREE.Vector3();
+  let n = 0, sz = 0, su = 0, sv = 0, szz = 0, szu = 0, szv = 0, suu = 0, svv = 0;
+  const mats = [], bb = new THREE.Box3().setFromObject(obj), midY = (bb.min.y + bb.max.y) / 2;
+  obj.traverse((m) => {
+    if (!m.isMesh || !m.geometry || !m.geometry.attributes.uv) return;
+    const P = m.geometry.attributes.position, U = m.geometry.attributes.uv, step = Math.max(1, Math.floor(P.count / 1500));
+    M.multiplyMatrices(inv, m.matrixWorld);
+    for (let i = 0; i < P.count; i += step) {
+      v.fromBufferAttribute(P, i).applyMatrix4(M);
+      if (v.y < midY) continue;   // 上側の面だけ（下と上で流れる向きが逆なので）
+      const z = v.z, u = U.getX(i), w = U.getY(i);
+      n++; sz += z; su += u; sv += w; szz += z * z; szu += z * u; szv += z * w; suu += u * u; svv += w * w;
+    }
+    m.material = [].concat(m.material).map((mt) => { if (!mt || !mt.map) return mt; const c = mt.clone(); c.map = mt.map.clone(); c.map.needsUpdate = true; c.map.wrapS = c.map.wrapT = THREE.RepeatWrapping; mats.push(c); return c; });
+    if (m.material.length === 1) m.material = m.material[0];
+  });
+  if (!mats.length || n < 4) return null;
+  const vz = szz / n - (sz / n) ** 2, cu = szu / n - sz * su / n / n, cv = szv / n - sz * sv / n / n, vu = suu / n - (su / n) ** 2, vv = svv / n - (sv / n) ** 2;
+  if (vz < 1e-6) return null;
+  const ru = Math.abs(cu) / Math.sqrt(vz * vu + 1e-12), rv = Math.abs(cv) / Math.sqrt(vz * vv + 1e-12);
+  const useU = ru > rv, slope = (useU ? cu : cv) / vz;   // 1m 進むと UV がいくつ動くか
+  if (!Number.isFinite(slope) || Math.abs(slope) < 1e-4) return null;
+  return { mats, useU, slope, side };
+}
+const TRACK_RE = /^(キャタピラ|キャタピラー|履帯|クローラ|クローラー|track|crawler)/i;
 // 名前やカスタムプロパティ「種類」の文字から種類を見つける（見つからなければ null）
 function kindFromText(txt) { for (const k of VKIND_ORDER) if (VKINDS[k].re.test(txt || '')) return k; return null; }
 const NEED_TXT = { bed: '「荷台」', drum: '「ドラム」', tank: '「タンク」' };
@@ -1022,64 +1064,79 @@ function rigAutoCar(item, root, model, gltf, def) {
   // 選んだタイヤの数のならべ方（読み込み直すときは、名前から多い順に見つける）
   let lay = null;
   for (const n of def.wheels ? [def.wheels] : [8, 6, 4, 3, 2]) for (const l of LAYOUTS[n] || []) if (!lay && l.every((k) => found[k])) lay = l;
-  // 戦車はタイヤがなくても走れる（キャタピラ。前は Blender の −Y、いちばん下が地面）
-  const wheelless = !lay && (def.sub === 'tank' || (!VKINDS[def.sub] && kindFromText(strOf(model, KIND_KEYS) || strOf({ traverse: (f) => f({ userData: extrasOf(gltf) }) }, KIND_KEYS)) === 'tank'));
-  if (wheelless) lay = [];
-  if (!lay) {
-    const n = def.wheels || 4;
-    if (n === 3) reasons.push('3 輪は「タイヤ前・タイヤ右後・タイヤ左後」か「タイヤ右前・タイヤ左前・タイヤ後」という名前の部品が必要です');
-    else {
-      for (const k of LAYOUTS[n][0]) if (!found[k]) reasons.push(`「${WHEEL_DEFS[k][0]}」という名前の部品がありません`);
-      if (n >= 4) reasons.push(`左右のタイヤを 1 つの部品にまとめるなら ${n === 4 ? '「タイヤ前」「タイヤ後」' : n === 6 ? '「タイヤ前」「タイヤ中」「タイヤ後」' : '「タイヤ前1」「タイヤ前2」「タイヤ中」「タイヤ後」'} という名前でも走れます`);
-    }
-    throw new RuleError('car', reasons);
-  }
+  // 動き方：選んだもの → カスタムプロパティ「操舵」 → タイヤがなくてキャタピラがあればキャタピラ
+  const tracks = []; model.traverse((o) => { if (TRACK_RE.test(o.name || '') && !tracks.some((q) => { for (let p = o.parent; p; p = p.parent) if (p === q) return true; return false; })) tracks.push(o); });
+  const isTank = def.sub === 'tank' || kindFromText(strOf(model, KIND_KEYS) || extrasOf(gltf)[KIND_KEYS[0]] || def.name) === 'tank';   // 戦車はキャタピラ
+  let steer = STEERS[def.steer] ? def.steer : steerFromText(strOf(model, STEER_KEYS) || extrasOf(gltf)[STEER_KEYS[0]]) || ((!lay && tracks.length) || isTank ? 'track' : 'front');
+  // タイヤもキャタピラもなくても走れる（形の箱で地面にのる）。タイヤがあれば、ならべ方に合わなくても、あるタイヤだけ回す
+  const inModel = (o) => { for (let p = o; p; p = p.parent) if (p === model) return true; return false; };
+  if (!lay) { const seen = new Set(); lay = Object.keys(WHEEL_DEFS).filter((k) => found[k] && inModel(found[k]) && !seen.has(found[k]) && seen.add(found[k])); }
   const measure = () => {
     root.updateMatrixWorld(true);
     const w = {};
     for (const k of lay) { const b = new THREE.Box3().setFromObject(found[k]); w[k] = { b, c: b.getCenter(new THREE.Vector3()), s: b.getSize(new THREE.Vector3()) }; }
     return w;
   };
-  let w = measure();
-  for (const k of lay) if (w[k].b.isEmpty()) reasons.push(`「${WHEEL_DEFS[k][0]}」に形が入っていません`);
-  if (reasons.length) throw new RuleError('car', reasons);
-  const fr = lay.filter((k) => FRONT_W.has(k)), rr = lay.filter((k) => REAR_W.has(k));
-  const avgZ = (keys) => keys.reduce((a, k) => a + w[k].c.z, 0) / keys.length;
-  let frontZ = avgZ(fr), rearZ = avgZ(rr);
-  if (wheelless) { const b = modelBox(root, model), L = b.max.z - b.min.z; frontZ = b.max.z - L * 0.2; rearZ = b.min.z + L * 0.2; }
-  else if (frontZ < rearZ - 0.3) { model.rotation.y = Math.PI; w = measure(); frontZ = avgZ(fr); rearZ = avgZ(rr); }   // 前が -Z 向きなら回してあげる
-  if (frontZ - rearZ < 0.3) reasons.push('前のタイヤと後ろのタイヤが同じ位置にあります（車の前を +Z に向けてください）');
+  let w = measure(), frontZ = 0, rearZ = 0;
+  lay = lay.filter((k) => !w[k].b.isEmpty());
   const radius = {};
   for (const k of lay) {
     radius[k] = Math.max(w[k].s.y, w[k].s.z) / 2;
     if (radius[k] < CAR_LIMITS.rMin || radius[k] > CAR_LIMITS.rMax) reasons.push(`「${WHEEL_DEFS[k][0]}」の半径が ${radius[k].toFixed(2)}m です（${CAR_LIMITS.rMin}〜${CAR_LIMITS.rMax}m にしてください）`);
   }
   if (reasons.length) throw new RuleError('car', reasons);
-  // 前と後ろのタイヤの真ん中を原点に、いちばん低いタイヤの下を地面に
-  let ground = Infinity, mx = 0;
-  for (const k of lay) { ground = Math.min(ground, w[k].c.y - radius[k]); mx += w[k].c.x / lay.length; }
-  if (wheelless) { const b = modelBox(root, model); ground = b.min.y; mx = (b.min.x + b.max.x) / 2; }
-  const mz = (frontZ + rearZ) / 2;
-  model.position.set(model.position.x - mx, model.position.y - ground, model.position.z - mz);
+  // キャタピラ：「キャタピラ右」「キャタピラ左」か、左右まとめた「キャタピラ」（車のまん中で左右に分ける）
+  const tr = {};
+  for (const o of tracks) {
+    const n = (o.name || '').replace(TRACK_RE, '');
+    if (/右|right|^[ _-]?r(?![a-z])/i.test(n)) { tr.R = tr.R || o; continue; }
+    if (/左|left|^[ _-]?l(?![a-z])/i.test(n)) { tr.L = tr.L || o; continue; }
+    const bb = new THREE.Box3().setFromObject(o); if (bb.isEmpty()) continue;
+    const [neg, pos] = splitBySide(root, o, (bb.min.x + bb.max.x) / 2);
+    tr.R = tr.R || neg; tr.L = tr.L || pos;
+  }
+  const trackList = [tr.R, tr.L].filter(Boolean);
+  const fr = lay.filter((k) => FRONT_W.has(k)), rr = lay.filter((k) => REAR_W.has(k) || k === 'MR' || k === 'ML');
+  const avgZ = (keys) => keys.reduce((a, k) => a + w[k].c.z, 0) / keys.length;
+  if (fr.length && rr.length) {   // 前と後ろのタイヤがある：タイヤで前の向き・中心・地面を決める
+    frontZ = avgZ(fr); rearZ = avgZ(rr);
+    if (frontZ < rearZ - 0.3) { model.rotation.y = Math.PI; w = measure(); frontZ = avgZ(fr); rearZ = avgZ(rr); }   // 前が -Z 向きなら回してあげる
+    if (frontZ - rearZ < 0.3) { reasons.push('前のタイヤと後ろのタイヤが同じ位置にあります（車の前を +Z に向けてください）'); throw new RuleError('car', reasons); }
+    // 前と後ろのタイヤの真ん中を原点に、いちばん低いタイヤの下を地面に
+    let ground = Infinity, mx = 0;
+    for (const k of lay) { ground = Math.min(ground, w[k].c.y - radius[k]); mx += w[k].c.x / lay.length; }
+    for (const o of trackList) ground = Math.min(ground, new THREE.Box3().setFromObject(o).min.y);
+    model.position.set(model.position.x - mx, model.position.y - ground, model.position.z - (frontZ + rearZ) / 2);
+  } else {   // キャタピラだけ・タイヤなし：キャタピラ（なければ全体）の箱。前は +Z（Blender の −Y）
+    root.updateMatrixWorld(true);
+    const bb = new THREE.Box3();
+    for (const o of trackList) bb.union(new THREE.Box3().setFromObject(o));
+    if (bb.isEmpty()) bb.copy(modelBox(root, model));
+    if (bb.isEmpty()) { reasons.push('形が入っていません'); throw new RuleError('car', reasons); }
+    const len = Math.max(0.5, bb.max.z - bb.min.z), k = trackList.length ? 0.4 : 0.35;
+    model.position.set(model.position.x - (bb.min.x + bb.max.x) / 2, model.position.y - bb.min.y, model.position.z - (bb.min.z + bb.max.z) / 2);
+    frontZ = len * k; rearZ = -len * k;   // 地面の傾きを見る前後の点
+  }
   w = measure();
   const all = modelBox(root, model), size = all.getSize(new THREE.Vector3());
-  // 種類：置くときに選んだもの、なければカスタムプロパティ「種類」、なければ形から（荷台→トラック）
+  // 種類（できることを決める。動き方とは別）：前の置き方・販売店で決めた種類 → カスタムプロパティ「種類」 → ファイル名 → 部品（ドラム→ミキサー、タンク→タンクローリー、ブーム・バケット→重機、荷台→トラック）
   const topParts = (re) => { const out = []; model.traverse((o) => { if (re.test(o.name || '') && !out.some((q) => { for (let p = o.parent; p; p = p.parent) if (p === q) return true; return false; })) out.push(o); }); return out; };
   const bed = topParts(BED_RE)[0] || null, drums = topParts(DRUM_RE), tank = topParts(TANK_RE)[0] || null, seatParts = topParts(SEAT_RE);
   const has = { bed: !!bed, drum: drums.length > 0, tank: !!tank };
   const propKind = kindFromText(strOf(model, KIND_KEYS) || strOf({ traverse: (f) => f({ userData: extrasOf(gltf) }) }, KIND_KEYS));
-  let kind = VKINDS[def.sub] && def.sub !== 'other' ? def.sub : propKind;
+  let kind = VKINDS[def.sub] && def.sub !== 'other' ? def.sub : propKind || kindFromText(def.name);
   const lack = (k) => (VKINDS[k].need || []).filter((n) => !has[n]);
   if (kind && lack(kind).length) {
     if (def.strict && kind === def.sub) { for (const n of lack(kind)) reasons.push(`${VKINDS[kind].name}には${NEED_TXT[n]}という名前の部品がいります（下の「Blender でのつくり方」を見てください）`); throw new RuleError('car', reasons); }
     kind = null;   // みんなの物・販売店の車：部品が足りなければ、形から決めなおす
   }
+  if (!kind) kind = has.drum ? 'mixer' : has.tank ? 'tanker' : topParts(BOOM_RE).length || topParts(BUCKET_RE).length ? 'heavy' : null;
   const kindSet = !!kind || def.sub === 'other';
-  if (!kind) kind = def.sub === 'other' ? 'other' : bed ? 'truck' : lay.length <= 3 ? 'bike' : 'sedan';
+  if (!kind) kind = def.sub === 'other' ? 'other' : bed ? 'truck' : lay.length && lay.length <= 3 ? 'bike' : 'sedan';
   const VK = VKINDS[kind];
-  // 荷台があるか、大きな車の種類なら 12.5m まで。荷台の床の広さで運べる重さ
-  const LIM = bed || VK.lim === 'truck' ? TRUCK_LIMITS : CAR_LIMITS;
-  if (size.z > LIM.length) reasons.push(`全長が ${size.z.toFixed(1)}m です（${LIM.length}m まで${LIM === CAR_LIMITS ? '。バス・トラックなど大きな車の種類なら 12.5m まで' : ''}）`);
+  // 大きさは種類によらず、全長 12.5m・全幅 3.5m・高さ 4.2m まで。荷台の床の広さで運べる重さ
+  const LIM = TRUCK_LIMITS;
+  if (size.z > LIM.length) reasons.push(`全長が ${size.z.toFixed(1)}m です（${LIM.length}m まで）`);
   if (size.x > LIM.width) reasons.push(`全幅が ${size.x.toFixed(1)}m です（${LIM.width}m まで）`);
   if (size.y > LIM.height) reasons.push(`高さが ${size.y.toFixed(1)}m です（${LIM.height}m まで）`);
   let cargo = null;
@@ -1090,29 +1147,46 @@ function rigAutoCar(item, root, model, gltf, def) {
   let load = null;
   if (kind === 'mixer' && drums.length) { const ds = new THREE.Box3().setFromObject(drums[0]).getSize(new THREE.Vector3()); const m3 = numIn(model, ['容量', 'capacity']) || ds.x * ds.y * ds.z * 0.3; load = { type: 'concrete', what: '生コン', m3: Math.round(THREE.MathUtils.clamp(m3, 0.5, 12) * 10) / 10 }; }
   if (kind === 'tanker' && tank) { const ts = new THREE.Box3().setFromObject(tank).getSize(new THREE.Vector3()), r = Math.min(ts.x, ts.y) / 2; const L = numIn(model, ['容量', 'capacity']) || Math.PI * r * r * ts.z * 1000; load = { type: 'liquid', what: strOf(model, ['積荷', '積み荷', 'cargo_type']) || '液体', L: Math.round(THREE.MathUtils.clamp(L, 200, 30000) / 100) * 100 }; }
-  // タイヤを「ハンドルで曲がる箱」と「転がる箱」に入れる（タイヤの中心を軸にする）。曲がるのは前のタイヤだけ
+  // タイヤを「ハンドルで曲がる箱」と「転がる箱」に入れる（タイヤの中心を軸にする）。
+  // どのタイヤが曲がるかは動き方で決まる（前輪：名前に「前」、後輪：名前に「後」、前後：両方。後ろは前と逆に切れる）。
+  // タイヤのカスタムプロパティ「操舵」で変えられる：しない（曲がらない）・する（ふつうの向き）・逆・同じ（前と同じ向き＝かに歩き）
+  const ST = STEER_DIR[steer] || STEER_DIR.front;
+  let sf = 0, sr = 0;   // ハンドルを 1 切ったときの前・後ろのタイヤの角度（左が +）
   for (const k of lay) {
-    const steer = new THREE.Group(), spin = new THREE.Group();
-    steer.position.copy(w[k].c);
-    root.add(steer); steer.add(spin);
+    const st = new THREE.Group(), spin = new THREE.Group();
+    st.position.copy(w[k].c);
+    root.add(st); st.add(spin);
     root.updateMatrixWorld(true);
     spin.attach(found[k]);
-    // 前の軸が 2 本あるときは、後ろの軸から遠いほど大きく曲げる（まん中の前輪がハンドルの角度）
-    item.wheels.push({ steer, spin, front: FRONT_W.has(k), sk: FRONT_W.has(k) && frontZ - rearZ > 0.3 ? (w[k].c.z - rearZ) / (frontZ - rearZ) : 1 });
+    const isF = FRONT_W.has(k), isR = REAR_W.has(k), atFront = w[k].c.z > (frontZ + rearZ) / 2;
+    let d = isF ? ST.f : isR ? ST.r : 0;
+    const pp = propsOf(found[k], STEER_KEYS), say = String(STEER_KEYS.map((q) => pp[q]).find((x) => x != null) ?? '');
+    if (/しない|なし|no|false|^0$|固定/i.test(say)) d = 0;
+    else if (/逆|反対|opposite|reverse/i.test(say)) d = -1;
+    else if (/同じ|same|かに|crab/i.test(say)) d = 1;
+    else if (/する|あり|yes|true|^1$/i.test(say) && !d) d = atFront ? 1 : -1;
+    // 前の軸が 2 本あるとき（8 輪）は、後ろの軸から遠いほど大きく曲げる（いちばん前の軸がハンドルの角度）
+    const sk = d && steer === 'front' && isF && frontZ - rearZ > 0.3 ? (w[k].c.z - rearZ) / (frontZ - rearZ) : 1;
+    if (d && atFront) sf = Math.abs(sf) < Math.abs(d) ? d : sf; else if (d) sr = Math.abs(sr) < Math.abs(d) ? d : sr;
+    item.wheels.push({ steer: st, spin, front: !!d, dir: d, sk, side: k.length > 1 && /L$/.test(k) ? 1 : k.length > 1 && /R$/.test(k) ? -1 : 0, r: radius[k] });
   }
+  if (!lay.length) { sf = ST.f; sr = ST.r; }   // タイヤがない車は、動き方どおりに曲がる
+  if (steer === 'track') { sf = 0; sr = 0; }
+  // キャタピラの模様を走った分だけ流す（UV のどちらが前後かは形から調べる）
+  const treads = trackList.map((o, i) => trackTread(root, o, trackList.length === 2 ? (i ? 1 : -1) : 0)).filter(Boolean);
   const kmh = carKmh(model, extrasOf(gltf), VK.kmh || 60);
   const halfWidth = Math.max(0.3, Math.abs(all.min.x), all.max.x), halfLength = size.z / 2, centerZ = (all.max.z + all.min.z) / 2;
-  const wheelRadius = lay.length ? lay.reduce((a, k) => a + radius[k], 0) / lay.length : 0.4;
+  const wheelRadius = lay.length ? lay.reduce((a, k) => a + radius[k], 0) / lay.length : 0.35;
   // 相乗りの席：「座席」という名前の部品（運転席のほか）。バスで座席がなければ、車内のまんなかにならべる
   let seats = seatParts.map((o) => { const b = new THREE.Box3().setFromObject(o), c = b.getCenter(new THREE.Vector3()); return [Math.round(c.x * 100) / 100, Math.round(b.min.y * 100) / 100, Math.round(c.z * 100) / 100]; }).slice(0, 16);
   if (!seats.length && kind === 'bus') for (let z = all.min.z + 1.2; z < all.max.z - 2 && seats.length < 16; z += 1.4) seats.push([0, wheelRadius * 1.3, Math.round(z * 100) / 100]);
   const cap = numIn(model, ['定員', 'capacity_people', 'seats']);
   item.def.vehicle = {
-    type: 'car', wheels: lay.length, cargo, kind, kindSet, load,
+    type: 'car', wheels: lay.length, cargo, kind, kindSet, load, steer, sf, sr, spinTurn: steer === 'track', treads: treads.length ? treads : undefined,
     seats: seats.length ? seats : undefined, pass: seats.length > 0, cap: cap ? Math.min(99, Math.round(cap)) : seats.length + 1,
     wheelRadius, wheelbase: frontZ - rearZ,
     halfWidth, halfLength, centerZ, height: size.y,
-    maxSpeed: kmh / 3.6, accel: 7, brake: 16, reverseMax: 6, maxSteer: 0.6, pw: 3, drag: 0.0001,   // 小型車と同じ：最高速度までちゃんと出る（前は空気の抵抗で 60km/h の車が 53km/h どまりだった）
+    maxSpeed: kmh / 3.6, accel: 7, brake: 16, reverseMax: 6, maxSteer: steer === 'rear' ? 0.8 : 0.6, pw: 3, drag: 0.0001,   // 小型車と同じ：最高速度までちゃんと出る（前は空気の抵抗で 60km/h の車が 53km/h どまりだった）
     exit: [-(halfWidth + 0.6), centerZ],
   };
   item.size = size;
@@ -4841,9 +4915,11 @@ function bldCamClip(target, camP) {
 }
 // .glb を読んで、選んだ種類の形にする（自動車はルールに合わないと CarRuleError）
 // sub：自動車の種類（VKINDS）。strict：置く人が選んだ種類なので、いる部品がなければルール違反にする
-async function buildThing(buf, name, cat, wheels, sub, strict) {
+// steer：自動車の動き方（STEERS）。sub に STEERS のキーを入れてもよい（保存した props.kind が動き方のとき）
+async function buildThing(buf, name, cat, wheels, sub, strict, steer) {
   const veh = VEHICLE_CATS.has(cat);
-  return loadItem({ name, kind: veh ? 'vehicle' : 'prop', rig: veh ? cat : null, wheels, sub: cat === 'car' && VKINDS[sub] ? sub : undefined, strict: !!strict, source: { buffer: buf.slice(0) } });
+  if (STEERS[sub]) { steer = sub; sub = undefined; }
+  return loadItem({ name, kind: veh ? 'vehicle' : 'prop', rig: veh ? cat : null, wheels, sub: cat === 'car' && VKINDS[sub] ? sub : undefined, steer: cat === 'car' && STEERS[steer] ? steer : undefined, strict: !!strict, source: { buffer: buf.slice(0) } });
 }
 // 建物の置き場所えらび：自分の前に建物を出して、歩くとついてくる。⟲⟳ で正面（入口 +Z）の向きを 15° ずつ回す
 function chooseBuildingSpot(item) {
@@ -4888,8 +4964,8 @@ function kindInfo(V) {
   if (V.pass) t.push(`定員 ${V.cap} 人（相乗りできる）`);
   return t.length ? `（${t.join('・')}）` : '';
 }
-async function addPropFromBuffer(buf, name, cat, wheels, sub, strict) {
-  const item = await buildThing(buf, name, cat, wheels, sub, strict);   // 乗り物のルール違反はここで投げる
+async function addPropFromBuffer(buf, name, cat, wheels, sub, strict, steer) {
+  const item = await buildThing(buf, name, cat, wheels, sub, strict, steer);   // 乗り物のルール違反はここで投げる
   const veh = VEHICLE_CATS.has(cat), V = veh ? item.def.vehicle : null;
   let chosen = null;
   if (cat === 'building') {   // 建物は、置く前に場所と正面の向きを決める
@@ -4911,8 +4987,9 @@ async function addPropFromBuffer(buf, name, cat, wheels, sub, strict) {
   }
   const tris = countTris(item.root);
   const VK = cat === 'car' && V && V.kindSet ? VKINDS[V.kind] : null;
-  const label = VK ? VK.name : CATS[cat];
-  const kindRow = VK ? V.kind : null;
+  const ST = cat === 'car' && V && V.steer && V.steer !== 'front' ? STEERS[V.steer] : null;
+  const label = ST ? ST.name : VK ? VK.name : CATS[cat];
+  const kindRow = ST ? V.steer : VK ? V.kind : null;   // props.kind：前輪で曲がる車は種類（sedan・dump…）、ほかは動き方（rear・both・track）
   const place = (id) => {
     const o = veh ? makeVehicle(item, x, z, rot, { id, shared: !!id, name }) : placeProp(item, name, cat, x, z, rot, id);
     o.mine = true;   // 自分が出した物（メニューから消せる）
@@ -4959,7 +5036,7 @@ async function loadSharedProp(d) {
     const buf = await net.db.file(id);
     if (buf.byteLength > SHARE_MAX) throw new Error('大きすぎます');
     let item, asCat = cat;
-    try { item = await buildThing(buf, name, cat, undefined, VKINDS[d.kind] ? d.kind : undefined); }
+    try { item = await buildThing(buf, name, cat, undefined, VKINDS[d.kind] || STEERS[d.kind] ? d.kind : undefined); }
     catch (e) { if (!VEHICLE_CATS.has(cat)) throw e; asCat = 'prop'; item = await buildThing(buf, name, 'prop'); }
     if (!net.loading.has(id)) return;   // 読み込み中に片付けられた
     const x = num(d.x, X0 + 1, X1 - 1), z = num(d.z, Z0 + 1, Z1 - 1), rot = num(d.rot, -100, 100);
@@ -5042,13 +5119,13 @@ const HELP_CAR = `<h4>自動車のきまり（どの種類も同じ）</h4>
 <tr><td>8 輪</td><td>前から <code>タイヤ右前1</code> <code>タイヤ右前2</code> <code>タイヤ右中</code> <code>タイヤ右後</code>（左も同じ：<code>タイヤ左前1</code> <code>タイヤ左前2</code> <code>タイヤ左中</code> <code>タイヤ左後</code>）</td></tr></table></li>
 <li><b>名前のつけ方のきまり</b>：
 <ul><li><code>タイヤ</code> ＋ <code>右</code> か <code>左</code> ＋ 場所（<code>前</code>・<code>中</code>・<code>後</code>）。2 輪と、3 輪の 1 本だけの所は 右・左 をつけない（<code>タイヤ前</code>）。</li>
-<li><b>ハンドルで曲がるのは、名前に「前」がつくタイヤだけ</b>です。6 輪・8 輪の 中・後 は曲がりません。8 輪は 前1・前2 の 2 本の軸が曲がり、前1 のほうが少し大きく曲がります。</li>
+<li><b>ハンドルで曲がるのは、名前に「前」がつくタイヤ</b>です（後輪で曲がる車は「後」、前後で曲がる車は両方）。6 輪・8 輪の 中 は曲がりません。8 輪は 前1・前2 の 2 本の軸が曲がり、前1 のほうが少し大きく曲がります。</li>
 <li>前の軸が 2 本あるときは、前から順に <code>1</code> <code>2</code> をつける。<code>タイヤ右前</code> は <code>タイヤ右前1</code> と同じです。</li>
 <li>名前は頭が合っていればよい（<code>タイヤ右前.001</code> も OK）。英語なら <code>wheel_fr</code> <code>wheel_fr2</code> <code>wheel_mr</code> <code>wheel_rr</code>（左は l）。</li>
 <li>前に作った 8 輪（<code>タイヤ右後2</code> <code>タイヤ左後2</code> がある車）もそのまま走れます（そのときは 前 だけ曲がる）。</li></ul></li>
 <li><b>左右のタイヤを 1 つの部品にまとめてもよい</b>（Ctrl+J で結合）：4 輪は <code>タイヤ前</code> <code>タイヤ後</code>、6 輪は <code>タイヤ前</code> <code>タイヤ中</code> <code>タイヤ後</code>、8 輪は <code>タイヤ前1</code> <code>タイヤ前2</code> <code>タイヤ中</code> <code>タイヤ後</code>。ワールドが車のまん中で左右に分けて、それぞれのタイヤの中心で回し、前はハンドルで曲げます（原点はどこでもよい）。2 輪の <code>タイヤ前</code> <code>タイヤ後</code> は 1 本ずつです。</li>
 <li>地面の高さ・車の中心は、ワールドがタイヤから決めます（いちばん低いタイヤの下が地面）。</li>
-<li>大きさ：全長 7m・全幅 3.5m・高さ 4m まで。バス・トラック・ダンプ・ミキサー・タンクローリー・重機は全長 12.5m・高さ 4.2m まで。</li>
+<li>大きさ：全長 12.5m・全幅 3.5m・高さ 4.2m まで。</li>
 </ol>
 <h4>どの車にもつけられる物</h4>
 <table><tr><th>部品の名前</th><th>はたらき</th></tr>
@@ -5064,24 +5141,27 @@ const HELP_CAR = `<h4>自動車のきまり（どの種類も同じ）</h4>
 <tr><td><code>種類</code> = <code>ダンプ</code> など</td><td>車の種類。つけておくと、ほかの人の画面や販売店でもその種類になる（ここで選んだ種類もみんなに伝わります）</td></tr>
 <tr><td><code>最高速度</code> = <code>120</code></td><td>km/h（10〜400）。ないときは 60（重機・コンバイン 15、トラクター 35、バス 80）</td></tr>
 <tr><td><code>定員</code> = <code>40</code></td><td>乗れる人数（表示用。相乗りできるのは座席の数まで）</td></tr></table>`;
-const HELP_KIND = {
-  pass: `<h4>乗用車・軽・スポーツ・ワゴン・バイク</h4><p>人が乗るだけの車です。上のきまり（ボディ＋タイヤ）だけで走れます。助手席や後ろの席に <code>座席_1</code>… を置くと、友だちが相乗りできます。バイクは 2 輪か 3 輪を選んでください。</p>`,
-  bus: `<h4>バス</h4><ol><li>ボディ＋タイヤ（4・6・8 輪）。全長 12.5m まで。</li><li>客席のいすに <code>座席_1</code> <code>座席_2</code>… と名前をつける（16 席まで）。だれかが運転しているとき、ほかの人が「相乗り」で座れます。座席がないときは、車内のまんなかに自動でならべます。</li><li>カスタムプロパティ <code>定員</code> に乗れる人数（例 <code>40</code>）。</li></ol>`,
-  truck: `<h4>トラック</h4><ol><li>ボディ＋タイヤ（4・6・8 輪）。全長 12.5m まで。</li><li>荷物をのせる所を別の部品にして、名前を <code>荷台</code> にする（箱の荷台なら、その箱）。</li><li>荷台の床の広さ（よこ×たて）で運べる重さが決まります：<b>1㎡ で 400kg、12 トンまで</b>。例：2m×4m の荷台 → 3,200kg。</li><li>🏢 事業 → トラック で「自分の glTF のトラック」として仕入れ・配達につかえます（買わなくてよい）。</li></ol>`,
-  dump: `<h4>ダンプカー</h4><ol><li>トラックと同じ：ボディ＋タイヤ＋<code>荷台</code>（荷台は必ずいります）。</li><li>荷台の後ろの下のふちを軸にして、前が持ち上がります（原点はどこでもよい）。荷台の上にのっている物（あおりなど）は、荷台の子にしておくといっしょに上がります。</li><li>運転中に「荷台を上げる」ボタン（パソコンは <code>K</code>）。もう一度で下がります。</li><li>荷台の広さ×高さで、つめる土砂の量（㎥）も出ます。事業ではトラックとしてもつかえます。</li></ol>`,
-  mixer: `<h4>コンクリートミキサー車</h4><ol><li>ボディ＋タイヤ（6・8 輪がおすすめ）。</li><li>回るドラムを別の部品にして、名前を <code>ドラム</code> にする（必ずいります）。</li><li><b>ドラムの作り方</b>：「追加」→「メッシュ」→「円柱」で作り、<b>X 軸で 90° くらい回して横にねかせ、少しかたむける</b>。原点は真ん中のまま。<b>回転は「適用」しない</b>（Ctrl+A をしない）でください。ドラムは「円柱を作ったときの縦の軸」で回ります。</li><li>走っているあいだはゆっくり回り、「生コンを出す」ボタン（<code>K</code>）で逆にはやく回ります。</li><li>カスタムプロパティ <code>容量</code> に ㎥（例 <code>4.4</code>）。ないときはドラムの大きさから決めます。</li></ol>`,
-  tanker: `<h4>タンクローリー</h4><ol><li>ボディ＋タイヤ（6・8 輪がおすすめ）。</li><li>タンクを別の部品にして、名前を <code>タンク</code> にする（必ずいります）。前後に長い円柱にすると、容量がうまく計算されます。</li><li>カスタムプロパティ <code>容量</code> にリットル（例 <code>16000</code>）、<code>積荷</code> に中身（<code>ガソリン</code> <code>軽油</code> <code>水</code> <code>牛乳</code> など）。容量がないときはタンクの大きさから決めます（30,000L まで）。</li><li>これから増える事業（燃料・牛乳の運送など）でつかえるように、種類と容量を覚えておきます。</li></ol>`,
-  heavy: `<h4>重機（ショベルカー・クレーン・ブルドーザー）</h4><ol><li>ボディ（下の走る部分）＋タイヤ。キャタピラの重機は、キャタピラの中に小さな「タイヤ」を 4 つ入れてください（見えなくてよい）。</li><li>動く部品の名前：
-<table><tr><th>名前</th><th>動き</th><th>原点</th></tr>
-<tr><td><code>上部</code></td><td>運転席ごと左右に回る</td><td>どこでもよい（形の真ん中で回る）</td></tr>
-<tr><td><code>ブーム</code></td><td>上下にふる</td><td>上部とつながる関節</td></tr>
-<tr><td><code>アーム</code></td><td>上下にふる</td><td>ブームとつながる関節</td></tr>
-<tr><td><code>バケット</code>（<code>ブレード</code>）</td><td>すくう</td><td>アームとつながる関節</td></tr></table>
-どれか 1 つでもよい（ブルドーザーは <code>ブレード</code> だけ、クレーンは <code>上部</code>＋<code>ブーム</code> など）。親子にしていなくても、バケット→アーム→ブーム→上部の順にいっしょに動きます。</li>
-<li>関節の原点は、関節の軸の真ん中に置く（上の「原点」のやり方）。関節は左右（X）の軸で回ります。</li><li>運転中に「作業」ボタン（<code>K</code>）で、旋回・ブーム・アーム・バケットが動きます。最高速度はないとき 15km/h。</li><li>カスタムプロパティ <code>種類</code> に <code>ショベル</code> <code>クレーン</code> <code>ブルドーザー</code> など。</li></ol>`,
-  tank: `<h4>戦車</h4><ol><li>車体の名前を <code>ボディ</code>（または <code>車体</code>）にする。</li><li><b>タイヤはなくてもよい</b>（「タイヤなし」を選ぶ）。そのときは、いちばん下が地面、前は Blender の <b>−Y</b>。タイヤを入れるなら、ほかの自動車と同じ名前で（見えなくてよい）。</li><li>砲塔・砲身は「動く部品」のカスタムプロパティで動かします（下の「動く部品（砲塔・砲身・首など）とボタン」を見てください）。例：砲塔に <code>動作</code>=<code>回転</code>・<code>軸</code>=<code>Z</code>・<code>最小</code>=<code>-90</code>・<code>最大</code>=<code>90</code>。砲身を砲塔の子にして <code>動作</code>=<code>回転</code>・<code>軸</code>=<code>X</code>・<code>最小</code>=<code>-20</code>・<code>最大</code>=<code>10</code>（上へ 20°・下へ 10°）。</li><li>カスタムプロパティ <code>種類</code>=<code>戦車</code> をつけると、ほかの人の画面でも戦車になります。最高速度はないとき 60km/h。全長 12.5m・高さ 4.2m まで。</li></ol>`,
-  farm: `<h4>トラクター・コンバイン</h4><ol><li>ボディ＋タイヤ（コンバインのキャタピラは中に小さなタイヤを入れる）。</li><li>回る部品に <code>ロータリー</code>（トラクターの耕す所）や <code>リール</code>（コンバインの刈る所）と名前をつけると、「作業」ボタン（<code>K</code>）で回ります。円柱を足して横にねかせ、回転は適用しない。</li><li>🏢 事業 → 🚜 農機 で畑・田んぼにつかえます（トラクターで収穫 1.25 倍、コンバインがないと稲は 0.65 倍）。</li><li>最高速度はないときトラクター 35km/h、コンバイン 15km/h。</li></ol>`,
-};
+const HELP_STEER = `<h4>自動車の動き方</h4><p>バスかダンプかではなく、<b>どう曲がるか</b>を選びます。できること（荷台・ドラム・座席など）は部品の名前で決まります（下の「あるとできること」）。</p>
+<table><tr><th>動き方</th><th>曲がり方</th></tr>
+<tr><td>🚗 前輪で曲がる</td><td>ふつうの車。名前に <code>前</code> がつくタイヤが曲がる</td></tr>
+<tr><td>🏭 後輪で曲がる</td><td>フォークリフトのように、名前に <code>後</code> がつくタイヤが曲がり、おしりがふられる。小回りがきく</td></tr>
+<tr><td>🔄 前後で曲がる</td><td>前のタイヤと後ろのタイヤが<b>逆向き</b>に切れて、もっと小回りがきく</td></tr>
+<tr><td>🛡️ キャタピラ</td><td>止まったままその場で回れる（戦車・ショベルカー）。左右のキャタピラの速さが変わる</td></tr></table>
+<h4>タイヤ・キャタピラ（なくてもよい）</h4><ul>
+<li><b>タイヤもキャタピラもなくても走れます</b>（形のいちばん下が地面。前は Blender の −Y）。</li>
+<li>タイヤがあれば、走った分だけ回り、曲がるタイヤはハンドルで曲がります（名前は下の「自動車のきまり」）。タイヤの数は名前から決まるので、選ばなくてよい。</li>
+<li>キャタピラは部品の名前を <code>キャタピラ右</code> <code>キャタピラ左</code>（左右まとめた <code>キャタピラ</code> でもよい）。模様（テクスチャ）が走った分だけ流れます。中の転輪を <code>タイヤ右前</code>… にすると回ります。</li>
+<li><b>曲がるタイヤを変えたいとき</b>だけ、タイヤにカスタムプロパティ <code>操舵</code> をつける：<code>しない</code>（曲がらない）・<code>する</code>・<code>逆</code>（前と逆向き）・<code>同じ</code>（前と同じ向き＝かに歩き）。ふつうはいりません。</li>
+<li>ボディのカスタムプロパティ <code>操舵</code> = <code>後輪</code> <code>前後</code> <code>キャタピラ</code> でも動き方を決められます（販売店で売るときなど）。</li></ul>`;
+const HELP_PARTS = `<h4>あるとできること（どの動き方でも）</h4>
+<table><tr><th>部品・カスタムプロパティ</th><th>できること</th></tr>
+<tr><td><code>荷台</code></td><td>荷物をつむ（床 1㎡ で 400kg、12 トンまで）。🏢 事業のトラックになる。ボディに <code>種類</code>=<code>ダンプ</code> で荷台が上がる（<code>K</code>）</td></tr>
+<tr><td><code>ドラム</code></td><td>ミキサー車：ドラムが回る。<code>容量</code>（㎥）</td></tr>
+<tr><td><code>タンク</code></td><td>タンクローリー：<code>容量</code>（L）・<code>積荷</code></td></tr>
+<tr><td><code>上部</code> <code>ブーム</code> <code>アーム</code> <code>バケット</code>（<code>ブレード</code>）</td><td>重機：「作業」（<code>K</code>）で動く。原点が関節</td></tr>
+<tr><td><code>座席_1</code>…</td><td>相乗り。ボディに <code>種類</code>=<code>バス</code> なら、座席がなくても車内にならぶ</td></tr>
+<tr><td>砲塔・砲身・フォークなど</td><td>カスタムプロパティ <code>動作</code>=<code>回転</code> / <code>移動</code> で動く部品になり、☰ で作ったボタンで動かせる（下の「動く部品とボタン」）。ボディに <code>種類</code>=<code>戦車</code> でキャタピラの動き方になる</td></tr>
+<tr><td><code>ロータリー</code> <code>リール</code> <code>回転_1</code></td><td>「作業」で回る。<code>種類</code>=<code>トラクター</code> / <code>コンバイン</code> で 🚜 農機につかえる</td></tr></table>`;
 const HELP_MAIN = `<h4>種類のえらび方</h4><table><tr><th>種類</th><th>いる部品</th></tr>
 <tr><td>建物</td><td>なくてもよい。<code>ドア_1</code>（原点が蝶番）・<code>ライト_1</code>・<code>ガラス</code>・<code>スイッチ</code>・<code>イス_1</code> で使える建物に。壁は 10〜20cm の厚み、階段は 1 段 40cm まで、入口は 80cm×2m 以上。カスタムプロパティ <code>用途</code>=<code>店</code> で明かりがつけっぱなし、ドアの <code>開き方</code>=<code>横</code> で引き戸、<code>閉まる</code>=<code>3</code> で 3 秒で閉まる。</td></tr>
 <tr><td>植物・置物</td><td>形だけでよい。地面に置かれます。</td></tr>
@@ -5095,8 +5175,7 @@ function renderPlaceHelp(s) {
   const body = el('placeHelpBody');
   if (!body) return;
   let h;
-  if (s === 'ctype') h = `<h4>自動車の種類</h4><p>種類によって、いる部品と、できることがかわります。</p><table><tr><th>種類</th><th>いる部品（ボディ・タイヤのほかに）</th></tr>${Object.values(VKINDS).filter((K) => K !== VKINDS.other).map((K) => `<tr><td>${K.icon} ${K.name}</td><td>${(K.need || []).map((n) => `<code>${NEED_TXT[n].slice(1, -1)}</code>`).join(' ') || 'なし'}${K.g === 'work' && !K.need ? '（ブーム・アーム・バケットで動く）' : K.g === 'bus' ? '（座席で相乗り）' : ''}</td></tr>`).join('')}</table>` + HELP_CAR;
-  else if (s === 'car') { const K = VKINDS[pendingKind]; h = (K ? (pendingKind === 'tractor' || pendingKind === 'combine' ? HELP_KIND.farm : HELP_KIND[K.g === 'pass' ? 'pass' : pendingKind] || HELP_KIND.pass) : '') + HELP_CAR; }
+  if (s === 'ctype' || s === 'car') h = HELP_STEER + HELP_CAR + HELP_PARTS;
   else if (s === 'vehicle' || s === 'boat') h = HELP_BOAT + `<p>自動車は「自動車」を選ぶと、種類ごとのつくり方が出ます。</p>`;
   else h = HELP_MAIN;
   body.innerHTML = h + HELP_BASE;
@@ -5106,17 +5185,16 @@ const placeEl = document.getElementById('place');
 let pendingFile = null, pendingCat = null;
 let placeScreen = 'main', placeBaseTitle = '';
 const SCREEN_UP = { vehicle: 'main', ctype: 'vehicle', car: 'ctype', boat: 'vehicle' };
-const SCREEN_TITLE = { vehicle: '乗り物の種類は？', ctype: '自動車の種類は？', car: 'タイヤはいくつ？', boat: '船の種類は？' };
+const SCREEN_TITLE = { vehicle: '乗り物の種類は？', ctype: '自動車の動き方は？', car: 'タイヤはいくつ？', boat: '船の種類は？' };
 let pendingKind = null;   // 自動車の種類（VKINDS のキー）
-// 自動車の種類のボタン（VKINDS から作る）
-placeEl.querySelector('[data-screen="ctype"]').innerHTML = Object.entries(VKINDS).map(([k, K]) => `<button type="button" data-kind="${k}" data-go="car" class="pveh"><b>${K.icon} ${K.name}</b><small>${K.note}</small></button>`).join('');
+// 自動車の動き方のボタン（STEERS から作る）。タイヤの数は名前から決めるので聞かない
+placeEl.querySelector('[data-screen="ctype"]').innerHTML = Object.entries(STEERS).map(([k, K]) => `<button type="button" data-cat="car" data-steer="${k}" class="pveh"><b>${K.icon} ${K.name}</b><small>${K.note}</small></button>`).join('');
 function showScreen(s) {
   placeScreen = s;
   for (const d of placeEl.querySelectorAll('[data-screen]')) d.hidden = d.dataset.screen !== s;
   el('placeBack').hidden = s === 'main';
   el('placeTitle').textContent = s === 'main' ? placeBaseTitle : s === 'car' && pendingKind ? `${VKINDS[pendingKind].name}：タイヤはいくつ？` : SCREEN_TITLE[s];
   if (s === 'main' || s === 'vehicle') pendingKind = null;
-  el('placeNoWheel').hidden = pendingKind !== 'tank';
   renderPlaceHelp(s);
   const first = placeEl.querySelector(`[data-screen="${s}"] button`);
   if (first) first.focus();
@@ -5144,7 +5222,7 @@ const RULE_HEAD = { robot: '人型ロボットのルールに合いませんで�
 async function placeWithCategory(buf, name, cat, wheels, sub) {
   for (const x of placeEl.querySelectorAll('button')) x.disabled = true;
   try {
-    await addPropFromBuffer(buf, name, cat, wheels, sub, !!sub);
+    await addPropFromBuffer(buf, name, cat, wheels, sub, !!sub && !STEERS[sub]);
     closePlace();
   } catch (err) {
     pendingFile = { buf, name };
@@ -5177,7 +5255,7 @@ placeEl.addEventListener('click', (e) => {
   const cat = b.dataset.cat;
   if (!cat) return;
   const wheels = b.dataset.wheels ? Number(b.dataset.wheels) : undefined;
-  const sub = cat === 'car' ? pendingKind || undefined : undefined;
+  const sub = cat === 'car' ? b.dataset.steer || pendingKind || undefined : undefined;   // 動き方（STEERS のキー）
   if (pendingFile) { placeWithCategory(pendingFile.buf, pendingFile.name, cat, wheels, sub); return; }
   // まだファイルがない：選んだ種類を覚えて、ファイル選びを開く（押した流れのまま開く）
   pendingCat = { cat, wheels, sub };
@@ -8169,16 +8247,20 @@ function stepCar(car, dt) {
 
   const target = auto ? auto.steer : steerIn * V.maxSteer / (1 + Math.abs(car.vF) / 10);
   car.steer += (target - car.steer) * Math.min(1, dt * 8);
-  let yawRate = (car.vF / V.wheelbase) * Math.tan(car.steer);
+  // 前のタイヤの角度 sf×ハンドル、後ろのタイヤの角度 sr×ハンドル（後輪操舵は sr=−1、前後操舵は sf=1・sr=−1、かに歩きは sr=+1）
+  const sf = V.sf ?? 1, sr = V.sr ?? 0;
+  let yawRate = (car.vF / V.wheelbase) * (Math.tan(sf * car.steer) - Math.tan(sr * car.steer));
   if (V.type === 'robot') yawRate += (car.steer / V.maxSteer) * 0.9 * Math.max(0, 1 - Math.abs(car.vF) / 4);   // ロボットは止まっていても向きを変えられる
+  if (V.spinTurn) yawRate = (car.steer / V.maxSteer) * (0.9 - 0.45 * Math.min(1, Math.abs(car.vF) / 8)) * (car.vF < -0.5 ? -1 : 1);   // キャタピラ：その場で回れる（バックはハンドルと逆に回る＝車と同じ）
+  const slip = V.steer && V.steer !== 'front' && !V.spinTurn ? car.vF * (Math.tan(sf * car.steer) + Math.tan(sr * car.steer)) / 2 : 0;   // 後輪・前後操舵：車の中心が横にずれる（後輪操舵はおしりがふられる）
   if (hand) yawRate *= 1.35;
   const old = { x: car.pos.x, z: car.pos.y, h: car.h };
   car.h += yawRate * dt;
   car.vL += -yawRate * car.vF * dt * (hand ? 0.35 : 0.08);
   car.vL *= Math.exp(-(hand ? 1.6 : 9) * dt);
   const s = Math.sin(car.h), c = Math.cos(car.h);
-  car.pos.x += (s * car.vF + c * car.vL) * dt;
-  car.pos.y += (c * car.vF - s * car.vL) * dt;
+  car.pos.x += (s * car.vF + c * (car.vL + slip)) * dt;
+  car.pos.y += (c * car.vF - s * (car.vL + slip)) * dt;
 
   for (const [ax, az] of CORNERS) {
     const p = carLocalToWorld(car, ax * V.halfWidth, V.centerZ + az * V.halfLength);
@@ -8238,8 +8320,14 @@ function stepCar(car, dt) {
   showCar(car);
   if (!mine && Math.abs(pose.y - car.y) < 0.002 && Math.abs(pose.pitch - car.pitch) < 0.001 && Math.abs(pose.roll - car.roll) < 0.001) car.settled = true;
   for (const w of car.item.wheels) {
-    w.spin.rotation.x += (car.vF / V.wheelRadius) * dt;
-    if (w.front) w.steer.rotation.y = w.sk && w.sk !== 1 ? Math.atan(w.sk * Math.tan(car.steer)) : car.steer;
+    const sp = V.spinTurn && w.side ? car.vF - w.side * yawRate * V.halfWidth : car.vF;   // キャタピラ：曲がる側は遅く、外側は速く
+    w.spin.rotation.x += (sp / (w.r || V.wheelRadius)) * dt;
+    const d = w.dir ?? (w.front ? 1 : 0);
+    if (d) w.steer.rotation.y = w.sk && w.sk !== 1 ? Math.atan(w.sk * Math.tan(car.steer)) : d * car.steer;
+  }
+  if (V.treads) for (const T of V.treads) {   // キャタピラの模様を流す
+    const sp = T.side ? car.vF - T.side * yawRate * V.halfWidth : car.vF, dv = sp * dt * T.slope;
+    for (const m of T.mats) { if (T.useU) m.map.offset.x -= dv; else m.map.offset.y -= dv; }
   }
 }
 function hitWall(car) { car.vF *= -0.15; car.vL *= 0.3; }
@@ -13015,7 +13103,7 @@ function guessKind(v) {
   if (V.kindSet && VKINDS[V.kind]) return V.kind;   // 置くときに選んだ種類か、カスタムプロパティ「種類」
   const k = kindFromText(v.name || '');
   if (k) return k;
-  return V.cargo ? 'truck' : V.halfLength * 2 > 8 ? 'bus' : V.wheels <= 3 ? 'bike' : 'sedan';
+  return V.cargo ? 'truck' : V.halfLength * 2 > 8 ? 'bus' : V.wheels && V.wheels <= 3 ? 'bike' : 'sedan';
 }
 // 自分の農機（トラクター・コンバイン）：買った車の種類はこの端末に覚える（world.machines）。名前やスペックの「種類」からも分かる
 let MACH = {}; try { MACH = JSON.parse(localStorage.getItem('world.machines') || '{}') || {}; } catch (e) { MACH = {}; }
@@ -13774,7 +13862,7 @@ function bizMemHtml(b, btn, last) {
 // ほかの人の店の車種（ネットから来たデータなので形をたしかめる）
 const carList = (co) => (co && Array.isArray(co.cars) ? co.cars : []).slice(0, DLR_MAX).filter((c) => c && isId(c.m) && Number.isFinite(+c.p) && +c.p >= 1e5 && +c.p <= 1e9)
   .map((c) => ({ m: c.m, n: String(c.n || '車').replace(/[\u0000-\u001f<>]/g, '').slice(0, 24) || '車', p: Math.round(+c.p), k: Math.max(0, Math.min(999, Math.round(+c.k || 0))), l: Math.max(0, Math.min(30, +c.l || 0)), w: Math.max(0, Math.min(10, +c.w || 0)),
-    t: DLR_KINDS[c.t] ? c.t : 'other', wh: Math.max(0, Math.min(16, Math.round(+c.wh || 0))), s: (Array.isArray(c.s) ? c.s : []).slice(0, 24).filter((q) => Array.isArray(q) && q.length === 2).map((q) => [String(q[0]).slice(0, 20), String(q[1]).slice(0, 40)]) }));
+    t: DLR_KINDS[c.t] ? c.t : 'other', st: STEERS[c.st] ? c.st : undefined, wh: Math.max(0, Math.min(16, Math.round(+c.wh || 0))), s: (Array.isArray(c.s) ? c.s : []).slice(0, 24).filter((q) => Array.isArray(q) && q.length === 2).map((q) => [String(q[0]).slice(0, 20), String(q[1]).slice(0, 40)]) }));
 const bizOtherLot = (id) => { const r = BIZ_NET.lots.get(id); return r && r.by !== net.myId ? r : null; };
 const bizCleanName = (t) => String(t || '').replace(/[\u0000-\u001f<>]/g, '').slice(0, 16) || '会社';
 // ほかの人の土地を 3D に（自分の分は BIZ から描く）
@@ -13825,7 +13913,7 @@ async function bizPush(co) {
     if (b) {   // 1 人 1 行：名前と形は はじめの会社、売り上げ・利益・土地は 全部の会社の合計。grp に会社ごとの名前・場所・受ける仕事
       const lastOf = (c) => c.ledger[c.ledger.length - 1], last = lastOf(b);
       const row = { by: net.myId, name: bizCleanName(b.name), form: b.form, day: last ? last.n : b.start, rev: BIZS.reduce((s, c) => s + (lastOf(c) ? lastOf(c).revT : 0), 0), prof: BIZS.reduce((s, c) => s + (lastOf(c) ? lastOf(c).prof : 0), 0), lots: Math.min(50, bizAllLots().length) };
-      if (!BIZ_NET.noCars) row.cars = BIZS.flatMap((c) => c.cars || []).filter((c) => c.m).slice(0, DLR_MAX).map((c) => ({ m: c.m, n: c.name, p: c.price, k: c.kmh, l: c.len, w: c.wid, t: c.kind, wh: c.wheels, s: c.spec || [] }));
+      if (!BIZ_NET.noCars) row.cars = BIZS.flatMap((c) => c.cars || []).filter((c) => c.m).slice(0, DLR_MAX).map((c) => ({ m: c.m, n: c.name, p: c.price, k: c.kmh, l: c.len, w: c.wid, t: c.kind, st: c.st, wh: c.wheels, s: c.spec || [] }));
       if (!BIZ_NET.noGrp) row.grp = BIZS.map((c) => { const fl = bizKindLots(c, 'factory'), L = fl.length ? bizLot(fl[0].id) : bizBaseLot(c), o = { id: c.id, n: bizCleanName(c.name), f: c.form, l: L ? L.id : null };
         if (c.svcP && fl.length) { o.p = Object.fromEntries(Object.keys(BIZ_RECIPE).map((k) => [k, bizFee(c, k)])); o.pc = Math.round(bizFacCap(c) * 0.5); }
         if (c.svcH && c.fleet.length) { o.h = c.hRate; o.hc = Math.round(fleetKg(c) * 0.6); }
@@ -13946,7 +14034,7 @@ async function carRegister(key) {
   const dl = myDealerLots(); if (!dl.length) return say('まず販売店を建ててください（🏗️ 建てる → 車の販売店）');
   const sel = [...document.querySelectorAll('select[data-ck]')].find((q) => q.dataset.ck === key), kind = sel && DLR_KINDS[sel.value] ? sel.value : guessKind(v);
   const V = v.item.def.vehicle, len = Math.round(V.halfLength * 20) / 10, wid = Math.round(V.halfWidth * 20) / 10, kmh = Math.round(V.maxSpeed * 3.6);
-  const c = { key: newId(), src: key, name: String(v.name || '車').slice(0, 24), kind, wheels: V.wheels || v.item.wheels.length, len, wid, kmh, spec: specOf(v.item.root), m: null, at: gameDayN() };
+  const c = { key: newId(), src: key, name: String(v.name || '車').slice(0, 24), kind, st: V.steer && V.steer !== 'front' ? V.steer : undefined, wheels: V.wheels || v.item.wheels.length, len, wid, kmh, spec: specOf(v.item.root), m: null, at: gameDayN() };
   c.cost = Math.round(carCost(len, wid, kmh) * KIND_COST[kind] / 1e4) * 1e4; c.price = carFair(c);
   if (!dlrPlace(dl, [...b.cars.map(dlrDim), dlrDim(c)]).some((q) => q.c.key === c.key)) { const big = dl.reduce((a, q) => q.lay.D > a.lay.D ? q : a, dl[0]); return say(`「${c.name}」（${len}×${wid}m）を並べる場所がありません（展示場 ${big.lay.W}×${big.lay.D}m${b.cars.length ? '・ほかの車でいっぱい' : ''}）。広い土地に店を建てるか、建物を小さめにしてください`); }
   if (net.db && net.db.model && v.id) {
@@ -13971,7 +14059,7 @@ async function carBuy(by, i) {
   TP.carBusy = true; say(`はじめ自動車が「${q.n}」を用意しています…`);
   try {
     const buf = await net.db.file(q.m), before = new Set(vehicles);
-    await addPropFromBuffer(buf, q.n, 'car', undefined, q.t);
+    await addPropFromBuffer(buf, q.n, 'car', undefined, q.t, false, q.st);
     const got = vehicles.find((v) => !before.has(v) && v.mine);
     if (!got) throw new Error('置けませんでした');
     if (!got.shared) { await removeMine({ kind: 'v', o: got, name: got.name }); throw new Error('みんなの世界に置けませんでした'); }
@@ -13990,7 +14078,7 @@ async function carTry(by, i) {
   if (ride || driving) return say('降りてから試乗してください');
   TP.carBusy = true; say(`「${q.n}」を用意しています…`);
   try {
-    const item = await buildThing(await net.db.file(q.m), q.n, 'car', undefined, q.t), V = item.def.vehicle;
+    const item = await buildThing(await net.db.file(q.m), q.n, 'car', undefined, q.t, false, q.st), V = item.def.vehicle;
     const f = new THREE.Vector3(Math.sin(player.face), 0, Math.cos(player.face)), at = player.pos.clone().addScaledVector(f, 3 + Math.max(V.halfLength, V.halfWidth));
     const v = makeVehicle(item, clampX(at.x, 4), clampZ(at.z, 4), wrapA(player.face), { id: null, shared: false, name: `${q.n}（試乗）` });
     v.trial = true; Object.assign(TRIAL, { v, until: gameDayF() + TRIAL_H / 24, warned: false });
