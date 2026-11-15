@@ -1339,14 +1339,16 @@ function mpHang(M, dt) {
     const top = host.localToWorld(_hW.copy(p.p0));   // つった所（ワイヤーの上のはし）
     // ゆれ：つった所の加速度で、振り子が動く
     const S = p.sw, h = Math.min(Math.max(dt, 1e-3), 0.05);
-    if (S.pP) { const v = _hV.copy(top).sub(S.pP).divideScalar(h); S.acc.lerp(v.clone().sub(S.pV).divideScalar(h).clampLength(0, 30), 0.3); S.pV.copy(v); S.pP.copy(top); }
+    if (S.pP) { const v = _hV.copy(top).sub(S.pP).divideScalar(h); S.acc.lerp(v.clone().sub(S.pV).divideScalar(h).clampLength(0, 6), 0.12); S.pV.copy(v); S.pP.copy(top); }
     else S.pP = top.clone();
     let down = 0;
     for (const a of p.axes) if (p.type === 'move') down += Math.abs(a.val);
     const L = Math.max(0.5, down + 0.3), n = Math.ceil(h / 0.01), k = h / n;
     for (let i = 0; i < n; i++) {
-      S.vx += (-(9.8 / L) * Math.sin(S.x) - (S.acc.x / L) * Math.cos(S.x) - 1.5 * S.vx) * k; S.x = THREE.MathUtils.clamp(S.x + S.vx * k, -1, 1);
-      S.vz += (-(9.8 / L) * Math.sin(S.z) - (S.acc.z / L) * Math.cos(S.z) - 1.5 * S.vz) * k; S.z = THREE.MathUtils.clamp(S.z + S.vz * k, -1, 1);
+      S.vx += (-(9.8 / L) * Math.sin(S.x) - (S.acc.x / L) * Math.cos(S.x) - 4 * S.vx) * k; S.x = THREE.MathUtils.clamp(S.x + S.vx * k, -0.35, 0.35);
+      S.vz += (-(9.8 / L) * Math.sin(S.z) - (S.acc.z / L) * Math.cos(S.z) - 4 * S.vz) * k; S.z = THREE.MathUtils.clamp(S.z + S.vz * k, -0.35, 0.35);
+    }
+    if (CP.links.some((Lk) => Lk.k.o === p.o && Lk.hang)) { S.x *= 0.8; S.z *= 0.8; S.vx = S.vz = 0;   // 物をつっているフックは、物のほうがゆれる（2 つ重ねてゆらさない）
     }
     _hS.setFromAxisAngle(H_Z, S.x).multiply(_hQx.setFromAxisAngle(H_X, -S.z)).multiply(_hT).multiply(_hQ);   // 世界の向き（回転の前）
     const pos = top;
@@ -4784,13 +4786,17 @@ function surfTop(x, z, yMax, skip, skip2) {
   _surf.y = -Infinity; _surf.v = null; _surf.P = null;
   for (const v of vehicles) {
     const L = v.item.hf;
-    if (!L || v === skip || v === skip2 || v.sunk || (skip && v.base && v.base.v === skip)) continue;
+    if (!L || v === skip || (skip2 && v === skip2.v && !skip2.fr) || v.sunk || (skip && v.base && v.base.v === skip)) continue;
     const V = v.item.def.vehicle, r = V.halfLength + V.halfWidth + 1;
     if (Math.abs(x - v.pos.x) > r || Math.abs(z - v.pos.y) > r || v.y > yMax + 0.5) continue;
-    for (const P of L) { const y = hfAt(P, x, Math.min(yMax, v.y + 3), z); if (y > _surf.y && y <= yMax) { _surf.y = y; _surf.v = v; _surf.P = P; } }
+    for (const P of L) {
+      if (skip2 && v === skip2.v && skip2.fr.has(P.fr)) continue;   // つっているフック・アームの面にはのらない（荷台にはのる）
+      const y = hfAt(P, x, Math.min(yMax, v.y + 3), z); if (y > _surf.y && y <= yMax) { _surf.y = y; _surf.v = v; _surf.P = P; } }
   }
   return _surf.v ? _surf : null;
 }
+// その乗り物の面のうち、yMax より下でいちばん高いもの（なければ -Infinity）
+function surfUnder(v, x, z, yMax) { let best = -Infinity; for (const P of v.item.hf || []) { const y = hfAt(P, x, v.y + 1, z); if (y <= yMax && y > best) best = y; } return best; }
 // その乗り物だけの、いちばん上の面（ぶつかる判定用）
 function surfOf(v, x, z) { let best = -Infinity; for (const P of v.item.hf || []) best = Math.max(best, hfAt(P, x, v.y + 1, z)); return best; }
 // 乗っている物（人・置物・止まった車）の「下の乗り物」をおぼえる／外す
@@ -4880,6 +4886,7 @@ function stepLoose(dt, mv) {
     // 2) 動いている車に押される（車体の外形。フォークのような動く部品は下にもぐれる）
     for (const u of near) {
       if (pr.base && pr.base.v === u) continue;
+      if (surfUnder(u, p.x, p.z, p.y + 0.3) > -Infinity) continue;   // 荷台などの上（上から落ちてきた）：横に押し出さない
       const V = u.item.def.vehicle, Bd = u.item.hfBody;
       const hx = Bd ? Bd.hx : V.halfWidth, z0b = Bd ? Bd.z0 : V.centerZ - V.halfLength, z1b = Bd ? Bd.z1 : V.centerZ + V.halfLength;
       if (p.y > u.y + (V.height || 1.5) - 0.1 || p.y + L.hy < u.y + 0.15) continue;   // 高さが重ならない
@@ -4915,7 +4922,13 @@ function stepLoose(dt, mv) {
    計算するのは運転している人。ほかの人には presence の cp で知らせ、同じ計算で動かす。はずしたら、運転していた人が置き場所を保存する */
 const CP = { links: [], ign: [], tick: 0, msgAt: 0 };
 // つないでいる乗り物（クレーンのフックなど）の面には、のらない（はずした直後も、フックがはなれるまで）
-const cpSkip = (o) => (o.cpL ? o.cpL.own : o.cpIgn || null);
+const cpSkip = (o) => (o.cpL ? o.cpL.skip : o.cpIgn || null);
+// のらない面：フック（連結器）と、それを動かす親の部品（アームなど）の面だけ。フックが動かない部品なら、その乗り物ぜんぶ
+function cpSkipOf(host, k) {
+  const fr = new Set(), root = host.item.root;
+  for (let q = k.o; q && q !== root; q = q.parent) fr.add(q);
+  return { v: host, fr: (host.item.hf || []).some((P) => fr.has(P.fr)) ? fr : null };
+}
 const CP_REACH = 0.7, CP_PAD = 0.25, CP_SLACK = 0.15, CP_G = 9.8;
 const _cpT = new THREE.Vector3(), _cpA = new THREE.Vector3(), _cpV = new THREE.Vector3(), _cpW = new THREE.Vector3(), _cpP = new THREE.Vector3();
 const _cpQ = new THREE.Quaternion(), _cpQx = new THREE.Quaternion(), _cpQy = new THREE.Quaternion(), _cpM = new THREE.Matrix4(), _cpE = new THREE.Euler(0, 0, 0, 'YXZ');
@@ -4966,7 +4979,7 @@ function cpMake(own, host, k, c, mine, enc) {
     a = root.worldToLocal(A.clone());
     slack = Math.max(0, T.y - A.y) + CP_SLACK;   // つないだときの高さの差はたるみ。そこから 15cm 上がると持ち上がる
   }
-  const L = { own, host, k, tk: c.tk, tgt: o, ta: c.ta || null, a, slack, mine, yaw: c.tk === 'v' ? o.h : root.rotation.y, sw: { x: 0, z: 0, vx: 0, vz: 0 }, pT: null, pV: new THREE.Vector3(), acc: new THREE.Vector3(), hang: false, vy: 0 };
+  const L = { own, host, k, tk: c.tk, tgt: o, ta: c.ta || null, a, slack, mine, yaw: c.tk === 'v' ? o.h : root.rotation.y, sw: { x: 0, z: 0, vx: 0, vz: 0 }, pT: null, pV: new THREE.Vector3(), acc: new THREE.Vector3(), hang: false, vy: 0, skip: cpSkipOf(host, k) };
   o.cpL = L; o.base = null;
   if (c.tk === 'v') o.settled = false; else if (o.loose) { o.loose.rest = false; o.loose.saveAt = 0; }
   CP.links.push(L);
@@ -4979,7 +4992,7 @@ function cpRelease(L) {
   for (const C of CP.links.filter((x) => x.host === L.tgt)) cpRelease(C);   // その先につながっている物もはずす
   const o = L.tgt, t = performance.now();
   if (o.cpL === L) o.cpL = null;
-  if (vehicles.includes(L.own)) { o.cpIgn = L.own; CP.ign = CP.ign.filter((q) => q.o !== o); CP.ign.push({ o, k: L.k, until: t + 60000 }); }
+  if (vehicles.includes(L.own)) { o.cpIgn = L.skip; CP.ign = CP.ign.filter((q) => q.o !== o); CP.ign.push({ o, k: L.k, until: t + 60000 }); }
   if (L.tk === 'v') { o.cpHang = false; o.settled = false; o.snapUntil = 0; if (L.mine) o.saveAt = t + 1500; }
   else {
     o.item.root.rotation.set(0, L.yaw, 0);
@@ -5073,7 +5086,7 @@ function cpStep(L, dt) {
   // 引っぱる点の加速度（振り子をゆらす）
   if (L.pT) {
     const v = _cpV.copy(T).sub(L.pT).divideScalar(Math.max(dt, 1e-3));
-    L.acc.lerp(_cpW.copy(v).sub(L.pV).divideScalar(Math.max(dt, 1e-3)).clampLength(0, 30), 0.3);
+    L.acc.lerp(_cpW.copy(v).sub(L.pV).divideScalar(Math.max(dt, 1e-3)).clampLength(0, 6), 0.12);   // ゆれは小さく（はげしく暴れないように）
     L.pV.copy(v); L.pT.copy(T);
   } else { L.pT = T.clone(); L.pV.set(0, 0, 0); }
   const yaw0 = car ? o.h : L.yaw, px0 = car ? o.pos.x : root.position.x, pz0 = car ? o.pos.y : root.position.z, py0 = car ? o.y : root.position.y;
@@ -5099,8 +5112,8 @@ function cpStep(L, dt) {
     const B = cpLocalBox(o.item), lc = Math.max(0.3, aS.y - (B.min.y + B.max.y) / 2 * sc.y);
     const n = Math.max(1, Math.ceil(Math.min(dt, 0.05) / 0.01)), h = Math.min(dt, 0.05) / n;
     for (let i = 0; i < n; i++) {
-      sw.vx += (-(CP_G / lc) * Math.sin(sw.x) - (L.acc.x / lc) * Math.cos(sw.x) - 1.2 * sw.vx) * h; sw.x = THREE.MathUtils.clamp(sw.x + sw.vx * h, -1.2, 1.2);
-      sw.vz += (-(CP_G / lc) * Math.sin(sw.z) - (L.acc.z / lc) * Math.cos(sw.z) - 1.2 * sw.vz) * h; sw.z = THREE.MathUtils.clamp(sw.z + sw.vz * h, -1.2, 1.2);
+      sw.vx += (-(CP_G / lc) * Math.sin(sw.x) - (L.acc.x / lc) * Math.cos(sw.x) - 4 * sw.vx) * h; sw.x = THREE.MathUtils.clamp(sw.x + sw.vx * h, -0.35, 0.35);
+      sw.vz += (-(CP_G / lc) * Math.sin(sw.z) - (L.acc.z / lc) * Math.cos(sw.z) - 4 * sw.vz) * h; sw.z = THREE.MathUtils.clamp(sw.z + sw.vz * h, -0.35, 0.35);
     }
     _cpQ.setFromAxisAngle(CP_AX.z, sw.x).multiply(_cpQx.setFromAxisAngle(CP_AX.x, -sw.z)).multiply(_cpQy.setFromAxisAngle(CP_AX.y, yaw));
     _cpP.copy(aS).applyQuaternion(_cpQ); _cpP.subVectors(T, _cpP);
