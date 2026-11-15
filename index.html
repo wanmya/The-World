@@ -489,6 +489,7 @@ body.jetOn #map { display: none !important; }
       <button class="mi" type="button" id="mHazard" aria-pressed="false" title="H キー">⚠ ハザード</button>
       <button class="mi" type="button" id="mTurnL" aria-pressed="false" title="Z キー">⇦ ウインカー</button>
       <button class="mi" type="button" id="mTurnR" aria-pressed="false" title="X キー">ウインカー ⇨</button>
+      <button class="mi" type="button" id="mPat" aria-pressed="false" title="C キー" hidden>🚨 パトランプ</button>
     </div>
   </div>
   <div id="vehMenu" hidden>
@@ -1382,6 +1383,7 @@ const LAMP_DEFS = {
   tail: /^(左|右)?(テールランプ|テールライト|尾灯|tail[ _-]?(light|lamp)|rear[ _-]?(light|lamp))/i,
   brake: /^(左|右)?(ブレーキランプ|ブレーキライト|制動灯|stop[ _-]?(light|lamp)|brake[ _-]?(light|lamp))/i,
   turn: /^(左|右)?(ウインカー|ウィンカー|方向指示器|turn[ _-]?(signal|light|lamp)|blinker|indicator)/i,
+  pat: /^(左|右)?(パトランプ|パトライト|警光灯|赤色灯|回転警告灯|ライトバー|patlamp|beacon|light[ _-]?bar|emergency[ _-]?light)/i,
 };
 // 部品の中（オブジェクト・メッシュ・マテリアル）から、keys のカスタムプロパティを集める（オブジェクトが先）
 function propsOf(obj, keys) {
@@ -1390,9 +1392,113 @@ function propsOf(obj, keys) {
   obj.traverse((o) => { if (o.isMesh) for (const m of [].concat(o.material)) if (m) take(m.userData); });
   return out;
 }
-const LAMP_MAT = { head: /ヘッドライト|ヘッドランプ|head/i, tail: /テール|tail/i, brake: /ブレーキ|brake|stop/i, turn: /ウインカー|ウィンカー|turn|blinker|indicator/i };
+const LAMP_MAT = { head: /ヘッドライト|ヘッドランプ|head/i, tail: /テール|tail/i, brake: /ブレーキ|brake|stop/i, turn: /ウインカー|ウィンカー|turn|blinker|indicator/i, pat: /パト|警光|赤色灯|警告灯|ライトバー|beacon|light ?bar|patlamp/i };
 const LENS_RE = /レンズ|lens/i, POP_RE = /リトラクタブル|ポップアップ|retractable|pop[ _-]?up/i, POP_KEYS = ['開く角度', 'open_angle'];
-const LAMP_COL = { head: 0xfff4dc, tail: 0xff2414, brake: 0xff2414, turn: 0xffa018 };
+const LAMP_COL = { head: 0xfff4dc, tail: 0xff2414, brake: 0xff2414, turn: 0xffa018, pat: 0xff1a1a };
+// パトランプの色：カスタムプロパティ「色」（赤・青・黄・緑・白・紫・オレンジ か #ff0000）。なければマテリアルの色、白っぽいときは赤
+const PAT_NAMED = [[/^(赤|red)/i, 0xff1a1a], [/^(青|blue)/i, 0x2a62ff], [/^(黄|yellow|amber|アンバー)/i, 0xffb400], [/^(オレンジ|橙|orange)/i, 0xff7a00], [/^(緑|green)/i, 0x22ff55], [/^(白|white)/i, 0xffffff], [/^(紫|purple|violet)/i, 0xa040ff]];
+function patColor(t) {
+  if (t == null) return null;
+  const s = String(t).trim();
+  for (const [re, c] of PAT_NAMED) if (re.test(s)) return c;
+  const m = /^#?([0-9a-f]{6})$/i.exec(s);
+  return m ? parseInt(m[1], 16) : null;
+}
+let patBeamTex = null;
+// パトランプ 1 つ分：光るマテリアルの色ごとに、まわりの光（ハロー）と、回る光のすじ（前後 2 本）を作る
+function rigPatLamp(root, p, L) {
+  const ud = propsOf(p.o, ['色', 'color', '光り方', 'flash']);
+  const want = patColor(ud['色'] ?? ud.color), flash = /点滅|flash|strobe/i.test(String(ud['光り方'] ?? ud.flash ?? ''));
+  const hsl = {}, vivid = (m) => !!(m && m.color && (m.color.getHSL(hsl), hsl.s > 0.3 && hsl.l > 0.06));
+  const named = (m) => !!m && (LENS_RE.test(m.name || '') || LAMP_MAT.pat.test(m.name || ''));
+  let anyNamed = false, anyVivid = false;
+  p.o.traverse((o) => { if (o.isMesh) for (const m of [].concat(o.material)) { if (named(m)) anyNamed = true; if (vivid(m)) anyVivid = true; } });
+  // 光る所：レンズ／パトランプの名前のマテリアル → なければ色のついたマテリアル（黒い台は光らない）→ なければぜんぶ
+  const lit = (m) => !!m && (anyNamed ? named(m) : anyVivid ? vivid(m) : true);
+  const groups = new Map();
+  p.o.traverse((o) => {
+    if (!o.isMesh || ![].concat(o.material).some(lit)) return;
+    o.material = [].concat(o.material).map((m) => {
+      if (!lit(m)) return m;
+      let g = groups.get(m.uuid);
+      if (!g) groups.set(m.uuid, g = { src: m, copy: m.clone(), box: new THREE.Box3() });
+      g.box.expandByObject(o);
+      return g.copy;
+    });
+    if (o.material.length === 1) o.material = o.material[0];
+  });
+  if (!patBeamTex) {
+    const c = document.createElement('canvas'); c.width = 4; c.height = 64;
+    const g = c.getContext('2d'), gr = g.createLinearGradient(0, 0, 0, 64);
+    gr.addColorStop(0, 'rgba(255,255,255,1)'); gr.addColorStop(0.35, 'rgba(255,255,255,0.35)'); gr.addColorStop(1, 'rgba(255,255,255,0)');
+    g.fillStyle = gr; g.fillRect(0, 0, 4, 64);
+    patBeamTex = new THREE.CanvasTexture(c); patBeamTex.colorSpace = THREE.SRGBColorSpace;
+  }
+  for (const g of groups.values()) {
+    if (g.box.isEmpty()) continue;
+    const m = g.copy, col = want ?? (vivid(g.src) ? g.src.color.getHex() : LAMP_COL.pat);
+    const c = root.worldToLocal(g.box.getCenter(new THREE.Vector3())), sz = g.box.getSize(new THREE.Vector3());
+    const r = THREE.MathUtils.clamp(Math.max(sz.x, sz.y, sz.z) * 2.6, 0.5, 2.2);
+    const halo = new THREE.Sprite(new THREE.SpriteMaterial({ map: lampHaloTex, color: col, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, opacity: 0 }));
+    halo.position.copy(c); halo.visible = false; halo.renderOrder = 3; root.add(halo);
+    // 回る光のすじ：ランプから外へ広がる円すい（夜によく見える）。反対向きにもう 1 本
+    const len = 6 + r * 2, cone = new THREE.ConeGeometry(0.35 + r * 0.45, len, 18, 1, true);
+    cone.translate(0, -len / 2, 0); cone.rotateX(-Math.PI / 2);
+    const bm = new THREE.MeshBasicMaterial({ map: patBeamTex, color: col, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide });
+    const beam = new THREE.Group(); beam.position.copy(c); beam.visible = false; beam.renderOrder = 3;
+    const b1 = new THREE.Mesh(cone, bm), b2 = new THREE.Mesh(cone, bm); b2.rotation.y = Math.PI;
+    beam.add(b1, b2); root.add(beam);
+    L.pat.push({ mats: [{ m, e: m.emissive ? m.emissive.getHex() : null, ei: m.emissiveIntensity ?? 1, c: m.color ? m.color.getHex() : 0xffffff }], halo, beam, bm, col, r, c, flash, ph: L.pat.length * Math.PI * 0.5 });
+  }
+  if (L.pat.length) L.has.pat = true;
+}
+const PAT_RPS = 2.2, patCam = new THREE.Vector3();
+// 毎コマ：パトランプ（bits の 32）。回り方は時計で決める（みんなの画面でそろう）
+function stepPatLamps(v, on) {
+  const L = v.item.lamps;
+  if (!L || !L.pat.length) return;
+  if (!on) {
+    if (!L.patOn) return;
+    L.patOn = false;
+    for (const q of L.pat) {
+      for (const s of q.mats) { if (s.e != null) { s.m.emissive.setHex(s.e); s.m.emissiveIntensity = s.ei; } else if (s.m.color) s.m.color.setHex(s.c); }
+      q.halo.visible = q.beam.visible = false;
+    }
+    return;
+  }
+  L.patOn = true;
+  const root = L.pat[0].halo.parent, now = Date.now() / 1000, dark = THREE.MathUtils.clamp(1 - dayLight, 0, 1);
+  patCam.copy(camera.position); if (root) root.worldToLocal(patCam);
+  for (const q of L.pat) {
+    let k;
+    if (q.flash) {   // 点滅：タタッ、タタッ（となりのランプと交互に）
+      const t = (now + (q.ph > 0 ? 0.5 * (Math.round(q.ph / (Math.PI * 0.5)) % 2) : 0)) % 1;
+      k = t < 0.07 || (t > 0.14 && t < 0.21) ? 1 : 0;
+      q.beam.visible = false;
+    } else {   // 回転：光のすじが回り、こちらを向いたときに強く光る
+      const a = now * PAT_RPS * Math.PI * 2 + q.ph;
+      q.beam.rotation.y = a; q.beam.visible = true;
+      q.bm.opacity = 0.07 + 0.28 * dark;
+      const dx = patCam.x - q.c.x, dz = patCam.z - q.c.z, d = Math.hypot(dx, dz) || 1;
+      const f = Math.abs((Math.sin(a) * dx + Math.cos(a) * dz) / d);
+      k = 0.15 + 0.85 * Math.pow(f, 6);
+    }
+    for (const s of q.mats) {
+      if (s.e != null) { s.m.emissive.setHex(k > 0.05 ? q.col : s.e); s.m.emissiveIntensity = k > 0.05 ? 0.8 + 2.6 * k : s.ei; }
+      else if (s.m.color) s.m.color.setHex(k > 0.05 ? q.col : s.c);
+    }
+    q.halo.visible = k > 0.05;
+    q.halo.material.opacity = k * (0.55 + 0.45 * dark);
+    const sc = q.r * (0.7 + 1.3 * k); q.halo.scale.set(sc, sc, 1);
+  }
+}
+const hasPat = (v) => !!(v && v.item.lamps && v.item.lamps.has.pat);
+function togglePat() {
+  if (!driving || !hasPat(ride)) return;
+  ride.patOn = !ride.patOn;
+  showMsg(ride.patOn ? '🚨 パトランプをつけました' : 'パトランプを消しました');
+  renderLampMenu(); lastUi = '';
+}
 let lampHaloTex = null, lampPoolTex = null;
 function lampTex(w, h, stops) {
   const c = document.createElement('canvas'); c.width = w; c.height = h;
@@ -1414,7 +1520,7 @@ function rigCarLamps(root, model) {
     lampHaloTex = lampTex(64, 64, [[0, 1], [0.25, 0.55], [1, 0]]);
     lampPoolTex = lampTex(64, 64, [[0, 0.9], [0.5, 0.35], [1, 0]]);
   }
-  const L = { head: [], tail: [], brake: [], turnL: [], turnR: [], halos: [], pool: null, bits: -1, dark: -1, has: {}, pops: [] };
+  const L = { head: [], tail: [], brake: [], turnL: [], turnR: [], pat: [], halos: [], pool: null, bits: -1, dark: -1, has: {}, pops: [] };
   // リトラクタブルヘッドライト：名前に「リトラクタブル」か、カスタムプロパティ「開く角度」（度）があるヘッドライト。
   //   原点がちょうつがい。開く角度は、Blender で開いた形にしたときの、その部品の X 回転の数（マイナスもそのまま）。
   //   閉じた形は書き出したときの回転。ライトをつけると閉じた形から開いた形まで回る。名前だけのときは、閉じた形から -60° 回す。
@@ -1445,7 +1551,7 @@ function rigCarLamps(root, model) {
   const sideOfName = (n) => (/左|left|(^|[ _.-])l($|[ _.\d-])/i.test(n) ? 1 : /右|right|(^|[ _.-])r($|[ _.\d-])/i.test(n) ? -1 : 0);
   for (let i = 0; i < parts.length; i++) {
     const p = parts[i];
-    if (sideOfName(p.n)) continue;
+    if (p.k === 'pat' || sideOfName(p.n)) continue;   // パトランプは分けない（色ごとに光る）
     const b = new THREE.Box3().setFromObject(p.o);
     if (b.isEmpty() || !(b.min.x < mid.x - 0.1 && b.max.x > mid.x + 0.1 && b.max.x - b.min.x > 0.4)) continue;
     const [neg, pos] = splitBySide(root, p.o, mid.x, 'x', true);
@@ -1457,11 +1563,12 @@ function rigCarLamps(root, model) {
   // 前と後ろのウインカーを 1 つにまとめたときは、前後にも分ける
   for (let i = 0; i < parts.length; i++) {
     const p = parts[i], b = new THREE.Box3().setFromObject(p.o);
-    if (b.isEmpty() || !(b.min.z < mid.z - 0.5 && b.max.z > mid.z + 0.5)) continue;
+    if (p.k === 'pat' || b.isEmpty() || !(b.min.z < mid.z - 0.5 && b.max.z > mid.z + 0.5)) continue;
     const pv = splitBySide(root, p.o, mid.z, 'z', true).filter(Boolean).map((o) => Object.assign({}, p, { o }));
     parts.splice(i, 1, ...pv); i += pv.length - 1;
   }
   for (const p of parts) {
+    if (p.k === 'pat') { rigPatLamp(root, p, L); continue; }
     const b = new THREE.Box3().setFromObject(p.o);
     if (b.isEmpty()) continue;
     // 光るのは、名前に「レンズ」（lens）がつくマテリアルだけ。部品にレンズのマテリアルがなければ、部品ぜんぶが光る
@@ -1495,7 +1602,7 @@ function rigCarLamps(root, model) {
     L.has[g] = true;
   }
   if (!L.pops.length) delete L.pops;
-  if (!L.head.length && !L.tail.length && !L.brake.length && !L.turnL.length && !L.turnR.length) return null;
+  if (!L.head.length && !L.tail.length && !L.brake.length && !L.turnL.length && !L.turnR.length && !L.pat.length) return null;
   if (L.head.length) {   // ヘッドライトが道を照らす（地面にうすい光をのせる。本物のライトは使わない：重くならないように）
     const w = Math.max(2.4, all.max.x - all.min.x + 1.2), len = 16;
     const pool = new THREE.Mesh(new THREE.PlaneGeometry(w, len), new THREE.MeshBasicMaterial({ map: lampPoolTex, color: LAMP_COL.head, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4 }));
@@ -1526,6 +1633,7 @@ function myLampBits(car) {
   const on = CARL.mode === 'on' || (CARL.mode === 'auto' && lampAutoOn());
   let bits = on ? 1 : 0;
   if (car.lampBrk) bits |= 2;
+  if (car.patOn && hasPat(car)) bits |= 32;   // パトランプ
   // 手動のウインカーは、曲がり終わってハンドルがもどったら自然に消える
   if (CARL.turn) {
     CARL.yaw += wrapA(car.h - CARL.lastH) * CARL.turn;
@@ -1567,6 +1675,7 @@ function stepCarLamps(v) {
   const bits = v.remote ? (v.remote.cl | 0) : v === ride && driving ? myLampBits(v) : 0;
   v.lampBits = bits;
   showCarLamps(v, bits);
+  stepPatLamps(v, !!(bits & 32));
   const P = v.item.lamps.pops;
   if (P) {   // リトラクタブルヘッドライト：ライトをつけると開き、消すと閉じる（約 0.7 秒）
     const now = performance.now();
@@ -5660,6 +5769,7 @@ const HELP_CAR = `<h4>はじめに：書き出しのチェック</h4>
 <tr><td><code>テールランプ</code></td><td>ライトでうすく赤、ブレーキで明るく</td></tr>
 <tr><td><code>ブレーキランプ</code></td><td>ブレーキのときだけ赤く</td></tr>
 <tr><td><code>ウインカー左</code> <code>ウインカー右</code></td><td>オレンジに点滅</td></tr>
+<tr><td><code>パトランプ</code>（<code>パトランプ_1</code> <code>パトランプ_2</code>… いくつでも）</td><td>くるくる回って光る（光のすじが回り、こちらを向くと強く光る）。<b>色はマテリアルの色</b>（赤・青・黄など）。左右で赤と青のライトバーは、1 つの部品に赤と青のマテリアルを入れれば、それぞれの色で交互に光ります（黒い台など色のないマテリアルは光らない）。カスタムプロパティ <code>色</code>=<code>青</code> で色を決めてもよい（赤・青・黄・緑・白・紫・オレンジ）。<code>光り方</code>=<code>点滅</code> で回らずにピカピカ点滅。つけ方：☰ →「🚨 パトランプ」（パソコンは <code>C</code> キー）か、☰ →「🎛️ ボタンを作る」→ ON／OFF →「🚨 パトランプ」で画面にボタンを置く。ほかの人の画面でも光ります</td></tr>
 <tr><td colspan="2">ライトは<b>左右（前後も）を 1 つの部品にまとめてもよい</b>（<code>ウインカー</code> <code>テールランプ</code> など）。ワールドが車のまん中で左右に分けるので、ウインカーは左右べつに点滅します。<br><b>光る所</b>：部品の中に、名前に <code>レンズ</code> がつくマテリアルか、ライトと同じ名前のマテリアル（<code>ウインカー</code> の部品の <code>ウインカー</code> のマテリアルなど）があれば、そこだけが光ります（ボディ色のカバーやバックランプは光らない）。なければ部品ぜんぶが光ります。<br></td></tr>
 <tr><td><code>座席_1</code> <code>座席_2</code>…</td><td>運転席のほかの席。だれかが運転しているとき、ほかの人が「相乗り」で座れる</td></tr>
 <tr><td><code>回転灯</code> <code>回転_1</code>…</td><td>「作業」ボタンを押すと回る（部品の縦の軸＝円柱を足したときの軸で回る）</td></tr></table>
@@ -5837,6 +5947,7 @@ document.addEventListener('keydown', (e) => {
   if (e.code === 'KeyL') { if (driving && hasLamps(ride)) cycleLampMode(); else toggleLight(); }
   if (driving && hasLamps(ride) && !e.repeat) { if (e.code === 'KeyZ') setTurnSignal(1); if (e.code === 'KeyX') setTurnSignal(-1); if (e.code === 'KeyH') setTurnSignal(2); }
   if (e.code === 'KeyK' && !e.repeat) toggleWork();
+  if (e.code === 'KeyC' && !e.repeat) togglePat();
   if (e.code === 'KeyR') rescueBoat();
   if (e.code === 'KeyP') setPeriscope(!periscope);
   if (e.code === 'KeyV') toggleBusView();
@@ -6073,7 +6184,7 @@ function leaveRide(force) {
   dropPlayerAt(exitPoint(car), visYaw(car), car.y);
   ride = null; driving = false; avatar.visible = true;
   stopAuto(); SEMI.on = false;
-  CARL.turn = 0; CARL.hazard = false; car.workOn = false;
+  CARL.turn = 0; CARL.hazard = false; car.workOn = false; car.patOn = false;
   if (periscope) setPeriscope(false);
   car.vF = 0; car.vL = 0; car.settled = false;
   car.h = wrapA(visYaw(car)); car.yawOff = 0;   // 見た目の向きを、そのまま止めた向きにする
@@ -10267,7 +10378,7 @@ function sendPresence() {
     ns: ride && isBoat(ride) && (vtype(ride) === 'sub' || ride.item.def.vehicle.aegis ? subNoisy(ride) : Math.abs(ride.vF) > 0.3) ? 1 : 0,   // スクリューの音
     sp: ride && isBoat(ride) ? Math.round(Math.abs(ride.vF) / KT) : 0,   // 速さ（ノット）。5 ノット以下は 300m まで近づかないと聞こえない
     gy: ride && ride.item.guns ? [r((ride.item.guns.main[0] || { pivot: { rotation: { y: 0 } } }).pivot.rotation.y), r((ride.item.guns.ciws[0] || { pivot: { rotation: { y: 0 } } }).pivot.rotation.y)] : null,   // イージス艦の砲塔の向き   // 潜水艦の音（動いている・装填中・撃った直後）
-    cl: ride && ride.shared ? ((ride.item.lamps ? ride.lampBits & 15 : 0) | (ride.workOn ? 16 : 0) | (ride.item.jet ? jetBits(ride) : 0)) : 0,   // 旅客機：32 ギアを上げた・64〜 フラップの段   // 車のライト（1 ライト・2 ブレーキ・4 左・8 右）と作業中（16）
+    cl: ride && ride.shared ? ((ride.item.lamps ? ride.lampBits & 47 : 0) | (ride.workOn ? 16 : 0) | (ride.item.jet ? jetBits(ride) : 0)) : 0,   // 旅客機：32 ギアを上げた・64〜 フラップの段   // 車のライト（1 ライト・2 ブレーキ・4 左・8 右）と作業中（16）
     mp: ride && ride.shared && ride.item.moves ? ride.item.moves.chans.slice(0, 32).map((a) => r(a.val, 10)) : null,   // 動く部品の値（度・m）
     cp: ride && ride.shared ? cpEncode() : null,   // 連結している車・置物
     c: myCar ? pose(myCar) : null,
@@ -12172,7 +12283,7 @@ const mpVeh = () => (driving && ride && (ride.item.moves || hasLamps(ride)) ? ri
 const mpClampXY = (n, d) => THREE.MathUtils.clamp(Number.isFinite(n) ? n : d, 0.04, 0.96);
 const mpRange = (a) => a.free ? 'ぐるぐる回る' : a.part.type === 'rot' ? `${a.min}°〜${a.max}°` : `${a.min}m〜${a.max}m`;
 const MP_PLUS_TXT = { rot: { Z: '上から見て左回り', X: '前が下がる向き（砲身なら下向き）', Y: '左（+X）に傾く向き' }, move: { Z: '上へ', X: '左へ（+X）', Y: '後ろへ（+Y）' } };
-const mpActTxt = (q) => { const o = q.n > 1 ? `(${q.n})` : ''; if (q.k === 'light') return 'ライト' + o; if (q.k === 'cp') { const k = MPB.v && cpCps(MPB.v).find((c) => c.key === q.ch); return k ? k.name : '？'; } const a = mpChan(q.ch); return a ? `${a.part.name}${q.dir < 0 ? '−' : '＋'}${o}` : '？'; };
+const mpActTxt = (q) => { const o = q.n > 1 ? `(${q.n})` : ''; if (q.k === 'light') return 'ライト' + o; if (q.k === 'pat') return 'パトランプ' + o; if (q.k === 'cp') { const k = MPB.v && cpCps(MPB.v).find((c) => c.key === q.ch); return k ? k.name : '？'; } const a = mpChan(q.ch); return a ? `${a.part.name}${q.dir < 0 ? '−' : '＋'}${o}` : '？'; };
 // すること の順番（1〜9）。同じ番号はいっしょに、番号の小さい順に動く（前の番号がぜんぶ終わってから次）
 const mpOrd = (q) => THREE.MathUtils.clamp(Math.round(Number(q.n) || 1), 1, 9);
 function mpGroups(acts, desc) {
@@ -12183,13 +12294,14 @@ function mpGroups(acts, desc) {
 function mpStartGroup(g, mode) {
   for (const q of g) {
     if (q.k === 'light') { if (mode !== 'home') { CARL.mode = mode === 'on' ? 'on' : 'off'; renderLampMenu(); } continue; }
+    if (q.k === 'pat') { if (mode !== 'home' && MPB.v) { MPB.v.patOn = mode === 'on'; renderLampMenu(); } continue; }
     for (const a of mpChans(q.ch)) {
       if (mode === 'home') { for (const r of a.part.axes) r.goal = r.init; continue; }
       a.goal = mode === 'off' ? a.init : a.free ? a.val + q.dir * 90 : q.dir < 0 ? a.min : a.max;
     }
   }
 }
-const mpGroupDone = (g) => g.every((q) => q.k === 'light' || mpChans(q.ch).every((a) => a.part.axes.every((r) => r.goal == null)));
+const mpGroupDone = (g) => g.every((q) => q.k === 'light' || q.k === 'pat' || mpChans(q.ch).every((a) => a.part.axes.every((r) => r.goal == null)));
 function mpRun(b, mode) {
   // ON は番号の小さい順、OFF・もどすは逆の順（最後に動いた物から元にもどる）
   const R = { groups: mpGroups(b.acts, mode !== 'on'), gi: 0, mode };
@@ -12218,7 +12330,7 @@ function renderMpButtons() {
   layer.hidden = !v; el('mpDone').hidden = !(v && MPB.edit);
   if (!v) return;
   MPB.list.forEach((b, i) => {
-    const ok = b.acts.filter((q) => q.k === 'light' ? hasLamps(v) : q.k === 'cp' ? cpCps(v).some((k) => k.key === q.ch) : mpChan(q.ch));
+    const ok = b.acts.filter((q) => q.k === 'light' ? hasLamps(v) : q.k === 'pat' ? hasPat(v) : q.k === 'cp' ? cpCps(v).some((k) => k.key === q.ch) : mpChan(q.ch));
     const btn = document.createElement('button');
     btn.type = 'button'; btn.className = 'mpb' + (MPB.edit ? ' edit' : '') + (ok.length ? '' : ' dead') + (b.t === 'toggle' && b.on ? ' on' : '');
     btn.textContent = b.name || b.acts.map(mpActTxt).join('・').slice(0, 14) + (b.t === 'home' ? ' もどす' : b.t === 'couple' ? ' 連結' : '');
@@ -12303,7 +12415,8 @@ function mpActsUi() {
   };
   if (t === 'couple') { for (const k of cpCps(ride)) if (!box.querySelector(`[data-k="${CSS.escape(k.key)}"]`)) row(k.key, `🔗 ${k.name}（連結器・フック）`, false, true); }
   else if (ride && ride.item.moves) for (const a of ride.item.moves.chans) if (!box.querySelector(`[data-k="${CSS.escape(a.key)}"]`)) row(a.key, `${a.part.name}（${a.ax}・${a.part.type === 'rot' ? '回転' : '移動'}・${mpRange(a)}）`, true);
-  if (t === 'toggle' && hasLamps(ride)) row('light', '💡 ライト（つける・消す）', false);
+  if (t === 'toggle' && hasLamps(ride) && (ride.item.lamps.has.head || ride.item.lamps.has.tail)) row('light', '💡 ライト（つける・消す）', false);
+  if (t === 'toggle' && hasPat(ride)) row('pat', '🚨 パトランプ（つける・消す）', false);
   if (!box.children.length) box.textContent = t === 'couple' ? '連結器がありません（部品のカスタムプロパティ 動作=連結）' : t === 'toggle' ? 'えらべるものがありません' : '動く部品がありません（ON／OFF ならライトをえらべます）';
   mpInfo();
 }
@@ -12334,6 +12447,7 @@ el('mpOk').addEventListener('click', () => {
     if (!r.querySelector('input').checked) continue;
     const n = Number(r.querySelector('.mpn').value) || 1;
     if (r.dataset.k === 'light') acts.push({ k: 'light', n });
+    else if (r.dataset.k === 'pat') acts.push({ k: 'pat', n });
     else if (r.dataset.k.startsWith('cp|')) acts.push({ k: 'cp', ch: r.dataset.k, n: 1 });
     else acts.push({ k: 'part', ch: r.dataset.k, dir: r.querySelector('.mpdir') && r.querySelector('.mpdir').value === '-1' ? -1 : 1, n });
   }
@@ -12375,7 +12489,11 @@ function renderLampMenu() {
   el('mTurnL').hidden = el('mTurnR').hidden = el('mHazard').hidden = !turn;
   el('mTurnL').setAttribute('aria-pressed', String(CARL.turn === 1)); el('mTurnR').setAttribute('aria-pressed', String(CARL.turn === -1));
   el('mHazard').setAttribute('aria-pressed', String(CARL.hazard));
+  el('mPat').hidden = !L.has.pat;
+  el('mPat').setAttribute('aria-pressed', String(!!ride.patOn));
+  for (const b of MPB.list) if (b._btn && b.t === 'toggle' && b.acts.some((q) => q.k === 'pat') && b.acts.every((q) => q.k !== 'part')) { b.on = !!ride.patOn; b._btn.classList.toggle('on', b.on); }   // パトランプだけのボタンは、☰ やキーで切りかえても色がそろう
 }
+el('mPat').addEventListener('click', () => { togglePat(); setMenu(false); });
 el('mLamp').addEventListener('click', () => cycleLampMode());
 el('mTurnL').addEventListener('click', () => { setTurnSignal(1); setMenu(false); });
 el('mTurnR').addEventListener('click', () => { setTurnSignal(-1); setMenu(false); });
