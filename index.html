@@ -1298,7 +1298,10 @@ const MP_FUNCS = {
   hold: { name: '押している間うごく（一方通行）' },
   home: { name: 'はじめの位置にもどす' },
 };
-const mpHeld = new Map();   // 押しているボタン → { a, dir }
+const mpHeld = new Map();   // 押しているボタン → { groups: [[{ a, dir }]] }（順番の小さい組から）
+const mpRuns = new Map();   // 順番どおりに動いているボタン → { groups, gi, mode }
+// 押している間：順番の小さい組から動かす。組の部品がぜんぶはし（最大か最小）に着いたら、次の組が動く（ぐるぐる回る部品は着かない）
+const mpAtEnd = (a, dir) => !a.free && (dir < 0 ? a.val <= a.min + 1e-6 : a.val >= a.max - 1e-6);
 // 毎コマ：押しているボタンで動かす。ほかの人が運転している乗り物は、届いた値へ寄せる
 function stepMoveParts(v, dt) {
   const M = v.item.moves;
@@ -1308,12 +1311,17 @@ function stepMoveParts(v, dt) {
     if (mp) M.chans.forEach((a, i) => { if (typeof mp[i] !== 'number') return; let d = mp[i] - a.val; if (a.free) d = ((d + 540) % 360) - 180; if (Math.abs(d) > 1e-3) { a.val += d * Math.min(1, dt * 10); M.dirty = true; } });
   } else if (v === ride && driving) {
     for (const h of mpHeld.values()) {
-      const a = h.a; if (!M.chans.includes(a)) continue;
-      a.goal = null;
-      a.val += h.dir * a.speed * dt;
-      if (a.free) a.val = ((a.val + 540) % 360) - 180; else a.val = THREE.MathUtils.clamp(a.val, a.min, a.max);
-      M.dirty = true;
+      const g = h.groups.find((gr) => gr.some(({ a, dir }) => M.chans.includes(a) && !mpAtEnd(a, dir)));
+      if (!g) continue;
+      for (const { a, dir } of g) {
+        if (!M.chans.includes(a) || mpAtEnd(a, dir)) continue;
+        a.goal = null;
+        a.val += dir * a.speed * dt;
+        if (a.free) a.val = ((a.val + 540) % 360) - 180; else a.val = THREE.MathUtils.clamp(a.val, a.min, a.max);
+        M.dirty = true;
+      }
     }
+    mpRunStep(M);
     for (const a of M.chans) if (a.goal != null) {   // 「もどす」：はじめの値へ動く
       const d = a.goal - a.val, s = a.speed * dt;
       if (Math.abs(d) <= s) { a.val = a.goal; a.goal = null; } else a.val += Math.sign(d) * s;
@@ -5352,7 +5360,7 @@ const HELP_BASE = `<details><summary>はじめに：Blender の基本（どの�
 <p><b>移動（上下・のびちぢみ）</b>：<code>動作</code>=<code>移動</code> にすると、部品が <code>軸</code> の向きにすべります。<code>最小</code>・<code>最大</code> は書き出した位置からの m、<code>速さ</code> は 1 秒に何 m か。＋は Blender の +X・+Y・+Z の向き（Z なら上）。</p>
 <ul><li>フォークリフトのツメ：<code>動作</code>=<code>移動</code>・<code>軸</code>=<code>Z</code>・<code>最小</code>=<code>0</code>・<code>最大</code>=<code>3</code>（地面に下ろした形で書き出す）。</li>
 <li>はしご車：<code>ターンテーブル</code>（回転・Z）の子に <code>はしご</code>（回転・X。上げるのは −）、その子に <code>はしご先</code>（移動・Y。前へのばすのは −、例 <code>最小</code>=<code>-10</code>・<code>最大</code>=<code>0</code>）。親子にすると、回す・上げる・のばすが全部つながります。</li></ul>
-<p><b>ボタン</b>は .glb には入れません。乗り物を運転しているときに ☰ →「🎛️ ボタンを作る」で作ります。1. ボタンの種類：<b>ON／OFF</b>（1 回押すと部品が ＋ なら最大・− なら最小まで動いてライトがつく、もう 1 回で元にもどってライトが消える）・<b>押している間うごく</b>（一方通行。砲塔の右回りなど）・<b>はじめの位置にもどす</b>。2. すること：動かす部品（＋／−の向き）とライトを<b>いくつでも</b>えらべます（例：「ライト」ボタン＝ライト＋ヘッドライトの部品を開く）。3. 名前をつけて「作る」。ボタンをドラッグして好きな所に置き「完了」。並べかえ・消すのも ☰ から。ボタンの配置は乗り物の名前ごとに、その端末に覚えます。</p>
+<p><b>ボタン</b>は .glb には入れません。乗り物を運転しているときに ☰ →「🎛️ ボタンを作る」で作ります。1. ボタンの種類：<b>ON／OFF</b>（1 回押すと部品が ＋ なら最大・− なら最小まで動いてライトがつく、もう 1 回で元にもどってライトが消える）・<b>押している間うごく</b>（一方通行。砲塔の右回りなど）・<b>はじめの位置にもどす</b>。2. すること：動かす部品（＋／−の向き）とライトを<b>いくつでも</b>えらべます（例：「ライト」ボタン＝ライト＋ヘッドライトの部品を開く）。それぞれに<b>順番</b>（1番・2番…）をつけると、同じ番号はいっしょに、前の番号が終わってから次の番号が動きます（OFF・もどすは逆の順）。3. 名前をつけて「作る」。ボタンをドラッグして好きな所に置き「完了」。並べかえ・消すのも ☰ から。ボタンの配置は乗り物の名前ごとに、その端末に覚えます。</p>
 <p class="tip">Blender のプロパティの歯車の「最小・最大・デフォルト」は書き出されません。最小・最大は、それぞれ別のプロパティ（<code>最小</code> <code>最大</code>）として作ってください。整数・浮動小数点数のプロパティに -90 などが入らないときは、歯車の「ソフト最小」「ソフト最大」を広げるか、タイプを「文字列」にしてください。</p></details>
 <details><summary>書き出し（.glb にする）</summary>
 <ol>
@@ -5425,7 +5433,7 @@ const HELP_MOVE = `<h4>動く部品とボタン</h4>
 <tr><td>ON／OFF</td><td>1 回押すと ON（部品は ＋ なら最大・− なら最小へ、ライトがつく）、もう 1 回で OFF（はじめの位置へ、ライトが消える）</td></tr>
 <tr><td>押している間うごく</td><td>一方通行。押すたびに同じ向きへ（砲塔の右回りなど）</td></tr>
 <tr><td>はじめの位置にもどす</td><td>えらんだ部品をはじめの位置へ</td></tr></table>
-<p>1 つのボタンに、部品とライトを<b>いくつでも</b>入れられます。例：「ライト」ボタン＝💡 ライト＋ヘッドライト ＋。フォークリフトのツメは <code>動作</code>=<code>移動</code>・<code>軸</code>=<code>Z</code>・<code>最小</code>=<code>0</code>・<code>最大</code>=<code>3</code>。</p>`;
+<p>1 つのボタンに、部品とライトを<b>いくつでも</b>入れられます。例：「ライト」ボタン＝💡 ライト＋ヘッドライト ＋。</p><p><b>順番</b>：すること ごとに「1番」「2番」…をえらべます。同じ番号はいっしょに動き、前の番号がぜんぶ終わってから次の番号が動きます。例：アームA 1番・アームB 1番・ライト 2番 なら、2 つのアームがいっしょに動いて、終わったらライトがつく。ON／OFF の OFF と「もどす」は逆の順（大きい番号から）。押している間うごくボタンは、1番の部品がはし（最小か最大）に着くと 2番が動き出します。フォークリフトのツメは <code>動作</code>=<code>移動</code>・<code>軸</code>=<code>Z</code>・<code>最小</code>=<code>0</code>・<code>最大</code>=<code>3</code>。</p>`;
 const HELP_MAIN = `<h4>種類のえらび方</h4><table><tr><th>種類</th><th>いる部品</th></tr>
 <tr><td>建物</td><td>なくてもよい。<code>ドア_1</code>（原点が蝶番）・<code>ライト_1</code>・<code>ガラス</code>・<code>スイッチ</code>・<code>イス_1</code> で使える建物に。壁は 10〜20cm の厚み、階段は 1 段 40cm まで、入口は 80cm×2m 以上。カスタムプロパティ <code>用途</code>=<code>店</code> で明かりがつけっぱなし、ドアの <code>開き方</code>=<code>横</code> で引き戸、<code>閉まる</code>=<code>3</code> で 3 秒で閉まる。</td></tr>
 <tr><td>植物・置物</td><td>形だけでよい。地面に置かれます。</td></tr>
@@ -11882,20 +11890,48 @@ const mpVeh = () => (driving && ride && (ride.item.moves || hasLamps(ride)) ? ri
 const mpClampXY = (n, d) => THREE.MathUtils.clamp(Number.isFinite(n) ? n : d, 0.04, 0.96);
 const mpRange = (a) => a.free ? 'ぐるぐる回る' : a.part.type === 'rot' ? `${a.min}°〜${a.max}°` : `${a.min}m〜${a.max}m`;
 const MP_PLUS_TXT = { rot: { Z: '上から見て左回り', X: '前が下がる向き（砲身なら下向き）', Y: '左（+X）に傾く向き' }, move: { Z: '上へ', X: '左へ（+X）', Y: '後ろへ（+Y）' } };
-const mpActTxt = (q) => { if (q.k === 'light') return 'ライト'; const a = mpChan(q.ch); return a ? `${a.part.name}${q.dir < 0 ? '−' : '＋'}` : '？'; };
+const mpActTxt = (q) => { const o = q.n > 1 ? `(${q.n})` : ''; if (q.k === 'light') return 'ライト' + o; const a = mpChan(q.ch); return a ? `${a.part.name}${q.dir < 0 ? '−' : '＋'}${o}` : '？'; };
+// すること の順番（1〜9）。同じ番号はいっしょに、番号の小さい順に動く（前の番号がぜんぶ終わってから次）
+const mpOrd = (q) => THREE.MathUtils.clamp(Math.round(Number(q.n) || 1), 1, 9);
+function mpGroups(acts, desc) {
+  const ns = [...new Set(acts.map(mpOrd))].sort((x, y) => (desc ? y - x : x - y));
+  return ns.map((n) => acts.filter((q) => mpOrd(q) === n));
+}
+// 組を 1 つ始める。mode：on（ON）・off（OFF：はじめの値へ）・home（もどす）
+function mpStartGroup(g, mode) {
+  for (const q of g) {
+    if (q.k === 'light') { if (mode !== 'home') { CARL.mode = mode === 'on' ? 'on' : 'off'; renderLampMenu(); } continue; }
+    for (const a of mpChans(q.ch)) {
+      if (mode === 'home') { for (const r of a.part.axes) r.goal = r.init; continue; }
+      a.goal = mode === 'off' ? a.init : a.free ? a.val + q.dir * 90 : q.dir < 0 ? a.min : a.max;
+    }
+  }
+}
+const mpGroupDone = (g) => g.every((q) => q.k === 'light' || mpChans(q.ch).every((a) => a.part.axes.every((r) => r.goal == null)));
+function mpRun(b, mode) {
+  // ON は番号の小さい順、OFF・もどすは逆の順（最後に動いた物から元にもどる）
+  const R = { groups: mpGroups(b.acts, mode !== 'on'), gi: 0, mode };
+  mpRuns.set(b, R);
+  mpStartGroup(R.groups[0], mode);
+}
+function mpRunStep(M) {
+  for (const [b, R] of mpRuns) {
+    if (!mpGroupDone(R.groups[R.gi])) continue;
+    if (++R.gi >= R.groups.length) { mpRuns.delete(b); continue; }
+    mpStartGroup(R.groups[R.gi], R.mode);
+  }
+  void M;
+}
 // ON／OFF：部品は ON で選んだ向きのはし（最大か最小）へ、OFF ではじめの値へ。ライトは ON でつく
 function mpToggle(b, on) {
   b.on = on;
-  for (const q of b.acts) {
-    if (q.k === 'light') { CARL.mode = on ? 'on' : 'off'; renderLampMenu(); continue; }
-    for (const a of mpChans(q.ch)) a.goal = !on ? a.init : a.free ? a.val + q.dir * 90 : q.dir < 0 ? a.min : a.max;
-  }
+  mpRun(b, on ? 'on' : 'off');
 }
 function setMpEdit(on) { MPB.edit = !!on; MPB.drag = null; renderMpButtons(); }
 function renderMpButtons() {
   for (let i = holds.length - 1; i >= 0; i--) if (holds[i].mp) { holds[i].release(); holds.splice(i, 1); }
   const layer = el('mpLayer'), v = mpVeh();
-  if (MPB.v !== v) { MPB.v = v; MPB.list = v ? mpLoad(v) : []; MPB.edit = false; MPB.drag = null; }
+  if (MPB.v !== v) { MPB.v = v; MPB.list = v ? mpLoad(v) : []; MPB.edit = false; MPB.drag = null; mpRuns.clear(); }
   layer.textContent = '';
   layer.hidden = !v; el('mpDone').hidden = !(v && MPB.edit);
   if (!v) return;
@@ -11931,14 +11967,14 @@ function renderMpButtons() {
         if (!ok.length) { showMsg(btn.title); return; }
         if (b.t === 'toggle') { mpToggle(b, !b.on); btn.classList.toggle('on', b.on); return; }
         if (b.t === 'home') {   // もどす：選んだ部品をはじめの値へ（ON／OFF のボタンも OFF にもどる）
-          for (const q of ok) if (q.k === 'part') for (const a of mpChans(q.ch)) for (const r of a.part.axes) r.goal = r.init;
-          for (const o of MPB.list) if (o.t === 'toggle') o.on = false;
+          for (const o of MPB.list) if (o.t === 'toggle') { o.on = false; mpRuns.delete(o); }
+          mpRun({ acts: ok.filter((q) => q.k === 'part') }, 'home');
           renderMpButtons();
           return;
         }
         h.release();
         h.id = e.pointerId;
-        for (const q of ok) if (q.k === 'part') for (const a of mpChans(q.ch)) { const k = {}; mpHeld.set(k, { a, dir: q.dir }); h.keys.push(k); }
+        { const k = {}; mpHeld.set(k, { groups: mpGroups(ok.filter((q) => q.k === 'part')).map((g) => g.flatMap((q) => mpChans(q.ch).map((a) => ({ a, dir: q.dir })))) }); h.keys.push(k); }
         btn.classList.add('on');
         try { btn.setPointerCapture(e.pointerId); } catch (_) {}
       });
@@ -11959,7 +11995,7 @@ function renderMpMenu() {
 // ダイアログ：すること の一覧（部品は ＋／− の向きつき、ライトは ON／OFF のときだけ）
 function mpActsUi() {
   const t = el('mpFn').value, box = el('mpActs'), keep = new Map();
-  for (const r of box.querySelectorAll('.mpact')) keep.set(r.dataset.k, { on: r.querySelector('input').checked, dir: r.querySelector('select') ? r.querySelector('select').value : '1' });
+  for (const r of box.querySelectorAll('.mpact')) keep.set(r.dataset.k, { on: r.querySelector('input').checked, dir: r.querySelector('.mpdir') ? r.querySelector('.mpdir').value : '1', n: r.querySelector('.mpn').value });
   box.textContent = '';
   const row = (k, label, part) => {
     const r = document.createElement('label'); r.className = 'mpact'; r.dataset.k = k;
@@ -11967,11 +12003,16 @@ function mpActsUi() {
     const sp = document.createElement('span'); sp.textContent = label;
     r.append(c, sp);
     if (part && t !== 'home') {
-      const sel = document.createElement('select');
+      const sel = document.createElement('select'); sel.className = 'mpdir'; sel.setAttribute('aria-label', '向き');
       sel.innerHTML = `<option value="1">＋</option><option value="-1">−</option>`;
       sel.value = (keep.get(k) || {}).dir || '1';
       r.append(sel);
     }
+    // 順番：同じ番号はいっしょに、小さい番号から順に
+    const ns = document.createElement('select'); ns.className = 'mpn'; ns.setAttribute('aria-label', '順番');
+    ns.innerHTML = [1, 2, 3, 4, 5, 6, 7, 8, 9].map((n) => `<option value="${n}">${n}番</option>`).join('');
+    ns.value = (keep.get(k) || {}).n || '1';
+    r.append(ns);
     box.append(r);
   };
   if (ride && ride.item.moves) for (const a of ride.item.moves.chans) if (!box.querySelector(`[data-k="${CSS.escape(a.key)}"]`)) row(a.key, `${a.part.name}（${a.ax}・${a.part.type === 'rot' ? '回転' : '移動'}・${mpRange(a)}）`, true);
@@ -11981,9 +12022,10 @@ function mpActsUi() {
 }
 function mpInfo() {
   const t = el('mpFn').value;
-  el('mpInfo').textContent = t === 'toggle' ? '1 回押すと ON：部品は ＋ なら最大、− なら最小まで動き、ライトはつく。もう 1 回で OFF：はじめの位置にもどり、ライトは消える。'
-    : t === 'hold' ? '押している間だけ、選んだ向き（＋／−）に動く。何度押しても同じ向きに動く。＋は Blender の値が増える向き（回転 Z なら上から見て左回り、移動 Z なら上へ）。'
-    : '押すと、選んだ部品がはじめの位置にもどる。';
+  const ord = '「○番」は順番：同じ番号はいっしょに動き、前の番号がぜんぶ終わってから次の番号が動く。';
+  el('mpInfo').textContent = t === 'toggle' ? '1 回押すと ON：部品は ＋ なら最大、− なら最小まで動き、ライトはつく（1番→2番→…）。もう 1 回で OFF：逆の順（大きい番号から）にはじめの位置にもどり、ライトは消える。' + ord
+    : t === 'hold' ? '押している間だけ、選んだ向き（＋／−）に動く。何度押しても同じ向きに動く。＋は Blender の値が増える向き（回転 Z なら上から見て左回り、移動 Z なら上へ）。1番の部品がはし（最大か最小）に着くと 2番が動き出す。' + ord
+    : '押すと、選んだ部品がはじめの位置にもどる（大きい番号から順に）。' + ord;
 }
 function openMpDlg() {
   if (!mpVeh()) { showMsg('動く部品かライトのある乗り物を運転しているときに作れます'); return; }
@@ -12002,8 +12044,9 @@ el('mpOk').addEventListener('click', () => {
   const t = el('mpFn').value, acts = [];
   for (const r of el('mpActs').querySelectorAll('.mpact')) {
     if (!r.querySelector('input').checked) continue;
-    if (r.dataset.k === 'light') acts.push({ k: 'light' });
-    else acts.push({ k: 'part', ch: r.dataset.k, dir: r.querySelector('select') && r.querySelector('select').value === '-1' ? -1 : 1 });
+    const n = Number(r.querySelector('.mpn').value) || 1;
+    if (r.dataset.k === 'light') acts.push({ k: 'light', n });
+    else acts.push({ k: 'part', ch: r.dataset.k, dir: r.querySelector('.mpdir') && r.querySelector('.mpdir').value === '-1' ? -1 : 1, n });
   }
   if (!MP_FUNCS[t]) return;
   if (!acts.length) { showMsg('することを 1 つ以上えらんでください'); return; }
