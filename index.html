@@ -769,7 +769,7 @@ async function loadItem(def) {
   if (def.rig) RIGS[def.rig](item, root, model, gltf, def);
 
   // 動く部品（カスタムプロパティ 動作=回転 など）。乗り物だけ（ボタンで動かす）
-  if (def.kind === 'vehicle') item.moves = rigMoveParts(item);
+  if (def.kind === 'vehicle') item.moves = rigMoveParts(item, model);
   if (def.rig === 'car') item.hf = buildCarHf(item);   // 上に乗れる面の地図
 
   // 持ち込みの置物：地面に置いて、真ん中をそろえる
@@ -1237,7 +1237,7 @@ function rigCarWork(root, model, kind, P) {
      最小 / 最大 = 角度（度。移動なら m）   初期 = はじめの値（なければ 0）   速さ = 1 秒に動く量（回転 30°、移動 0.5m）
      軸が 2 つ以上のときは 最小Z・最大X のように軸ごとにも書ける（なければ 最小・最大）
    値は「書き出した形」を 0 にして数える。原点が回る中心。子の部品（砲塔の子の砲身）はいっしょに動く。
-   回るのは部品自身の軸（部品の回転が 0 なら Blender の X・Y・Z と同じ）。＋は Blender の角度が増える向き（Z なら上から見て左回り）
+   軸は書き出したときの Blender の X・Y・Z（グローバル）。部品は縮尺なしの「軸の箱」に入れて動かす。＋は Blender の角度が増える向き（Z なら上から見て左回り）
    ボタンは .glb に入れない：運転中に ☰ →「ボタンを作る」でプレイヤーが作り、好きな所に置く（MP_FUNCS が機能の一覧） */
 const MP_TYPES = [['rot', /回転|回る|旋回|rotat|turn|spin/i], ['move', /移動|スライド|伸|上下|昇降|slide|move|lift/i]];
 const CP_RE = /連結|カプラ|カプラー|フック|けん引|牽引|coupl|hitch|hook|tow/i;   // 動作=連結：さわった物とボタンで連結（移動・連結 のように動きといっしょでもよい）
@@ -1254,7 +1254,7 @@ function mpPropsOf(o) {
   return out;
 }
 const mpGet = (P, names, ax) => { for (const n of names) { const k = mpKey(n); for (const kk of ax ? [k + ax, ax + k] : [k]) if (P[kk] != null) return P[kk]; } return null; };
-function rigMoveParts(item) {
+function rigMoveParts(item, modelOf) {
   const parts = [], cps = [];
   item.root.traverse((o) => {
     const P = mpPropsOf(o), kv = mpGet(P, MP_NAMES.kind);
@@ -1276,9 +1276,30 @@ function rigMoveParts(item) {
       if (!free) val = THREE.MathUtils.clamp(val, min, max);
       return { ax, vec: new THREE.Vector3(...MP_AXV[ax]), min, max, free, speed, val, init: val, goal: null };
     });
-    parts.push({ o, type, name: String(o.name || '部品').replace(/(·[−+][xz])+$/, '').replace(/\.\d+$/, '').slice(0, 24), axes, q0: o.quaternion.clone(), p0: o.position.clone() });
+    parts.push({ o, type, name: String(o.name || '部品').replace(/(·[−+][xz])+$/, '').replace(/\.\d+$/, '').slice(0, 24), axes });
   });
   if (!parts.length && !cps.length) return null;
+  // 動く部品は「軸の箱」（縮尺なしの Group）に入れて、箱のほうを回す・すべらせる。
+  //   部品や親に、縦横で違う縮尺（Blender で「スケールを適用」していない）があっても、形がのびたりつぶれたりしない
+  //   （前は 支柱 の縮尺の中で アームA を回したので、上げるとのびた。アウトリガーの中のジャッキも形がくずれた）。
+  //   箱は、いちばん近い動く親の箱か、乗り物の root につける（とちゅうの動かない親は通さない）。
+  //   軸は「書き出したときの Blender の X・Y・Z（画面の向き）」。親の部品が動けば、軸もいっしょに向きが変わる
+  const root = item.root, model = modelOf || root;
+  root.updateMatrixWorld(true);
+  const pvOf = new Map(), mq = model.getWorldQuaternion(new THREE.Quaternion()), hq = new THREE.Quaternion();
+  for (const p of parts) {   // traverse の順＝親が先
+    let host = root;
+    for (let q = p.o.parent; q; q = q.parent) if (pvOf.has(q)) { host = pvOf.get(q); break; }
+    const pv = new THREE.Group(); pv.name = '動く部品の軸';
+    host.add(pv); root.updateMatrixWorld(true);
+    pv.position.copy(host.worldToLocal(p.o.getWorldPosition(new THREE.Vector3())));
+    root.updateMatrixWorld(true);
+    pv.attach(p.o);
+    pvOf.set(p.o, pv);
+    host.getWorldQuaternion(hq).invert().multiply(mq);   // model（glTF の向き）→ 箱の親の向き
+    for (const a of p.axes) a.vec.applyQuaternion(hq).normalize();
+    p.pv = pv; p.p0 = pv.position.clone();
+  }
   const chans = [];
   for (const p of parts) for (const a of p.axes) { a.part = p; a.key = `${p.name}|${a.ax}`; chans.push(a); }
   for (const c of cps) c.key = 'cp|' + c.name;
@@ -1289,10 +1310,11 @@ function rigMoveParts(item) {
 const _mpQ = new THREE.Quaternion(), _mpV = new THREE.Vector3();
 function mpApply(M) {
   for (const p of M.parts) {
-    p.o.quaternion.copy(p.q0); p.o.position.copy(p.p0);
+    const g = p.pv;   // 軸の箱（縮尺なし）を動かす。部品そのものは箱の中で止まったまま
+    g.quaternion.identity(); g.position.copy(p.p0);
     for (const a of p.axes) {
-      if (p.type === 'rot') p.o.quaternion.multiply(_mpQ.setFromAxisAngle(a.vec, a.val * Math.PI / 180));
-      else p.o.position.addScaledVector(a.vec, a.val);   // 移動は親の軸（Blender の「位置 X・Y・Z」と同じ向き）。部品が回してあっても、Y なら Y の向きにすべる
+      if (p.type === 'rot') g.quaternion.multiply(_mpQ.setFromAxisAngle(a.vec, a.val * Math.PI / 180));
+      else g.position.addScaledVector(a.vec, a.val);   // 移動：書き出したときの Blender の X・Y・Z の向き（親の部品が回れば、いっしょに向きが変わる）
     }
   }
   M.dirty = false;
@@ -5596,8 +5618,8 @@ const HELP_BASE = `<details><summary>はじめに：Blender の基本（どの�
 <ol>
 <li><b>角度は「書き出した形」を 0 として数えます</b>。砲塔は、前を向いた形で書き出してください。</li>
 <li><b>原点が回る中心</b>になります（上の「原点」のやり方で、砲塔なら回る軸の真ん中、砲身なら砲塔とつながる所へ）。</li>
-<li><b>移動</b>の軸は、Blender の「位置」の X・Y・Z と同じ向きです（親がなければ画面の X・Y・Z。部品を回してあっても変わりません）。</li>
-<li>回るのは部品自身の軸です。部品の回転を 0 にしておくと Blender の X・Y・Z と同じ向きになります（回転を 0 にするには Ctrl+A →「回転」を適用）。</li>
+<li><b>軸の向き</b>は、書き出したときの Blender の画面の X・Y・Z（グローバル）です。部品を回してあっても変わりません。親の部品が動けば、軸もいっしょに向きが変わります（支柱を回すと、アームの上げ下げの軸もついてくる）。</li>
+<li>部品や親の「スケール」が縦横でちがっていても、形はくずれません（Blender で スケールを適用 しなくてよい）。</li>
 <li><b>子の部品はいっしょに動きます</b>：砲身を砲塔の子にすると、砲塔が回ると砲身もついてきます。砲身には <code>動作</code>=<code>回転</code>・<code>軸</code>=<code>X</code>・<code>最小</code>=<code>-20</code>・<code>最大</code>=<code>10</code>（上へ 20°・下へ 10°） などをつけます。</li>
 <li>＋の向きは Blender で値を増やした向き：<b>Z は上から見て左回り</b>、X は前が下がる向き（砲身なら下向き。上に向けたいときは −）。</li>
 </ol>
