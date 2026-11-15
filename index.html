@@ -4778,6 +4778,9 @@ function hfAt(P, x, y, z) {
   const ly = P.h[k * P.nx + i];
   if (ly === -Infinity) return -Infinity;
   _hfV.y = ly; _hfV.applyMatrix4(P.fr.matrixWorld);
+  // かたむいた・回った部品（ジャッキ・アーム）は、地図の「上」が世界の上ではない。見つけた面が、さがした所の真上・真下でなければ使わない
+  //   （前はここを見ていなかったので、遠くの何もない所に面があることになり、ぶつかったり物を弾いたりした）
+  if (Math.abs(_hfV.x - x) > 0.3 || Math.abs(_hfV.z - z) > 0.3) return -Infinity;
   return _hfV.y;
 }
 // 乗り物の面のうち、yMax より下でいちばん高いもの。{ y, v, P } か null。skip の乗り物と、skip に積まれている乗り物は見ない
