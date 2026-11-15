@@ -421,6 +421,7 @@ body.jetOn #map { display: none !important; }
 #mpLayer .mpb { position: absolute; transform: translate(-50%, -50%); pointer-events: auto; min-width: 56px; min-height: 56px; max-width: 120px; padding: 6px 10px; border-radius: 16px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); font: 800 13px/1.2 var(--font-ui); cursor: pointer; touch-action: none; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; overflow-wrap: anywhere; }
 #mpLayer .mpb.on { background: var(--accent); color: #fff; }
 #mpLayer .mpb.dead { opacity: 0.5; }
+#mpLayer .mpb.ready { box-shadow: 0 0 0 3px #ffd84a, 0 0 14px #ffd84a; }
 #mpLayer .mpb.edit { outline: 2px dashed var(--accent); outline-offset: 2px; cursor: grab; }
 #mpLayer .mpx { position: absolute; top: -10px; right: -10px; width: 24px; height: 24px; border-radius: 50%; background: #c8402a; color: #fff; font: 800 15px/24px var(--font-ui); text-align: center; }
 #mpDone { position: fixed; z-index: 4; left: 50%; transform: translateX(-50%); top: calc(56px + env(safe-area-inset-top, 0px)); display: flex; align-items: center; gap: 8px; padding: 6px 6px 6px 12px; background: var(--panel); border: 1px solid var(--line); border-radius: 999px; font: 800 12px var(--font-ui); white-space: nowrap; }
@@ -1235,6 +1236,7 @@ function rigCarWork(root, model, kind, P) {
    回るのは部品自身の軸（部品の回転が 0 なら Blender の X・Y・Z と同じ）。＋は Blender の角度が増える向き（Z なら上から見て左回り）
    ボタンは .glb に入れない：運転中に ☰ →「ボタンを作る」でプレイヤーが作り、好きな所に置く（MP_FUNCS が機能の一覧） */
 const MP_TYPES = [['rot', /回転|回る|旋回|rotat|turn|spin/i], ['move', /移動|スライド|伸|上下|昇降|slide|move|lift/i]];
+const CP_RE = /連結|カプラ|カプラー|フック|けん引|牽引|coupl|hitch|hook|tow/i;   // 動作=連結：さわった物とボタンで連結（移動・連結 のように動きといっしょでもよい）
 const MP_AXV = { X: [1, 0, 0], Y: [0, 0, -1], Z: [0, 1, 0] };   // Blender の軸 → glTF（+Y 上で書き出し：Blender Y は glTF −Z、Blender Z は glTF Y）
 const mpHalf = (s) => String(s).replace(/[！-～]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0xfee0)).replace(/[−－ー―‐]/g, '-');
 const mpKey = (k) => mpHalf(k).replace(/[\s_\-()（）・:：［］\[\]]/g, '').toUpperCase();
@@ -1249,11 +1251,12 @@ function mpPropsOf(o) {
 }
 const mpGet = (P, names, ax) => { for (const n of names) { const k = mpKey(n); for (const kk of ax ? [k + ax, ax + k] : [k]) if (P[kk] != null) return P[kk]; } return null; };
 function rigMoveParts(item) {
-  const parts = [];
+  const parts = [], cps = [];
   item.root.traverse((o) => {
     const P = mpPropsOf(o), kv = mpGet(P, MP_NAMES.kind);
     if (kv == null) return;
-    const t = MP_TYPES.find(([, re]) => re.test(String(kv)));
+    if (CP_RE.test(String(kv)) && !cps.some((c) => c.o === o)) cps.push({ o, name: String(o.name || '連結器').replace(/(·[−+][xz])+$/, '').replace(/\.\d+$/, '').slice(0, 24) });
+    const t = MP_TYPES.find(([, re]) => re.test(String(kv).replace(CP_RE, '')));
     if (!t || parts.some((q) => q.o === o)) return;
     const type = t[0];
     let letters = [...new Set((mpHalf(mpGet(P, MP_NAMES.axis) || 'Z').toUpperCase().match(/[XYZ]/g) || ['Z']))].slice(0, 3);
@@ -1271,10 +1274,11 @@ function rigMoveParts(item) {
     });
     parts.push({ o, type, name: String(o.name || '部品').replace(/(·[−+][xz])+$/, '').replace(/\.\d+$/, '').slice(0, 24), axes, q0: o.quaternion.clone(), p0: o.position.clone() });
   });
-  if (!parts.length) return null;
+  if (!parts.length && !cps.length) return null;
   const chans = [];
   for (const p of parts) for (const a of p.axes) { a.part = p; a.key = `${p.name}|${a.ax}`; chans.push(a); }
-  const M = { parts, chans, dirty: true };
+  for (const c of cps) c.key = 'cp|' + c.name;
+  const M = { parts, chans, cps, dirty: true };
   mpApply(M);
   return M;
 }
@@ -1297,6 +1301,7 @@ const MP_FUNCS = {
   toggle: { name: 'ON／OFF（押すたびに入る・切れる）' },
   hold: { name: '押している間うごく（一方通行）' },
   home: { name: 'はじめの位置にもどす' },
+  couple: { name: '連結／解除（さわっている物とつなぐ）' },
 };
 const mpHeld = new Map();   // 押しているボタン → { groups: [[{ a, dir }]] }（順番の小さい組から）
 const mpRuns = new Map();   // 順番どおりに動いているボタン → { groups, gi, mode }
@@ -4603,11 +4608,11 @@ function hfAt(P, x, y, z) {
 }
 // 乗り物の面のうち、yMax より下でいちばん高いもの。{ y, v, P } か null。skip の乗り物と、skip に積まれている乗り物は見ない
 const _surf = { y: -Infinity, v: null, P: null };
-function surfTop(x, z, yMax, skip) {
+function surfTop(x, z, yMax, skip, skip2) {
   _surf.y = -Infinity; _surf.v = null; _surf.P = null;
   for (const v of vehicles) {
     const L = v.item.hf;
-    if (!L || v === skip || v.sunk || (skip && v.base && v.base.v === skip)) continue;
+    if (!L || v === skip || v === skip2 || v.sunk || (skip && v.base && v.base.v === skip)) continue;
     const V = v.item.def.vehicle, r = V.halfLength + V.halfWidth + 1;
     if (Math.abs(x - v.pos.x) > r || Math.abs(z - v.pos.y) > r || v.y > yMax + 0.5) continue;
     for (const P of L) { const y = hfAt(P, x, Math.min(yMax, v.y + 3), z); if (y > _surf.y && y <= yMax) { _surf.y = y; _surf.v = v; _surf.P = P; } }
@@ -4679,7 +4684,7 @@ function looseSupport(pr, yMax) {
   const p = pr.pos, L = pr.loose, k = 0.7;
   let y = groundAt(p.x, p.z, p.y + 0.3), s = null;
   for (const [ox, oz] of [[0, 0], [L.hx * k, L.hz * k], [-L.hx * k, L.hz * k], [L.hx * k, -L.hz * k], [-L.hx * k, -L.hz * k]]) {
-    const q = surfTop(p.x + ox, p.z + oz, yMax, null);
+    const q = surfTop(p.x + ox, p.z + oz, yMax, null, cpSkip(pr));
     if (q && q.y > y) { y = q.y; s = { y: q.y, v: q.v, P: q.P }; }
   }
   for (const o of props) {
@@ -4693,7 +4698,7 @@ function stepLoose(dt, mv) {
   const t = performance.now();
   for (const pr of props) {
     const L = pr.loose;
-    if (!L) continue;
+    if (!L || pr.cpL) continue;   // 連結中は cpStep が動かす
     const p = pr.pos, x0 = p.x, z0 = p.z, y0 = p.y, rot0 = pr.item.root.rotation.y;
     const near = mv.filter((u) => Math.abs(u.pos.x - p.x) < 16 && Math.abs(u.pos.y - p.z) < 16);
     if (L.rest && !near.length && !pr.base) continue;
@@ -4731,17 +4736,251 @@ function stepLoose(dt, mv) {
     }
   }
 }
+/* ---- 連結（2026-11-15）：部品のカスタムプロパティ 動作=連結（連結器・クレーンのフック）。動きもつけるなら 動作=移動・連結 のように
+   その部品の原点が、ほかの車・置物にさわっている（相手の連結器の原点から 0.7m、または相手の形の中）とき、ボタンでつなぐ。もう 1 回でつなぎをはずす。
+   つないだ所は自在に曲がる（トレーラー・列車のように、引かれる側は向きを変えながらついてくる）。持ち上がると、ぶら下がって振り子のようにゆれる。
+   計算するのは運転している人。ほかの人には presence の cp で知らせ、同じ計算で動かす。はずしたら、運転していた人が置き場所を保存する */
+const CP = { links: [], ign: [], tick: 0, msgAt: 0 };
+// つないでいる乗り物（クレーンのフックなど）の面には、のらない（はずした直後も、フックがはなれるまで）
+const cpSkip = (o) => (o.cpL ? o.cpL.own : o.cpIgn || null);
+const CP_REACH = 0.7, CP_PAD = 0.25, CP_SLACK = 0.15, CP_G = 9.8;
+const _cpT = new THREE.Vector3(), _cpA = new THREE.Vector3(), _cpV = new THREE.Vector3(), _cpW = new THREE.Vector3(), _cpP = new THREE.Vector3();
+const _cpQ = new THREE.Quaternion(), _cpQx = new THREE.Quaternion(), _cpQy = new THREE.Quaternion(), _cpM = new THREE.Matrix4(), _cpE = new THREE.Euler(0, 0, 0, 'YXZ');
+const CP_AX = { x: new THREE.Vector3(1, 0, 0), y: new THREE.Vector3(0, 1, 0), z: new THREE.Vector3(0, 0, 1) };
+const cpWorld = (o, out) => { o.updateWorldMatrix(true, false); return out.setFromMatrixPosition(o.matrixWorld); };
+const cpCps = (o) => (o && o.item && o.item.moves && o.item.moves.cps) || [];
+// 乗り物・置物の形の箱（root から見た向きで。1 回だけ計算）
+function cpLocalBox(item) {
+  if (item._cpBox) return item._cpBox;
+  const r = item.root; r.updateWorldMatrix(true, true);
+  const inv = new THREE.Matrix4().copy(r.matrixWorld).invert(), b = new THREE.Box3(), t = new THREE.Box3(), m = new THREE.Matrix4();
+  r.traverse((o) => { if (!o.isMesh || !o.geometry) return; if (!o.geometry.boundingBox) o.geometry.computeBoundingBox(); t.copy(o.geometry.boundingBox).applyMatrix4(m.multiplyMatrices(inv, o.matrixWorld)); b.union(t); });
+  if (b.isEmpty()) b.set(new THREE.Vector3(-0.5, 0, -0.5), new THREE.Vector3(0.5, 1, 0.5));
+  return (item._cpBox = b);
+}
+// つなげる相手：止まっている車（ほかの人が運転していない）と、置物（押せる大きさの物）
+function cpTargets() {
+  const out = [];
+  for (const v of vehicles) { const t = vtype(v); if (v === ride || v.remote || v.sunk || v.run || v.cpL || (t !== 'car' && t !== 'robot')) continue; out.push({ tk: 'v', o: v }); }
+  for (const pr of props) if (pr.loose && !pr.cpL && !pr.bld) out.push({ tk: 'p', o: pr });
+  return out;
+}
+// 点 H（連結器の原点）にさわっている物。相手の連結器の近くなら、そこでつなぐ（ta）。self は連結器の持ち主（自分にはつながない）
+function cpTouch(H, self) {
+  let best = null, bd = Infinity;
+  for (const c of cpTargets()) {
+    const o = c.o, root = o.item.root;
+    if (o === self || (self && self.cpL && self.cpL.host === o)) continue;
+    if (c.tk === 'v') { const V = o.item.def.vehicle; if (Math.hypot(o.pos.x - H.x, o.pos.y - H.z) > V.halfLength + V.halfWidth + 3 || Math.abs(H.y - o.y) > (V.height || 3) + 4) continue; }
+    else if (!o.box.clone().expandByScalar(CP_PAD + CP_REACH).containsPoint(H)) continue;
+    for (const k of cpCps(o)) { const d = cpWorld(k.o, _cpW).distanceTo(H); if (d < CP_REACH && d < bd) { bd = d; best = { tk: c.tk, o, ta: k.o }; } }
+    if (bd <= CP_REACH && best.o === o) continue;
+    root.updateWorldMatrix(true, false);
+    const lp = root.worldToLocal(_cpV.copy(H)), B = cpLocalBox(o.item), pad = CP_PAD / (Math.max(root.scale.x, root.scale.y, root.scale.z) || 1);
+    if (bd > CP_REACH && lp.x > B.min.x - pad && lp.x < B.max.x + pad && lp.y > B.min.y - pad && lp.y < B.max.y + pad && lp.z > B.min.z - pad && lp.z < B.max.z + pad) { bd = CP_REACH + 0.01; best = { tk: c.tk, o, ta: null }; }
+  }
+  return best;
+}
+const cpBusyK = (k) => CP.links.some((L) => L.k === k || L.ta === k.o);
+// つなぐ。own：運転している乗り物、host：連結器 k の持ち主（own か、つながっている車）
+function cpMake(own, host, k, c, mine, enc) {
+  const o = c.o, root = o.item.root;
+  root.updateWorldMatrix(true, false);
+  let a, slack;
+  if (enc) { a = new THREE.Vector3(enc[0], enc[1], enc[2]); slack = enc[3]; }
+  else {
+    const T = cpWorld(k.o, new THREE.Vector3()), A = c.ta ? cpWorld(c.ta, new THREE.Vector3()) : T.clone();
+    a = root.worldToLocal(A.clone());
+    slack = Math.max(0, T.y - A.y) + CP_SLACK;   // つないだときの高さの差はたるみ。そこから 15cm 上がると持ち上がる
+  }
+  const L = { own, host, k, tk: c.tk, tgt: o, ta: c.ta || null, a, slack, mine, yaw: c.tk === 'v' ? o.h : root.rotation.y, sw: { x: 0, z: 0, vx: 0, vz: 0 }, pT: null, pV: new THREE.Vector3(), acc: new THREE.Vector3(), hang: false, vy: 0 };
+  o.cpL = L; o.base = null;
+  if (c.tk === 'v') o.settled = false; else if (o.loose) { o.loose.rest = false; o.loose.saveAt = 0; }
+  CP.links.push(L);
+  return L;
+}
+function cpRelease(L) {
+  const i = CP.links.indexOf(L);
+  if (i < 0) return;
+  CP.links.splice(i, 1);
+  for (const C of CP.links.filter((x) => x.host === L.tgt)) cpRelease(C);   // その先につながっている物もはずす
+  const o = L.tgt, t = performance.now();
+  if (o.cpL === L) o.cpL = null;
+  if (vehicles.includes(L.own)) { o.cpIgn = L.own; CP.ign = CP.ign.filter((q) => q.o !== o); CP.ign.push({ o, k: L.k, until: t + 60000 }); }
+  if (L.tk === 'v') { o.cpHang = false; o.settled = false; o.snapUntil = 0; if (L.mine) o.saveAt = t + 1500; }
+  else {
+    o.item.root.rotation.set(0, L.yaw, 0);
+    if (o.loose) { o.loose.rest = false; o.loose.vy = 0; o.loose.snap = 0; if (L.mine) { o.loose.mine = true; o.loose.saveAt = t + 1500; } }
+    o.item.root.updateMatrixWorld(true); o.box.setFromObject(o.item.root);
+  }
+}
+// 自分のボタンの連結器から先の、つながり（つないだ順）
+function cpChain(sel) {
+  const out = CP.links.filter((L) => L.mine && L.host === ride && sel.includes(L.k));
+  for (let i = 0; i < out.length; i++) for (const L of CP.links) if (L.mine && L.host === out[i].tgt && !out.includes(L)) out.push(L);
+  return out;
+}
+const cpSel = (b) => (MPB.v ? cpCps(MPB.v).filter((k) => b.acts.some((q) => q.k === 'cp' && q.ch === k.key)) : []);
+// つなげる連結器（自分の、えらんだ連結器と、その先につながっている車の連結器）で、いま物にさわっているもの
+function cpCandidates(sel) {
+  const hosts = sel.map((k) => ({ host: ride, k }));
+  for (const L of cpChain(sel)) if (L.tk === 'v') for (const k of cpCps(L.tgt)) hosts.push({ host: L.tgt, k });
+  const out = [];
+  for (const h of hosts) {
+    if (cpBusyK(h.k)) continue;
+    const c = cpTouch(cpWorld(h.k.o, new THREE.Vector3()), h.host);
+    if (c && !out.some((q) => q.c.o === c.o)) out.push({ ...h, c });
+  }
+  return out;
+}
+// ボタン：さわっている物があればつなぐ。なければ、つないでいる物をぜんぶはずす
+function cpPress(b) {
+  const sel = cpSel(b);
+  if (!sel.length || !ride) return;
+  const cand = cpCandidates(sel);
+  if (cand.length) {
+    for (const q of cand) cpMake(ride, q.host, q.k, q.c, true);
+    showMsg(`${cand.map((q) => q.c.o.name || '物').join('・')} と連結しました`);
+  } else {
+    const ch = cpChain(sel);
+    if (ch.length) { for (const L of ch.filter((x) => x.host === ride)) cpRelease(L); showMsg('連結をはずしました'); }
+    else showMsg('連結できる物にさわっていません。連結器やフックを、車や置物に当ててから押してください');
+  }
+  cpButtons();
+}
+// ボタンの色：つないでいる＝ON、さわっていてつなげる＝光る
+function cpButtons() {
+  for (const b of MPB.list) {
+    if (b.t !== 'couple' || !b._btn) continue;
+    const sel = cpSel(b), on = cpChain(sel).length > 0;
+    b._btn.classList.toggle('on', on);
+    b._btn.classList.toggle('ready', !MPB.edit && cpCandidates(sel).length > 0);
+  }
+}
+// presence に入れる：[相手の種類 v/p, 相手の番号, 連結器の番号, 持ち主（-1＝運転している乗り物、0〜＝この表の何番目の相手）, つないだ所 x, y, z, たるみ]
+function cpEncode() {
+  const out = [], ls = [], r = (x) => Math.round(x * 100) / 100;
+  for (const L of CP.links) {
+    if (!L.mine || out.length >= 8) continue;
+    const id = L.tgt.id, hi = L.host === ride ? -1 : ls.findIndex((q) => q.tgt === L.host), ci = cpCps(L.host).indexOf(L.k);
+    if (id == null || (L.tk === 'v' && !L.tgt.shared) || (L.host !== ride && hi < 0) || ci < 0) continue;
+    out.push([L.tk, String(id), ci, hi, r(L.a.x), r(L.a.y), r(L.a.z), r(L.slack)]); ls.push(L);
+  }
+  return out.length ? out : null;
+}
+// ほかの人の乗り物：届いた cp に合わせて、つなぐ・はずす
+function cpRemote() {
+  for (const v of vehicles) {
+    const cp = v.remote && v.remote.cp && cpCps(v).length ? v.remote.cp : null;
+    const key = cp ? JSON.stringify(cp) : '';
+    if ((v.cpKey || '') === key) continue;
+    v.cpKey = key;
+    for (const L of CP.links.filter((x) => !x.mine && x.own === v)) cpRelease(L);
+    if (!cp) continue;
+    const made = [];
+    for (const e of cp) {
+      const host = e[3] < 0 ? v : made[e[3]] && made[e[3]].tgt, k = host && cpCps(host)[e[2]];
+      const tgt = e[0] === 'v' ? vehicles.find((u) => u.id != null && String(u.id) === e[1]) : props.find((p) => p.id != null && String(p.id) === e[1]);
+      if (!k || !tgt || tgt.cpL || tgt === ride || (e[0] === 'p' && !tgt.loose)) { made.push(null); continue; }
+      made.push(cpMake(v, host, k, { tk: e[0], o: tgt, ta: null }, false, e.slice(4, 8)));
+    }
+  }
+}
+// 1 本のつなぎを 1 コマ動かす
+function cpStep(L, dt) {
+  const o = L.tgt, root = o.item.root, sc = root.scale, car = L.tk === 'v';
+  const T = cpWorld(L.k.o, _cpT); T.y -= L.slack;
+  const aS = _cpA.copy(L.a).multiply(sc);
+  // 引っぱる点の加速度（振り子をゆらす）
+  if (L.pT) {
+    const v = _cpV.copy(T).sub(L.pT).divideScalar(Math.max(dt, 1e-3));
+    L.acc.lerp(_cpW.copy(v).sub(L.pV).divideScalar(Math.max(dt, 1e-3)).clampLength(0, 30), 0.3);
+    L.pV.copy(v); L.pT.copy(T);
+  } else { L.pT = T.clone(); L.pV.set(0, 0, 0); }
+  const yaw0 = car ? o.h : L.yaw, px0 = car ? o.pos.x : root.position.x, pz0 = car ? o.pos.y : root.position.z, py0 = car ? o.y : root.position.y;
+  // 回る中心：車は つないだ側と反対の車軸（トレーラーのように）、置物は形のまん中
+  let pcx = 0, pcz = 0;
+  if (car) { const V = o.item.def.vehicle; pcz = V.centerZ - Math.sign(L.a.z - V.centerZ || 1) * (V.wheelbase || 2) / 2; }
+  else { const B = cpLocalBox(o.item); pcx = (B.min.x + B.max.x) / 2 * sc.x; pcz = (B.min.z + B.max.z) / 2 * sc.z; }
+  const dx = aS.x - pcx, dz = aS.z - pcz, lh = Math.hypot(dx, dz);
+  let yaw = yaw0;
+  if (lh > 0.3) {   // 自在につながっている：回る中心から引っぱる点へ向く
+    const s = Math.sin(yaw0), c = Math.cos(yaw0), wx = px0 + pcx * c + pcz * s, wz = pz0 - pcx * s + pcz * c, ex = T.x - wx, ez = T.z - wz;
+    if (Math.hypot(ex, ez) > 1e-3) yaw = Math.atan2(ex, ez) - Math.atan2(dx, dz);
+  }
+  const s = Math.sin(yaw), c = Math.cos(yaw);
+  let px = T.x - (aS.x * c + aS.z * s), pz = T.z - (-aS.x * s + aS.z * c);
+  // 持ち上がっているか：下の面より上
+  const yHang = T.y - aS.y;
+  const sup = car ? carGround(px, pz, py0 + 0.3, o) : (root.position.set(px, py0, pz), looseSupport(o, py0 + HF_STEP).y);
+  const hang = yHang > sup + 0.02;
+  const sw = L.sw;
+  if (hang) {
+    // 振り子：つないだ所が中心。重心の下までの長さ
+    const B = cpLocalBox(o.item), lc = Math.max(0.3, aS.y - (B.min.y + B.max.y) / 2 * sc.y);
+    const n = Math.max(1, Math.ceil(Math.min(dt, 0.05) / 0.01)), h = Math.min(dt, 0.05) / n;
+    for (let i = 0; i < n; i++) {
+      sw.vx += (-(CP_G / lc) * Math.sin(sw.x) - (L.acc.x / lc) * Math.cos(sw.x) - 1.2 * sw.vx) * h; sw.x = THREE.MathUtils.clamp(sw.x + sw.vx * h, -1.2, 1.2);
+      sw.vz += (-(CP_G / lc) * Math.sin(sw.z) - (L.acc.z / lc) * Math.cos(sw.z) - 1.2 * sw.vz) * h; sw.z = THREE.MathUtils.clamp(sw.z + sw.vz * h, -1.2, 1.2);
+    }
+    _cpQ.setFromAxisAngle(CP_AX.z, sw.x).multiply(_cpQx.setFromAxisAngle(CP_AX.x, -sw.z)).multiply(_cpQy.setFromAxisAngle(CP_AX.y, yaw));
+    _cpP.copy(aS).applyQuaternion(_cpQ); _cpP.subVectors(T, _cpP);
+    if (car) {
+      _cpE.setFromQuaternion(_cpQ, 'YXZ');
+      o.pos.x = _cpP.x; o.pos.y = _cpP.z; o.y = _cpP.y; o.h = _cpE.y - (o.yawOff || 0); o.pitch = -_cpE.x; o.roll = _cpE.z;
+      o.cpHang = true; showCar(o);
+    } else { root.position.copy(_cpP); root.quaternion.copy(_cpQ); }
+    L.vy = 0;
+  } else {
+    sw.x = sw.z = sw.vx = sw.vz = 0;
+    if (car) {
+      o.cpHang = false; o.pos.x = px; o.pos.y = pz; o.h = yaw; o.settled = false; o.base = null;
+      const V = o.item.def.vehicle, fwd = (px - px0) * Math.sin(yaw) + (pz - pz0) * Math.cos(yaw);   // 引かれた分だけタイヤが回る
+      for (const w of o.item.wheels || []) w.spin.rotation.x += fwd / (w.r || V.wheelRadius || 0.35);
+      showCar(o);
+    } else {
+      let y = py0;
+      if (sup >= y - 0.01) { y = sup; L.vy = 0; } else { L.vy -= CP_G * dt; y = Math.max(sup, y + L.vy * dt); }
+      root.position.set(px, y, pz); root.rotation.set(0, yaw, 0);
+    }
+  }
+  L.hang = hang; L.yaw = yaw;
+  if (!car) { o.base = null; root.updateMatrixWorld(true); o.box.setFromObject(root); if (o.loose) o.loose.rest = false; }
+}
+function stepCouple(dt) {
+  cpRemote();
+  let lost = false;
+  for (const L of [...CP.links]) {
+    if (!CP.links.includes(L)) continue;
+    const gone = !vehicles.includes(L.own) || (L.tk === 'v' ? !vehicles.includes(L.tgt) || L.tgt.remote : !props.includes(L.tgt)) || (L.host !== L.own && !L.host.cpL);
+    if (gone || (L.mine && (L.own !== ride || !driving))) { if (L.mine && !gone) lost = true; cpRelease(L); continue; }
+    cpStep(L, dt);
+    // 引っぱる点から大きくはなれた（ワープ・復活など）
+    const r = L.tgt.item.root, A = _cpW.copy(L.a); r.localToWorld(A);
+    if (A.distanceTo(cpWorld(L.k.o, _cpV)) > 20) cpRelease(L);
+  }
+  // はずした物：フックがはなれたら、また乗り物の面にのれる
+  CP.ign = CP.ign.filter((q) => {
+    const o = q.o, root = o.item.root;
+    let keep = performance.now() < q.until && !o.cpL && (vehicles.includes(o) || props.includes(o));
+    if (keep) { root.updateWorldMatrix(true, false); const lp = root.worldToLocal(cpWorld(q.k.o, _cpV)), B = cpLocalBox(o.item), pad = 0.5 / (Math.max(root.scale.x, root.scale.y, root.scale.z) || 1); keep = lp.x > B.min.x - pad && lp.x < B.max.x + pad && lp.y > B.min.y - pad && lp.y < B.max.y + pad && lp.z > B.min.z - pad && lp.z < B.max.z + pad; }
+    if (!keep && !o.cpL) o.cpIgn = null;
+    return keep;
+  });
+  if (lost && performance.now() > CP.msgAt) { CP.msgAt = performance.now() + 3000; showMsg('降りたので、連結をはずしました'); }
+  if ((CP.tick -= dt) <= 0) { CP.tick = 0.3; if (MPB.v && MPB.list.some((b) => b.t === 'couple')) cpButtons(); }
+}
 // 車の下の高さ：地面か、ほかの乗り物の面（いまの高さから HF_STEP までなら乗り上げられる。置いた直後は上にのせる）
 function carGround(x, z, cy, car) {
   const g = groundAt(x, z, cy);
-  const s = surfTop(x, z, car.snapUntil && performance.now() < car.snapUntil ? cy + 50 : cy + HF_STEP, car);
+  const s = surfTop(x, z, car.snapUntil && performance.now() < car.snapUntil ? cy + 50 : cy + HF_STEP, car, cpSkip(car));
   return s && s.y > g ? s.y : g;
 }
 // 車が乗っている乗り物（まん中・前・後ろのどこかで支えられていれば）
 function carBase(car) {
   const V = car.item.def.vehicle, L = (V.wheelbase || 2) / 2;
   for (const lz of [0, L, -L]) {
-    const p = carLocalToWorld(car, 0, lz), s = surfTop(p.x, p.y, car.y + 0.25, car);
+    const p = carLocalToWorld(car, 0, lz), s = surfTop(p.x, p.y, car.y + 0.25, car, cpSkip(car));
     if (s && s.y > car.y - 0.3 && s.y > groundAt(p.x, p.y, car.y + 0.3) + 0.03) return { v: s.v, P: s.P };
   }
   return null;
@@ -4751,7 +4990,7 @@ function hfBlocked(car) {
   const V = car.item.def.vehicle, Bd = car.item.hfBody, hx = (Bd ? Bd.hx : V.halfWidth) * 0.95, z0 = Bd ? Bd.z0 : V.centerZ - V.halfLength, z1 = Bd ? Bd.z1 : V.centerZ + V.halfLength;
   const zm = (z0 + z1) / 2, r = Math.max(hx, z1 - zm, zm - z0) + 1;
   for (const u of vehicles) {
-    if (u === car || !u.item.hf || u.sunk || (u.base && u.base.v === car) || u.y > car.y + (V.height || 1.5) - 0.3) continue;
+    if (u === car || !u.item.hf || u.sunk || u.cpL || (u.base && u.base.v === car) || u.y > car.y + (V.height || 1.5) - 0.3) continue;
     const U = u.item.def.vehicle;
     if (Math.hypot(u.pos.x - car.pos.x, u.pos.y - car.pos.y) > r + U.halfLength + U.halfWidth) continue;
     for (const [lx, lz] of [[hx, z1], [-hx, z1], [hx, z0], [-hx, z0], [0, z1], [0, z0], [hx, zm], [-hx, zm]]) {
@@ -5433,7 +5672,13 @@ const HELP_MOVE = `<h4>動く部品とボタン</h4>
 <tr><td>ON／OFF</td><td>1 回押すと ON（部品は ＋ なら最大・− なら最小へ、ライトがつく）、もう 1 回で OFF（はじめの位置へ、ライトが消える）</td></tr>
 <tr><td>押している間うごく</td><td>一方通行。押すたびに同じ向きへ（砲塔の右回りなど）</td></tr>
 <tr><td>はじめの位置にもどす</td><td>えらんだ部品をはじめの位置へ</td></tr></table>
-<p>1 つのボタンに、部品とライトを<b>いくつでも</b>入れられます。例：「ライト」ボタン＝💡 ライト＋ヘッドライト ＋。</p><p><b>順番</b>：すること ごとに「1番」「2番」…をえらべます。同じ番号はいっしょに動き、前の番号がぜんぶ終わってから次の番号が動きます。例：アームA 1番・アームB 1番・ライト 2番 なら、2 つのアームがいっしょに動いて、終わったらライトがつく。ON／OFF の OFF と「もどす」は逆の順（大きい番号から）。押している間うごくボタンは、1番の部品がはし（最小か最大）に着くと 2番が動き出します。フォークリフトのツメは <code>動作</code>=<code>移動</code>・<code>軸</code>=<code>Z</code>・<code>最小</code>=<code>0</code>・<code>最大</code>=<code>3</code>。</p>`;
+<p>1 つのボタンに、部品とライトを<b>いくつでも</b>入れられます。例：「ライト」ボタン＝💡 ライト＋ヘッドライト ＋。</p><p><b>順番</b>：すること ごとに「1番」「2番」…をえらべます。同じ番号はいっしょに動き、前の番号がぜんぶ終わってから次の番号が動きます。例：アームA 1番・アームB 1番・ライト 2番 なら、2 つのアームがいっしょに動いて、終わったらライトがつく。ON／OFF の OFF と「もどす」は逆の順（大きい番号から）。押している間うごくボタンは、1番の部品がはし（最小か最大）に着くと 2番が動き出します。フォークリフトのツメは <code>動作</code>=<code>移動</code>・<code>軸</code>=<code>Z</code>・<code>最小</code>=<code>0</code>・<code>最大</code>=<code>3</code>。</p>
+<h4>連結（けん引・クレーンのフック）</h4>
+<p>連結器やフックの部品に <code>動作</code>=<code>連結</code>。上げ下げもするフックなら <code>動作</code>=<code>移動・連結</code>（<code>軸</code> などは移動と同じ）か、動く部品の<b>子</b>にします。<b>原点がつなぐ点</b>（フックの先・連結器の先）です。</p>
+<table><tr><th>つなぐ相手</th><th>さわるとは</th></tr>
+<tr><td>ほかの車（止まっている車）</td><td>原点が相手の車の形に入る。相手にも <code>動作</code>=<code>連結</code> の部品があれば、原点どうしが 70cm 以内でそこがつながる</td></tr>
+<tr><td>置物（8m×8m×6m まで）</td><td>原点が置物の形に入る</td></tr></table>
+<p>運転中に ☰ →「🎛️ ボタンを作る」→「連結／解除」で、使う連結器をえらんでボタンを作ります。さわっているとボタンが<b>黄色く光り</b>、押すと連結、もう 1 回押すとはずれます。つないだ所は<b>自在に曲がり</b>（トレーラー・列車のように）、持ち上げると<b>ぶら下がってゆれます</b>。つないだ車の後ろの連結器が次の車にさわっていれば、押すたびに次々につながります。降りると連結ははずれます。</p>`;
 const HELP_MAIN = `<h4>種類のえらび方</h4><table><tr><th>種類</th><th>いる部品</th></tr>
 <tr><td>建物</td><td>なくてもよい。<code>ドア_1</code>（原点が蝶番）・<code>ライト_1</code>・<code>ガラス</code>・<code>スイッチ</code>・<code>イス_1</code> で使える建物に。壁は 10〜20cm の厚み、階段は 1 段 40cm まで、入口は 80cm×2m 以上。カスタムプロパティ <code>用途</code>=<code>店</code> で明かりがつけっぱなし、ドアの <code>開き方</code>=<code>横</code> で引き戸、<code>閉まる</code>=<code>3</code> で 3 秒で閉まる。</td></tr>
 <tr><td>植物・置物</td><td>形だけでよい。地面に置かれます。</td></tr>
@@ -8494,6 +8739,7 @@ function stepCar(car, dt) {
     showCar(car);
     return;
   }
+  if (car.cpHang) { showCar(car); return; }   // クレーンにつられている（cpStep が動かす）
   const mine = car === ride;
   if (!mine && car.settled) return;   // 止まっている車は計算しない
   let gas = 0, brk = 0, steerIn = 0, hand = 0, auto = null;
@@ -9941,6 +10187,7 @@ function syncPeers(peers) {
     o.t.cl = Number.isInteger(pr.cl) ? pr.cl & 511 : 0;   // 車のライト（16 は作業中）、旅客機のギア（32）とフラップ（64〜448）
     o.t.lt = pr.lt === 1; o.t.py = num(pr.py, -7, 7); o.t.ns = pr.ns === 1; o.t.sp = num(pr.sp, 0, 99, 0);
     o.t.mp = Array.isArray(pr.mp) ? pr.mp.slice(0, 32).map((x) => (typeof x === 'number' && Number.isFinite(x) ? THREE.MathUtils.clamp(x, -360, 360) : null)) : null;   // 動く部品の値（砲塔の角度など）
+    o.t.cp = Array.isArray(pr.cp) ? pr.cp.slice(0, 8).filter((e) => Array.isArray(e) && (e[0] === 'v' || e[0] === 'p') && typeof e[1] === 'string' && /^[A-Za-z0-9_-]{1,40}$/.test(e[1])).map((e) => [e[0], e[1], num(e[2], 0, 31) | 0, num(e[3], -1, 7, -1) | 0, num(e[4], -60, 60), num(e[5], -60, 60), num(e[6], -60, 60), num(e[7], 0, 60)]) : null;   // 連結している物
     o.t.gy = Array.isArray(pr.gy) ? [num(pr.gy[0], -2, 2), num(pr.gy[1], -2, 2)] : null;
     o.tc = Array.isArray(pr.c) ? { x: num(pr.c[0], X0, X1), y: num(pr.c[1], Y_BOTTOM, Y_AIR), z: num(pr.c[2], Z0, Z1), h: num(pr.c[3], -100, 100), pitch: num(pr.c[4], -1, 1), roll: num(pr.c[5], -1, 1) } : null;
     o.t.v = typeof pr.v === 'string' && /^[A-Za-z0-9_-]{1,40}$/.test(pr.v) ? pr.v : null;
@@ -9959,7 +10206,7 @@ function syncPeers(peers) {
   }
   // みんなの車：だれかが運転中なら、その人の位置に合わせる
   const driven = new Map();
-  for (const [peer, o] of net.others) if (o.t && o.t.v && o.t.vc) driven.set(o.t.v, Object.assign({ peer, lt: o.t.lt, py: o.t.py, gy: o.t.gy, cl: o.t.cl, mp: o.t.mp }, o.t.vc));
+  for (const [peer, o] of net.others) if (o.t && o.t.v && o.t.vc) driven.set(o.t.v, Object.assign({ peer, lt: o.t.lt, py: o.t.py, gy: o.t.gy, cl: o.t.cl, mp: o.t.mp, cp: o.t.cp }, o.t.vc));
   for (const v of vehicles) {
     if (!v.shared) continue;
     const d = driven.get(v.id);
@@ -9988,6 +10235,7 @@ function sendPresence() {
     gy: ride && ride.item.guns ? [r((ride.item.guns.main[0] || { pivot: { rotation: { y: 0 } } }).pivot.rotation.y), r((ride.item.guns.ciws[0] || { pivot: { rotation: { y: 0 } } }).pivot.rotation.y)] : null,   // イージス艦の砲塔の向き   // 潜水艦の音（動いている・装填中・撃った直後）
     cl: ride && ride.shared ? ((ride.item.lamps ? ride.lampBits & 15 : 0) | (ride.workOn ? 16 : 0) | (ride.item.jet ? jetBits(ride) : 0)) : 0,   // 旅客機：32 ギアを上げた・64〜 フラップの段   // 車のライト（1 ライト・2 ブレーキ・4 左・8 右）と作業中（16）
     mp: ride && ride.shared && ride.item.moves ? ride.item.moves.chans.slice(0, 32).map((a) => r(a.val, 10)) : null,   // 動く部品の値（度・m）
+    cp: ride && ride.shared ? cpEncode() : null,   // 連結している車・置物
     c: myCar ? pose(myCar) : null,
     v: ride && ride.shared ? ride.id : runShown ? runShown.id : null,       // みんなの車を運転中なら、その車の番号と位置（運転していないときは、配達中の自分のトラック）
     vc: ride && ride.shared ? pose(ride) : runShown ? pose(runShown) : null,
@@ -11890,7 +12138,7 @@ const mpVeh = () => (driving && ride && (ride.item.moves || hasLamps(ride)) ? ri
 const mpClampXY = (n, d) => THREE.MathUtils.clamp(Number.isFinite(n) ? n : d, 0.04, 0.96);
 const mpRange = (a) => a.free ? 'ぐるぐる回る' : a.part.type === 'rot' ? `${a.min}°〜${a.max}°` : `${a.min}m〜${a.max}m`;
 const MP_PLUS_TXT = { rot: { Z: '上から見て左回り', X: '前が下がる向き（砲身なら下向き）', Y: '左（+X）に傾く向き' }, move: { Z: '上へ', X: '左へ（+X）', Y: '後ろへ（+Y）' } };
-const mpActTxt = (q) => { const o = q.n > 1 ? `(${q.n})` : ''; if (q.k === 'light') return 'ライト' + o; const a = mpChan(q.ch); return a ? `${a.part.name}${q.dir < 0 ? '−' : '＋'}${o}` : '？'; };
+const mpActTxt = (q) => { const o = q.n > 1 ? `(${q.n})` : ''; if (q.k === 'light') return 'ライト' + o; if (q.k === 'cp') { const k = MPB.v && cpCps(MPB.v).find((c) => c.key === q.ch); return k ? k.name : '？'; } const a = mpChan(q.ch); return a ? `${a.part.name}${q.dir < 0 ? '−' : '＋'}${o}` : '？'; };
 // すること の順番（1〜9）。同じ番号はいっしょに、番号の小さい順に動く（前の番号がぜんぶ終わってから次）
 const mpOrd = (q) => THREE.MathUtils.clamp(Math.round(Number(q.n) || 1), 1, 9);
 function mpGroups(acts, desc) {
@@ -11936,10 +12184,11 @@ function renderMpButtons() {
   layer.hidden = !v; el('mpDone').hidden = !(v && MPB.edit);
   if (!v) return;
   MPB.list.forEach((b, i) => {
-    const ok = b.acts.filter((q) => q.k === 'light' ? hasLamps(v) : mpChan(q.ch));
+    const ok = b.acts.filter((q) => q.k === 'light' ? hasLamps(v) : q.k === 'cp' ? cpCps(v).some((k) => k.key === q.ch) : mpChan(q.ch));
     const btn = document.createElement('button');
     btn.type = 'button'; btn.className = 'mpb' + (MPB.edit ? ' edit' : '') + (ok.length ? '' : ' dead') + (b.t === 'toggle' && b.on ? ' on' : '');
-    btn.textContent = b.name || b.acts.map(mpActTxt).join('・').slice(0, 14) + (b.t === 'home' ? ' もどす' : '');
+    btn.textContent = b.name || b.acts.map(mpActTxt).join('・').slice(0, 14) + (b.t === 'home' ? ' もどす' : b.t === 'couple' ? ' 連結' : '');
+    b._btn = btn;
     btn.title = ok.length ? `${MP_FUNCS[b.t].name}：${b.acts.map(mpActTxt).join('・')}` : 'この乗り物には、このボタンで動かす部品がありません';
     btn.style.left = mpClampXY(b.x, 0.5) * 100 + '%'; btn.style.top = mpClampXY(b.y, 0.45) * 100 + '%';
     btn.addEventListener('contextmenu', (e) => e.preventDefault());
@@ -11966,6 +12215,7 @@ function renderMpButtons() {
         e.preventDefault(); e.stopPropagation();
         if (!ok.length) { showMsg(btn.title); return; }
         if (b.t === 'toggle') { mpToggle(b, !b.on); btn.classList.toggle('on', b.on); return; }
+        if (b.t === 'couple') { cpPress(b); return; }   // 連結：さわっている物とつなぐ／はずす
         if (b.t === 'home') {   // もどす：選んだ部品をはじめの値へ（ON／OFF のボタンも OFF にもどる）
           for (const o of MPB.list) if (o.t === 'toggle') { o.on = false; mpRuns.delete(o); }
           mpRun({ acts: ok.filter((q) => q.k === 'part') }, 'home');
@@ -11997,7 +12247,7 @@ function mpActsUi() {
   const t = el('mpFn').value, box = el('mpActs'), keep = new Map();
   for (const r of box.querySelectorAll('.mpact')) keep.set(r.dataset.k, { on: r.querySelector('input').checked, dir: r.querySelector('.mpdir') ? r.querySelector('.mpdir').value : '1', n: r.querySelector('.mpn').value });
   box.textContent = '';
-  const row = (k, label, part) => {
+  const row = (k, label, part, noOrd) => {
     const r = document.createElement('label'); r.className = 'mpact'; r.dataset.k = k;
     const c = document.createElement('input'); c.type = 'checkbox'; c.checked = !!(keep.get(k) || {}).on;
     const sp = document.createElement('span'); sp.textContent = label;
@@ -12012,18 +12262,21 @@ function mpActsUi() {
     const ns = document.createElement('select'); ns.className = 'mpn'; ns.setAttribute('aria-label', '順番');
     ns.innerHTML = [1, 2, 3, 4, 5, 6, 7, 8, 9].map((n) => `<option value="${n}">${n}番</option>`).join('');
     ns.value = (keep.get(k) || {}).n || '1';
+    ns.hidden = !!noOrd;
     r.append(ns);
     box.append(r);
   };
-  if (ride && ride.item.moves) for (const a of ride.item.moves.chans) if (!box.querySelector(`[data-k="${CSS.escape(a.key)}"]`)) row(a.key, `${a.part.name}（${a.ax}・${a.part.type === 'rot' ? '回転' : '移動'}・${mpRange(a)}）`, true);
+  if (t === 'couple') { for (const k of cpCps(ride)) if (!box.querySelector(`[data-k="${CSS.escape(k.key)}"]`)) row(k.key, `🔗 ${k.name}（連結器・フック）`, false, true); }
+  else if (ride && ride.item.moves) for (const a of ride.item.moves.chans) if (!box.querySelector(`[data-k="${CSS.escape(a.key)}"]`)) row(a.key, `${a.part.name}（${a.ax}・${a.part.type === 'rot' ? '回転' : '移動'}・${mpRange(a)}）`, true);
   if (t === 'toggle' && hasLamps(ride)) row('light', '💡 ライト（つける・消す）', false);
-  if (!box.children.length) box.textContent = t === 'toggle' ? 'えらべるものがありません' : '動く部品がありません（ON／OFF ならライトをえらべます）';
+  if (!box.children.length) box.textContent = t === 'couple' ? '連結器がありません（部品のカスタムプロパティ 動作=連結）' : t === 'toggle' ? 'えらべるものがありません' : '動く部品がありません（ON／OFF ならライトをえらべます）';
   mpInfo();
 }
 function mpInfo() {
   const t = el('mpFn').value;
   const ord = '「○番」は順番：同じ番号はいっしょに動き、前の番号がぜんぶ終わってから次の番号が動く。';
-  el('mpInfo').textContent = t === 'toggle' ? '1 回押すと ON：部品は ＋ なら最大、− なら最小まで動き、ライトはつく（1番→2番→…）。もう 1 回で OFF：逆の順（大きい番号から）にはじめの位置にもどり、ライトは消える。' + ord
+  el('mpInfo').textContent = t === 'couple' ? '連結器（フック）を車や置物に当てて押すと連結。ボタンが光っているときが、さわっている合図。もう 1 回押すとはずれる。つないだ所は自在に曲がり、持ち上げるとぶら下がってゆれる。連結した車の連結器が次の車にさわっていれば、押すたびに次々つながる（列車）。'
+    : t === 'toggle' ? '1 回押すと ON：部品は ＋ なら最大、− なら最小まで動き、ライトはつく（1番→2番→…）。もう 1 回で OFF：逆の順（大きい番号から）にはじめの位置にもどり、ライトは消える。' + ord
     : t === 'hold' ? '押している間だけ、選んだ向き（＋／−）に動く。何度押しても同じ向きに動く。＋は Blender の値が増える向き（回転 Z なら上から見て左回り、移動 Z なら上へ）。1番の部品がはし（最大か最小）に着くと 2番が動き出す。' + ord
     : '押すと、選んだ部品がはじめの位置にもどる（大きい番号から順に）。' + ord;
 }
@@ -12046,6 +12299,7 @@ el('mpOk').addEventListener('click', () => {
     if (!r.querySelector('input').checked) continue;
     const n = Number(r.querySelector('.mpn').value) || 1;
     if (r.dataset.k === 'light') acts.push({ k: 'light', n });
+    else if (r.dataset.k.startsWith('cp|')) acts.push({ k: 'cp', ch: r.dataset.k, n: 1 });
     else acts.push({ k: 'part', ch: r.dataset.k, dir: r.querySelector('.mpdir') && r.querySelector('.mpdir').value === '-1' ? -1 : 1, n });
   }
   if (!MP_FUNCS[t]) return;
@@ -14919,6 +15173,7 @@ function frame() {
   stepWrecks(dt);
   for (const v of vehicles) stepVehicle(v, dt);
   stepCarry(dt);   // 乗り物の上の人・物・車をいっしょに動かす
+  stepCouple(dt);   // 連結した車・置物を引っぱる・つり上げる
   stepBuildings(dt);
   stepTown();
   stepPaper();
