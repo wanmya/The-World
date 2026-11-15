@@ -1213,8 +1213,12 @@ function rigCarWork(root, model, kind, P) {
   const W = { kind, w: 0, t: 0, tilt: null, drums: P.drums, spins: P.topParts(SPIN_RE), hv: {} };
   root.updateMatrixWorld(true);
   const pivot = (o, at) => { const g = new THREE.Group(); g.position.copy(root.worldToLocal(at.clone())); root.add(g); root.updateMatrixWorld(true); g.attach(o); return g; };
-  if (kind === 'dump' && P.bed) { const b = P.bedBox; W.tilt = pivot(P.bed, new THREE.Vector3((b.min.x + b.max.x) / 2, b.min.y, b.min.z)); }
-  const one = (re) => P.topParts(re)[0] || null;
+  // カスタムプロパティ「動作」がある部品と、その子・孫は、名前（アーム・ブーム・上部…）で動かさない（動く部品のきまりにまかせる。
+  //   前は アームA が root の軸の箱へ移されて、親の 支柱 を回してもついてこなかった）
+  const byMove = (o) => { for (let q = o; q && q !== root; q = q.parent) if (mpGet(mpPropsOf(q), MP_NAMES.kind) != null) return true; return false; };
+  if (kind === 'dump' && P.bed && !byMove(P.bed)) { const b = P.bedBox; W.tilt = pivot(P.bed, new THREE.Vector3((b.min.x + b.max.x) / 2, b.min.y, b.min.z)); }
+  const one = (re) => P.topParts(re).find((o) => !byMove(o)) || null;
+  W.spins = W.spins.filter((o) => !byMove(o)); W.drums = W.drums.filter((o) => !byMove(o));
   const order = [['bucket', BUCKET_RE], ['arm', ARM_RE], ['boom', BOOM_RE]];
   for (const [k, re] of order) { const o = one(re); if (o) W.hv[k] = pivot(o, o.getWorldPosition(new THREE.Vector3())); }
   const tu = one(TURRET_RE);
