@@ -892,12 +892,14 @@ const WHEEL_PAIRS = [
 ];
 // 左右をまとめた部品を、まん中の X（cx：root の中の座標）で 2 つに分ける。三角形ごとに、まん中より −X か +X かで分ける（axis 'z' なら前後で分ける）。
 // 分けた形は元の部品と同じ親に入れ、元の部品ははずす。返り値は [−X 側, +X 側]（形がない側は null）
-function splitBySide(root, obj, cx, axis = 'x') {
+function splitBySide(root, obj, cx, axis = 'x', keep = false) {
   root.updateMatrixWorld(true);
   const parent = obj.parent; if (!parent) return [null, null];
-  const inv = new THREE.Matrix4().copy(root.matrixWorld).invert(), pInv = new THREE.Matrix4().copy(parent.matrixWorld).invert();
+  // keep：分けた左右も、元の部品と同じ原点・向き・カスタムプロパティにする（動作=回転 のヘッドライトなどが、元の原点で回るように）
+  const inv = new THREE.Matrix4().copy(root.matrixWorld).invert(), pInv = new THREE.Matrix4().copy(keep ? obj.matrixWorld : parent.matrixWorld).invert();
   const out = [new THREE.Group(), new THREE.Group()], used = [false, false];
   out[0].name = (obj.name || '') + '·−' + axis; out[1].name = (obj.name || '') + '·+' + axis;
+  if (keep) for (const g of out) { g.position.copy(obj.position); g.quaternion.copy(obj.quaternion); g.scale.copy(obj.scale); g.userData = Object.assign({}, obj.userData); }
   const meshes = []; obj.traverse((m) => { if (m.isMesh && m.geometry && m.geometry.attributes.position) meshes.push(m); });
   const v = new THREE.Vector3(), M = new THREE.Matrix4(), L = new THREE.Matrix4();
   for (const m of meshes) {
@@ -929,7 +931,7 @@ function splitBySide(root, obj, cx, axis = 'x') {
       ng.setIndex(new THREE.BufferAttribute(order.length > 65535 ? new Uint32Array(index) : new Uint16Array(index), 1));
       if (g.groups.length) for (const gr of ngroups) ng.addGroup(gr.start, gr.count, gr.materialIndex);
       const nm = new THREE.Mesh(ng, m.material);
-      nm.name = m.name; nm.castShadow = m.castShadow; nm.receiveShadow = m.receiveShadow; nm.userData = m.userData; nm.renderOrder = m.renderOrder;
+      nm.name = m.name; nm.castShadow = m.castShadow; nm.receiveShadow = m.receiveShadow; nm.userData = keep && m === obj ? {} : m.userData; nm.renderOrder = m.renderOrder;
       L.multiplyMatrices(pInv, m.matrixWorld).decompose(nm.position, nm.quaternion, nm.scale);
       out[s].add(nm); used[s] = true;
     }
@@ -1263,7 +1265,7 @@ function rigMoveParts(item) {
       if (!free) val = THREE.MathUtils.clamp(val, min, max);
       return { ax, vec: new THREE.Vector3(...MP_AXV[ax]), min, max, free, speed, val, init: val, goal: null };
     });
-    parts.push({ o, type, name: String(o.name || '部品').replace(/\.\d+$/, '').slice(0, 24), axes, q0: o.quaternion.clone(), p0: o.position.clone() });
+    parts.push({ o, type, name: String(o.name || '部品').replace(/(·[−+][xz])+$/, '').replace(/\.\d+$/, '').slice(0, 24), axes, q0: o.quaternion.clone(), p0: o.position.clone() });
   });
   if (!parts.length) return null;
   const chans = [];
@@ -1402,7 +1404,7 @@ function rigCarLamps(root, model) {
     if (sideOfName(p.n)) continue;
     const b = new THREE.Box3().setFromObject(p.o);
     if (b.isEmpty() || !(b.min.x < mid.x - 0.1 && b.max.x > mid.x + 0.1 && b.max.x - b.min.x > 0.4)) continue;
-    const [neg, pos] = splitBySide(root, p.o, mid.x);
+    const [neg, pos] = splitBySide(root, p.o, mid.x, 'x', true);
     const add = [];
     if (pos) add.push(Object.assign({}, p, { o: pos, side: 1 }));
     if (neg) add.push(Object.assign({}, p, { o: neg, side: -1 }));
@@ -1412,7 +1414,7 @@ function rigCarLamps(root, model) {
   for (let i = 0; i < parts.length; i++) {
     const p = parts[i], b = new THREE.Box3().setFromObject(p.o);
     if (b.isEmpty() || !(b.min.z < mid.z - 0.5 && b.max.z > mid.z + 0.5)) continue;
-    const pv = splitBySide(root, p.o, mid.z, 'z').filter(Boolean).map((o) => Object.assign({}, p, { o }));
+    const pv = splitBySide(root, p.o, mid.z, 'z', true).filter(Boolean).map((o) => Object.assign({}, p, { o }));
     parts.splice(i, 1, ...pv); i += pv.length - 1;
   }
   for (const p of parts) {
