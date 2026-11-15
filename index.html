@@ -771,7 +771,7 @@ async function loadItem(def) {
 
   // 動く部品（カスタムプロパティ 動作=回転 など）。乗り物だけ（ボタンで動かす）
   if (def.kind === 'vehicle') item.moves = rigMoveParts(item, model);
-  if (def.rig === 'car') item.hf = buildCarHf(item);   // 上に乗れる面の地図
+  if (def.rig === 'car' || def.rig === 'ship') item.hf = buildCarHf(item);   // 上に乗れる面の地図（船の甲板にも、車や置物をのせられる）
 
   // 持ち込みの置物：地面に置いて、真ん中をそろえる
   if (def.kind === 'prop') {
@@ -4715,10 +4715,11 @@ function looseSupport(pr, yMax) {
     if (q && q.y > y) { y = q.y; s = { y: q.y, v: q.v, P: q.P }; }
   }
   for (const o of props) {
-    if (o === pr || o.bld || o.box.max.y > yMax || o.box.max.y <= y) continue;
+    if (o === pr || o.bld || o.cpL || o.box.max.y > yMax || o.box.max.y <= y) continue;
     if (p.x + L.hx * 0.6 < o.box.min.x || p.x - L.hx * 0.6 > o.box.max.x || p.z + L.hz * 0.6 < o.box.min.z || p.z - L.hz * 0.6 > o.box.max.z) continue;
     y = o.box.max.y; s = o.base ? { y, v: o.base.v, P: o.base.P } : null;
   }
+  if (blds.length) { const bf = bldFloor(p.x, p.z, yMax - BLD_STEP); if (bf > y) { y = bf; s = null; } }   // 建物の床・屋上
   return { y, s };
 }
 function stepLoose(dt, mv) {
@@ -5005,9 +5006,19 @@ function stepCouple(dt) {
 }
 // 車の下の高さ：地面か、ほかの乗り物の面（いまの高さから HF_STEP までなら乗り上げられる。置いた直後は上にのせる）
 function carGround(x, z, cy, car) {
-  const g = groundAt(x, z, cy);
-  const s = surfTop(x, z, car.snapUntil && performance.now() < car.snapUntil ? cy + 50 : cy + HF_STEP, car, cpSkip(car));
-  return s && s.y > g ? s.y : g;
+  const snap = car.snapUntil && performance.now() < car.snapUntil, yMax = snap ? cy + 50 : cy + HF_STEP;
+  let g = groundAt(x, z, cy);
+  const s = surfTop(x, z, yMax, car, cpSkip(car));
+  if (s && s.y > g) g = s.y;
+  // 建物の床・屋上と、置物の上（クレーンで降ろした車がのる）。置いた直後は、車のまん中が置物の上にあるときだけ
+  if (blds.length) { const bf = bldFloor(x, z, yMax - BLD_STEP); if (bf > g) g = bf; }
+  for (const o of props) {
+    const b = o.box;
+    if (o.bld || o.cpL || b.max.y <= g || b.max.y > yMax || b.max.y - b.min.y < 0.25 || x < b.min.x || x > b.max.x || z < b.min.z || z > b.max.z) continue;
+    if (snap && (car.pos.x < b.min.x || car.pos.x > b.max.x || car.pos.y < b.min.z || car.pos.y > b.max.z)) continue;
+    g = b.max.y;
+  }
+  return g;
 }
 // 車が乗っている乗り物（まん中・前・後ろのどこかで支えられていれば）
 function carBase(car) {
@@ -5712,7 +5723,8 @@ const HELP_MOVE = `<h4>動く部品とボタン</h4>
 <table><tr><th>つなぐ相手</th><th>さわるとは</th></tr>
 <tr><td>ほかの車（止まっている車）</td><td>原点が相手の車の形に入る。相手にも <code>動作</code>=<code>連結</code> の部品があれば、原点どうしが 70cm 以内でそこがつながる</td></tr>
 <tr><td>置物（8m×8m×6m まで）</td><td>原点が置物の形に入る</td></tr></table>
-<p>運転中に ☰ →「🎛️ ボタンを作る」→「連結／解除」で、使う連結器をえらんでボタンを作ります。連結器が何にもさわっていないときは、ボタンは<b>灰色で押せません</b>。さわると<b>黄色く光って</b>押せるようになり、押すと連結。連結中はもう 1 回押すとはずれます。フックの上げ下げは、<code>移動・連結</code> の部品を「押している間うごく」ボタンで動かします。つないだ所は<b>自在に曲がり</b>（トレーラー・列車のように）、持ち上げると<b>ぶら下がってゆれます</b>。つないだ車の後ろの連結器が次の車にさわっていれば、押すたびに次々につながります。降りると連結ははずれます。</p>`;
+<p>運転中に ☰ →「🎛️ ボタンを作る」→「連結／解除」で、使う連結器をえらんでボタンを作ります。連結器が何にもさわっていないときは、ボタンは<b>灰色で押せません</b>。さわると<b>黄色く光って</b>押せるようになり、押すと連結。連結中はもう 1 回押すとはずれます。フックの上げ下げは、<code>移動・連結</code> の部品を「押している間うごく」ボタンで動かします。つないだ所は<b>自在に曲がり</b>（トレーラー・列車のように）、持ち上げると<b>ぶら下がってゆれます</b>。つないだ車の後ろの連結器が次の車にさわっていれば、押すたびに次々につながります。降りると連結ははずれます。</p>
+<p><b>荷台に降ろす</b>：つり上げた物を、トラックの荷台・船の甲板・建物の床や屋上・置物の上で降ろして連結をはずすと、そこにのります。のった物は摩擦で動かず、下の車や船が走るといっしょに動きます（だれの乗り物・置物でも）。フックでまたつり上げられます。</p>`;
 const HELP_MAIN = `<h4>種類のえらび方</h4><table><tr><th>種類</th><th>いる部品</th></tr>
 <tr><td>建物</td><td>なくてもよい。<code>ドア_1</code>（原点が蝶番）・<code>ライト_1</code>・<code>ガラス</code>・<code>スイッチ</code>・<code>イス_1</code> で使える建物に。壁は 10〜20cm の厚み、階段は 1 段 40cm まで、入口は 80cm×2m 以上。カスタムプロパティ <code>用途</code>=<code>店</code> で明かりがつけっぱなし、ドアの <code>開き方</code>=<code>横</code> で引き戸、<code>閉まる</code>=<code>3</code> で 3 秒で閉まる。</td></tr>
 <tr><td>植物・置物</td><td>形だけでよい。地面に置かれます。</td></tr>
@@ -8834,7 +8846,7 @@ function stepCar(car, dt) {
   }
   for (const pr of props) {
     const b = pr.box, R = 1.3;
-    if (pr.loose || b.max.y - b.min.y < 0.25 || b.min.y > car.y + 1.5) continue;   // 置物は押せる（stepLoose）
+    if (pr.loose || b.max.y - b.min.y < 0.25 || b.min.y > car.y + 1.5 || car.y >= b.max.y - 0.35) continue;   // 置物は押せる（stepLoose）。上にのっている車はぶつからない
     const qx = THREE.MathUtils.clamp(car.pos.x, b.min.x, b.max.x), qz = THREE.MathUtils.clamp(car.pos.y, b.min.z, b.max.z);
     const dx = car.pos.x - qx, dz = car.pos.y - qz, d = Math.hypot(dx, dz);
     if (d < R) {
