@@ -764,6 +764,7 @@ async function loadItem(def) {
 
   // 動く部品（カスタムプロパティ 動作=回転 など）。乗り物だけ（ボタンで動かす）
   if (def.kind === 'vehicle') item.moves = rigMoveParts(item);
+  if (def.rig === 'car') item.hf = buildCarHf(item);   // 上に乗れる面の地図
 
   // 持ち込みの置物：地面に置いて、真ん中をそろえる
   if (def.kind === 'prop') {
@@ -975,7 +976,7 @@ const VKIND_ORDER = ['tank', 'combine', 'tractor', 'mixer', 'tanker', 'dump', 'h
    both：前と後ろで曲がる（小回り）  track：キャタピラ（その場で回れる。戦車・ショベルカー）
    保存は props.kind（front 以外のとき）。前の種類（sedan・dump…）で置いた車は front */
 const STEERS = {
-  front: { name: '前輪で曲がる', icon: '🚗', note: 'ふつうの車・バス・トラックなど' },
+  front: { name: '自動車', icon: '🚗', note: 'タイヤ前が曲がる（ほかはカスタムプロパティ「操舵」）' },
   rear: { name: '後輪で曲がる', icon: '🏭', note: 'フォークリフトなど（後ろがふられる）' },
   both: { name: '前後で曲がる', icon: '🔄', note: '小回りがきく特殊な車' },
   track: { name: 'キャタピラ', icon: '🛡️', note: 'その場で回れる（戦車・ショベルカーなど）' },
@@ -1186,7 +1187,7 @@ function rigAutoCar(item, root, model, gltf, def) {
     seats: seats.length ? seats : undefined, pass: seats.length > 0, cap: cap ? Math.min(99, Math.round(cap)) : seats.length + 1,
     wheelRadius, wheelbase: frontZ - rearZ,
     halfWidth, halfLength, centerZ, height: size.y,
-    maxSpeed: kmh / 3.6, accel: 7, brake: 16, reverseMax: 6, maxSteer: steer === 'rear' ? 0.8 : 0.6, pw: 3, drag: 0.0001,   // 小型車と同じ：最高速度までちゃんと出る（前は空気の抵抗で 60km/h の車が 53km/h どまりだった）
+    maxSpeed: kmh / 3.6, accel: 7, brake: 16, reverseMax: 6, maxSteer: !sf && sr ? 0.8 : 0.6, pw: 3, drag: 0.0001,   // 小型車と同じ：最高速度までちゃんと出る（前は空気の抵抗で 60km/h の車が 53km/h どまりだった）
     exit: [-(halfWidth + 0.6), centerZ],
   };
   item.size = size;
@@ -4488,7 +4489,7 @@ const vehicles = [];
 let myCar = null;   // 自分の小型車（しまっているときは null）
 let ride = null;    // いま運転している乗り物
 function makeVehicle(item, x, z, h, extra) {
-  const v = Object.assign({ item, pos: new THREE.Vector2(x, z), h, yawOff: 0, vF: 0, vL: 0, steer: 0, y: 0, pitch: 0, roll: 0, id: null, shared: false, name: item.def.name, remote: null, settled: false }, extra);
+  const v = Object.assign({ item, pos: new THREE.Vector2(x, z), h, yawOff: 0, vF: 0, vL: 0, steer: 0, y: 0, pitch: 0, roll: 0, id: null, shared: false, name: item.def.name, remote: null, settled: false, base: null, snapUntil: performance.now() + 15000 }, extra);
   const p = restPose(v);
   Object.assign(v, { y: p.y, pitch: p.pitch, roll: p.roll });
   item.root.rotation.order = 'YXZ';
@@ -4497,7 +4498,7 @@ function makeVehicle(item, x, z, h, extra) {
   return v;
 }
 function parkAt(v, x, z, h) {
-  Object.assign(v, { pos: new THREE.Vector2(x, z), h, yawOff: 0, vF: 0, vL: 0, steer: 0, settled: false, dive: 0, throttle: 0, vy: 0 });
+  Object.assign(v, { pos: new THREE.Vector2(x, z), h, yawOff: 0, vF: 0, vL: 0, steer: 0, settled: false, dive: 0, throttle: 0, vy: 0, base: null, snapUntil: performance.now() + 3000 });
   const p = restPose(v);
   Object.assign(v, { y: p.y, pitch: p.pitch, roll: p.roll });
 }
@@ -4506,6 +4507,237 @@ function removeVehicle(v) {
   if (aboard && aboard.v === v) getOff();
   scene.remove(v.item.root);
   const i = vehicles.indexOf(v); if (i >= 0) vehicles.splice(i, 1);
+}
+/* ================= 乗り物の上に乗る・物をのせる・積む =================
+   自動車の形から「上を向いた面の高さの地図」（HF_CELL ごと）を作る。動く部品（動作=回転/移動・ダンプの荷台・重機の関節）は部品ごとに別の地図。
+   人・置物・止まっている車はこの面の上に立てる（荷台に乗る、車ごと積む、フォークで持ち上げる）。下の乗り物が動くと、いっしょに動く。
+   置物は少しぶつかったくらいでは飛ばない（押した分だけずれる）。押されたり持ち上げられたりした置物・車は、止まったら動かした人が位置を保存する。 */
+const HF_CELL = 0.2, HF_STEP = 0.45;
+let hfFrame = 0;
+function hfBuild(frame, skip) {
+  frame.updateMatrixWorld(true);
+  const inv = new THREE.Matrix4().copy(frame.matrixWorld).invert(), M = new THREE.Matrix4(), a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3();
+  const tris = [];
+  const walk = (o) => {
+    if (o !== frame && skip.has(o)) return;
+    if (o.isMesh && o.visible && o.geometry && o.geometry.attributes.position) {
+      const P = o.geometry.attributes.position, I = o.geometry.index, n = I ? I.count : P.count;
+      M.multiplyMatrices(inv, o.matrixWorld);
+      const arr = new Float32Array(n * 3);
+      for (let i = 0; i < n; i++) { a.fromBufferAttribute(P, I ? I.getX(i) : i).applyMatrix4(M); arr[i * 3] = a.x; arr[i * 3 + 1] = a.y; arr[i * 3 + 2] = a.z; }
+      tris.push(arr);
+    }
+    for (const ch of o.children) walk(ch);
+  };
+  walk(frame);
+  let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity;
+  for (const arr of tris) for (let i = 0; i < arr.length; i += 3) { x0 = Math.min(x0, arr[i]); x1 = Math.max(x1, arr[i]); z0 = Math.min(z0, arr[i + 2]); z1 = Math.max(z1, arr[i + 2]); }
+  if (!(x1 > x0) || !(z1 > z0)) return null;
+  const nx = Math.min(200, Math.ceil((x1 - x0) / HF_CELL) + 1), nz = Math.min(200, Math.ceil((z1 - z0) / HF_CELL) + 1), cx = (x1 - x0) / Math.max(1, nx - 1) || HF_CELL, cz = (z1 - z0) / Math.max(1, nz - 1) || HF_CELL;
+  const h = new Float32Array(nx * nz).fill(-Infinity);
+  const put = (x, y, z) => { const i = Math.round((x - x0) / cx), k = Math.round((z - z0) / cz); if (i >= 0 && i < nx && k >= 0 && k < nz && y > h[k * nx + i]) h[k * nx + i] = y; };
+  for (const arr of tris) for (let t = 0; t + 8 < arr.length; t += 9) {
+    a.set(arr[t], arr[t + 1], arr[t + 2]); b.set(arr[t + 3], arr[t + 4], arr[t + 5]); c.set(arr[t + 6], arr[t + 7], arr[t + 8]);
+    // 三角形の中のマス（上から見て）。立っている面はふちだけ（壁の上のはし）
+    const ix0 = Math.max(0, Math.floor((Math.min(a.x, b.x, c.x) - x0) / cx)), ix1 = Math.min(nx - 1, Math.ceil((Math.max(a.x, b.x, c.x) - x0) / cx));
+    const iz0 = Math.max(0, Math.floor((Math.min(a.z, b.z, c.z) - z0) / cz)), iz1 = Math.min(nz - 1, Math.ceil((Math.max(a.z, b.z, c.z) - z0) / cz));
+    const d = (b.z - c.z) * (a.x - c.x) + (c.x - b.x) * (a.z - c.z);
+    if (Math.abs(d) > 1e-9 && (ix1 - ix0 + 1) * (iz1 - iz0 + 1) < 40000) for (let k = iz0; k <= iz1; k++) for (let i = ix0; i <= ix1; i++) {
+      const px = x0 + i * cx, pz = z0 + k * cz;
+      const w1 = ((b.z - c.z) * (px - c.x) + (c.x - b.x) * (pz - c.z)) / d, w2 = ((c.z - a.z) * (px - c.x) + (a.x - c.x) * (pz - c.z)) / d, w3 = 1 - w1 - w2;
+      if (w1 >= -1e-4 && w2 >= -1e-4 && w3 >= -1e-4) { const y = w1 * a.y + w2 * b.y + w3 * c.y; if (y > h[k * nx + i]) h[k * nx + i] = y; }
+    }
+    for (const [p, q] of [[a, b], [b, c], [c, a]]) { const L = Math.hypot(q.x - p.x, q.z - p.z), n = Math.min(200, Math.ceil(L / (HF_CELL * 0.5))); for (let s = 0; s <= n; s++) { const f = n ? s / n : 0; put(p.x + (q.x - p.x) * f, p.y + (q.y - p.y) * f, p.z + (q.z - p.z) * f); } }
+  }
+  let top = frame; while (top.parent && top.parent.type !== 'Scene') top = top.parent;
+  return { fr: frame, top, x0, z0, nx, nz, cx, cz, h, inv: new THREE.Matrix4(), invF: -1, x1, z1 };
+}
+// 自動車の地図をつくる（読み込んだとき。動く部品をつけたあと）
+function buildCarHf(item) {
+  const movers = new Set();
+  if (item.moves) for (const p of item.moves.parts) movers.add(p.o);
+  if (item.work) { if (item.work.tilt) movers.add(item.work.tilt); for (const g of Object.values(item.work.hv || {})) movers.add(g); }
+  const pieces = [hfBuild(item.root, movers)];
+  for (const o of movers) pieces.push(hfBuild(o, movers));
+  const list = pieces.filter(Boolean);
+  if (!list.length) return null;
+  const B = list[0];   // 車体だけの外形（動く部品＝フォークなどは入れない）：押す・ぶつかるときに使う
+  item.hfBody = B === pieces[0] ? { hx: Math.max(Math.abs(B.x0), Math.abs(B.x1)), z0: B.z0, z1: B.z1 } : null;
+  return list;
+}
+// 地図の 1 枚で、世界の点 (x, z) の面の高さ（世界の y）。ないなら -Infinity
+const _hfV = new THREE.Vector3();
+// 乗り物ぜんたいの行列を、1 コマに 1 回だけ新しくする（動く部品の位置も root から計算しなおす）
+function hfMats(P) { const r = P.top; if (r._mwF !== hfFrame) { r.updateMatrixWorld(true); r._mwF = hfFrame; } }
+function hfAt(P, x, y, z) {
+  if (P.invF !== hfFrame) { hfMats(P); P.inv.copy(P.fr.matrixWorld).invert(); P.invF = hfFrame; }
+  _hfV.set(x, y, z).applyMatrix4(P.inv);
+  const i = Math.round((_hfV.x - P.x0) / P.cx), k = Math.round((_hfV.z - P.z0) / P.cz);
+  if (i < 0 || i >= P.nx || k < 0 || k >= P.nz) return -Infinity;
+  const ly = P.h[k * P.nx + i];
+  if (ly === -Infinity) return -Infinity;
+  _hfV.y = ly; _hfV.applyMatrix4(P.fr.matrixWorld);
+  return _hfV.y;
+}
+// 乗り物の面のうち、yMax より下でいちばん高いもの。{ y, v, P } か null。skip の乗り物と、skip に積まれている乗り物は見ない
+const _surf = { y: -Infinity, v: null, P: null };
+function surfTop(x, z, yMax, skip) {
+  _surf.y = -Infinity; _surf.v = null; _surf.P = null;
+  for (const v of vehicles) {
+    const L = v.item.hf;
+    if (!L || v === skip || v.sunk || (skip && v.base && v.base.v === skip)) continue;
+    const V = v.item.def.vehicle, r = V.halfLength + V.halfWidth + 1;
+    if (Math.abs(x - v.pos.x) > r || Math.abs(z - v.pos.y) > r || v.y > yMax + 0.5) continue;
+    for (const P of L) { const y = hfAt(P, x, Math.min(yMax, v.y + 3), z); if (y > _surf.y && y <= yMax) { _surf.y = y; _surf.v = v; _surf.P = P; } }
+  }
+  return _surf.v ? _surf : null;
+}
+// その乗り物だけの、いちばん上の面（ぶつかる判定用）
+function surfOf(v, x, z) { let best = -Infinity; for (const P of v.item.hf || []) best = Math.max(best, hfAt(P, x, v.y + 1, z)); return best; }
+// 乗っている物（人・置物・止まった車）の「下の乗り物」をおぼえる／外す
+function setBase(o, s) {
+  if (!s) { o.base = null; return; }
+  if (o.base && o.base.P === s.P) return;
+  hfMats(s.P);
+  o.base = { v: s.v, P: s.P, prev: s.P.fr.matrixWorld.clone() };
+}
+// 下の乗り物が動いた分だけ動かす（位置と向き）。返り値：動いたか
+const _cM = new THREE.Matrix4(), _cV = new THREE.Vector3(), _cQ = new THREE.Quaternion(), _cE = new THREE.Euler(0, 0, 0, 'YXZ');
+function carryBy(o, pos, setYaw) {
+  const B = o.base;
+  if (!B) return false;
+  if (!vehicles.includes(B.v)) { o.base = null; return false; }
+  hfMats(B.P);
+  const now = B.P.fr.matrixWorld;
+  if (now.equals(B.prev)) return false;
+  _cM.copy(B.prev).invert().premultiply(now);   // now × prev⁻¹
+  _cV.copy(pos).applyMatrix4(_cM);
+  pos.copy(_cV);
+  if (setYaw) { _cQ.setFromRotationMatrix(_cM); _cE.setFromQuaternion(_cQ, 'YXZ'); setYaw(_cE.y); }
+  B.prev.copy(now);
+  return true;
+}
+// 動いている乗り物のまわりの、止まっている車・置物を起こす（フォークが上がった、荷台に乗ってきた…）
+const movingCars = () => vehicles.filter((v) => v.item.hf && (v === ride || v.remote || !v.settled || (v.item.moves && v.item.moves.dirty)));
+function stepCarry(dt) {
+  hfFrame++;
+  const mv = movingCars();
+  for (const v of vehicles) {
+    const t = vtype(v);
+    if (v.remote || (t !== 'car' && t !== 'robot')) continue;
+    if (v.base) {   // 積まれている車：下の乗り物といっしょに動く
+      const p = new THREE.Vector3(v.pos.x, v.y, v.pos.y);
+      if (carryBy(v, p, (dy) => { v.h += dy; })) {
+        v.pos.x = p.x; v.pos.y = p.z; v.y = p.y; v.settled = false; v.movedAt = performance.now();
+        if (v !== ride && (v.base.v === ride || (v.base.v.base && v.base.v.base.v === ride))) v.saveAt = performance.now() + 1500;   // 自分が運んだ車は、止まったら自分が保存する
+      }
+    } else if (v !== ride && v.settled && mv.some((u) => u !== v && Math.hypot(u.pos.x - v.pos.x, u.pos.y - v.pos.y) < 14)) v.settled = false;
+  }
+  if (!driving && !aboard && !busRide && player.base) {   // 自分が乗っている乗り物が動いた
+    if (carryBy(player, player.pos, (dy) => { player.face += dy; })) player.vy = Math.min(player.vy, 0);
+  }
+  stepLoose(dt, mv);
+  // 押した・積んで運んだ車を、止まったら保存する
+  const t = performance.now();
+  for (const v of vehicles) if (v.saveAt && t > v.saveAt && v.settled && v !== ride) { v.saveAt = 0; if (v.shared && v.id && net.db) net.db.move(v.id, Math.round(v.pos.x * 100) / 100, Math.round(v.pos.y * 100) / 100, Math.round(v.h * 1000) / 1000).catch(() => {}); }
+}
+/* ---- 置物（「置物」で置いた物）：地面か乗り物・ほかの置物の上にのる。車に押されると、押された分だけずれる ---- */
+const LOOSE_MAX = { w: 8, h: 6 };
+function looseInit(pr) {
+  if (pr.cat !== 'prop' || pr.bld) return;
+  const s = pr.box.getSize(new THREE.Vector3());
+  if (s.x > LOOSE_MAX.w || s.z > LOOSE_MAX.w || s.y > LOOSE_MAX.h) return;
+  const r = pr.item.root;
+  pr.loose = { r: Math.max(0.15, Math.min(s.x, s.z) / 2), hx: s.x / 2, hz: s.z / 2, hy: s.y, rest: false, vy: 0, snap: performance.now() + 15000, mine: false, saveAt: 0, movedAt: 0 };
+  pr.base = null;
+  pr.pos = r.position;   // root の位置（y は底）
+}
+// 置物の下の高さ：地面・乗り物の面・ほかの置物の上
+function looseSupport(pr, yMax) {
+  const p = pr.pos, L = pr.loose, k = 0.7;
+  let y = groundAt(p.x, p.z, p.y + 0.3), s = null;
+  for (const [ox, oz] of [[0, 0], [L.hx * k, L.hz * k], [-L.hx * k, L.hz * k], [L.hx * k, -L.hz * k], [-L.hx * k, -L.hz * k]]) {
+    const q = surfTop(p.x + ox, p.z + oz, yMax, null);
+    if (q && q.y > y) { y = q.y; s = { y: q.y, v: q.v, P: q.P }; }
+  }
+  for (const o of props) {
+    if (o === pr || o.bld || o.box.max.y > yMax || o.box.max.y <= y) continue;
+    if (p.x + L.hx * 0.6 < o.box.min.x || p.x - L.hx * 0.6 > o.box.max.x || p.z + L.hz * 0.6 < o.box.min.z || p.z - L.hz * 0.6 > o.box.max.z) continue;
+    y = o.box.max.y; s = o.base ? { y, v: o.base.v, P: o.base.P } : null;
+  }
+  return { y, s };
+}
+function stepLoose(dt, mv) {
+  const t = performance.now();
+  for (const pr of props) {
+    const L = pr.loose;
+    if (!L) continue;
+    const p = pr.pos, x0 = p.x, z0 = p.z, y0 = p.y, rot0 = pr.item.root.rotation.y;
+    const near = mv.filter((u) => Math.abs(u.pos.x - p.x) < 16 && Math.abs(u.pos.y - p.z) < 16);
+    if (L.rest && !near.length && !pr.base) continue;
+    // 1) 下の乗り物が動いたら、いっしょに
+    if (pr.base && carryBy(pr, p, (dy) => { pr.item.root.rotation.y += dy; })) { if (pr.base.v === ride) L.mine = true; }
+    // 2) 動いている車に押される（車体の外形。フォークのような動く部品は下にもぐれる）
+    for (const u of near) {
+      if (pr.base && pr.base.v === u) continue;
+      const V = u.item.def.vehicle, Bd = u.item.hfBody;
+      const hx = Bd ? Bd.hx : V.halfWidth, z0b = Bd ? Bd.z0 : V.centerZ - V.halfLength, z1b = Bd ? Bd.z1 : V.centerZ + V.halfLength;
+      if (p.y > u.y + (V.height || 1.5) - 0.1 || p.y + L.hy < u.y + 0.15) continue;   // 高さが重ならない
+      const h = visYaw(u), s = Math.sin(h), c = Math.cos(h), dx = p.x - u.pos.x, dz = p.z - u.pos.y;
+      const lx = dx * c - dz * s, lz = dx * s + dz * c;   // 車から見た置物の位置（x：左、z：前）
+      const qx = THREE.MathUtils.clamp(lx, -hx, hx), qz = THREE.MathUtils.clamp(lz, z0b, z1b);
+      let ex = lx - qx, ez = lz - qz, d = Math.hypot(ex, ez);
+      if (d >= L.r) continue;
+      if (d < 1e-4) { const ox = hx - Math.abs(lx), oz = Math.min(lz - z0b, z1b - lz); if (ox < oz) { ex = Math.sign(lx) || 1; ez = 0; } else { ex = 0; ez = lz - z0b < z1b - lz ? -1 : 1; } d = 1; }
+      const push = L.r - (d < 1 ? d : 0), nx = ex / Math.max(d, 1e-4), nz = ez / Math.max(d, 1e-4);
+      p.x += (nx * c + nz * s) * push; p.z += (-nx * s + nz * c) * push;
+      if (u === ride) { L.mine = true; u.vF *= Math.exp(-Math.min(6, 0.4 * L.hx * L.hz * L.hy) * dt); }   // 重い物ほど、押す車がおそくなる（地面の摩擦）
+    }
+    // 3) 下の面にのる（上がってきた面には持ち上げられ、なくなったら落ちる）
+    const snap = t < L.snap;
+    const sp = looseSupport(pr, snap ? p.y + 50 : p.y + HF_STEP);
+    if (sp.y >= p.y - 0.01) { p.y = sp.y; L.vy = 0; setBase(pr, sp.s); }
+    else { L.vy -= GRAVITY * dt; p.y = Math.max(sp.y, p.y + L.vy * dt); if (p.y === sp.y) { L.vy = 0; setBase(pr, sp.s); } else pr.base = null; }
+    const moved = Math.abs(p.x - x0) + Math.abs(p.z - z0) + Math.abs(p.y - y0) + Math.abs(pr.item.root.rotation.y - rot0) > 1e-4;
+    if (moved) {
+      pr.item.root.updateMatrixWorld(true); pr.box.setFromObject(pr.item.root); L.movedAt = t; L.rest = false;
+      if (L.mine) L.saveAt = t + 1500;
+    } else if (!near.length && !pr.base && L.vy === 0) L.rest = true;
+    if (L.saveAt && t > L.saveAt && !moved) {   // 止まったら、動かした人が保存する
+      L.saveAt = 0; L.mine = false;
+      if (pr.id && net.db) net.db.move(pr.id, Math.round(p.x * 100) / 100, Math.round(p.z * 100) / 100, Math.round(pr.item.root.rotation.y * 1000) / 1000).catch(() => {});
+    }
+  }
+}
+// 車の下の高さ：地面か、ほかの乗り物の面（いまの高さから HF_STEP までなら乗り上げられる。置いた直後は上にのせる）
+function carGround(x, z, cy, car) {
+  const g = groundAt(x, z, cy);
+  const s = surfTop(x, z, car.snapUntil && performance.now() < car.snapUntil ? cy + 50 : cy + HF_STEP, car);
+  return s && s.y > g ? s.y : g;
+}
+// 車が乗っている乗り物（まん中・前・後ろのどこかで支えられていれば）
+function carBase(car) {
+  const V = car.item.def.vehicle, L = (V.wheelbase || 2) / 2;
+  for (const lz of [0, L, -L]) {
+    const p = carLocalToWorld(car, 0, lz), s = surfTop(p.x, p.y, car.y + 0.25, car);
+    if (s && s.y > car.y - 0.3 && s.y > groundAt(p.x, p.y, car.y + 0.3) + 0.03) return { v: s.v, P: s.P };
+  }
+  return null;
+}
+// 自分の車の外形（8 点）が、ほかの乗り物の高い所（荷台の横・運転席など）に入るか
+function hfBlocked(car) {
+  const V = car.item.def.vehicle, Bd = car.item.hfBody, hx = (Bd ? Bd.hx : V.halfWidth) * 0.95, z0 = Bd ? Bd.z0 : V.centerZ - V.halfLength, z1 = Bd ? Bd.z1 : V.centerZ + V.halfLength;
+  const zm = (z0 + z1) / 2, r = Math.max(hx, z1 - zm, zm - z0) + 1;
+  for (const u of vehicles) {
+    if (u === car || !u.item.hf || u.sunk || (u.base && u.base.v === car) || u.y > car.y + (V.height || 1.5) - 0.3) continue;
+    const U = u.item.def.vehicle;
+    if (Math.hypot(u.pos.x - car.pos.x, u.pos.y - car.pos.y) > r + U.halfLength + U.halfWidth) continue;
+    for (const [lx, lz] of [[hx, z1], [-hx, z1], [hx, z0], [-hx, z0], [0, z1], [0, z0], [hx, zm], [-hx, zm]]) {
+      const p = carLocalToWorld(car, lx, lz * 0.97);
+      if (surfOf(u, p.x, p.y) > car.y + HF_STEP) return true;
+    }
+  }
+  return false;
 }
 
 /* ================= 持ち込みアイテム =================
@@ -4540,6 +4772,7 @@ function placeProp(item, name, cat, x, z, rot, id) {
   }
   const pr = { item, box, id, name, cat, pad };
   props.push(pr);
+  looseInit(pr);   // 置物は押したり持ち上げたりできる
   if (cat === 'building') setupBuilding(pr);
   return pr;
 }
@@ -5048,8 +5281,18 @@ async function loadSharedProp(d) {
 function movedSharedProp(d) {
   const v = vehicles.find((x) => x.id === d.id);
   if (v && 'share' in d) v.share = !!d.share;   // 持ち主が「みんな使える」を切りかえた
-  if (!v || v === ride || v.remote || v.sunk) return;
-  parkAt(v, num(d.x, X0 + 1, X1 - 1), num(d.z, Z0 + 1, Z1 - 1), num(d.rot, -100, 100));
+  const x = num(d.x, X0 + 1, X1 - 1), z = num(d.z, Z0 + 1, Z1 - 1), rot = num(d.rot, -100, 100), now = performance.now();
+  if (!v) {   // 置物：押された・運ばれた（自分の画面で動かしている間は、そちらを使う）
+    const pr = props.find((p) => p.id === d.id), L = pr && pr.loose;
+    if (!L || now - L.movedAt < 4000 || L.saveAt) return;
+    if (Math.abs(x - pr.pos.x) < 0.03 && Math.abs(z - pr.pos.z) < 0.03 && Math.abs(wrapA(rot - pr.item.root.rotation.y)) < 0.01) return;
+    pr.pos.x = x; pr.pos.z = z; pr.item.root.rotation.y = rot; pr.base = null; L.rest = false; L.snap = now + 3000;
+    pr.item.root.updateMatrixWorld(true); pr.box.setFromObject(pr.item.root);
+    return;
+  }
+  if (v === ride || v.remote || v.sunk || (v.movedAt && now - v.movedAt < 4000) || v.saveAt) return;
+  if (Math.abs(x - v.pos.x) < 0.03 && Math.abs(z - v.pos.y) < 0.03 && Math.abs(wrapA(rot - v.h)) < 0.01) return;   // 同じ場所（読み直し）
+  parkAt(v, x, z, rot);
 }
 function unloadSharedProp(id) {
   net.loading.delete(id);
@@ -5141,18 +5384,23 @@ const HELP_CAR = `<h4>自動車のきまり（どの種類も同じ）</h4>
 <tr><td><code>種類</code> = <code>ダンプ</code> など</td><td>車の種類。つけておくと、ほかの人の画面や販売店でもその種類になる（ここで選んだ種類もみんなに伝わります）</td></tr>
 <tr><td><code>最高速度</code> = <code>120</code></td><td>km/h（10〜400）。ないときは 60（重機・コンバイン 15、トラクター 35、バス 80）</td></tr>
 <tr><td><code>定員</code> = <code>40</code></td><td>乗れる人数（表示用。相乗りできるのは座席の数まで）</td></tr></table>`;
-const HELP_STEER = `<h4>自動車の動き方</h4><p>バスかダンプかではなく、<b>どう曲がるか</b>を選びます。できること（荷台・ドラム・座席など）は部品の名前で決まります（下の「あるとできること」）。</p>
-<table><tr><th>動き方</th><th>曲がり方</th></tr>
-<tr><td>🚗 前輪で曲がる</td><td>ふつうの車。名前に <code>前</code> がつくタイヤが曲がる</td></tr>
-<tr><td>🏭 後輪で曲がる</td><td>フォークリフトのように、名前に <code>後</code> がつくタイヤが曲がり、おしりがふられる。小回りがきく</td></tr>
-<tr><td>🔄 前後で曲がる</td><td>前のタイヤと後ろのタイヤが<b>逆向き</b>に切れて、もっと小回りがきく</td></tr>
-<tr><td>🛡️ キャタピラ</td><td>止まったままその場で回れる（戦車・ショベルカー）。左右のキャタピラの速さが変わる</td></tr></table>
-<h4>タイヤ・キャタピラ（なくてもよい）</h4><ul>
-<li><b>タイヤもキャタピラもなくても走れます</b>（形のいちばん下が地面。前は Blender の −Y）。</li>
-<li>タイヤがあれば、走った分だけ回り、曲がるタイヤはハンドルで曲がります（名前は下の「自動車のきまり」）。タイヤの数は名前から決まるので、選ばなくてよい。</li>
-<li>キャタピラは部品の名前を <code>キャタピラ右</code> <code>キャタピラ左</code>（左右まとめた <code>キャタピラ</code> でもよい）。模様（テクスチャ）が走った分だけ流れます。中の転輪を <code>タイヤ右前</code>… にすると回ります。</li>
-<li><b>曲がるタイヤを変えたいとき</b>だけ、タイヤにカスタムプロパティ <code>操舵</code> をつける：<code>しない</code>（曲がらない）・<code>する</code>・<code>逆</code>（前と逆向き）・<code>同じ</code>（前と同じ向き＝かに歩き）。ふつうはいりません。</li>
-<li>ボディのカスタムプロパティ <code>操舵</code> = <code>後輪</code> <code>前後</code> <code>キャタピラ</code> でも動き方を決められます（販売店で売るときなど）。</li></ul>`;
+const HELP_STEER = `<h4>自動車の区分</h4><p>区分は <b>🚗 自動車・🏍️ バイク・🛡️ キャタピラ</b> の 3 つだけです。バスかダンプかは選びません。できること（荷台・ドラム・座席など）は部品の名前で決まります（下の「あるとできること」）。</p>
+<h4>タイヤ（なくてもよい）</h4><ul>
+<li><b>タイヤもキャタピラもなくても走れます</b>（形のいちばん下が地面。前は Blender の −Y）。タイヤの数は選びません（名前から決まります）。</li>
+<li>タイヤは<b>左右まとめた 1 つの部品</b>を何組か作る：例 前 2 軸・後ろ 1 軸の大型トラックは <code>タイヤ前1</code> <code>タイヤ前2</code> <code>タイヤ後</code>。4 輪なら <code>タイヤ前</code> <code>タイヤ後</code>。走った分だけ回ります。</li>
+<li><b>曲がるのは、ふつうは名前に「前」がつくタイヤ</b>。変えたいタイヤだけ、カスタムプロパティ <code>操舵</code>（文字列）をつける：
+<table><tr><th>値</th><th>そのタイヤ</th></tr>
+<tr><td><code>する</code></td><td>曲がる（後ろのタイヤにつけると、前と逆向きに切れて小回り）</td></tr>
+<tr><td><code>しない</code></td><td>曲がらない</td></tr>
+<tr><td><code>同じ</code></td><td>前と同じ向きに切れる（かに歩き）</td></tr></table>
+例：フォークリフト（後輪操舵）は <code>タイヤ前</code> に <code>操舵</code>=<code>しない</code>、<code>タイヤ後</code> に <code>操舵</code>=<code>する</code>。後ろが曲がる車は、おしりがふられます。</li>
+<li>🏍️ バイクは <code>タイヤ前</code> <code>タイヤ後</code> を 1 本ずつ（左右に分けない）。</li>
+<li>🛡️ キャタピラは、部品の名前を <code>キャタピラ</code>（左右まとめて）か <code>キャタピラ右</code> <code>キャタピラ左</code>。止まったままその場で回れます。模様（テクスチャ）が走った分だけ流れます。ボディに <code>種類</code>=<code>戦車</code> でもキャタピラになります。</li></ul>
+<h4>乗る・積む・持ち上げる</h4><ul>
+<li>どの車も、上を向いた面（荷台・屋根・フォーク）に人が乗れて、置物をのせられます。車が動くと、のっている人・物・車もいっしょに動きます。</li>
+<li>車で荷台に乗り上げられるのは、段差 45cm まで。高い荷台は <b>スロープ</b>（坂の板）の部品をつけると、ほかの人の車を積めます。</li>
+<li>フォークは <code>動作</code>=<code>移動</code>・<code>軸</code>=<code>Z</code>・<code>最小</code>=<code>0</code>・<code>最大</code>=<code>3</code> の部品にして、ボタンで上げ下げ。フォークの上の置物や車が持ち上がります。</li>
+<li>置物は、車で押すと押した分だけずれます（はね飛ばない）。重い物ほど押す車がおそくなります。止まったら、動かした人の画面から位置がみんなに保存されます。</li></ul>`;
 const HELP_PARTS = `<h4>あるとできること（どの動き方でも）</h4>
 <table><tr><th>部品・カスタムプロパティ</th><th>できること</th></tr>
 <tr><td><code>荷台</code></td><td>荷物をつむ（床 1㎡ で 400kg、12 トンまで）。🏢 事業のトラックになる。ボディに <code>種類</code>=<code>ダンプ</code> で荷台が上がる（<code>K</code>）</td></tr>
@@ -5185,10 +5433,15 @@ const placeEl = document.getElementById('place');
 let pendingFile = null, pendingCat = null;
 let placeScreen = 'main', placeBaseTitle = '';
 const SCREEN_UP = { vehicle: 'main', ctype: 'vehicle', car: 'ctype', boat: 'vehicle' };
-const SCREEN_TITLE = { vehicle: '乗り物の種類は？', ctype: '自動車の動き方は？', car: 'タイヤはいくつ？', boat: '船の種類は？' };
+const SCREEN_TITLE = { vehicle: '乗り物の種類は？', ctype: '自動車の区分は？', car: 'タイヤはいくつ？', boat: '船の種類は？' };
 let pendingKind = null;   // 自動車の種類（VKINDS のキー）
-// 自動車の動き方のボタン（STEERS から作る）。タイヤの数は名前から決めるので聞かない
-placeEl.querySelector('[data-screen="ctype"]').innerHTML = Object.entries(STEERS).map(([k, K]) => `<button type="button" data-cat="car" data-steer="${k}" class="pveh"><b>${K.icon} ${K.name}</b><small>${K.note}</small></button>`).join('');
+// 自動車の区分は 3 つだけ：自動車・バイク・キャタピラ。タイヤの数は名前から決めるので聞かない。
+// 後輪で曲がる・前後で曲がるは、タイヤのカスタムプロパティ「操舵」（する／しない）で決める（ボディの 操舵=後輪/前後 でもよい）
+placeEl.querySelector('[data-screen="ctype"]').innerHTML = [
+  `<button type="button" data-cat="car" data-steer="front" class="pveh"><b>🚗 自動車</b><small>${STEERS.front.note}</small></button>`,
+  `<button type="button" data-cat="car" data-kind="bike" data-wheels="2" class="pveh"><b>🏍️ バイク</b><small>タイヤ前・タイヤ後（1 本ずつ）</small></button>`,
+  `<button type="button" data-cat="car" data-steer="track" class="pveh"><b>${STEERS.track.icon} ${STEERS.track.name}</b><small>${STEERS.track.note}</small></button>`,
+].join('');
 function showScreen(s) {
   placeScreen = s;
   for (const d of placeEl.querySelectorAll('[data-screen]')) d.hidden = d.dataset.screen !== s;
@@ -8078,7 +8331,8 @@ function stepPlayer(dt) {
     else { const ch = bldSeat.ch; player.pos.set(ch.at.x, ch.seatY - 0.4, ch.at.z); player.vy = 0; player.onGround = true; player.moving = false; player.mode = 'walk';
       player.face += ((keys.KeyA || keys.ArrowLeft ? 1 : 0) - (keys.KeyD || keys.ArrowRight ? 1 : 0)) * 2 * dt; return; }
   }
-  const ox = player.pos.x, oz = player.pos.z, oy = player.pos.y;
+  const ox = player.pos.x, oz = player.pos.z, oy = player.pos.y, wasG = player.onGround;
+  const pGround = (x, z) => { const g = groundAt(x, z, player.pos.y), s = surfTop(x, z, player.pos.y + P_H, null); return s && s.y > g ? s.y : g; };   // 乗り物の面も段差
   // ↑↓ で向いている方へ進む・下がる、←→ で向きを変える（カメラの向きとは関係なし）
   let fwdIn = (keys.KeyW || keys.ArrowUp ? 1 : 0) - (keys.KeyS || keys.ArrowDown ? 1 : 0);
   let turnIn = (keys.KeyA || keys.ArrowLeft ? 1 : 0) - (keys.KeyD || keys.ArrowRight ? 1 : 0);
@@ -8102,7 +8356,7 @@ function stepPlayer(dt) {
       const fx = -Math.sin(camYaw), fz = -Math.cos(camYaw), lx = fz, lz = -fx, n = Math.hypot(mx, mz);
       const dx = (fx * mz + lx * mx) / n, dz = (fz * mz + lz * mx) / n;
       const nx = player.pos.x + dx * speed * mag * dt, nz = player.pos.z + dz * speed * mag * dt;
-      const rise = groundAt(nx, nz, player.pos.y) - Math.max(player.pos.y, ground);
+      const rise = pGround(nx, nz) - Math.max(player.pos.y, ground);
       if (!(player.onGround && rise > speed * mag * dt * 1.6 + 0.02)) { player.pos.x = nx; player.pos.z = nz; }
       let d = Math.atan2(dx, dz) - player.face; d = Math.atan2(Math.sin(d), Math.cos(d));
       player.face += d * Math.min(1, dt * 12);
@@ -8117,7 +8371,7 @@ function stepPlayer(dt) {
     const sg = Math.sign(fwdIn), dirx = Math.sin(player.face) * sg, dirz = Math.cos(player.face) * sg;
     const nx = player.pos.x + dirx * speed * mag * dt, nz = player.pos.z + dirz * speed * mag * dt;
     // 歩きで登れないほど急なところ（高さ 1m 以上の段差に相当）は進めない
-    const rise = groundAt(nx, nz, player.pos.y) - Math.max(player.pos.y, ground);
+    const rise = pGround(nx, nz) - Math.max(player.pos.y, ground);
     if (!(player.onGround && rise > speed * mag * dt * 1.6 + 0.02)) { player.pos.x = nx; player.pos.z = nz; }
   }
 
@@ -8147,11 +8401,16 @@ function stepPlayer(dt) {
   const roof = archTop(player.pos.x, player.pos.z);   // トンネルの屋根の上は歩ける（下をくぐるときは関係ない）
   if (roof > g2 && player.pos.y > roof - 1.2) g2 = roof;
   if (blds.length) { const bf = bldFloor(player.pos.x, player.pos.z, player.pos.y - Math.min(0, player.vy * dt)); if (bf > g2) g2 = bf; }   // 建物の床・階段
-  if (player.pos.y <= g2) { player.pos.y = g2; player.vy = Math.max(0, player.vy); player.onGround = true; if (!inWater) player.mode = 'walk'; }
+  // 乗り物の上（荷台・屋根・フォーク）：落ちてきたか、歩いて上がれる高さなら立つ
+  const vs = surfTop(player.pos.x, player.pos.z, Math.max(player.pos.y, oy) + (wasG ? 0.3 : 0.05), null);
+  const vb = vs && vs.y > g2 ? { v: vs.v, P: vs.P } : null;
+  if (vb) g2 = vs.y;
+  if (player.pos.y <= g2) { player.pos.y = g2; player.vy = Math.max(0, player.vy); player.onGround = true; if (!inWater) player.mode = 'walk'; setBase(player, vb); }
+  else player.base = null;
 
   // 車にめり込まない（車の高さより上なら乗り越えられる）。自分の車も、ほかの人の車も
   for (const a of AIR.planes) if (a.v && a.onGround && !driving) jetPushPlayer(a.v, ox, oz);
-  for (const v of vehicles) if (!(aboard && aboard.v === v)) { if (v.item.jet && v.item.jet.hit) jetPushPlayer(v, ox, oz); else pushFromCar(v.item.def.vehicle, v.pos.x, v.pos.y, v.y, visYaw(v)); }
+  for (const v of vehicles) if (!(aboard && aboard.v === v)) { if (v.item.jet && v.item.jet.hit) jetPushPlayer(v, ox, oz); else if (!(v.item.hf && surfOf(v, player.pos.x, player.pos.z) <= player.pos.y + 0.5)) pushFromCar(v.item.def.vehicle, v.pos.x, v.pos.y, v.y, visYaw(v)); }   // 乗れる高さなら押し出さない
   pushFromTraffic();   // 路線バスや車にははね飛ばされず、押しのけられる
   for (const o of net.others.values()) {
     if (o.carObj) pushFromCar(ITEM_DEFS.mini.vehicle, o.carObj.position.x, o.carObj.position.z, o.carObj.position.y, o.carObj.rotation.y);
@@ -8171,7 +8430,7 @@ function stepPlayer(dt) {
     const b = pr.box;
     if (player.pos.y >= b.max.y - 0.05) {
       if (player.pos.x > b.min.x && player.pos.x < b.max.x && player.pos.z > b.min.z && player.pos.z < b.max.z && player.pos.y < b.max.y + 0.05 && player.vy <= 0) {
-        player.pos.y = b.max.y; player.vy = 0; player.onGround = true;
+        player.pos.y = b.max.y; player.vy = 0; player.onGround = true; if (pr.base) setBase(player, pr.base);   // 荷台の上の箱に立っている
       }
       continue;
     }
@@ -8192,8 +8451,9 @@ function carPose(car) {
   const V = car.item.def.vehicle, L = V.wheelbase / 2, Wd = V.halfWidth * 0.85;
   const f = carLocalToWorld(car, 0, L), b = carLocalToWorld(car, 0, -L);
   const l = carLocalToWorld(car, Wd, 0), r = carLocalToWorld(car, -Wd, 0);
-  const cy = car.y ?? -Infinity, hf = groundAt(f.x, f.y, cy), hb = groundAt(b.x, b.y, cy), hl = groundAt(l.x, l.y, cy), hr = groundAt(r.x, r.y, cy);
-  return { y: (hf + hb + hl + hr) / 4, pitch: Math.atan2(hf - hb, 2 * L), roll: Math.atan2(hl - hr, 2 * Wd) };
+  const cy = car.y ?? -Infinity, hf = carGround(f.x, f.y, cy, car), hb = carGround(b.x, b.y, cy, car), hl = carGround(l.x, l.y, cy, car), hr = carGround(r.x, r.y, cy, car);
+  const hc = carGround(car.pos.x, car.pos.y, cy, car);   // まん中だけで支えられているとき（フォークの上など）
+  return { y: Math.max((hf + hb + hl + hr) / 4, hc), pitch: Math.atan2(hf - hb, 2 * L), roll: Math.atan2(hl - hr, 2 * Wd) };
 }
 function showCar(car) {
   const root = car.item.root;
@@ -8252,7 +8512,7 @@ function stepCar(car, dt) {
   let yawRate = (car.vF / V.wheelbase) * (Math.tan(sf * car.steer) - Math.tan(sr * car.steer));
   if (V.type === 'robot') yawRate += (car.steer / V.maxSteer) * 0.9 * Math.max(0, 1 - Math.abs(car.vF) / 4);   // ロボットは止まっていても向きを変えられる
   if (V.spinTurn) yawRate = (car.steer / V.maxSteer) * (0.9 - 0.45 * Math.min(1, Math.abs(car.vF) / 8)) * (car.vF < -0.5 ? -1 : 1);   // キャタピラ：その場で回れる（バックはハンドルと逆に回る＝車と同じ）
-  const slip = V.steer && V.steer !== 'front' && !V.spinTurn ? car.vF * (Math.tan(sf * car.steer) + Math.tan(sr * car.steer)) / 2 : 0;   // 後輪・前後操舵：車の中心が横にずれる（後輪操舵はおしりがふられる）
+  const slip = sr && !V.spinTurn ? car.vF * (Math.tan(sf * car.steer) + Math.tan(sr * car.steer)) / 2 : 0;   // 後輪・前後操舵：車の中心が横にずれる（後輪操舵はおしりがふられる）
   if (hand) yawRate *= 1.35;
   const old = { x: car.pos.x, z: car.pos.y, h: car.h };
   car.h += yawRate * dt;
@@ -8270,7 +8530,7 @@ function stepCar(car, dt) {
   }
   for (const pr of props) {
     const b = pr.box, R = 1.3;
-    if (b.max.y - b.min.y < 0.25 || b.min.y > car.y + 1.5) continue;
+    if (pr.loose || b.max.y - b.min.y < 0.25 || b.min.y > car.y + 1.5) continue;   // 置物は押せる（stepLoose）
     const qx = THREE.MathUtils.clamp(car.pos.x, b.min.x, b.max.x), qz = THREE.MathUtils.clamp(car.pos.y, b.min.z, b.max.z);
     const dx = car.pos.x - qx, dz = car.pos.y - qz, d = Math.hypot(dx, dz);
     if (d < R) {
@@ -8288,6 +8548,7 @@ function stepCar(car, dt) {
       if (o.carObj && Math.abs(o.carObj.position.y - car.y) < 2) carCircles(o.carObj.position.x, o.carObj.position.z, o.carObj.rotation.y, ITEM_DEFS.mini.vehicle);
     }
     for (const v of vehicles) if (v !== car && Math.abs(v.y - car.y) < 2) {
+      if (v.item.hf) continue;   // 自動車どうしは形の面で判定（hfBlocked。荷台に乗り上げられる）
       const G = v.item.jet && v.item.jet.hit;
       if (!G) { carCircles(v.pos.x, v.pos.y, v.h, v.item.def.vehicle); continue; }
       if (Math.hypot(v.pos.x - car.pos.x, v.pos.y - car.pos.y) > G.R + 10) continue;
@@ -8304,6 +8565,11 @@ function stepCar(car, dt) {
     }
   }
   if (bumped) hitWall(car);
+  if (mine && hfBlocked(car)) {   // ほかの車の高い所に入る：もどす（もともと重なっていたなら、出られるように見ない）
+    const nx = car.pos.x, nz = car.pos.y, nh = car.h;
+    car.pos.x = old.x; car.pos.y = old.z; car.h = old.h;
+    if (hfBlocked(car)) { car.pos.x = nx; car.pos.y = nz; car.h = nh; } else hitWall(car);
+  }
   if (mine && !hwCarMove(car, old.x, old.z, true)) { car.pos.x = old.x; car.pos.y = old.z; car.h = old.h; hitWall(car); if (AUTO.on) stopAuto(); }   // 高速道路の出入りは IC だけ
   // 地形：急すぎる坂・深い水なら、元の位置に戻して止める
   let pose = carPose(car);
@@ -8318,6 +8584,7 @@ function stepCar(car, dt) {
   car.y += (pose.y - car.y) * k; car.pitch += (pose.pitch - car.pitch) * k; car.roll += (pose.roll - car.roll) * k;
 
   showCar(car);
+  const nb = carBase(car); if (!nb) car.base = null; else setBase(car, nb);   // 乗っている乗り物（いっしょに動く）
   if (!mine && Math.abs(pose.y - car.y) < 0.002 && Math.abs(pose.pitch - car.pitch) < 0.001 && Math.abs(pose.roll - car.roll) < 0.001) car.settled = true;
   for (const w of car.item.wheels) {
     const sp = V.spinTurn && w.side ? car.vF - w.side * yawRate * V.halfWidth : car.vF;   // キャタピラ：曲がる側は遅く、外側は速く
@@ -14544,6 +14811,7 @@ function frame() {
   stepPods(dt);
   stepWrecks(dt);
   for (const v of vehicles) stepVehicle(v, dt);
+  stepCarry(dt);   // 乗り物の上の人・物・車をいっしょに動かす
   stepBuildings(dt);
   stepTown();
   stepPaper();
@@ -16766,7 +17034,7 @@ window.__world = {
   keys, touch, toggleRide, loadItem, ITEM_DEFS, heightAt, player, net, syncPeers,
   addPropFromBuffer, wallet, addPoints, PG, openPachi, touch, insideB: () => insideBld(), setCamYaw: (v) => { camYaw = v; }, bgmState: () => ({ name: bgm.name, vol: +bgm.vol.toFixed(2), playing: !!(bgm.el && !bgm.el.paused), t: bgm.el ? +bgm.el.currentTime.toFixed(1) : 0 }), blds, bldFloor, bldPush, roadNear, nearBldAction, placeAt, get bldSeat() { return bldSeat; }, get dayLight() { return dayLight; },
   HWY, groundAt, deckNear, roadSurf, hwExtra, hwSigns, hwTunnels, hwZone, TOLL, HW_LOTS, stepHwRules, hwDraw, HWT, scene, THREE, get rinfo() { return { calls: renderer.info.render.calls, tris: renderer.info.render.triangles }; },
-  get aboard() { return aboard; }, get ride() { return ride; }, buses, get busRide() { return busRide; }, nearBusDoor, traffic, roadNet, worldHour, setHourOffset(h) { hourOffset = h; },
+  props, get aboard() { return aboard; }, get ride() { return ride; }, buses, get busRide() { return busRide; }, nearBusDoor, traffic, roadNet, worldHour, setHourOffset(h) { hourOffset = h; },
   hullGround, findWaterSpot, rescueBoat, get periscope() { return periscope; }, toggleLight, setPeriscope,
   teleport(x, z, y) { player.pos.set(x, y ?? heightAt(x, z), z); player.vy = 0; },
   torps, tube, ord, booms, get clockT() { return clock.elapsedTime; },
