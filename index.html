@@ -422,6 +422,7 @@ body.jetOn #map { display: none !important; }
 #mpLayer .mpb.on { background: var(--accent); color: #fff; }
 #mpLayer .mpb.dead { opacity: 0.5; }
 #mpLayer .mpb.ready { box-shadow: 0 0 0 3px #ffd84a, 0 0 14px #ffd84a; }
+#mpLayer .mpb.idle { opacity: 0.4; filter: grayscale(1); cursor: default; }
 #mpLayer .mpb.edit { outline: 2px dashed var(--accent); outline-offset: 2px; cursor: grab; }
 #mpLayer .mpx { position: absolute; top: -10px; right: -10px; width: 24px; height: 24px; border-radius: 50%; background: #c8402a; color: #fff; font: 800 15px/24px var(--font-ui); text-align: center; }
 #mpDone { position: fixed; z-index: 4; left: 50%; transform: translateX(-50%); top: calc(56px + env(safe-area-inset-top, 0px)); display: flex; align-items: center; gap: 8px; padding: 6px 6px 6px 12px; background: var(--panel); border: 1px solid var(--line); border-radius: 999px; font: 800 12px var(--font-ui); white-space: nowrap; }
@@ -4870,7 +4871,7 @@ function cpPress(b) {
   } else {
     const ch = cpChain(sel);
     if (ch.length) { for (const L of ch.filter((x) => x.host === ride)) cpRelease(L); showMsg('連結をはずしました'); }
-    else showMsg('連結できる物にさわっていません。連結器やフックを、車や置物に当ててから押してください');
+    // 何にもさわっていない・つないでいない：ボタンは灰色で、押しても何もしない
   }
   cpButtons();
 }
@@ -4880,7 +4881,13 @@ function cpButtons() {
     if (b.t !== 'couple' || !b._btn) continue;
     const sel = cpSel(b), on = cpChain(sel).length > 0;
     b._btn.classList.toggle('on', on);
-    b._btn.classList.toggle('ready', !MPB.edit && cpCandidates(sel).length > 0);
+    const ready = cpCandidates(sel).length > 0;
+    b._btn.classList.toggle('ready', !MPB.edit && ready);
+    // さわっている（つなげる）か、つないでいる（はずせる）ときだけ押せる。それ以外は灰色
+    const idle = !MPB.edit && !ready && !on;
+    b._btn.classList.toggle('idle', idle);
+    b._btn.setAttribute('aria-disabled', String(idle));
+    if (!MPB.edit) b._btn.title = idle ? '連結器・フックが何にもさわっていません（当てると押せるようになります）' : on ? '押すと連結をはずします' : '押すと連結します';
   }
 }
 // presence に入れる：[相手の種類 v/p, 相手の番号, 連結器の番号, 持ち主（-1＝運転している乗り物、0〜＝この表の何番目の相手）, つないだ所 x, y, z, たるみ]
@@ -4994,7 +5001,7 @@ function stepCouple(dt) {
     return keep;
   });
   if (lost && performance.now() > CP.msgAt) { CP.msgAt = performance.now() + 3000; showMsg('降りたので、連結をはずしました'); }
-  if ((CP.tick -= dt) <= 0) { CP.tick = 0.3; if (MPB.v && MPB.list.some((b) => b.t === 'couple')) cpButtons(); }
+  if ((CP.tick -= dt) <= 0) { CP.tick = 0.15; if (MPB.v && MPB.list.some((b) => b.t === 'couple')) cpButtons(); }
 }
 // 車の下の高さ：地面か、ほかの乗り物の面（いまの高さから HF_STEP までなら乗り上げられる。置いた直後は上にのせる）
 function carGround(x, z, cy, car) {
@@ -5705,7 +5712,7 @@ const HELP_MOVE = `<h4>動く部品とボタン</h4>
 <table><tr><th>つなぐ相手</th><th>さわるとは</th></tr>
 <tr><td>ほかの車（止まっている車）</td><td>原点が相手の車の形に入る。相手にも <code>動作</code>=<code>連結</code> の部品があれば、原点どうしが 70cm 以内でそこがつながる</td></tr>
 <tr><td>置物（8m×8m×6m まで）</td><td>原点が置物の形に入る</td></tr></table>
-<p>運転中に ☰ →「🎛️ ボタンを作る」→「連結／解除」で、使う連結器をえらんでボタンを作ります。さわっているとボタンが<b>黄色く光り</b>、押すと連結、もう 1 回押すとはずれます。つないだ所は<b>自在に曲がり</b>（トレーラー・列車のように）、持ち上げると<b>ぶら下がってゆれます</b>。つないだ車の後ろの連結器が次の車にさわっていれば、押すたびに次々につながります。降りると連結ははずれます。</p>`;
+<p>運転中に ☰ →「🎛️ ボタンを作る」→「連結／解除」で、使う連結器をえらんでボタンを作ります。連結器が何にもさわっていないときは、ボタンは<b>灰色で押せません</b>。さわると<b>黄色く光って</b>押せるようになり、押すと連結。連結中はもう 1 回押すとはずれます。フックの上げ下げは、<code>移動・連結</code> の部品を「押している間うごく」ボタンで動かします。つないだ所は<b>自在に曲がり</b>（トレーラー・列車のように）、持ち上げると<b>ぶら下がってゆれます</b>。つないだ車の後ろの連結器が次の車にさわっていれば、押すたびに次々につながります。降りると連結ははずれます。</p>`;
 const HELP_MAIN = `<h4>種類のえらび方</h4><table><tr><th>種類</th><th>いる部品</th></tr>
 <tr><td>建物</td><td>なくてもよい。<code>ドア_1</code>（原点が蝶番）・<code>ライト_1</code>・<code>ガラス</code>・<code>スイッチ</code>・<code>イス_1</code> で使える建物に。壁は 10〜20cm の厚み、階段は 1 段 40cm まで、入口は 80cm×2m 以上。カスタムプロパティ <code>用途</code>=<code>店</code> で明かりがつけっぱなし、ドアの <code>開き方</code>=<code>横</code> で引き戸、<code>閉まる</code>=<code>3</code> で 3 秒で閉まる。</td></tr>
 <tr><td>植物・置物</td><td>形だけでよい。地面に置かれます。</td></tr>
@@ -12260,6 +12267,7 @@ function renderMpButtons() {
     }
     layer.append(btn);
   });
+  if (MPB.list.some((b) => b.t === 'couple')) cpButtons();   // 連結ボタンは、はじめから正しい色で
 }
 // ☰ の中：動く部品かライトのある乗り物を運転しているときだけ
 function renderMpMenu() {
@@ -12302,7 +12310,7 @@ function mpActsUi() {
 function mpInfo() {
   const t = el('mpFn').value;
   const ord = '「○番」は順番：同じ番号はいっしょに動き、前の番号がぜんぶ終わってから次の番号が動く。';
-  el('mpInfo').textContent = t === 'couple' ? '連結器（フック）を車や置物に当てて押すと連結。ボタンが光っているときが、さわっている合図。もう 1 回押すとはずれる。つないだ所は自在に曲がり、持ち上げるとぶら下がってゆれる。連結した車の連結器が次の車にさわっていれば、押すたびに次々つながる（列車）。'
+  el('mpInfo').textContent = t === 'couple' ? '連結器（フック）を車や置物に当てて押すと連結。何にもさわっていないとき、ボタンは灰色で押せない。さわると黄色く光って押せる。連結中はもう 1 回押すとはずれる。つないだ所は自在に曲がり、持ち上げるとぶら下がってゆれる。連結した車の連結器が次の車にさわっていれば、押すたびに次々つながる（列車）。'
     : t === 'toggle' ? '1 回押すと ON：部品は ＋ なら最大、− なら最小まで動き、ライトはつく（1番→2番→…）。もう 1 回で OFF：逆の順（大きい番号から）にはじめの位置にもどり、ライトは消える。' + ord
     : t === 'hold' ? '押している間だけ、選んだ向き（＋／−）に動く。何度押しても同じ向きに動く。＋は Blender の値が増える向き（回転 Z なら上から見て左回り、移動 Z なら上へ）。1番の部品がはし（最大か最小）に着くと 2番が動き出す。' + ord
     : '押すと、選んだ部品がはじめの位置にもどる（大きい番号から順に）。' + ord;
