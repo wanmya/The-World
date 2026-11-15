@@ -1072,6 +1072,9 @@ function rigAutoCar(item, root, model, gltf, def) {
   // 選んだタイヤの数のならべ方（読み込み直すときは、名前から多い順に見つける）
   let lay = null;
   for (const n of def.wheels ? [def.wheels] : [8, 6, 4, 3, 2]) for (const l of LAYOUTS[n] || []) if (!lay && l.every((k) => found[k])) lay = l;
+  // ならべ方に入らないタイヤがあるとき（タイヤ前・タイヤ後1・タイヤ後2 など）は、見つけたタイヤをぜんぶ使う
+  const inModel0 = (o) => { for (let p = o; p; p = p.parent) if (p === model) return true; return false; };
+  if (lay && Object.keys(WHEEL_DEFS).some((k) => found[k] && inModel0(found[k]) && !lay.includes(k) && !lay.some((q) => found[q] === found[k]))) lay = null;
   // 動き方：選んだもの → カスタムプロパティ「操舵」 → タイヤがなくてキャタピラがあればキャタピラ
   const tracks = []; model.traverse((o) => { if (TRACK_RE.test(o.name || '') && !tracks.some((q) => { for (let p = o.parent; p; p = p.parent) if (p === q) return true; return false; })) tracks.push(o); });
   const isTank = def.sub === 'tank' || kindFromText(strOf(model, KIND_KEYS) || extrasOf(gltf)[KIND_KEYS[0]] || def.name) === 'tank';   // 戦車はキャタピラ
@@ -1173,6 +1176,12 @@ function rigAutoCar(item, root, model, gltf, def) {
     if (d && atFront) sf = Math.abs(sf) < Math.abs(d) ? d : sf; else if (d) sr = Math.abs(sr) < Math.abs(d) ? d : sr;
     item.wheels.push({ steer: st, spin, front: !!d, dir: d, sk, side: k.length > 1 && /L$/.test(k) ? 1 : k.length > 1 && /R$/.test(k) ? -1 : 0, r: radius[k] });
   }
+  // 後ろの軸が 2 本以上曲がるとき（前は曲がらない）は、曲がらない軸から遠いほど大きく曲げる（いちばん後ろの軸がハンドルの角度）
+  { const W = item.wheels, fixed = W.filter((q) => !q.dir), rs = W.filter((q) => q.dir && q.steer.position.z < (frontZ + rearZ) / 2);
+    if (fixed.length && rs.length && !W.some((q) => q.dir && q.steer.position.z >= (frontZ + rearZ) / 2)) {
+      const pz = fixed.reduce((a, q) => a + q.steer.position.z, 0) / fixed.length, far = Math.max(...rs.map((q) => pz - q.steer.position.z));
+      if (far > 0.3) for (const q of rs) q.sk = Math.max(0.05, (pz - q.steer.position.z) / far);
+    } }
   if (!lay.length) { sf = ST.f; sr = ST.r; }   // タイヤがない車は、動き方どおりに曲がる
   if (steer === 'track') { sf = 0; sr = 0; }
   // キャタピラの模様を走った分だけ流す（UV のどちらが前後かは形から調べる）
@@ -5386,7 +5395,7 @@ const HELP_STEER = `<h4>自動車の区分</h4><p>区分は <b>🚗 自動車・
 <tr><td><code>する</code></td><td>曲がる（後ろのタイヤにつけると、前と逆向きに切れて小回り）</td></tr>
 <tr><td><code>しない</code></td><td>曲がらない</td></tr>
 <tr><td><code>同じ</code></td><td>前と同じ向きに切れる（かに歩き）</td></tr></table>
-例：フォークリフト（後輪操舵）は <code>タイヤ前</code> に <code>操舵</code>=<code>しない</code>、<code>タイヤ後</code> に <code>操舵</code>=<code>する</code>。後ろが曲がる車は、おしりがふられます。</li>
+例：フォークリフト（後輪操舵）は <code>タイヤ前</code> に <code>操舵</code>=<code>しない</code>、<code>タイヤ後</code> に <code>操舵</code>=<code>する</code>。後ろの軸が 2 本なら <code>タイヤ後1</code> <code>タイヤ後2</code>（両方に <code>する</code> をつけると、後ろの軸ほど大きく切れる）。後ろが曲がる車は、おしりがふられます。</li>
 <li>🏍️ バイクは <code>タイヤ前</code> <code>タイヤ後</code> を 1 本ずつ（左右に分けない）。</li>
 <li>🛡️ キャタピラは、部品の名前を <code>キャタピラ</code>（左右まとめて）か <code>キャタピラ右</code> <code>キャタピラ左</code>。止まったままその場で回れます。模様（テクスチャ）が走った分だけ流れます。ボディに <code>種類</code>=<code>戦車</code> でもキャタピラになります。</li></ul>
 <h4>乗る・積む・持ち上げる</h4><ul>
@@ -8597,7 +8606,7 @@ function stepCar(car, dt) {
     const sp = V.spinTurn && w.side ? car.vF - w.side * yawRate * V.halfWidth : car.vF;   // キャタピラ：曲がる側は遅く、外側は速く
     w.spin.rotation.x += (sp / (w.r || V.wheelRadius)) * dt;
     const d = w.dir ?? (w.front ? 1 : 0);
-    if (d) w.steer.rotation.y = w.sk && w.sk !== 1 ? Math.atan(w.sk * Math.tan(car.steer)) : d * car.steer;
+    if (d) w.steer.rotation.y = w.sk && w.sk !== 1 ? d * Math.atan(w.sk * Math.tan(car.steer)) : d * car.steer;
   }
   if (V.treads) for (const T of V.treads) {   // キャタピラの模様を流す
     const sp = T.side ? car.vF - T.side * yawRate * V.halfWidth : car.vF, dv = sp * dt * T.slope;
