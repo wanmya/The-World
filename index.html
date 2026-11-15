@@ -1247,7 +1247,9 @@ const MP_AXV = { X: [1, 0, 0], Y: [0, 0, -1], Z: [0, 1, 0] };   // Blender の�
 const mpHalf = (s) => String(s).replace(/[！-～]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0xfee0)).replace(/[−－ー―‐]/g, '-');
 const mpKey = (k) => mpHalf(k).replace(/[\s_\-()（）・:：［］\[\]]/g, '').toUpperCase();
 const mpNum = (v) => { if (typeof v === 'number') return Number.isFinite(v) ? v : null; if (typeof v !== 'string') return null; const n = parseFloat(mpHalf(v).replace(/[^0-9.+\-eE]/g, ' ').trim()); return Number.isFinite(n) ? n : null; };
-const MP_NAMES = { kind: ['動作', '動き', 'MOTION', 'ACTION'], axis: ['軸', '回転軸', 'AXIS'], min: ['最小', '最小値', '最小角度', 'MIN'], max: ['最大', '最大値', '最大角度', 'MAX'], init: ['初期', '初期値', '初期角度', 'デフォルト', 'DEFAULT', 'INIT'], speed: ['速さ', '速度', 'スピード', 'SPEED'] };
+const MP_NAMES = { kind: ['動作', '動き', 'MOTION', 'ACTION'], axis: ['軸', '回転軸', 'AXIS'], min: ['最小', '最小値', '最小角度', 'MIN'], max: ['最大', '最大値', '最大角度', 'MAX'], init: ['初期', '初期値', '初期角度', 'デフォルト', 'DEFAULT', 'INIT'], speed: ['速さ', '速度', 'スピード', 'SPEED'], hang: ['ぶら下がり', 'ぶらさがり', 'ぶら下げ', 'つり下げ', '吊り下げ', 'HANG'] };
+// ぶら下がり=する：親の位置にはついていくが、向きはいつも重力の真下（親がかたむいても、移動 Z は真上・真下＝ワイヤーの長さ）。ゆれる
+const mpYes = (v) => v === true || v === 1 || (typeof v === 'string' && /^(する|はい|有|あり|on|yes|true|1)$/i.test(mpHalf(v).trim()));
 // 部品のカスタムプロパティ（オブジェクト → 同じ部品のメッシュ → マテリアル）を、キーの書き方をそろえて集める
 function mpPropsOf(o) {
   const out = {}, take = (u) => { if (u) for (const k in u) { const v = u[k]; if (v == null || typeof v === 'object' || typeof v === 'function') continue; const kk = mpKey(k); if (out[kk] == null) out[kk] = v; } };
@@ -1259,11 +1261,13 @@ const mpGet = (P, names, ax) => { for (const n of names) { const k = mpKey(n); f
 function rigMoveParts(item, modelOf) {
   const parts = [], cps = [];
   item.root.traverse((o) => {
-    const P = mpPropsOf(o), kv = mpGet(P, MP_NAMES.kind);
-    if (kv == null) return;
+    const P = mpPropsOf(o), kv = mpGet(P, MP_NAMES.kind), hang = mpYes(mpGet(P, MP_NAMES.hang));
+    if (kv == null && !hang) return;
+    if (kv == null) { if (!parts.some((q) => q.o === o)) parts.push({ o, type: 'none', hang, name: String(o.name || '部品').slice(0, 24), axes: [] }); return; }
     if (CP_RE.test(String(kv)) && !cps.some((c) => c.o === o)) cps.push({ o, name: String(o.name || '連結器').replace(/(·[−+][xz])+$/, '').replace(/\.\d+$/, '').slice(0, 24) });
     const t = MP_TYPES.find(([, re]) => re.test(String(kv).replace(CP_RE, '')));
-    if (!t || parts.some((q) => q.o === o)) return;
+    if (parts.some((q) => q.o === o)) return;
+    if (!t) { if (hang) parts.push({ o, type: 'none', hang, name: String(o.name || '部品').slice(0, 24), axes: [] }); return; }
     const type = t[0];
     let letters = [...new Set((mpHalf(mpGet(P, MP_NAMES.axis) || 'Z').toUpperCase().match(/[XYZ]/g) || ['Z']))].slice(0, 3);
     const axes = letters.map((ax) => {
@@ -1278,7 +1282,7 @@ function rigMoveParts(item, modelOf) {
       if (!free) val = THREE.MathUtils.clamp(val, min, max);
       return { ax, vec: new THREE.Vector3(...MP_AXV[ax]), min, max, free, speed, val, init: val, goal: null };
     });
-    parts.push({ o, type, name: String(o.name || '部品').replace(/(·[−+][xz])+$/, '').replace(/\.\d+$/, '').slice(0, 24), axes });
+    parts.push({ o, type, hang, name: String(o.name || '部品').replace(/(·[−+][xz])+$/, '').replace(/\.\d+$/, '').slice(0, 24), axes });
   });
   if (!parts.length && !cps.length) return null;
   // 動く部品は「軸の箱」（縮尺なしの Group）に入れて、箱のほうを回す・すべらせる。
@@ -1305,7 +1309,8 @@ function rigMoveParts(item, modelOf) {
   const chans = [];
   for (const p of parts) for (const a of p.axes) { a.part = p; a.key = `${p.name}|${a.ax}`; chans.push(a); }
   for (const c of cps) c.key = 'cp|' + c.name;
-  const M = { parts, chans, cps, dirty: true };
+  const M = { parts, chans, cps, hang: parts.filter((p) => p.hang), dirty: true };
+  for (const p of M.hang) p.sw = { x: 0, z: 0, vx: 0, vz: 0, pP: null, pV: new THREE.Vector3(), acc: new THREE.Vector3() };
   mpApply(M);
   return M;
 }
@@ -1321,6 +1326,37 @@ function mpApply(M) {
   }
   M.dirty = false;
 }
+// ぶら下がる部品：毎コマ、親（の箱）の向きのかたむきを打ち消して、真下を向ける。つった所（書き出した位置）を中心に振り子のようにゆれる
+const _hQ = new THREE.Quaternion(), _hT = new THREE.Quaternion(), _hS = new THREE.Quaternion(), _hQx = new THREE.Quaternion(), _hP = new THREE.Vector3(), _hW = new THREE.Vector3(), _hV = new THREE.Vector3(), _hSc = new THREE.Vector3(), _hU = new THREE.Vector3();
+const H_UP = new THREE.Vector3(0, 1, 0), H_X = new THREE.Vector3(1, 0, 0), H_Z = new THREE.Vector3(0, 0, 1);
+function mpHang(M, dt) {
+  for (const p of M.hang) {
+    const g = p.pv, host = g.parent;
+    if (!host) continue;
+    host.updateWorldMatrix(true, false);
+    host.matrixWorld.decompose(_hP, _hQ, _hSc);
+    _hT.setFromUnitVectors(_hU.copy(H_UP).applyQuaternion(_hQ), H_UP);   // 親のかたむきを打ち消す
+    const top = host.localToWorld(_hW.copy(p.p0));   // つった所（ワイヤーの上のはし）
+    // ゆれ：つった所の加速度で、振り子が動く
+    const S = p.sw, h = Math.min(Math.max(dt, 1e-3), 0.05);
+    if (S.pP) { const v = _hV.copy(top).sub(S.pP).divideScalar(h); S.acc.lerp(v.clone().sub(S.pV).divideScalar(h).clampLength(0, 30), 0.3); S.pV.copy(v); S.pP.copy(top); }
+    else S.pP = top.clone();
+    let down = 0;
+    for (const a of p.axes) if (p.type === 'move') down += Math.abs(a.val);
+    const L = Math.max(0.5, down + 0.3), n = Math.ceil(h / 0.01), k = h / n;
+    for (let i = 0; i < n; i++) {
+      S.vx += (-(9.8 / L) * Math.sin(S.x) - (S.acc.x / L) * Math.cos(S.x) - 1.5 * S.vx) * k; S.x = THREE.MathUtils.clamp(S.x + S.vx * k, -1, 1);
+      S.vz += (-(9.8 / L) * Math.sin(S.z) - (S.acc.z / L) * Math.cos(S.z) - 1.5 * S.vz) * k; S.z = THREE.MathUtils.clamp(S.z + S.vz * k, -1, 1);
+    }
+    _hS.setFromAxisAngle(H_Z, S.x).multiply(_hQx.setFromAxisAngle(H_X, -S.z)).multiply(_hT).multiply(_hQ);   // 世界の向き（回転の前）
+    const pos = top;
+    for (const a of p.axes) if (p.type === 'move') pos.addScaledVector(_hV.copy(a.vec).applyQuaternion(_hS), a.val);
+    g.position.copy(host.worldToLocal(pos));
+    for (const a of p.axes) if (p.type === 'rot') _hS.multiply(_mpQ.setFromAxisAngle(a.vec, a.val * Math.PI / 180));
+    g.quaternion.copy(_hQ.invert().multiply(_hS));
+  }
+}
+function stepHangParts(dt) { for (const v of vehicles) { const M = v.item.moves; if (M && M.hang && M.hang.length && !v.sunk) mpHang(M, dt); } }
 // ボタンの機能（ゲームに登録された機能）。あとで足せるように表にしておく
 //   toggle：押すたびに ON／OFF（ON で部品は 最大か最小 へ、ライトはつく。OFF ではじめの位置へ、ライトは消える）
 //   hold：押している間だけ、選んだ向きに動く（何度押しても同じ向き）  home：はじめの位置にもどす
@@ -5820,7 +5856,8 @@ const HELP_MOVE = `<h4>動く部品とボタン</h4>
 <tr><td><code>動作</code></td><td><code>回転</code> か <code>移動</code>（文字列）</td></tr>
 <tr><td><code>軸</code></td><td><code>X</code> <code>Y</code> <code>Z</code>（Blender の軸）。2 つ以上なら <code>ZX</code> のように続けて書く</td></tr>
 <tr><td><code>最小</code> <code>最大</code></td><td>回転は度、移動は m。回転で両方ないと、ぐるぐる回る</td></tr>
-<tr><td><code>初期</code> <code>速さ</code></td><td>はじめの値（なければ 0）・1 秒に動く量（なければ 30° か 0.5m）</td></tr></table>
+<tr><td><code>初期</code> <code>速さ</code></td><td>はじめの値（なければ 0）・1 秒に動く量（なければ 30° か 0.5m）</td></tr>
+<tr><td><code>ぶら下がり</code></td><td><code>する</code>：親についていくが、向きは<b>いつも真下</b>（重力）。親がかたむいても、移動 <code>Z</code> は真上・真下に動く（ワイヤーの長さ）。動くと振り子のようにゆれる。クレーンのフック・ちょうちん・つり下げ看板などに。<code>動作</code> がなくても使える</td></tr></table>
 <p>＋の向きは Blender で値を増やした向き（Z は上から見て左回り、X は前が下がる、移動 Z は上）。</p>
 <p><b>ボタン</b>は .glb に入れません。運転中に ☰ →「🎛️ ボタンを作る」で作り、ドラッグで好きな所に置きます。</p>
 <table><tr><th>ボタンの種類</th><th>動き</th></tr>
@@ -15337,6 +15374,7 @@ function frame() {
   stepPods(dt);
   stepWrecks(dt);
   for (const v of vehicles) stepVehicle(v, dt);
+  stepHangParts(dt);   // ぶら下がる部品（フック）を真下へ
   stepCarry(dt);   // 乗り物の上の人・物・車をいっしょに動かす
   stepCouple(dt);   // 連結した車・置物を引っぱる・つり上げる
   stepBuildings(dt);
