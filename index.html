@@ -97,6 +97,13 @@ body.mapOn #msg { top: max(145px, 30vh); }
 #stopInfo { position: fixed; z-index: 4; left: 50%; transform: translateX(-50%); top: calc(64px + env(safe-area-inset-top, 0px)); max-width: min(92vw, 420px); padding: 8px 12px; border-radius: 12px; background: var(--panel); border: 1px solid var(--line); color: var(--ink); font: 500 12px/1.5 var(--font-ui); pointer-events: none; }
 #stopInfo b { font-weight: 800; }
 #stopInfo .dep { color: #c8402a; font-weight: 800; }
+/* ▾ でしまえる。しまうと「🚏 バス停の名前 ▴」だけの小さな札になる */
+#stopInfo { display: flex; align-items: flex-start; gap: 8px; }
+#stopInfo[hidden] { display: none; }
+#stopInfoTxt { flex: 1; min-width: 0; }
+#stopInfoMin { pointer-events: auto; flex: none; margin: -4px -6px -4px 0; padding: 4px 10px; font: 800 13px/1.2 var(--font-ui); color: var(--ink); background: #fff; border: 1px solid var(--line); border-radius: 999px; cursor: pointer; }
+#stopInfo.min { pointer-events: auto; cursor: pointer; padding: 5px 10px; align-items: center; }
+#stopInfo.min #stopInfoMin { margin: -2px -4px -2px 0; padding: 2px 8px; }
 #routeBtn { position: fixed; z-index: 4; left: 50%; transform: translateX(-50%); top: calc(20px + env(safe-area-inset-top, 0px)); }
 #wmap { position: fixed; z-index: 8; inset: max(12px, env(safe-area-inset-top, 0px)) max(12px, env(safe-area-inset-right, 0px)) max(12px, env(safe-area-inset-bottom, 0px)) max(12px, env(safe-area-inset-left, 0px));
   display: flex; flex-direction: column; gap: 6px; padding: 8px; background: rgba(255,255,255,.94); border: 1px solid var(--line); border-radius: 14px; box-sizing: border-box; }
@@ -562,7 +569,7 @@ body.jetOn #map { display: none !important; }
   <button type="button" class="apToggle" id="apMax" hidden aria-label="操作ボタンを出す">▴ 操作</button>
 </div>
 <button class="pill" id="routeBtn" type="button" hidden>🚏 路線図</button>
-<div id="stopInfo" hidden aria-live="polite"></div>
+<div id="stopInfo" hidden><div id="stopInfoTxt" aria-live="polite"></div><button type="button" id="stopInfoMin" aria-label="バスの時刻をしまう" title="しまう">▾</button></div>
 <div id="wmap" hidden role="dialog" aria-modal="true" aria-label="地図">
   <div class="wbar">
     <button type="button" data-wm="all">全体</button><button type="button" data-wm="near">近く</button><button type="button" data-wm="routes">路線図</button>
@@ -16328,6 +16335,21 @@ setInterval(() => { try { const me = myPose(), p = placeAt(me.x, me.z), t = p.ci
 function closeWmap() { WMAP.open = false; wmapEl.hidden = true; WMAP.pick = null; WMAP.fly = null; el('wmapGoBox').hidden = true; el('wmapGo').hidden = false; el('wmapFly').hidden = true; cv.focus(); }
 // バス停の近くでは、止まっているバスの発車時刻と、次に来るバスを出す
 let stopInfoT = 0;
+let stopInfoMin = localStorage.getItem('world.stopInfoMin') === '1';
+function stopInfoShow(full, short) {
+  const box = el('stopInfo');
+  box.classList.toggle('min', stopInfoMin);
+  el('stopInfoTxt').innerHTML = stopInfoMin ? short : full;
+  el('stopInfoMin').textContent = stopInfoMin ? '▴' : '▾';
+  el('stopInfoMin').setAttribute('aria-label', stopInfoMin ? 'バスの時刻を出す' : 'バスの時刻をしまう');
+  if (box.hidden) box.hidden = false;
+}
+function setStopInfoMin(on) {
+  stopInfoMin = on; try { localStorage.setItem('world.stopInfoMin', on ? '1' : '0'); } catch (e) {}
+  stopInfoT = 0; stepStopInfo(0);
+}
+el('stopInfoMin').addEventListener('click', (e) => { e.stopPropagation(); setStopInfoMin(!stopInfoMin); });
+el('stopInfo').addEventListener('click', () => { if (stopInfoMin) setStopInfoMin(false); });
 const hhmmss = (sec) => { const d = new Date(sec * 1000); return [d.getHours(), d.getMinutes(), d.getSeconds()].map((n) => String(n).padStart(2, '0')).join(':'); };
 function busRecIndex(v, now) { return (((now - v.phase - (v.lag || 0)) % T_ALL) + T_ALL) % T_ALL / REC_DT; }
 function stepStopInfo(dt) {
@@ -16337,8 +16359,8 @@ function stepStopInfo(dt) {
   const box = el('stopInfo');
   if (hkTrip && !busRide) {   // PA で休憩中：HAKATA の発車時刻
     const w = Math.max(0, Math.ceil(hkTrip.dep - Date.now() / 1000));
-    box.innerHTML = `🚌 <b>高速バス HAKATA</b>　${hkTrip.name}で休憩中<br><span class="dep">${gameHM(hkTrip.dep)} 発車</span>（あと ${w >= 60 ? Math.round(w / 60) + ' 分' : w + ' 秒'}）`;
-    if (box.hidden) box.hidden = false;
+    const left = w >= 60 ? Math.round(w / 60) + ' 分' : w + ' 秒';
+    stopInfoShow(`🚌 <b>高速バス HAKATA</b>　${hkTrip.name}で休憩中<br><span class="dep">${gameHM(hkTrip.dep)} 発車</span>（あと ${left}）`, `🚌 <span class="dep">あと ${left}</span>`);
     return;
   }
   let st = null, bd = 40;
@@ -16379,8 +16401,7 @@ function stepStopInfo(dt) {
     if (a.name === st.name) lines.push(`<b>高速バス HAKATA ${z.short}行き</b>　<span class="dep">${gameHM(a.dep)} 発</span>（${until(a.dep)}）`);
     if (z.name === st.name) lines.push(`高速バス HAKATA ${a.short}から　${gameHM(z.arr)} 着（${v.stopName === st.name ? '着いています' : until(z.arr)}）`);
   }
-  box.innerHTML = `🚏 <b>${st.name}</b><br>` + (lines.length ? lines.join('<br>') : 'このあと 1 時間、バスは来ません');
-  if (box.hidden) box.hidden = false;
+  stopInfoShow(`🚏 <b>${st.name}</b><br>` + (lines.length ? lines.join('<br>') : 'このあと 1 時間、バスは来ません'), `🚏 <b>${st.name}</b>`);
 }
 let wmapTick = 0;
 function stepWmap(dt) {
