@@ -450,6 +450,13 @@ body.jetOn #map { display: none !important; }
 #mpDlg .pcancel, #mpDlg .pok { font: 800 13px var(--font-ui); border-radius: 999px; padding: 8px 16px; cursor: pointer; }
 #mpDlg .pcancel { color: var(--ink); background: transparent; border: 1px solid var(--line); }
 #mpDlg .pok { color: #fff; background: var(--go); border: 0; }
+#specDlg { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); width: min(340px, calc(100vw - 32px)); max-height: calc(100% - 32px); overflow-y: auto; box-sizing: border-box; display: grid; gap: 8px; padding: 14px 16px; background: #fff; color: var(--ink); border: 1px solid var(--line); border-radius: 16px; box-shadow: 0 12px 40px rgba(22, 50, 79, 0.25); z-index: 7; font: 500 14px var(--font-ui); }
+#specDlg .ptitle { margin: 0; font-weight: 800; font-size: 16px; }
+#specDlg table { border-collapse: collapse; width: 100%; }
+#specDlg th { text-align: left; font-weight: 800; padding: 4px 8px 4px 0; white-space: nowrap; color: var(--ink-dim); }
+#specDlg td { padding: 4px 0; }
+#specDlg .mpnote { margin: 0; font-size: 12px; line-height: 1.5; color: var(--ink-dim); }
+#specDlg button { justify-self: end; font: 800 13px var(--font-ui); border-radius: 999px; padding: 8px 16px; color: #fff; background: var(--go); border: 0; cursor: pointer; }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
 </style>
 </head>
@@ -537,6 +544,13 @@ body.jetOn #map { display: none !important; }
     <div class="mgrid">
       <button class="mi" type="button" id="mpNewBtn">🎛️ ボタンを作る</button>
       <button class="mi" type="button" id="mpEditBtn" aria-pressed="false">✋ 並べかえ・消す</button>
+    </div>
+  </div>
+  <div id="vxMenu" hidden>
+    <p class="mh">乗り物</p>
+    <div class="mgrid">
+      <button class="mi" type="button" id="mGear" title="G キー" hidden>ギアを上げる</button>
+      <button class="mi" type="button" id="mSpec">📋 スペック</button>
     </div>
   </div>
   <button class="mi mine" id="myBtn" type="button" aria-expanded="false" aria-controls="myList">自分が出した物<span id="myCount"></span><i aria-hidden="true">▸</i></button>
@@ -689,6 +703,12 @@ body.jetOn #map { display: none !important; }
   <div class="pfoot"><button type="button" class="pcancel" id="mpCancel">やめる</button><button type="button" class="pok" id="mpOk">作る</button></div>
 </div>
 
+<div id="specDlg" role="dialog" aria-modal="true" aria-labelledby="specT" hidden>
+  <p class="ptitle" id="specT">スペック</p>
+  <div id="specBody"></div>
+  <button type="button" id="specClose">閉じる</button>
+</div>
+
 <div id="hello" hidden><form id="helloForm" autocomplete="off">
   <p>なまえを入れてね</p>
   <input id="helloName" type="text" maxlength="12" placeholder="12文字まで" aria-label="なまえ" required>
@@ -780,8 +800,10 @@ async function loadItem(def) {
   if (def.rig) RIGS[def.rig](item, root, model, gltf, def);
 
   // 動く部品（カスタムプロパティ 動作=回転 など）。乗り物だけ（ボタンで動かす）
+  prepBundle(item, root, model, def);   // 2026-11-16：中に入れる（ドアに動作）・当たり判定の形
   if (def.kind === 'vehicle') item.moves = rigMoveParts(item, model);
-  if (def.rig === 'car' || def.rig === 'ship') item.hf = buildCarHf(item);   // 上に乗れる面の地図（船の甲板にも、車や置物をのせられる）
+  rigBundle(item, root, model, def);   // エフェクト・発射・イス・ローター・ギア
+  if (def.rig === 'car' || def.rig === 'ship' || (def.rig === 'plane' && !item.jet)) item.hf = buildCarHf(item);   // 上に乗れる面の地図（船の甲板にも、車や置物をのせられる）
 
   // 持ち込みの置物：地面に置いて、真ん中をそろえる
   if (def.kind === 'prop') {
@@ -1214,6 +1236,7 @@ function rigAutoCar(item, root, model, gltf, def) {
     exit: [-(halfWidth + 0.6), centerZ],
   };
   item.size = size;
+  rigSpec(item, root, { tank: 'tank', heavy: 'heavy', mixer: 'heavy', truck: 'truck', dump: 'truck', tanker: 'truck', bus: 'bus', tractor: 'farm', combine: 'farm', bike: 'bike' }[kind] || 'car', size);   // 2026-11-16：重量・出力・最大積載
   item.lamps = rigCarLamps(root, model);
   item.work = rigCarWork(root, model, kind, { bed, bedBox, drums, topParts });
 }
@@ -1367,6 +1390,823 @@ function mpHang(M, dt) {
     g.quaternion.copy(_hQ.invert().multiply(_hS));
   }
 }
+/* ================= まとめ更新（2026-11-16）：エフェクト・発射／切り離し・中に入れる・航空機の種類・ローター・ギア・スペックと重さ =================
+   .glb はデータだけ（部品の名前とカスタムプロパティ）。動き・見た目・計算はぜんぶワールドのほう。プレイヤーのコードは動かさない。
+   どれも書かなければ自動。カスタムプロパティは「上書き」だけ。 */
+const XP = {
+  fx: ['エフェクト', '効果', 'EFFECT', 'FX'], col: ['色', 'カラー', 'COLOR'], size: ['大きさ', 'サイズ', 'SIZE', 'SCALE'],
+  dir: ['向き', '方向', 'DIRECTION', 'DIR'], when: ['いつ', '発生', '出るとき', 'WHEN'],
+  ammo: ['弾数', 'AMMO'], every: ['間隔', 'INTERVAL'], wt: ['重さ', '重量', 'WEIGHT', 'MASS'],
+  onHit: ['当たると', 'あたると', 'ONHIT'], onTime: ['時間で', 'じかんで', 'ONTIME'], time: ['時間', '秒', 'TIME'], onGround: ['地面で', 'ONGROUND'], grav: ['重力', 'GRAVITY'],
+  inside: ['中に入れる', '中に入る', 'INSIDE', 'HOLLOW'], kind: ['種類', 'TYPE', 'KIND'], tilt: ['傾き', 'かたむき', 'TILT'], spin: ['回転', 'SPIN'],
+  stow: ['格納', 'RETRACT'], stowAng: ['格納角度', 'RETRACTANGLE'], order: ['順番', 'ORDER'], openAng: ['開く角度', 'OPENANGLE'], stay: ['開いたまま', 'STAYOPEN'], open: ['開き方', 'OPEN'],
+  power: ['出力', '馬力', 'POWER'], brake: ['ブレーキ', 'BRAKE'], vto: ['離陸速度', 'TAKEOFFSPEED'], climb: ['上昇力', 'CLIMB'], turnP: ['旋回力', 'TURNRATE'],
+  vclimb: ['上昇速度', 'CLIMBRATE'], hover: ['ホバリング', 'HOVER'], maxLoad: ['最大積載', '積載量', '最大積載量', 'MAXLOAD'], vmax: ['最高速度', 'MAXSPEEDKMH', 'MAXSPEED', 'TOPSPEED'],
+};
+const mpNo = (v) => v === false || v === 0 || (typeof v === 'string' && /^(なし|無し|しない|いいえ|無|off|no|false|0|none)$/i.test(mpHalf(v).trim()));
+// 乗り物ぜんたいのカスタムプロパティ：ボディ（機体・胴体・車体）を先に、なければどの部品でも
+const BODY_RE = /^(ボディ|車体|機体|胴体|船体|body|fuselage|hull)/i;
+function bodyProp(root, names) {
+  let body = null, v = null;
+  root.traverse((o) => { if (!body && BODY_RE.test(o.name || '')) body = o; });
+  if (body) { v = mpGet(mpPropsOf(body), names); if (v != null) return v; }
+  root.traverse((o) => { if (v == null) v = mpGet(mpPropsOf(o), names); });
+  return v;
+}
+const xNum = (root, names) => mpNum(bodyProp(root, names));
+
+/* ---------------- エフェクト（つぶつぶ＝パーティクル） ----------------
+   部品に エフェクト=爆発（炎・煙・蒸気・排気・放水・水しぶき・泡・火花・ビーム・キラキラ・花火・砂ぼこり・紙吹雪・軌跡）。
+   原点から出る。向き＝上・下・前・後・左・右（書き出した形での向き。部品が回れば、いっしょに回る）。色・大きさ（1 がふつう）。
+   いつ＝いつも・ボタン・運転中・走ると。乗り物は、ふだんボタン（☰ のボタンで出す）。置物・建物は いつも。 */
+const FX_TYPES = {
+  boom: { n: '爆発', re: /爆発|explo|boom/i, shot: true, dir: 'up' },
+  fire: { n: '炎', re: /炎|火(?!花)|fire|flame/i, dir: 'up' },
+  smoke: { n: '煙', re: /煙|けむり|smoke/i, dir: 'up' },
+  steam: { n: '蒸気', re: /蒸気|湯気|steam|vapor/i, dir: 'up' },
+  exhaust: { n: '排気', re: /排気|排ガス|exhaust/i, dir: 'back', when: 'drive' },
+  water: { n: '放水', re: /放水|水鉄砲|water(?!.?splash)|hose/i, dir: 'fwd' },
+  splash: { n: '水しぶき', re: /しぶき|飛沫|splash|spray/i, dir: 'up' },
+  bubble: { n: '泡', re: /泡|あわ|bubble/i, dir: 'up' },
+  spark: { n: '火花', re: /火花|spark/i, dir: 'up' },
+  beam: { n: 'ビーム', re: /ビーム|レーザー|光線|beam|laser/i, dir: 'fwd' },
+  twinkle: { n: 'キラキラ', re: /キラキラ|きらきら|twinkle|sparkle|glitter/i, dir: 'up' },
+  works: { n: '花火', re: /花火|firework/i, shot: true, dir: 'up' },
+  dust: { n: '砂ぼこり', re: /砂ぼこり|砂埃|土煙|dust/i, dir: 'up', when: 'move' },
+  confetti: { n: '紙吹雪', re: /紙吹雪|confetti/i, dir: 'up' },
+  trail: { n: '軌跡', re: /軌跡|航跡|trail/i, dir: 'back', when: 'move' },
+};
+const FX_ORDER = ['confetti', 'twinkle', 'exhaust', 'splash', 'bubble', 'spark', 'works', 'steam', 'smoke', 'water', 'trail', 'beam', 'dust', 'boom', 'fire'];   // 「火花」を「炎」より先に見る
+const FX_DIR = { up: [0, 1, 0], down: [0, -1, 0], fwd: [0, 0, 1], back: [0, 0, -1], left: [1, 0, 0], right: [-1, 0, 0] };
+function fxDirOf(s, dflt) {
+  const t = s == null ? '' : mpHalf(String(s)).trim();
+  if (/^上|up/i.test(t)) return FX_DIR.up; if (/^下|down/i.test(t)) return FX_DIR.down;
+  if (/^前|fwd|front|forward/i.test(t)) return FX_DIR.fwd; if (/^後|うしろ|back|rear/i.test(t)) return FX_DIR.back;
+  if (/^左|left/i.test(t)) return FX_DIR.left; if (/^右|right/i.test(t)) return FX_DIR.right;
+  const m = /^([+-])?([XYZ])$/i.exec(t);
+  if (m) { const v = MP_AXV[m[2].toUpperCase()]; return v.map((x) => x * (m[1] === '-' ? -1 : 1)); }
+  return FX_DIR[dflt] || FX_DIR.up;
+}
+const fxWhen = (s, dflt) => { const t = s == null ? '' : String(s); return /いつも|常|always/i.test(t) ? 'always' : /ボタン|button/i.test(t) ? 'button' : /運転|エンジン|drive|engine/i.test(t) ? 'drive' : /走|動く|移動|move|run/i.test(t) ? 'move' : dflt; };
+function fxColor(s) {
+  if (s == null) return null;
+  const c = patColor(s); if (c != null) return new THREE.Color(c);
+  try { return new THREE.Color(String(s).trim()); } catch (e) { return null; }
+}
+// つぶの入れ物（足し算で光るもの・ふつうのもの）。リングバッファで古いものから使い回す
+function fxPool(additive) {
+  const N = coarse ? 2500 : 5000;
+  const g = new THREE.BufferGeometry();
+  const P = { N, i: 0, pos: new Float32Array(N * 3), vel: new Float32Array(N * 3), col: new Float32Array(N * 3), sz: new Float32Array(N), al: new Float32Array(N),
+    s0: new Float32Array(N), gr: new Float32Array(N), a0: new Float32Array(N), age: new Float32Array(N), life: new Float32Array(N), gv: new Float32Array(N), dr: new Float32Array(N), live: 0 };
+  P.life.fill(0); P.age.fill(1);
+  g.setAttribute('position', new THREE.BufferAttribute(P.pos, 3).setUsage(THREE.DynamicDrawUsage));
+  g.setAttribute('aCol', new THREE.BufferAttribute(P.col, 3).setUsage(THREE.DynamicDrawUsage));
+  g.setAttribute('aSize', new THREE.BufferAttribute(P.sz, 1).setUsage(THREE.DynamicDrawUsage));
+  g.setAttribute('aAlpha', new THREE.BufferAttribute(P.al, 1).setUsage(THREE.DynamicDrawUsage));
+  const m = new THREE.ShaderMaterial({
+    uniforms: { uScale: { value: 600 } }, transparent: true, depthWrite: false, blending: additive ? THREE.AdditiveBlending : THREE.NormalBlending,
+    vertexShader: 'attribute vec3 aCol; attribute float aSize; attribute float aAlpha; uniform float uScale; varying vec3 vC; varying float vA;\nvoid main(){ vec4 mv = modelViewMatrix * vec4(position, 1.0); gl_PointSize = aSize * uScale / max(0.2, -mv.z); gl_Position = projectionMatrix * mv; vC = aCol; vA = aAlpha; }',
+    fragmentShader: 'varying vec3 vC; varying float vA;\nvoid main(){ vec2 d = gl_PointCoord - 0.5; float r = length(d) * 2.0; if (r > 1.0 || vA < 0.003) discard; gl_FragColor = vec4(vC, vA * (1.0 - r * r)); }',
+  });
+  const pts = new THREE.Points(g, m); pts.frustumCulled = false; pts.renderOrder = additive ? 6 : 5;
+  scene.add(pts);
+  P.g = g; P.m = m; P.pts = pts;
+  return P;
+}
+const FXP = { add: null, norm: null };
+function fxEmit(add, x, y, z, vx, vy, vz, r, gg, b, size, grow, life, alpha, grav, drag) {
+  const P = add ? (FXP.add || (FXP.add = fxPool(true))) : (FXP.norm || (FXP.norm = fxPool(false)));
+  const i = P.i; P.i = (P.i + 1) % P.N;
+  P.pos[i * 3] = x; P.pos[i * 3 + 1] = y; P.pos[i * 3 + 2] = z;
+  P.vel[i * 3] = vx; P.vel[i * 3 + 1] = vy; P.vel[i * 3 + 2] = vz;
+  P.col[i * 3] = r; P.col[i * 3 + 1] = gg; P.col[i * 3 + 2] = b;
+  P.s0[i] = size; P.gr[i] = grow; P.life[i] = life; P.age[i] = 0; P.a0[i] = alpha; P.gv[i] = grav; P.dr[i] = drag;
+  P.live = Math.max(P.live, 1);
+}
+function stepFxPool(P, dt) {
+  if (!P || !P.live) return;
+  let any = 0;
+  for (let i = 0; i < P.N; i++) {
+    if (P.age[i] >= P.life[i]) { if (P.al[i] !== 0) { P.al[i] = 0; P.sz[i] = 0; } continue; }
+    any++;
+    const a = (P.age[i] += dt), k = a / P.life[i], j = i * 3;
+    if (k >= 1) { P.al[i] = 0; P.sz[i] = 0; continue; }
+    const d = Math.exp(-P.dr[i] * dt);
+    P.vel[j] *= d; P.vel[j + 1] = P.vel[j + 1] * d - P.gv[i] * dt; P.vel[j + 2] *= d;
+    P.pos[j] += P.vel[j] * dt; P.pos[j + 1] += P.vel[j + 1] * dt; P.pos[j + 2] += P.vel[j + 2] * dt;
+    if (P.gv[i] > 0 && P.pos[j + 1] < SEA - 0.05 && P.pos[j + 1] < heightAt(P.pos[j], P.pos[j + 2]) + 0.05) { P.pos[j + 1] -= P.vel[j + 1] * dt; P.vel[j + 1] *= -0.25; P.vel[j] *= 0.5; P.vel[j + 2] *= 0.5; }
+    P.sz[i] = P.s0[i] + P.gr[i] * a;
+    P.al[i] = P.a0[i] * (k < 0.1 ? k / 0.1 : 1 - (k - 0.1) / 0.9);
+  }
+  P.live = any;
+  P.m.uniforms.uScale.value = renderer.domElement.height / (2 * Math.tan(camera.fov * Math.PI / 360));
+  for (const n of ['position', 'aCol', 'aSize', 'aAlpha']) P.g.attributes[n].needsUpdate = true;
+}
+const _fxV = new THREE.Vector3(), _fxD = new THREE.Vector3(), _fxQ = new THREE.Quaternion(), _fxC = new THREE.Color();
+const rnd = (a) => (Math.random() * 2 - 1) * a;
+// 爆発（1 回）：光・炎・煙・火花。近いと画面がゆれる。大きさ s
+function fxBoom(x, y, z, s, col) {
+  s = s || 1;
+  const c = col || _fxC.setRGB(1, 0.55, 0.15), n = coarse ? 0.6 : 1;
+  fxEmit(true, x, y, z, 0, 0, 0, 1, 0.95, 0.8, 4 * s, 18 * s, 0.25, 1, 0, 0);
+  for (let i = 0; i < 50 * n; i++) { const sp = 3 + Math.random() * 7; fxEmit(true, x, y, z, rnd(1) * sp * s, (rnd(1) * 0.6 + 0.5) * sp * s, rnd(1) * sp * s, c.r, c.g * (0.7 + Math.random() * 0.4), c.b, 1.2 * s, 2.2 * s, 0.5 + Math.random() * 0.5, 0.9, -1, 2.5); }
+  for (let i = 0; i < 26 * n; i++) { const sp = 1 + Math.random() * 3; fxEmit(false, x + rnd(s), y + rnd(s) * 0.5, z + rnd(s), rnd(1) * sp * s, (1 + Math.random() * 2) * s, rnd(1) * sp * s, 0.2, 0.19, 0.18, 1.5 * s, 2.5 * s, 2.5 + Math.random() * 2, 0.55, -0.4, 0.8); }
+  for (let i = 0; i < 30 * n; i++) { const sp = 8 + Math.random() * 10; fxEmit(true, x, y, z, rnd(1) * sp, Math.random() * sp, rnd(1) * sp, 1, 0.8, 0.4, 0.12, 0, 0.6 + Math.random() * 0.5, 1, 9.8, 0.3); }
+  const d = camera.position.distanceTo(_fxV.set(x, y, z));
+  if (d < 60 * s) { shakePow = Math.max(shakePow, 0.3 * s * (1 - d / (60 * s))); shakeUntil = clock.elapsedTime + 0.5; }
+}
+// 花火（1 回）：上がって、ひらく
+const FW = [];
+function fxWorks(x, y, z, s, col) { FW.push({ x, y, z, vy: 22 * Math.sqrt(s || 1), t: 0, s: s || 1, col: col ? col.clone() : null }); }
+function stepWorks(dt) {
+  for (const f of [...FW]) {
+    f.t += dt; f.vy -= 9.8 * dt; f.y += f.vy * dt;
+    fxEmit(true, f.x, f.y, f.z, rnd(0.5), -2, rnd(0.5), 1, 0.85, 0.5, 0.25, 0, 0.5, 0.8, 0, 0);
+    if (f.vy < 3 || f.t > 3) {
+      FW.splice(FW.indexOf(f), 1);
+      const n = (coarse ? 90 : 160) * Math.min(2, f.s), c = f.col || _fxC.setHSL(Math.random(), 1, 0.6);
+      for (let i = 0; i < n; i++) {
+        _fxD.set(rnd(1), rnd(1), rnd(1)).normalize().multiplyScalar(10 * f.s * (0.85 + Math.random() * 0.3));
+        fxEmit(true, f.x, f.y, f.z, _fxD.x, _fxD.y, _fxD.z, c.r, c.g, c.b, 0.35 * f.s, 0, 1.4 + Math.random() * 0.6, 1, 2.5, 1.2);
+      }
+    }
+  }
+}
+// 部品の中のエフェクトを見つける（乗り物・置物・建物・弾）
+function rigFx(item, root, model, isVeh) {
+  const list = [];
+  root.updateMatrixWorld(true);
+  const mq = (model || root).getWorldQuaternion(new THREE.Quaternion());
+  root.traverse((o) => {
+    const P = mpPropsOf(o), t = mpGet(P, XP.fx);
+    if (t == null || typeof t !== 'string') return;
+    const type = FX_ORDER.find((k) => FX_TYPES[k].re.test(t));
+    if (!type || list.some((e) => e.o === o)) return;
+    const T = FX_TYPES[type];
+    const dm = new THREE.Vector3(...fxDirOf(mpGet(P, XP.dir), T.dir));
+    const dl = dm.applyQuaternion(o.getWorldQuaternion(new THREE.Quaternion()).invert().multiply(mq)).normalize();   // 部品の中の向き（部品が回るといっしょに回る）
+    const sz = THREE.MathUtils.clamp(mpNum(mpGet(P, XP.size)) || 1, 0.1, 10);
+    const name = String(o.name || T.n).replace(/(·[−+][xz])+$/, '').replace(/\.\d+$/, '').slice(0, 24);
+    list.push({ o, type, T, dl, sz, col: fxColor(mpGet(P, XP.col)), when: fxWhen(mpGet(P, XP.when), isVeh ? (T.when || 'button') : 'always'), on: false, acc: 0, t: 0, name, key: 'fx|' + name, beam: null });
+  });
+  return list.length ? list : null;
+}
+// 1 つのエフェクトを出す（毎コマ）。v は乗り物（速さを足す）
+function fxRun(e, dt, vel, k) {
+  const o = e.o; o.updateWorldMatrix(true, false);
+  const p = _fxV.setFromMatrixPosition(o.matrixWorld), d = _fxD.copy(e.dl).transformDirection(o.matrixWorld), s = e.sz, c = e.col;
+  const vx = vel ? vel.x : 0, vy = vel ? vel.y : 0, vz = vel ? vel.z : 0;
+  const n = (coarse ? 0.6 : 1) * (k == null ? 1 : k);
+  const many = (rate) => { e.acc += rate * n * dt; const m = Math.floor(e.acc); e.acc -= m; return Math.min(m, 40); };
+  switch (e.type) {
+    case 'fire': for (let i = many(45 * s); i--;) { const sp = 2 + Math.random() * 2; const y0 = Math.random(); fxEmit(true, p.x + rnd(0.2 * s), p.y, p.z + rnd(0.2 * s), d.x * sp * s + rnd(0.5) + vx, d.y * sp * s + rnd(0.5) + vy, d.z * sp * s + rnd(0.5) + vz, c ? c.r : 1, c ? c.g : 0.45 + y0 * 0.35, c ? c.b : 0.1, 0.55 * s, 0.6 * s, 0.45 + Math.random() * 0.4, 0.9, -2, 1.5); }
+      for (let i = many(6 * s); i--;) fxEmit(false, p.x, p.y + d.y * s, p.z, d.x * 2 + rnd(0.4) + vx, 1.5 + d.y + vy, d.z * 2 + rnd(0.4) + vz, 0.22, 0.21, 0.2, 0.6 * s, 1.4 * s, 2.5, 0.35, -0.5, 0.6); break;
+    case 'smoke': for (let i = many(12 * s); i--;) { const g = c ? 1 : 0.25 + Math.random() * 0.1; fxEmit(false, p.x + rnd(0.2 * s), p.y, p.z + rnd(0.2 * s), d.x * 1.5 * s + rnd(0.4) + vx * 0.5, d.y * 1.5 * s + 1 + vy * 0.5, d.z * 1.5 * s + rnd(0.4) + vz * 0.5, c ? c.r : g, c ? c.g : g, c ? c.b : g, 0.8 * s, 1.3 * s, 3.5 + Math.random() * 2, 0.5, -0.3, 0.5); } break;
+    case 'steam': for (let i = many(22 * s); i--;) fxEmit(false, p.x, p.y, p.z, d.x * 3 * s + rnd(0.6) + vx, d.y * 3 * s + rnd(0.6) + vy, d.z * 3 * s + rnd(0.6) + vz, c ? c.r : 0.95, c ? c.g : 0.96, c ? c.b : 0.98, 0.35 * s, 1.4 * s, 1.4 + Math.random() * 0.6, 0.45, -0.6, 1.2); break;
+    case 'exhaust': for (let i = many((8 + 30 * (e.k || 0)) * s); i--;) fxEmit(false, p.x, p.y, p.z, d.x * 2.5 * s + rnd(0.3) + vx * 0.3, d.y * 2.5 * s + 0.4 + vy * 0.3, d.z * 2.5 * s + rnd(0.3) + vz * 0.3, c ? c.r : 0.55, c ? c.g : 0.56, c ? c.b : 0.6, 0.18 * s, 0.7 * s, 1 + Math.random() * 0.5, 0.35, -0.3, 1.5); break;
+    case 'water': for (let i = many(110 * s); i--;) { const sp = 18 * Math.sqrt(s) * (0.95 + Math.random() * 0.1); fxEmit(false, p.x, p.y, p.z, d.x * sp + rnd(0.4) + vx, d.y * sp + rnd(0.4) + vy, d.z * sp + rnd(0.4) + vz, c ? c.r : 0.78, c ? c.g : 0.9, c ? c.b : 1, 0.22 * s, 0.5 * s, 2.2, 0.75, 9.8, 0.15); } break;
+    case 'splash': for (let i = many(70 * s); i--;) { const sp = 5 * s; fxEmit(false, p.x, p.y, p.z, d.x * sp + rnd(2.5) + vx, d.y * sp + rnd(1) + vy + 2, d.z * sp + rnd(2.5) + vz, c ? c.r : 0.85, c ? c.g : 0.93, c ? c.b : 1, 0.16 * s, 0.35 * s, 1 + Math.random() * 0.4, 0.7, 9.8, 0.4); } break;
+    case 'bubble': for (let i = many(18 * s); i--;) fxEmit(false, p.x + rnd(0.3 * s), p.y, p.z + rnd(0.3 * s), d.x * s + rnd(0.3), d.y * s + 0.8 + rnd(0.2), d.z * s + rnd(0.3), c ? c.r : 0.9, c ? c.g : 0.97, c ? c.b : 1, 0.14 * s, 0.05, 2.5 + Math.random(), 0.55, -0.6, 0.6); break;
+    case 'spark': for (let i = many(55 * s); i--;) { const sp = 5 * s; fxEmit(true, p.x, p.y, p.z, d.x * sp + rnd(4) + vx, d.y * sp + rnd(3) + vy, d.z * sp + rnd(4) + vz, c ? c.r : 1, c ? c.g : 0.75, c ? c.b : 0.3, 0.09 * Math.sqrt(s), 0, 0.4 + Math.random() * 0.4, 1, 9.8, 0.4); } break;
+    case 'twinkle': for (let i = many(22 * s); i--;) { const cc = c || _fxC.setHSL(Math.random(), 0.6, 0.85); fxEmit(true, p.x + rnd(1.2 * s), p.y + rnd(1.2 * s) + d.y * 0.5 * s, p.z + rnd(1.2 * s), rnd(0.2) + vx, rnd(0.2) + 0.2 + vy, rnd(0.2) + vz, cc.r, cc.g, cc.b, 0.22 * s, -0.1 * s, 0.7 + Math.random() * 0.5, 1, 0, 0); } break;
+    case 'dust': for (let i = many(28 * s * (e.k == null ? 1 : e.k)); i--;) fxEmit(false, p.x + rnd(0.5 * s), p.y, p.z + rnd(0.5 * s), d.x * s + rnd(1) - vx * 0.15, d.y * s * 0.8 + 0.4, d.z * s + rnd(1) - vz * 0.15, c ? c.r : 0.62, c ? c.g : 0.53, c ? c.b : 0.4, 0.45 * s, 1.6 * s, 1.8 + Math.random(), 0.4, -0.1, 1.2); break;
+    case 'confetti': for (let i = many(40 * s); i--;) { const cc = c || _fxC.setHSL(Math.random(), 0.9, 0.6); const sp = 5 * s; fxEmit(false, p.x, p.y, p.z, d.x * sp + rnd(2) + vx, d.y * sp + rnd(2) + 1 + vy, d.z * sp + rnd(2) + vz, cc.r, cc.g, cc.b, 0.12 * Math.sqrt(s), 0, 4 + Math.random() * 2, 1, 2, 1.6); } break;
+    case 'trail': for (let i = many(60 * s); i--;) fxEmit(true, p.x + rnd(0.05), p.y + rnd(0.05), p.z + rnd(0.05), d.x * 0.3, d.y * 0.3, d.z * 0.3, c ? c.r : 0.75, c ? c.g : 0.85, c ? c.b : 1, 0.3 * s, 0.15 * s, 1.2, 0.6, 0, 0); break;
+    case 'beam': {   // 光線：原点から向きの方へ（地面で止まる）。根元が光る
+      if (!e.beam) {
+        const g = new THREE.CylinderGeometry(1, 1, 1, 10, 1, true); g.translate(0, 0.5, 0); g.rotateX(Math.PI / 2);
+        const cc = c || new THREE.Color(0xff3030);
+        e.beam = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ color: cc, transparent: true, opacity: 0.75, blending: THREE.AdditiveBlending, depthWrite: false, fog: false }));
+        e.beam.frustumCulled = false; e.beam.renderOrder = 6; scene.add(e.beam);
+      }
+      let L = 3;
+      for (; L < 120 * s; L += 2) { const qx = p.x + d.x * L, qy = p.y + d.y * L, qz = p.z + d.z * L; if (qy < groundAt(qx, qz, qy + 1)) break; }
+      e.beam.visible = true; e.beam.position.copy(p); e.beam.quaternion.setFromUnitVectors(_fxV.set(0, 0, 1), d);
+      e.beam.scale.set(0.12 * s * (1 + 0.15 * Math.sin(clock.elapsedTime * 40)), 0.12 * s, L);
+      const cc = c || _fxC.set(0xff3030);
+      for (let i = many(30); i--;) fxEmit(true, p.x + d.x * L, p.y + d.y * L, p.z + d.z * L, rnd(3), Math.random() * 3, rnd(3), cc.r, cc.g, cc.b, 0.15 * s, 0, 0.3, 1, 9.8, 0);
+      if (Math.random() < dt * 20) fxEmit(true, p.x, p.y, p.z, 0, 0, 0, cc.r, cc.g, cc.b, 0.5 * s, 0, 0.1, 0.9, 0, 0);
+      break;
+    }
+    case 'works': if ((e.t -= dt) <= 0) { e.t = 2.2; fxWorks(p.x, p.y, p.z, s, c); } break;
+    case 'boom': if ((e.t -= dt) <= 0) { e.t = 3; fxBoom(p.x, p.y, p.z, s, c); } break;
+  }
+}
+function fxOff(e) { if (e.beam) e.beam.visible = false; e.acc = 0; }
+function fxShot(e) {   // 1 回だけ（爆発・花火・ほかのものは 0.6 秒だけ出す）
+  const o = e.o; o.updateWorldMatrix(true, false);
+  const p = new THREE.Vector3().setFromMatrixPosition(o.matrixWorld);
+  if (e.type === 'boom') fxBoom(p.x, p.y, p.z, e.sz, e.col);
+  else if (e.type === 'works') fxWorks(p.x, p.y, p.z, e.sz, e.col);
+  else e.burst = 0.6;
+}
+const fxIsShot = (e) => !!e.T.shot;
+// 毎コマ：乗り物・置物・建物・弾のエフェクト
+const _fxVel = new THREE.Vector3();
+function stepFx(dt) {
+  const cam = camera.position, R = 450;
+  const run = (fx, on, vel, k) => {
+    for (const e of fx) {
+      let want = e.burst > 0 || (on && on(e));
+      if (e.burst > 0) e.burst -= dt;
+      if (want) { e.o.getWorldPosition(_fxV); if (_fxV.distanceToSquared(cam) > R * R || !visibleUp(e.o)) want = false; }
+      if (want) { e.k = k; fxRun(e, dt, vel, e.type === 'dust' ? k : null); } else if (e.beam && e.beam.visible) fxOff(e);
+    }
+  };
+  for (const v of vehicles) {
+    const F = v.item.fx; if (!F) continue;
+    const drv = (v === ride && driving) || !!v.remote, mov = Math.abs(v.vF || 0) > 1 || (v._spd || 0) > 1;
+    const bits = v.remote ? (v.remote.fx | 0) : -1;
+    _fxVel.set(Math.sin(v.h) * (v.vF || 0), v.vy || 0, Math.cos(v.h) * (v.vF || 0));
+    run(F, (e) => {
+      if (fxIsShot(e) && e.when !== 'always') return false;
+      if (e.when === 'always') return true;
+      if (e.when === 'drive') return drv;
+      if (e.when === 'move') return mov;
+      return v.remote ? !!(bits & (1 << F.indexOf(e))) : !!e.on;
+    }, _fxVel, v === ride ? Math.max(v.throttle || 0, Math.min(1, Math.abs(v.vF || 0) / Math.max(1, v.item.def.vehicle.maxSpeed || 10))) : 0.4);
+  }
+  for (const pr of props) { const F = pr.item.fx; if (F) run(F, () => true, null, 1); }
+  for (const s of SHOTS) if (s.fx) run(s.fx, (e) => !fxIsShot(e), s.vel, 1);
+  stepWorks(dt);
+  stepFxPool(FXP.add, dt); stepFxPool(FXP.norm, dt);
+}
+const visibleUp = (o) => { for (let q = o; q; q = q.parent) if (!q.visible) return false; return true; };
+// 名前（key）のエフェクトを ON／OFF（ボタン）。1 回のものは出す
+function fxSetKey(v, key, on) {
+  const F = v && v.item.fx; if (!F) return;
+  for (const e of F) if (e.key === key) { if (fxIsShot(e)) { if (on) fxShotNet(v, e); } else e.on = on; }
+}
+function fxShotNet(v, e) {
+  fxShot(e);
+  if (v.shared && v.id && net.room) net.room.emit('vfx', { t: 'fx', v: v.id, i: v.item.fx.indexOf(e) }).catch(() => {});
+}
+const fxBits = (v) => { let b = 0; (v.item.fx || []).forEach((e, i) => { if (i < 30 && e.on) b |= 1 << i; }); return b; };
+
+/* ---------------- 発射・切り離し ----------------
+   動作=発射：ボタンで、その部品のコピーが飛んでいく（元の部品は残る）。 速さ（m/秒、なければ 80）・向き（なければ 前）・重さ（kg）・弾数（なければ いくらでも）・間隔（秒、なければ 0.5）
+   動作=切り離し：部品そのものがはずれて落ちる（もう 1 回押すか「もどす」で元にもどる）。速さ（なければ 0）
+   飛んでいく物（コピー・はずれた部品）に：当たると=爆発／止まる／はねる／消える  時間で=爆発／消える（時間=秒、なければ 3）  地面で=止まる  重力=なし
+   当たった物は押されるだけ（こわれない）。エフェクトの子部品（ミサイルの炎など）は飛んでいる間ずっと出る */
+const LAUNCH_RE = /発射|射出|launch|fire|shoot/i, DROP_RE = /切り離し|切りはなし|切離|投下|分離|detach|drop|release/i;
+function rigLaunchers(item, root, model) {
+  const list = [];
+  root.updateMatrixWorld(true);
+  const mq = (model || root).getWorldQuaternion(new THREE.Quaternion());
+  root.traverse((o) => {
+    const P = mpPropsOf(o), kv = mpGet(P, MP_NAMES.kind);
+    if (kv == null || list.some((l) => l.o === o)) return;
+    const mode = DROP_RE.test(String(kv)) ? 'drop' : LAUNCH_RE.test(String(kv)) ? 'fire' : null;
+    if (!mode) return;
+    const dm = new THREE.Vector3(...fxDirOf(mpGet(P, XP.dir), mode === 'fire' ? 'fwd' : 'down'));
+    const dl = dm.applyQuaternion(o.getWorldQuaternion(new THREE.Quaternion()).invert().multiply(mq)).normalize();
+    const sp = mpNum(mpGet(P, MP_NAMES.speed)), ammo = mpNum(mpGet(P, XP.ammo)), ev = mpNum(mpGet(P, XP.every)), tm = mpNum(mpGet(P, XP.time));
+    const hit = String(mpGet(P, XP.onHit) ?? ''), onT = String(mpGet(P, XP.onTime) ?? ''), onG = String(mpGet(P, XP.onGround) ?? '');
+    const box = new THREE.Box3().setFromObject(o), bs = box.isEmpty() ? new THREE.Vector3(0.3, 0.3, 0.3) : box.getSize(new THREE.Vector3());
+    const wt = mpNum(mpGet(P, XP.wt));
+    const name = String(o.name || (mode === 'fire' ? '発射' : '切り離し')).replace(/(·[−+][xz])+$/, '').replace(/\.\d+$/, '').slice(0, 24);
+    list.push({ o, mode, dl, name, key: 'fire|' + name, speed: THREE.MathUtils.clamp(sp != null ? sp : mode === 'fire' ? 80 : 0, 0, 600),
+      ammo: ammo != null && ammo > 0 ? Math.round(ammo) : Infinity, left: ammo != null && ammo > 0 ? Math.round(ammo) : Infinity, every: THREE.MathUtils.clamp(ev != null ? ev : 0.5, 0.05, 30), last: -99,
+      mass: wt && wt > 0 ? wt : Math.max(1, bs.x * bs.y * bs.z * 800), r: Math.max(0.15, Math.max(bs.x, bs.y, bs.z) / 2),
+      hit: /爆発|explo/i.test(hit) ? 'boom' : /はね|跳|bounce/i.test(hit) ? 'bounce' : /消え|消す|vanish/i.test(hit) ? 'gone' : /止|stop|stick/i.test(hit) ? 'stop' : null,
+      onT: /爆発|explo/i.test(onT) ? 'boom' : /消/i.test(onT) ? 'gone' : null, time: THREE.MathUtils.clamp(tm != null ? tm : 3, 0.1, 120),
+      stopG: /止|stop/i.test(onG), grav: !mpNo(mpGet(P, XP.grav) ?? 1), fxSz: THREE.MathUtils.clamp(mpNum(mpGet(P, XP.size)) || Math.max(0.6, Math.max(bs.x, bs.y, bs.z)), 0.3, 10),
+      shot: null, idle: 0 });
+  });
+  return list.length ? list : null;
+}
+const SHOTS = [];   // 飛んでいる物 { obj, L, v, vel, t, rest, q0, d0, fx, mine }
+const _shM = new THREE.Matrix4(), _shQ = new THREE.Quaternion(), _shS = new THREE.Vector3(), _shP = new THREE.Vector3();
+function spawnShot(v, L, pos, vel, mine) {
+  const o = L.o; o.updateWorldMatrix(true, true);
+  const obj = o.clone(true);
+  obj.traverse((m) => { m.visible = true; });
+  o.matrixWorld.decompose(_shP, _shQ, _shS);
+  if (pos) _shP.copy(pos);
+  obj.position.copy(_shP); obj.quaternion.copy(_shQ); obj.scale.copy(_shS);
+  scene.add(obj); obj.updateMatrixWorld(true);
+  const d0 = L.dl.clone().applyQuaternion(_shQ).normalize();
+  const s = { obj, L, v, vel: vel.clone(), t: 0, rest: false, q0: _shQ.clone(), d0, fx: rigFx(null, obj, null, false), mine, life: L.mode === 'drop' ? Infinity : 30 };
+  if (s.fx) for (const e of s.fx) if (fxIsShot(e)) e.on = false;
+  SHOTS.push(s);
+  while (SHOTS.length > 60) { const old = SHOTS.find((q) => q.L.mode !== 'drop') || SHOTS[0]; killShot(old); }
+  return s;
+}
+function killShot(s) {
+  const i = SHOTS.indexOf(s); if (i >= 0) SHOTS.splice(i, 1);
+  scene.remove(s.obj);
+  if (s.fx) for (const e of s.fx) if (e.beam) { scene.remove(e.beam); e.beam = null; }
+  if (s.L.shot === s) { s.L.shot = null; s.L.o.visible = true; }
+}
+// 乗り物の速さ（世界の向き）。ほかの人の乗り物は動いた分から
+function vehVel(v, out) {
+  if (v._vel) return out.copy(v._vel);
+  return out.set(Math.sin(v.h) * (v.vF || 0), v.vy || 0, Math.cos(v.h) * (v.vF || 0));
+}
+// 発射ボタン：1 回撃つ（切り離しは、はずす／もどす）。net：みんなに知らせる
+function launch(v, L, net1 = true) {
+  const now = clock.elapsedTime;
+  if (L.mode === 'drop') {
+    if (L.shot) { killShot(L.shot); if (net1) launchNet(v, L, 0); return true; }
+    const vel = vehVel(v, new THREE.Vector3());
+    L.o.updateWorldMatrix(true, false);
+    vel.addScaledVector(_fxD.copy(L.dl).transformDirection(L.o.matrixWorld), L.speed);
+    L.shot = spawnShot(v, L, null, vel, v === ride);
+    L.o.visible = false;
+    if (net1) launchNet(v, L, 1, L.shot);
+    return true;
+  }
+  if (now - L.last < L.every) return false;
+  if (L.left <= 0) { if (v === ride) showMsg(`${L.name}：弾切れです（「もどす」ボタンか 20 秒で補充）`); return false; }
+  L.last = now; L.left--; L.idle = 0;
+  L.o.updateWorldMatrix(true, false);
+  const dir = _fxD.copy(L.dl).transformDirection(L.o.matrixWorld);
+  const vel = vehVel(v, new THREE.Vector3()).addScaledVector(dir, L.speed);
+  const s = spawnShot(v, L, null, vel, v === ride);
+  // 撃った所：小さな光と煙
+  const p = s.obj.position;
+  fxEmit(true, p.x, p.y, p.z, 0, 0, 0, 1, 0.85, 0.5, 0.8 * L.fxSz, 3, 0.12, 1, 0, 0);
+  for (let i = 0; i < 6; i++) fxEmit(false, p.x, p.y, p.z, dir.x * 2 + rnd(0.5), dir.y * 2 + rnd(0.5) + 0.5, dir.z * 2 + rnd(0.5), 0.6, 0.6, 0.6, 0.4 * L.fxSz, 1.2, 1.2, 0.4, -0.2, 1);
+  if (net1) launchNet(v, L, 1, s);
+  return true;
+}
+function launchNet(v, L, on, s) {
+  if (!(v.shared && v.id && net.room)) return;
+  const r = (x) => Math.round(x * 100) / 100;
+  const d = { t: 'shot', v: v.id, i: v.item.launch.indexOf(L), on };
+  if (s) { d.p = [r(s.obj.position.x), r(s.obj.position.y), r(s.obj.position.z)]; d.u = [r(s.vel.x), r(s.vel.y), r(s.vel.z)]; }
+  net.room.emit('vfx', d).catch(() => {});
+}
+// 当たる物：地面・水・乗り物の形・置物・建物の床
+function shotHit(s, x, y, z) {
+  if (y < heightAt(x, z) + 0.05) return { k: 'ground', y: heightAt(x, z) };
+  if (y < SEA) return { k: 'water', y: SEA };
+  const g = groundAt(x, z, y + 0.3); if (y < g) return { k: 'ground', y: g };
+  for (const u of vehicles) {
+    if (u === s.v && s.t < 0.6) continue;
+    if (u.item.hf && hfSpanV(u, x, z, y - s.L.r * 0.5, y + s.L.r * 0.5)) return { k: 'veh', u };
+  }
+  for (const pr of props) { const b = pr.box; if (!pr.bld && x > b.min.x && x < b.max.x && z > b.min.z && z < b.max.z && y > b.min.y && y < b.max.y) return { k: 'prop', pr }; }
+  if (blds.length) { const bf = bldFloor(x, z, y); if (bf > y - 0.2 && bf > -Infinity) return { k: 'ground', y: bf }; }
+  return null;
+}
+// 押す：爆発のまわり（R m）か、ぶつかった物。動かした人（撃った人）が位置を保存する
+function shotPush(s, x, y, z, R, power) {
+  if (!s.mine) return;
+  const now = performance.now();
+  for (const pr of props) {
+    const L = pr.loose; if (!L || pr.cpL) continue;
+    const c = pr.box.getCenter(_fxV), dx = c.x - x, dz = c.z - z, d = Math.hypot(dx, dz, c.y - y);
+    if (d > R + L.r) continue;
+    const m = Math.max(5, L.hx * L.hz * L.hy * 8 * 150), k = Math.min(1.5, (power / m) * (1 - Math.min(1, d / (R + L.r)))) ;
+    const n = Math.hypot(dx, dz) || 1;
+    pr.pos.x += (dx / n) * k; pr.pos.z += (dz / n) * k; L.rest = false; L.mine = true; L.saveAt = now + 1500; pr.base = null;
+  }
+  for (const u of vehicles) {
+    if (u === ride || u.remote || u.run || u.cpL || u.cpHang || !u.item.hf || vtype(u) === 'ship' || vtype(u) === 'sub') continue;
+    const dx = u.pos.x - x, dz = u.pos.y - z, d = Math.hypot(dx, dz, u.y - y), V = u.item.def.vehicle;
+    if (d > R + V.halfLength) continue;
+    const m = specMass(u), k = Math.min(1, (power / m) * (1 - Math.min(1, d / (R + V.halfLength))));
+    if (k < 0.02) continue;
+    const n = Math.hypot(dx, dz) || 1;
+    u.pos.x += (dx / n) * k; u.pos.y += (dz / n) * k; u.settled = false; u.saveAt = now + 1500;
+  }
+  if (!driving && !aboard) {   // 自分も少し飛ばされる
+    const dx = player.pos.x - x, dz = player.pos.z - z, d = Math.hypot(dx, dz, player.pos.y - y);
+    if (d < R) { const n = Math.hypot(dx, dz) || 1, k = (1 - d / R) * Math.min(1, power / 500); player.pos.x += (dx / n) * k; player.pos.z += (dz / n) * k; player.vy = Math.max(player.vy, 6 * k); }
+  }
+}
+function shotBoom(s, x, y, z) {
+  const sz = s.L.fxSz;
+  fxBoom(x, y + 0.2, z, sz, null);
+  shotPush(s, x, y, z, 4 * sz, 300 * sz * sz);
+  killShot(s);
+}
+function stepShots(dt) {
+  for (const s of [...SHOTS]) {
+    if (!SHOTS.includes(s)) continue;
+    const L = s.L, p = s.obj.position;
+    s.t += dt;
+    if (s.t > s.life) { killShot(s); continue; }
+    if (L.onT && s.t > L.time) { if (L.onT === 'boom') shotBoom(s, p.x, p.y, p.z); else killShot(s); continue; }
+    if (s.rest) { if (L.mode !== 'drop' && s.t > s.restT + 10) killShot(s); continue; }
+    const steps = Math.max(1, Math.ceil(s.vel.length() * dt / Math.max(0.3, L.r)));
+    const h = dt / Math.min(steps, 12);
+    let hit = null;
+    for (let i = 0; i < Math.min(steps, 12) && !hit; i++) {
+      if (L.grav) s.vel.y -= 9.8 * h;
+      s.vel.multiplyScalar(Math.exp(-0.02 * h));
+      p.addScaledVector(s.vel, h);
+      if (outsideBox(p.x, p.z, 1)) { killShot(s); break; }
+      hit = shotHit(s, p.x, p.y, p.z);
+    }
+    if (!SHOTS.includes(s)) continue;
+    // 向き：飛ぶ向きへ（爆弾は機首を下げながら落ちる）
+    if (s.vel.lengthSq() > 4) { _shQ.setFromUnitVectors(s.d0, _fxD.copy(s.vel).normalize()); s.obj.quaternion.copy(_shQ).multiply(s.q0); }
+    if (hit) {
+      if (L.hit === 'boom') { shotBoom(s, p.x, p.y, p.z); continue; }
+      if (L.hit === 'gone') { fxEmit(true, p.x, p.y, p.z, 0, 0, 0, 1, 0.8, 0.5, 0.6, 2, 0.15, 1, 0, 0); killShot(s); continue; }
+      if (hit.k === 'water') { for (let i = 0; i < 25; i++) fxEmit(false, p.x, SEA, p.z, rnd(2), 3 + Math.random() * 5, rnd(2), 0.85, 0.93, 1, 0.25, 0.4, 1.2, 0.7, 9.8, 0.3); }
+      if (hit.k === 'veh' || hit.k === 'prop') shotPush(s, p.x, p.y, p.z, 1.5, L.mass * s.vel.length() * 0.05);
+      if (L.hit === 'bounce' && hit.k !== 'water' && s.vel.length() > 2) {
+        p.addScaledVector(s.vel, -h); s.vel.y = Math.abs(s.vel.y) * 0.45; s.vel.x *= 0.6; s.vel.z *= 0.6; continue;
+      }
+      if (hit.k === 'water') { p.y = SEA - (L.mode === 'drop' ? 0 : 0.2); }
+      else if (hit.y != null) p.y = hit.y + 0.02;
+      else p.addScaledVector(s.vel, -h);
+      s.rest = true; s.restT = s.t; s.vel.set(0, 0, 0);
+    }
+  }
+  // 弾の補充：20 秒撃たなければ
+  if (ride && ride.item.launch) for (const L of ride.item.launch) { if (L.left < L.ammo && (L.idle += dt) > 20) { L.left = L.ammo; showMsg(`${L.name}：補充しました`); } }
+}
+function onVfx(p) {
+  const d = p && p.data;
+  if (!d || typeof d.v !== 'string' || !OK_ID.test(d.v)) return;
+  const v = vehicles.find((u) => u.id === d.v); if (!v) return;
+  if (d.t === 'fx') { const e = v.item.fx && v.item.fx[d.i | 0]; if (e) fxShot(e); return; }
+  if (d.t === 'door') { vehDoorSet(v, d.i | 0, !!d.on, false); return; }
+  if (d.t === 'shot') {
+    const L = v.item.launch && v.item.launch[d.i | 0]; if (!L) return;
+    const pos = Array.isArray(d.p) ? new THREE.Vector3(num(d.p[0], X0, X1), num(d.p[1], Y_BOTTOM, Y_AIR), num(d.p[2], Z0, Z1)) : null;
+    const vel = Array.isArray(d.u) ? new THREE.Vector3(num(d.u[0], -700, 700), num(d.u[1], -700, 700), num(d.u[2], -700, 700)) : new THREE.Vector3();
+    if (L.mode === 'drop') { if (L.shot) killShot(L.shot); if (d.on) { L.shot = spawnShot(v, L, pos, vel, false); L.o.visible = false; } return; }
+    spawnShot(v, L, pos, vel, false);
+  }
+}
+// もどす：はずした部品をもどし、弾を補充
+function launchHome(v, key) { for (const L of v.item.launch || []) if (L.key === key) { if (L.shot) launch(v, L); L.left = L.ammo; } }
+const FIRE_HELD = new Map();   // 押している発射ボタン → 次に撃つ
+function fireBtn(v, b, first) {
+  for (const q of b.acts) {
+    if (q.k === 'fire') for (const L of v.item.launch || []) { if (L.key !== q.ch) continue; if (L.mode === 'drop') { if (first) launch(v, L); } else launch(v, L); }
+    if (q.k === 'fx' && first) fxSetKey(v, q.ch, true);
+  }
+}
+
+/* ---------------- 中に入れる乗り物（中に入れる=する） ----------------
+   形の面そのものが床・壁・天井（上の hf の何枚もの面）。ドア_1…（原点が蝶番、開き方=横 で引き戸）は E で開け閉め・ボタンでも。
+   イス_1…・座席_1…：E で座る。運転席・操縦席（なければ イス_1）に座ると運転できる。中にいる人・積んだ車や物は、いっしょに動く */
+const VDOOR_RE = /^(ドア|扉|とびら|ハッチ|後部扉|ランプドア|door|hatch|ramp)/i, VSEAT_RE = /^(イス|いす|椅子|座席|シート|運転席|操縦席|seat|chair)/i, VDRV_RE = /運転席|操縦席|driver|pilot/i;
+// 読み込む前：ドアに 動作 がなければ、回転（引き戸は移動）をつける
+function prepHollow(root, model) {
+  root.updateMatrixWorld(true);
+  const inv = new THREE.Matrix4().copy(model.matrixWorld).invert(), v = new THREE.Vector3();
+  root.traverse((o) => {
+    if (!VDOOR_RE.test(o.name || '') || /ギア|gear/i.test(o.name || '')) return;
+    for (let q = o.parent; q && q !== root; q = q.parent) if (VDOOR_RE.test(q.name || '')) return;   // ドアの中の部品
+    const P = mpPropsOf(o);
+    o.userData.__door = true;
+    if (mpGet(P, MP_NAMES.kind) != null) return;
+    const slide = /横|スライド|slide|引/.test(String(mpGet(P, XP.open) ?? '')) || /^(引き戸|引戸|スライド)/.test(o.name || '');
+    if (slide) {
+      const b = new THREE.Box3(); o.traverse((m) => { if (m.isMesh) { const p = m.geometry.attributes.position; for (let i = 0; i < p.count; i++) b.expandByPoint(v.fromBufferAttribute(p, i).applyMatrix4(m.matrixWorld).applyMatrix4(inv)); } });
+      if (b.isEmpty()) return;
+      const org = v.setFromMatrixPosition(o.matrixWorld).applyMatrix4(inv).clone(), c = b.getCenter(new THREE.Vector3()), sz = b.getSize(new THREE.Vector3());
+      let ax, amt;
+      if (sz.x >= sz.z) { ax = 'X'; amt = -Math.sign(c.x - org.x || 1) * sz.x * 0.95; } else { ax = 'Y'; amt = Math.sign(c.z - org.z || 1) * sz.z * 0.95; }
+      Object.assign(o.userData, { '動作': '移動', '軸': ax, '最小': Math.min(0, amt), '最大': Math.max(0, amt), '速さ': 1.2 });
+    } else {
+      const a = mpNum(mpGet(P, XP.openAng)) ?? 90;
+      Object.assign(o.userData, { '動作': '回転', '軸': 'Z', '最小': Math.min(0, a), '最大': Math.max(0, a), '速さ': 90 });
+    }
+  });
+}
+function rigHollow(item, root) {
+  const H = { doors: [], seats: [] };
+  const M = item.moves;
+  if (M) {
+    const seen = new Map();
+    for (const p of M.parts) if (p.o.userData.__door) { const k = p.name; if (!seen.has(k)) { seen.set(k, H.doors.length); H.doors.push({ name: k, parts: [], open: false }); } H.doors[seen.get(k)].parts.push(p); }
+  }
+  root.updateMatrixWorld(true);
+  const inv = new THREE.Matrix4().copy(root.matrixWorld).invert();
+  root.traverse((o) => {
+    if (!VSEAT_RE.test(o.name || '') || H.seats.some((s) => s.o === o)) return;
+    for (let q = o.parent; q && q !== root; q = q.parent) if (VSEAT_RE.test(q.name || '')) return;
+    const b = new THREE.Box3().setFromObject(o); if (b.isEmpty()) return;
+    const c = b.getCenter(new THREE.Vector3());
+    const fw = new THREE.Vector3(0, 0, 1).transformDirection(o.matrixWorld); fw.y = 0; if (fw.lengthSq() < 1e-6) fw.set(0, 0, 1); fw.normalize();
+    const lp = new THREE.Vector3(c.x, b.min.y + Math.min(0.45, (b.max.y - b.min.y) * 0.55), c.z).applyMatrix4(inv);
+    H.seats.push({ o, lp, face: Math.atan2(fw.x, fw.z), name: o.name, drv: VDRV_RE.test(o.name || '') });
+  });
+  if (H.seats.length && !H.seats.some((s) => s.drv)) { const s1 = H.seats.find((s) => /[_\s-]?[1１]$/.test(s.name)) || H.seats[0]; s1.drv = true; }
+  return H;
+}
+function vehDoorSet(v, i, open, net1) {
+  const H = v.item.hollow, D = H && H.doors[i]; if (!D) return;
+  D.open = open;
+  for (const p of D.parts) for (const a of p.axes) a.goal = open ? (Math.abs(a.max) >= Math.abs(a.min) ? a.max : a.min) : a.init;
+  if (net1 && v.shared && v.id && net.room) net.room.emit('vfx', { t: 'door', v: v.id, i, on: open ? 1 : 0 }).catch(() => {});
+}
+// 止まっている乗り物（だれも運転していない）の、ドアなどの「もどす」動き
+function stepIdleMoves(dt) {
+  for (const v of vehicles) {
+    const M = v.item.moves;
+    if (!M || v.remote || (v === ride && driving)) continue;
+    let any = false;
+    for (const a of M.chans) if (a.goal != null) { const d = a.goal - a.val, s = a.speed * dt; if (Math.abs(d) <= s) { a.val = a.goal; a.goal = null; } else a.val += Math.sign(d) * s; any = true; }
+    if (any) { M.dirty = true; mpApply(M); v.settled = false; }
+  }
+}
+const seatWorldOf = (v, s, out) => { v.item.root.updateMatrixWorld(true); return out.copy(s.lp).applyMatrix4(v.item.root.matrixWorld); };
+let vehSit = null;   // { v, s } 乗り物のイスに座っている（運転しない席）
+// 近くの、乗り物のドア・イス（歩いているとき）
+function vehNearAction() {
+  if (vehSit) return { kind: 'vstand', text: 'イスから', btn: '立つ' };
+  if (driving || aboard || busRide) return null;
+  let best = null, bd = 1.9;
+  const pp = new THREE.Vector3(player.pos.x, player.pos.y + 1, player.pos.z), c = new THREE.Vector3();
+  for (const v of vehicles) {
+    const H = v.item.hollow; if (!H || v.sunk) continue;
+    const V = v.item.def.vehicle;
+    if (Math.hypot(v.pos.x - pp.x, v.pos.y - pp.z) > V.halfLength + V.halfWidth + 3) continue;
+    H.doors.forEach((D, i) => { for (const p of D.parts) { p.o.updateWorldMatrix(true, false); const b = new THREE.Box3().setFromObject(p.o); if (b.isEmpty()) continue; b.clampPoint(pp, c); const d = c.distanceTo(pp); if (d < bd) { bd = d; best = { kind: 'vdoor', v, i, text: `${D.name}を`, btn: D.open ? '閉める' : '開ける' }; } } });
+    if (!v.remote || canShareRide(v)) for (const s of H.seats) { seatWorldOf(v, s, c); const d = Math.hypot(c.x - pp.x, c.z - pp.z); if (d < Math.min(bd, 1.3) && Math.abs(c.y - player.pos.y) < 1.2) { bd = d; best = { kind: 'vseat', v, s, text: s.drv ? (v.remote ? `${v.name}の席に` : `${s.name}で`) : 'イスに', btn: s.drv && !v.remote ? (DRIVE_VERB[vtype(v)] || '運転') + 'する' : '座る' }; } }
+  }
+  return best;
+}
+function doVehAction(a) {
+  if (a.kind === 'vdoor') { if (a.v.remote) { showMsg(`${a.v.name} はほかの人が運転中です（ドアは運転している人がボタンで）`); return; } vehDoorSet(a.v, a.i, !a.v.item.hollow.doors[a.i].open, true); return; }
+  if (a.kind === 'vstand') { vehStand(); return; }
+  if (a.kind === 'vseat') {
+    const v = a.v, s = a.s;
+    if (s.drv && !v.remote) {
+      if (!canDrive(v)) { showMsg(`${v.name} は持ち主（${ownerName(v)}）だけが${DRIVE_VERB[vtype(v)] || '運転'}できます`); return; }
+      v._inSeat = s; takeWheel(v); return;
+    }
+    vehSit = { v, s }; player.vy = 0; player.face = visYaw(v) + s.face;
+  }
+}
+function vehStand() {
+  if (!vehSit) return;
+  const { v, s } = vehSit; vehSit = null;
+  const p = seatWorldOf(v, s, new THREE.Vector3()), f = visYaw(v) + s.face;
+  player.pos.set(p.x + Math.sin(f) * 0.6, p.y + 0.3, p.z + Math.cos(f) * 0.6);
+  const su = surfUnder(v, player.pos.x, player.pos.z, player.pos.y + 0.2); if (su > -Infinity) player.pos.y = su;
+  player.vy = 0;
+}
+// 座っている：イスに合わせる。動こうとしたら立つ
+function stepVehSit() {
+  if (!vehSit) return false;
+  const { v, s } = vehSit;
+  if (!vehicles.includes(v)) { vehSit = null; return false; }
+  const mv = keys.KeyW || keys.ArrowUp || keys.KeyS || keys.ArrowDown || keys.Space || touch.act || (touch.stickId !== null && Math.hypot(touch.x, touch.y) > 0.3);
+  if (mv) { vehStand(); return false; }
+  seatWorldOf(v, s, player.pos); player.pos.y -= 0.4;
+  player.vy = 0; player.onGround = true; player.moving = false; player.mode = 'walk'; player.face = visYaw(v) + s.face; player.base = null;
+  return true;
+}
+// 中から運転していた：降りたら席の横に立つ
+function hollowExit(car) {
+  const s = car._inSeat; car._inSeat = null;
+  if (!s || !car.item.hollow) return false;
+  const p = seatWorldOf(car, s, new THREE.Vector3()), f = visYaw(car) + s.face;
+  player.pos.set(p.x + Math.sin(f + Math.PI / 2) * 0.6, p.y + 0.2, p.z + Math.cos(f + Math.PI / 2) * 0.6);
+  const su = surfUnder(car, player.pos.x, player.pos.z, player.pos.y + 0.3); player.pos.y = su > -Infinity ? su : p.y;
+  player.vy = 0; player.face = f;
+  return true;
+}
+// 乗り物の中（屋根の下）にいる：一人称
+function insideVeh() {
+  if (driving || aboard || busRide) return null;
+  const v = vehSit ? vehSit.v : player.base && player.base.v;
+  if (!v || !v.item.hollow) return null;
+  for (const P of v.item.hf || []) { const y = hfAt(P, player.pos.x, player.pos.y, player.pos.z, player.pos.y + 6, player.pos.y + P_H - 0.2); if (y > -Infinity) return v; }
+  return null;
+}
+
+/* ---------------- 航空機の種類（種類=飛行機／ヘリ／飛行船・気球）・ローター・ギア ---------------- */
+const AIR_KIND = (s, hasRotor) => {
+  const t = s == null ? '' : String(s);
+  if (/気球|balloon/i.test(t)) return 'balloon';
+  if (/飛行船|airship|blimp|zeppelin/i.test(t)) return 'airship';
+  if (/ヘリ|heli|copter/i.test(t)) return 'heli';
+  if (/飛行機|plane|airplane|jet/i.test(t)) return 'plane';
+  return hasRotor ? 'heli' : 'plane';
+};
+const ROTOR_RE = /ローター|ロータ|rotor|プロペラ|propeller|prop$/i, TAIL_RE = /テール|tail|後/i, PROP_RE = /プロペラ|propeller|prop$/i;
+const GEAR_RE = /ギア|ギヤ|gear|脚/i, GDOOR_RE = /扉|ドア|door|カバー|cover/i;
+function rigRotors(item, root) {
+  const list = [];
+  root.traverse((o) => {
+    if (!ROTOR_RE.test(o.name || '') || o === root) return;
+    for (let q = o.parent; q && q !== root; q = q.parent) if (ROTOR_RE.test(q.name || '')) return;   // ローターの中の羽
+    const P = mpPropsOf(o);
+    const prop = PROP_RE.test(o.name || ''), tail = !prop && TAIL_RE.test(o.name || '');
+    const axL = (mpHalf(mpGet(P, MP_NAMES.axis) || (prop ? 'Y' : tail ? 'X' : 'Z')).toUpperCase().match(/[XYZ]/) || ['Z'])[0];
+    const ax = new THREE.Vector3(...MP_AXV[axL]);
+    const rev = /逆|反|reverse|ccw/i.test(String(mpGet(P, XP.spin) ?? ''));
+    // 回っているときの「ぼんやりした円」：羽の長さ（軸に直角な向きのいちばん遠い点）
+    const inv = new THREE.Matrix4().copy(o.matrixWorld).invert(), v = new THREE.Vector3(); let r = 0;
+    o.traverse((m) => { if (m.isMesh) { const p = m.geometry.attributes.position; for (let i = 0; i < p.count; i += 1) { v.fromBufferAttribute(p, i).applyMatrix4(m.matrixWorld).applyMatrix4(inv); r = Math.max(r, v.clone().sub(ax.clone().multiplyScalar(v.dot(ax))).length()); } } });
+    let disc = null;
+    if (r > 0.2) {
+      disc = new THREE.Mesh(new THREE.CircleGeometry(r, 40), new THREE.MeshBasicMaterial({ color: 0x2a2a2a, transparent: true, opacity: 0, depthWrite: false, side: THREE.DoubleSide }));
+      disc.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), ax); disc.visible = false; disc.renderOrder = 2;
+      o.add(disc);
+    }
+    list.push({ o, ax, q0: o.quaternion.clone(), a: 0, k: (prop ? 1.4 : tail ? 3.5 : 1) * (rev ? -1 : 1), disc, prop });
+  });
+  return list.length ? list : null;
+}
+const _rQ = new THREE.Quaternion();
+function stepRotors(v, dt) {
+  const R = v.item.rotors; if (!R) return;
+  const on = (v === ride && driving) || !!v.remote;
+  const air = v.item.def.vehicle.air;
+  let want = on ? (air === 'plane' || !air ? 0.25 + 0.75 * (v === ride ? (v.throttle || 0) : Math.min(1, (v._spd || 0) / 30)) : 1) : 0;
+  v.rotK = (v.rotK || 0) + THREE.MathUtils.clamp(want - (v.rotK || 0), -dt / 5, dt / 3.5);
+  const w = v.rotK * 32;   // 1 秒に何ラジアン（メインローター 300 回転／分ほど）
+  for (const r of R) {
+    r.a = (r.a + w * r.k * dt) % (Math.PI * 2);
+    r.o.quaternion.copy(r.q0).multiply(_rQ.setFromAxisAngle(r.ax, r.a));
+    if (r.disc) { const b = THREE.MathUtils.clamp((v.rotK - 0.45) * 2, 0, 1); r.disc.visible = b > 0.02; r.disc.material.opacity = b * 0.22; }
+  }
+}
+// ギア：名前に ギア のある部品。原点が蝶番、軸（なければ X）、格納角度（なければ 90）、速さ（なければ 30°／秒）。ギア扉は 開く角度（なければ 90、軸 なければ Y）
+function prepGear(root) {
+  let noAll = false;
+  const legs = [], doors = [];
+  root.traverse((o) => {
+    if (o === root) return;
+    const P = mpPropsOf(o), st = mpGet(P, XP.stow);
+    if (st != null && mpNo(st) && !GEAR_RE.test(o.name || '')) noAll = true;
+    if (!GEAR_RE.test(o.name || '')) return;
+    for (let q = o.parent; q && q !== root; q = q.parent) if (GEAR_RE.test(q.name || '')) return;   // ギアの中の部品（タイヤなど）
+    if (st != null && mpNo(st)) return;
+    if (GDOOR_RE.test(o.name || '')) doors.push(o); else legs.push(o);
+  });
+  if (noAll || !legs.length) return false;
+  const fill = (o, ang, ax, sp, mark) => {
+    const P = mpPropsOf(o);
+    o.userData[mark] = Math.round(mpNum(mpGet(P, XP.order)) || 1);
+    if (mpGet(P, MP_NAMES.kind) != null) return;
+    const a = mpNum(mpGet(P, ang === 'stow' ? XP.stowAng : XP.openAng)) ?? 90;
+    Object.assign(o.userData, { '動作': '回転', '軸': mpGet(P, MP_NAMES.axis) || ax, '最小': Math.min(0, a), '最大': Math.max(0, a), '速さ': mpNum(mpGet(P, MP_NAMES.speed)) || sp });
+  };
+  for (const o of legs) fill(o, 'stow', 'X', 30, '__gear');
+  for (const o of doors) { fill(o, 'open', 'Y', 90, '__gdoor'); if (mpYes(mpGet(mpPropsOf(o), XP.stay))) o.userData.__gstay = true; }
+  return true;
+}
+function rigGear(item) {
+  const M = item.moves; if (!M) return null;
+  const legs = [], doors = [];
+  for (const a of M.chans) { const o = a.part.o; if (o.userData.__gear != null) legs.push(a); else if (o.userData.__gdoor != null) doors.push(a); }
+  if (!legs.length) return null;
+  const far = (a) => (Math.abs(a.max) >= Math.abs(a.min) ? a.max : a.min);
+  return { legs, doors, far, down: true, phase: null, step: 0 };
+}
+// ギアの上げ下げ：扉を開ける → ギア（順番の小さいものから）→ 扉を閉める
+function gearToggle(v) {
+  const G = v.item.gear; if (!G) return;
+  const air = v.y > floorAt(v.pos.x, v.pos.y) + 1.5 || vtype(v) !== 'plane';
+  if (G.down && !air) { showMsg('地上ではギアを上げられません'); return; }
+  G.down = !G.down; G.phase = 'open'; G.step = 0;
+  for (const a of G.doors) a.goal = G.far(a);
+  showMsg(G.down ? 'ギアを下ろします' : 'ギアを上げます');
+}
+function stepGear(v) {
+  const G = v.item.gear; if (!G || !G.phase || !(v === ride && driving)) return;
+  const done = (arr) => arr.every((a) => a.goal == null);
+  if (G.phase === 'open') { if (!done(G.doors)) return; G.phase = 'legs'; G.step = 0; }
+  if (G.phase === 'legs') {
+    const ords = [...new Set(G.legs.map((a) => a.part.o.userData.__gear))].sort((x, y) => (G.down ? y - x : x - y));
+    while (G.step < ords.length) {
+      const grp = G.legs.filter((a) => a.part.o.userData.__gear === ords[G.step]);
+      if (!grp.some((a) => a._gs === G.down + ':' + G.step)) { for (const a of grp) { a.goal = G.down ? a.init : G.far(a); a._gs = G.down + ':' + G.step; } return; }
+      if (!done(grp)) return;
+      G.step++;
+    }
+    G.phase = 'close';
+    for (const a of G.doors) if (!(G.down && a.part.o.userData.__gstay)) a.goal = a.init;
+    for (const a of G.legs) a._gs = null;
+    return;
+  }
+  if (G.phase === 'close' && done(G.doors)) G.phase = null;
+}
+const gearUp = (v) => !!(v.item.gear && (!v.item.gear.down || v.item.gear.phase));
+
+/* ---------------- スペック（重さ・出力…）と、積んだ物の重さ ----------------
+   ボディ（機体・胴体）に 重量（kg）・最高速度（km/h）・出力（馬力）・ブレーキ・最大積載（kg）。航空機は 離陸速度（km/h）・上昇力（m/秒）・旋回力（1＝ふつう）、
+   ヘリは 上昇速度（m/秒）・ホバリング（しない＝少し進まないと浮かない）。書かなければ大きさと種類から自動 */
+const DENS = { car: 85, truck: 110, bus: 90, tank: 520, heavy: 300, bike: 140, farm: 220, plane: 4, heli: 3, airship: 0.15, balloon: 0.4, ship: 160, sub: 300, robot: 160 };
+function rigSpec(item, root, kindKey, size) {
+  const V = item.def.vehicle, S = { user: {} };
+  const read = (k, names) => { const n = mpNum(bodyProp(root, names)); if (n != null && n > 0) { S.user[k] = true; return n; } return null; };
+  const vol = Math.max(0.05, size.x * size.y * size.z);
+  S.mass = read('mass', XP.wt) ?? Math.round(THREE.MathUtils.clamp(vol * (DENS[kindKey] || 90), 30, 600000) / 10) * 10;
+  S.vmax = Math.round((V.maxSpeed || 10) * 3.6);
+  const p0 = Math.round(S.mass * (kindKey === 'plane' ? 0.18 : kindKey === 'heli' ? 0.3 : kindKey === 'tank' ? 0.025 : 0.11));   // 自動の馬力
+  S.power = read('power', XP.power) ?? p0;
+  S.pk = THREE.MathUtils.clamp(S.power / Math.max(1, p0), 0.2, 5);   // 出力の倍率（自動を 1）
+  const mlk = { plane: 0.45, heli: 0.7, airship: 0.5, balloon: 0.6, truck: 1.2, tank: 0.15, heavy: 0.4 }[kindKey] ?? 0.45;
+  S.maxLoad = read('maxLoad', XP.maxLoad) ?? Math.round(S.mass * mlk * S.pk / 10) * 10;
+  if (V.cargo && V.cargo.kg && !S.user.maxLoad) S.maxLoad = Math.max(S.maxLoad, V.cargo.kg);
+  const br = read('brake', XP.brake);
+  if (br != null && V.brake) { V.brake = THREE.MathUtils.clamp(br, 1, 40); S.brake = V.brake; } else S.brake = V.brake || null;
+  if (V.accel && S.user.power) V.accel *= Math.sqrt(S.pk);
+  if (V.air) {
+    S.vto = read('vto', XP.vto) ?? Math.round(S.vmax * 0.35);
+    S.climb = read('climb', XP.climb) ?? (V.air === 'plane' ? 12 : 0);
+    S.turnK = read('turnP', XP.turnP) ?? 1;
+    S.vclimb = read('vclimb', XP.vclimb) ?? (V.air === 'heli' ? 8 : V.air === 'airship' ? 3 : V.air === 'balloon' ? 2 : 0);
+    const hv = bodyProp(root, XP.hover); S.hover = hv == null ? true : !mpNo(hv); if (hv != null) S.user.hover = true;
+  }
+  item.spec = S;
+  return S;
+}
+const specMass = (v) => (v.item.spec ? v.item.spec.mass : v.item.def.vehicle && v.item.def.vehicle.type === 'car' ? 1100 : 1500);
+const propMass = (pr) => { const s = pr.box.getSize(_fxV); return THREE.MathUtils.clamp(s.x * s.y * s.z * 120, 5, 30000); };
+// 積んでいる物の重さ（kg）：のっている車・置物・人、つっている・引いている物。0.5 秒ごと
+function vehLoadKg(v, depth = 0) {
+  let kg = 0;
+  if (depth > 2) return 0;
+  for (const u of vehicles) if (u !== v && u.base && u.base.v === v) kg += specMass(u) + vehLoadKg(u, depth + 1);
+  for (const pr of props) if (pr.base && pr.base.v === v && !pr.cpL) kg += propMass(pr);
+  for (const L of CP.links) if (L.own === v || L.host === v) kg += (L.tk === 'v' ? specMass(L.tgt) + vehLoadKg(L.tgt, depth + 1) : propMass(L.tgt)) * (L.hang ? 1 : 0.3);
+  if (depth === 0) {
+    if (v === ride) kg += 70;
+    if (!driving && !aboard && player.base && player.base.v === v) kg += 70;
+    if (vehSit && vehSit.v === v) kg += 70;
+    for (const o of net.others.values()) if (o.t && (o.t.pv === v.id || (v.remote && o.t.v === v.id))) kg += 70;
+  }
+  return kg;
+}
+// 重さの倍率：空のとき 1、重いほど小さい（加速・上昇・旋回）
+const weightK = (v) => { const m = specMass(v); return m / (m + Math.max(0, (v.loadKg || 0) - 70)); };
+const overLoad = (v) => v.item.spec && (v.loadKg || 0) - 70 > v.item.spec.maxLoad;
+let loadT = 0;
+function stepLoads(dt) {
+  if ((loadT -= dt) > 0) return;
+  loadT = 0.5;
+  for (const v of vehicles) if (v.item.spec && (v === ride || v.remote || !v.settled)) v.loadKg = vehLoadKg(v);
+}
+// 毎コマ：ほかの人の乗り物の速さ（エフェクト・ローター用）
+function stepVehVel(dt) {
+  for (const v of vehicles) {
+    if (!v.item.fx && !v.item.rotors && !v.item.launch) continue;
+    const p = v._pp || (v._pp = new THREE.Vector3(v.pos.x, v.y, v.pos.y));
+    const vel = v._vel || (v._vel = new THREE.Vector3());
+    if (dt > 0) vel.set((v.pos.x - p.x) / dt, (v.y - p.y) / dt, (v.pos.y - p.z) / dt);
+    if (vel.lengthSq() > 1e6) vel.set(0, 0, 0);
+    v._spd = vel.length(); p.set(v.pos.x, v.y, v.pos.y);
+  }
+}
+// まとめて毎コマ（frame から）
+function stepBundle(dt) {
+  stepVehVel(dt);
+  stepIdleMoves(dt);
+  stepLoads(dt);
+  for (const v of vehicles) { if (v.item.rotors) stepRotors(v, dt); if (v.item.gear) stepGear(v); }
+  stepShots(dt);
+  for (const [b, t] of FIRE_HELD) { if (!ride || MPB.v !== ride) { FIRE_HELD.delete(b); continue; } if (clock.elapsedTime >= t) { fireBtn(ride, b, false); FIRE_HELD.set(b, clock.elapsedTime + 0.05); } }
+  stepFx(dt);
+}
+// 読み込んだ物すべて（loadItem の最後）：エフェクト・発射・中に入れる・ローター・ギア
+function rigBundle(item, root, model, def) {
+  const veh = def.kind === 'vehicle';
+  item.fx = rigFx(item, root, model, veh);
+  if (!veh) return;
+  item.launch = rigLaunchers(item, root, model);
+  if (item.hollowPrep) item.hollow = rigHollow(item, root);
+  item.rotors = rigRotors(item, root);
+  item.gear = rigGear(item);
+}
+// 読み込む前（動く部品を作る前）：ドア・ギアに動作をつける、中に入れるか、当たり判定の形
+function prepBundle(item, root, model, def) {
+  if (def.kind !== 'vehicle') return;
+  item.hollowPrep = mpYes(bodyProp(root, XP.inside));
+  if (item.hollowPrep) prepHollow(root, model);
+  const cols = [];
+  root.traverse((o) => { if (/^(当たり判定|あたり判定|collision|collider)/i.test(o.name || '')) o.traverse((m) => { if (m.isMesh) { cols.push(m); m.visible = false; } }); });
+  item.colMeshes = cols.length ? new Set(cols) : null;
+}
+function hfSkipOf(item) {
+  const s = new Set();
+  for (const r of item.rotors || []) s.add(r.o);
+  for (const L of item.launch || []) if (L.mode === 'fire') s.add(L.o);
+  return s;
+}
+// スペックを見る（☰）
+function showSpec(v) {
+  const S = v.item.spec, V = v.item.def.vehicle;
+  if (!S) { showMsg('この乗り物にはスペックがありません'); return; }
+  const a = (k) => (S.user[k] ? '' : '（自動）');
+  const kg = (n) => (n >= 1000 ? `${(n / 1000).toFixed(n >= 10000 ? 0 : 1)}t` : `${Math.round(n)}kg`);
+  const load = Math.max(0, (v.loadKg || 0) - 70);
+  const rows = [['重量', kg(S.mass) + a('mass')], ['最高速度', `${S.vmax}km/h`], ['出力', `${S.power.toLocaleString()}馬力${a('power')}`], ['最大積載', kg(S.maxLoad) + a('maxLoad')]];
+  if (S.brake) rows.push(['ブレーキ', `${S.brake.toFixed(1)}${a('brake')}`]);
+  if (V.air === 'plane') rows.push(['離陸速度', `${S.vto}km/h${a('vto')}`], ['上昇力', `${S.climb}m/秒${a('climb')}`], ['旋回力', `${S.turnK}${a('turnP')}`]);
+  if (V.air && V.air !== 'plane') rows.push(['上昇速度', `${S.vclimb}m/秒${a('vclimb')}`], ['ホバリング', S.hover ? 'できる' : 'できない（少し進むと浮く）']);
+  if (V.air) rows.push(['種類', { plane: '飛行機', heli: 'ヘリコプター', airship: '飛行船', balloon: '気球' }[V.air]]);
+  rows.push(['いまの荷物', kg(load)], ['総重量', kg(S.mass + load)]);
+  el('specBody').innerHTML = `<table>${rows.map(([k, x]) => `<tr><th>${k}</th><td>${x}</td></tr>`).join('')}</table><p class="mpnote">（自動）は大きさと種類から決めた値。ボディのカスタムプロパティで変えられます。</p>`;
+  el('specT').textContent = `${v.name} のスペック`;
+  el('specDlg').hidden = false;
+}
+
 function stepHangParts(dt) { for (const v of vehicles) { const M = v.item.moves; if (M && M.hang && M.hang.length && !v.sunk) mpHang(M, dt); } }
 // ボタンの機能（ゲームに登録された機能）。あとで足せるように表にしておく
 //   toggle：押すたびに ON／OFF（ON で部品は 最大か最小 へ、ライトはつく。OFF ではじめの位置へ、ライトは消える）
@@ -1378,6 +2218,7 @@ const MP_FUNCS = {
   home: { name: 'はじめの位置にもどす' },
   couple: { name: '連結／解除（さわっている物とつなぐ）' },
   seq: { name: 'ボタンをまとめる（ほかのボタンを順に押す）' },
+  fire: { name: '発射・切り離し（押すと撃つ・落とす）' },
   drive: { name: '運転に連動（前進・スティックで動く）' },
 };
 // 運転に連動：きっかけ（前進・後退・左・右・走っている間）と動き方（往復・その向きへ）。きっかけがなくなると、はじめの位置へもどる
@@ -1394,6 +2235,7 @@ function mpDriveStep(v, M, dt) {
     if (b.t !== 'drive') continue;
     const act = b.on !== false && mpTrigOn(v, b.trig || 'fwd');
     for (const q of b.acts) {
+      if (q.k === 'fx') { if (act !== !!b._act) fxSetKey(v, q.ch, act); continue; }   // エフェクトも運転に連動
       if (q.k !== 'part') continue;
       for (const a of mpChans(q.ch)) {
         if (!M.chans.includes(a)) continue;
@@ -1948,10 +2790,11 @@ function rigPlane(item, root, model, gltf, def) {
   if (reasons.length) throw new RuleError('plane', reasons);
   const c = box.getCenter(new THREE.Vector3());
   model.position.x -= c.x; model.position.z -= c.z; model.position.y -= box.min.y;
-  // 旅客機：ギアの部品がある か 長さ 35m より大きい
-  let gearPart = false;
-  model.traverse((o) => { if (JET_RE.nose.test((o.name || '').trim()) || JET_RE.main.test((o.name || '').trim())) gearPart = true; });
-  if (gearPart || size.z > 35) {
+  // 旅客機：ギアの部品がある か 長さ 35m より大きい（2026-11-16：ボディに 種類 を書くと、ふつうの航空機。ギアは名前に ギア）
+  let gearPart = false, hasRotor = false;
+  model.traverse((o) => { if (JET_RE.nose.test((o.name || '').trim()) || JET_RE.main.test((o.name || '').trim())) gearPart = true; if (ROTOR_RE.test(o.name || '') && !PROP_RE.test(o.name || '')) hasRotor = true; });
+  const kindProp = bodyProp(root, XP.kind);
+  if (kindProp == null && !hasRotor && (gearPart || size.z > 35)) {
     const P = rigJet(item, root, model, gltf, size);
     item.def.vehicle = {
       type: 'plane', jet: true, halfWidth: size.x / 2, halfLength: size.z / 2, centerZ: 0, height: size.y,
@@ -1961,13 +2804,19 @@ function rigPlane(item, root, model, gltf, def) {
     item.size = size;
     return;
   }
-  const kmh = kmhOf(extrasOf(gltf), 150, 60, 300);
+  // 種類：飛行機（前に進む速さがないと飛べない）・ヘリ（垂直に上がる。進む向きに機体がかたむく）・飛行船／気球（ヘリのなかま。かたむかない・ゆっくり・風に流される）
+  const air = AIR_KIND(kindProp, hasRotor);
+  const sv = xNum(root, XP.vmax);
+  const kmh = sv != null && sv > 0 ? THREE.MathUtils.clamp(sv, 10, 1200) : air === 'heli' ? 250 : air === 'airship' ? 90 : air === 'balloon' ? 25 : kmhOf(extrasOf(gltf), 150, 60, 300);
+  const tilt = bodyProp(root, XP.tilt);
+  prepGear(root);   // ギア（名前に ギア）を、動く部品にしておく
   item.def.vehicle = {
-    type: 'plane', halfWidth: size.x / 2, halfLength: size.z / 2, centerZ: 0, height: size.y,
+    type: 'plane', air, noTilt: air === 'airship' || air === 'balloon' || (tilt != null && mpNo(tilt)), halfWidth: size.x / 2, halfLength: size.z / 2, centerZ: 0, height: size.y,
     maxSpeed: kmh / 3.6, wheelbase: Math.max(1, size.z * 0.6), wheelRadius: 0.3,
     exit: [-(size.x / 2 + 0.6), 0],
   };
   item.size = size;
+  rigSpec(item, root, air, size);
 }
 /* ================= 人型ロボット =================
    部品：胴体・コックピット・左右の 肩・上腕・手・もも・ひざ・足。前が +Z。足はスキーのようにすべって進む。
@@ -4760,13 +5609,16 @@ function removeVehicle(v) {
    置物は少しぶつかったくらいでは飛ばない（押した分だけずれる）。押されたり持ち上げられたりした置物・車は、止まったら動かした人が位置を保存する。 */
 const HF_CELL = 0.2, HF_STEP = 0.45;
 let hfFrame = 0;
-function hfBuild(frame, skip) {
+// 2026-11-16：1 マスに面をいくつも持つ（床・天井・壁を区別できる）。lo〜hi が 1 つの「形のある高さ」。
+//   上を向いた面は lo=hi（その高さ）、立っている面（壁）は下のはしから上のはしまで。中に入れる乗り物の床と天井、つり上げたアームの下もわかる
+const HF_K = 6;
+function hfBuild(frame, skip, only) {
   frame.updateMatrixWorld(true);
   const inv = new THREE.Matrix4().copy(frame.matrixWorld).invert(), M = new THREE.Matrix4(), a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3();
   const tris = [];
   const walk = (o) => {
     if (o !== frame && skip.has(o)) return;
-    if (o.isMesh && o.visible && o.geometry && o.geometry.attributes.position) {
+    if (o.isMesh && (only ? only.has(o) : o.visible) && o.geometry && o.geometry.attributes.position) {
       const P = o.geometry.attributes.position, I = o.geometry.index, n = I ? I.count : P.count;
       M.multiplyMatrices(inv, o.matrixWorld);
       const arr = new Float32Array(n * 3);
@@ -4780,31 +5632,47 @@ function hfBuild(frame, skip) {
   for (const arr of tris) for (let i = 0; i < arr.length; i += 3) { x0 = Math.min(x0, arr[i]); x1 = Math.max(x1, arr[i]); z0 = Math.min(z0, arr[i + 2]); z1 = Math.max(z1, arr[i + 2]); }
   if (!(x1 > x0) || !(z1 > z0)) return null;
   const nx = Math.min(200, Math.ceil((x1 - x0) / HF_CELL) + 1), nz = Math.min(200, Math.ceil((z1 - z0) / HF_CELL) + 1), cx = (x1 - x0) / Math.max(1, nx - 1) || HF_CELL, cz = (z1 - z0) / Math.max(1, nz - 1) || HF_CELL;
-  const h = new Float32Array(nx * nz).fill(-Infinity);
-  const put = (x, y, z) => { const i = Math.round((x - x0) / cx), k = Math.round((z - z0) / cz); if (i >= 0 && i < nx && k >= 0 && k < nz && y > h[k * nx + i]) h[k * nx + i] = y; };
+  const K = HF_K, lo = new Float32Array(nx * nz * K), hi = new Float32Array(nx * nz * K), cnt = new Uint8Array(nx * nz);
+  // 1 マスに [ya, yb] を入れる：重なる・近い（8cm）ものはまとめる。いっぱいなら、いちばん近い 2 つをまとめる
+  const addI = (id, ya, yb) => {
+    const o = id * K;
+    let n = cnt[id];
+    for (let j = 0; j < n; j++) if (ya <= hi[o + j] + 0.08 && yb >= lo[o + j] - 0.08) {
+      ya = Math.min(ya, lo[o + j]); yb = Math.max(yb, hi[o + j]);
+      n--; lo[o + j] = lo[o + n]; hi[o + j] = hi[o + n]; cnt[id] = n; j = -1;   // はずして、もう一度まとめなおす
+    }
+    if (n < K) { lo[o + n] = ya; hi[o + n] = yb; cnt[id] = n + 1; return; }
+    let bi = 0, bd = Infinity;
+    for (let j = 0; j < n; j++) { const d = Math.max(lo[o + j] - yb, ya - hi[o + j]); if (d < bd) { bd = d; bi = j; } }
+    lo[o + bi] = Math.min(lo[o + bi], ya); hi[o + bi] = Math.max(hi[o + bi], yb);
+  };
+  const cell = new Map(), sp = Math.min(cx, cz) * 0.6;
   for (const arr of tris) for (let t = 0; t + 8 < arr.length; t += 9) {
     a.set(arr[t], arr[t + 1], arr[t + 2]); b.set(arr[t + 3], arr[t + 4], arr[t + 5]); c.set(arr[t + 6], arr[t + 7], arr[t + 8]);
-    // 三角形の中のマス（上から見て）。立っている面はふちだけ（壁の上のはし）
-    const ix0 = Math.max(0, Math.floor((Math.min(a.x, b.x, c.x) - x0) / cx)), ix1 = Math.min(nx - 1, Math.ceil((Math.max(a.x, b.x, c.x) - x0) / cx));
-    const iz0 = Math.max(0, Math.floor((Math.min(a.z, b.z, c.z) - z0) / cz)), iz1 = Math.min(nz - 1, Math.ceil((Math.max(a.z, b.z, c.z) - z0) / cz));
-    const d = (b.z - c.z) * (a.x - c.x) + (c.x - b.x) * (a.z - c.z);
-    if (Math.abs(d) > 1e-9 && (ix1 - ix0 + 1) * (iz1 - iz0 + 1) < 40000) for (let k = iz0; k <= iz1; k++) for (let i = ix0; i <= ix1; i++) {
-      const px = x0 + i * cx, pz = z0 + k * cz;
-      const w1 = ((b.z - c.z) * (px - c.x) + (c.x - b.x) * (pz - c.z)) / d, w2 = ((c.z - a.z) * (px - c.x) + (a.x - c.x) * (pz - c.z)) / d, w3 = 1 - w1 - w2;
-      if (w1 >= -1e-4 && w2 >= -1e-4 && w3 >= -1e-4) { const y = w1 * a.y + w2 * b.y + w3 * c.y; if (y > h[k * nx + i]) h[k * nx + i] = y; }
+    // 三角形の上に点をならべて、マスごとに高さのはんいを集める（立っている面は下から上まで）
+    const L = Math.max(a.distanceTo(b), b.distanceTo(c), c.distanceTo(a)), n = Math.min(140, Math.max(1, Math.ceil(L / sp)));
+    cell.clear();
+    for (let i = 0; i <= n; i++) for (let j = 0; j <= n - i; j++) {
+      const u = i / n, w = j / n, r = 1 - u - w;
+      const px = a.x * r + b.x * u + c.x * w, py = a.y * r + b.y * u + c.y * w, pz = a.z * r + b.z * u + c.z * w;
+      const ix = Math.round((px - x0) / cx), iz = Math.round((pz - z0) / cz);
+      if (ix < 0 || ix >= nx || iz < 0 || iz >= nz) continue;
+      const id = iz * nx + ix, q = cell.get(id);
+      if (q) { if (py < q[0]) q[0] = py; if (py > q[1]) q[1] = py; } else cell.set(id, [py, py]);
     }
-    for (const [p, q] of [[a, b], [b, c], [c, a]]) { const L = Math.hypot(q.x - p.x, q.z - p.z), n = Math.min(200, Math.ceil(L / (HF_CELL * 0.5))); for (let s = 0; s <= n; s++) { const f = n ? s / n : 0; put(p.x + (q.x - p.x) * f, p.y + (q.y - p.y) * f, p.z + (q.z - p.z) * f); } }
+    for (const [id, q] of cell) addI(id, q[0], q[1]);
   }
   let top = frame; while (top.parent && top.parent.type !== 'Scene') top = top.parent;
-  return { fr: frame, top, x0, z0, nx, nz, cx, cz, h, inv: new THREE.Matrix4(), invF: -1, x1, z1 };
+  return { fr: frame, top, x0, z0, nx, nz, cx, cz, lo, hi, cnt, inv: new THREE.Matrix4(), invF: -1, x1, z1 };
 }
 // 自動車の地図をつくる（読み込んだとき。動く部品をつけたあと）
 function buildCarHf(item) {
   const movers = new Set();
   if (item.moves) for (const p of item.moves.parts) movers.add(p.o);
   if (item.work) { if (item.work.tilt) movers.add(item.work.tilt); for (const g of Object.values(item.work.hv || {})) movers.add(g); }
-  const pieces = [hfBuild(item.root, movers)];
-  for (const o of movers) pieces.push(hfBuild(o, movers));
+  const only = item.colMeshes || null, skip = new Set([...movers, ...hfSkipOf(item)]);   // 当たり判定の形があれば、それだけ。ローターは入れない
+  const pieces = [hfBuild(item.root, skip, only)];
+  for (const o of movers) pieces.push(hfBuild(o, skip, only));
   const list = pieces.filter(Boolean);
   if (!list.length) return null;
   const B = list[0];   // 車体だけの外形（動く部品＝フォークなどは入れない）：押す・ぶつかるときに使う
@@ -4815,18 +5683,55 @@ function buildCarHf(item) {
 const _hfV = new THREE.Vector3();
 // 乗り物ぜんたいの行列を、1 コマに 1 回だけ新しくする（動く部品の位置も root から計算しなおす）
 function hfMats(P) { const r = P.top; if (r._mwF !== hfFrame) { r.updateMatrixWorld(true); r._mwF = hfFrame; } }
-function hfAt(P, x, y, z) {
+// yMax があれば、その高さより下でいちばん高い面（yMin より上のものだけ）。なければいちばん上の面
+function hfAt(P, x, y, z, yMax, yMin) {
   if (P.invF !== hfFrame) { hfMats(P); P.inv.copy(P.fr.matrixWorld).invert(); P.invF = hfFrame; }
   _hfV.set(x, y, z).applyMatrix4(P.inv);
   const i = Math.round((_hfV.x - P.x0) / P.cx), k = Math.round((_hfV.z - P.z0) / P.cz);
   if (i < 0 || i >= P.nx || k < 0 || k >= P.nz) return -Infinity;
-  const ly = P.h[k * P.nx + i];
-  if (ly === -Infinity) return -Infinity;
-  _hfV.y = ly; _hfV.applyMatrix4(P.fr.matrixWorld);
-  // かたむいた・回った部品（ジャッキ・アーム）は、地図の「上」が世界の上ではない。見つけた面が、さがした所の真上・真下でなければ使わない
-  //   （前はここを見ていなかったので、遠くの何もない所に面があることになり、ぶつかったり物を弾いたりした）
-  if (Math.abs(_hfV.x - x) > 0.3 || Math.abs(_hfV.z - z) > 0.3) return -Infinity;
-  return _hfV.y;
+  const id = k * P.nx + i, n = P.cnt[id];
+  if (!n) return -Infinity;
+  const lx = _hfV.x, lz = _hfV.z, e = P.fr.matrixWorld.elements;
+  let best = -Infinity;
+  for (let j = 0; j < n; j++) {
+    const ly = P.hi[id * HF_K + j];
+    // かたむいた・回った部品（ジャッキ・アーム）は、地図の「上」が世界の上ではない。見つけた面が、さがした所の真上・真下でなければ使わない
+    const wx = e[0] * lx + e[4] * ly + e[8] * lz + e[12], wz = e[2] * lx + e[6] * ly + e[10] * lz + e[14];
+    if (Math.abs(wx - x) > 0.3 || Math.abs(wz - z) > 0.3) continue;
+    const wy = e[1] * lx + e[5] * ly + e[9] * lz + e[13];
+    if (yMax != null && wy > yMax) continue;
+    if (yMin != null && wy < yMin) continue;
+    if (wy > best) best = wy;
+  }
+  return best;
+}
+// 地図の 1 枚で、(x, z) の高さ y0〜y1 に形があるか（ぶつかる判定）
+function hfSpan(P, x, z, y0, y1) {
+  if (P.invF !== hfFrame) { hfMats(P); P.inv.copy(P.fr.matrixWorld).invert(); P.invF = hfFrame; }
+  _hfV.set(x, (y0 + y1) / 2, z).applyMatrix4(P.inv);
+  const i = Math.round((_hfV.x - P.x0) / P.cx), k = Math.round((_hfV.z - P.z0) / P.cz);
+  if (i < 0 || i >= P.nx || k < 0 || k >= P.nz) return false;
+  const id = k * P.nx + i, n = P.cnt[id];
+  if (!n) return false;
+  const lx = _hfV.x, lz = _hfV.z, e = P.fr.matrixWorld.elements, by = e[1] * lx + e[9] * lz + e[13];
+  for (let j = 0; j < n; j++) {
+    const a = by + e[5] * P.lo[id * HF_K + j], b = by + e[5] * P.hi[id * HF_K + j];
+    if (Math.max(a, b) > y0 && Math.min(a, b) < y1) return true;
+  }
+  return false;
+}
+// その乗り物の形が、(x, z) の高さ y0〜y1 にあるか
+function hfSpanV(v, x, z, y0, y1) {
+  const V = v.item.def.vehicle, r = V.halfLength + V.halfWidth + 1;
+  if (!v.item.hf || v.sunk || Math.abs(x - v.pos.x) > r || Math.abs(z - v.pos.y) > r) return false;
+  for (const P of v.item.hf) if (hfSpan(P, x, z, y0, y1)) return true;
+  return false;
+}
+// 人（足もと y・半径 R）がその乗り物の形にぶつかるか（足もとの段差 HF_STEP はこえられる、頭の上は通れる）
+const HFP = [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1], [0.7, 0.7], [-0.7, 0.7], [0.7, -0.7], [-0.7, -0.7]];
+function hfHitsMan(v, x, z, y, R) {
+  for (const [ax, az] of HFP) if (hfSpanV(v, x + ax * R, z + az * R, y + HF_STEP, y + P_H - 0.1)) return true;
+  return false;
 }
 // 乗り物の面のうち、yMax より下でいちばん高いもの。{ y, v, P } か null。skip の乗り物と、skip に積まれている乗り物は見ない
 const _surf = { y: -Infinity, v: null, P: null };
@@ -4839,12 +5744,12 @@ function surfTop(x, z, yMax, skip, skip2) {
     if (Math.abs(x - v.pos.x) > r || Math.abs(z - v.pos.y) > r || v.y > yMax + 0.5) continue;
     for (const P of L) {
       if (skip2 && v === skip2.v && skip2.fr.has(P.fr)) continue;   // つっているフック・アームの面にはのらない（荷台にはのる）
-      const y = hfAt(P, x, Math.min(yMax, v.y + 3), z); if (y > _surf.y && y <= yMax) { _surf.y = y; _surf.v = v; _surf.P = P; } }
+      const y = hfAt(P, x, Math.min(yMax, v.y + 3), z, yMax); if (y > _surf.y && y <= yMax) { _surf.y = y; _surf.v = v; _surf.P = P; } }
   }
   return _surf.v ? _surf : null;
 }
 // その乗り物の面のうち、yMax より下でいちばん高いもの（なければ -Infinity）
-function surfUnder(v, x, z, yMax) { let best = -Infinity; for (const P of v.item.hf || []) { const y = hfAt(P, x, v.y + 1, z); if (y <= yMax && y > best) best = y; } return best; }
+function surfUnder(v, x, z, yMax) { let best = -Infinity; for (const P of v.item.hf || []) { const y = hfAt(P, x, Math.min(yMax, v.y + 1), z, yMax); if (y <= yMax && y > best) best = y; } return best; }
 // その乗り物だけの、いちばん上の面（ぶつかる判定用）
 function surfOf(v, x, z) { let best = -Infinity; for (const P of v.item.hf || []) best = Math.max(best, hfAt(P, x, v.y + 1, z)); return best; }
 // 乗っている物（人・置物・止まった車）の「下の乗り物」をおぼえる／外す
@@ -5245,7 +6150,7 @@ function hfBlocked(car) {
     if (Math.hypot(u.pos.x - car.pos.x, u.pos.y - car.pos.y) > r + U.halfLength + U.halfWidth) continue;
     for (const [lx, lz] of [[hx, z1], [-hx, z1], [hx, z0], [-hx, z0], [0, z1], [0, z0], [hx, zm], [-hx, zm]]) {
       const p = carLocalToWorld(car, lx, lz * 0.97);
-      if (surfOf(u, p.x, p.y) > car.y + HF_STEP) return true;
+      if (hfSpanV(u, p.x, p.y, car.y + HF_STEP, car.y + (V.height || 1.5) - 0.1)) return true;   // 2026-11-16：形のある高さで（アームの下・中に入れる乗り物の中へは入れる）
     }
   }
   return false;
@@ -5546,6 +6451,7 @@ function nearBldAction() {
   return best;
 }
 function doBldAction(a) {
+  if (a.kind && a.kind[0] === 'v') { doVehAction(a); return; }
   if (a.kind === 'door') {   // となりあう 2 枚のドア（両開き・両引き）はいっしょに動かす
     const d0 = a.b.doors[a.k], open = !d0.want;
     a.b.doors.forEach((d, k) => { if (k === a.k || (d.slide === d0.slide && d.c0.distanceTo(d0.c0) < 2.4 && !!d.want !== open)) setDoor(a.b, k, open, null, true); });
@@ -5942,14 +6848,66 @@ const HELP_MAIN = `<h4>種類のえらび方</h4><table><tr><th>種類</th><th>�
 const HELP_BOAT = `<h4>船・潜水艦・航空機・ロボット</h4><table><tr><th>種類</th><th>きまり</th></tr>
 <tr><td>船</td><td>形だけでよい（長さ 30m まで）。長いほうに進む。<code>主砲</code>・<code>CIWS</code>・<code>前方</code> をつけるとイージス艦（200m まで）。甲板に相乗りできる。</td></tr>
 <tr><td>潜水艦</td><td><code>ライト</code>（ある側が前）と <code>潜望鏡</code> がいる。</td></tr>
-<tr><td>航空機</td><td>形だけでよい（80m まで）。前が −Y（Blender）。速さは カスタムプロパティ <code>max_speed_kmh</code>（60〜300）。<br><b>旅客機</b>：<code>ノーズギア</code>・<code>メインギア左</code>・<code>メインギア右</code>（<code>メインギア中央</code> も可）の部品があるか、長さ 35m より大きいと旅客機になります（DC-10-30 の重さ・推力・失速速度で飛ぶ）。ギアは上の端を軸に格納。<code>フラップ左</code>・<code>フラップ右</code>（前のふちが軸）、<code>スラット…</code>、<code>スポイラー…</code> があれば動きます。</td></tr>
+<tr><td>航空機</td><td>形だけでよい（80m まで）。前が −Y（Blender）。ボディに <code>種類</code>=<code>飛行機</code>・<code>ヘリ</code>・<code>飛行船</code>・<code>気球</code>（下の「航空機の種類」）。<br><b>旅客機</b>（<code>種類</code> を書かないとき）：<code>ノーズギア</code>・<code>メインギア左</code>・<code>メインギア右</code>（<code>メインギア中央</code> も可）の部品があるか、長さ 35m より大きいと旅客機になります（DC-10-30 の重さ・推力・失速速度で飛ぶ）。ギアは上の端を軸に格納。<code>フラップ左</code>・<code>フラップ右</code>（前のふちが軸）、<code>スラット…</code>、<code>スポイラー…</code> があれば動きます。</td></tr>
 <tr><td>人型ロボット</td><td><code>胴体</code>・<code>コックピット</code>・<code>左足</code>・<code>右足</code> がいる。<code>左肩</code> <code>左上腕</code> <code>左手</code> <code>左もも</code> <code>左ひざ</code>（右も）で手足が動く。</td></tr></table>`;
+const HELP_AIR = `<h4>航空機の種類（ボディに <code>種類</code>）</h4>
+<table><tr><th>種類</th><th>飛び方</th></tr>
+<tr><td><code>飛行機</code></td><td>前に進む速さがないと飛べない（<code>離陸速度</code> より速く）。遅いと落ちる。滑走路がいる</td></tr>
+<tr><td><code>ヘリ</code></td><td>ローターが回りきると、その場で上がる（Space・「上昇」）。前へ進むと機首が下がり、曲がるとかたむく。<code>傾き</code>=<code>しない</code> でかたむかない</td></tr>
+<tr><td><code>飛行船</code> <code>気球</code></td><td>ヘリのなかま。かたむかない・ゆっくり・風に流される（気球はとてもおそい）</td></tr></table>
+<p>書かなければ、<code>ローター</code> の部品があればヘリ、なければ飛行機です。</p>
+<h4>ローター・プロペラ</h4>
+<p>名前に <b>ローター</b> が入っていれば回ります（<code>メインローター</code>・<code>テールローター</code>・<code>ローター前</code>・<code>ローター後</code> など）。<b>原点が回る中心（ハブ）</b>で、<b>部品の向き（ローカルの軸）</b>で回るので、ななめにつけてもよい。名前に <code>プロペラ</code> なら前後の軸で回ります。</p>
+<table><tr><th>プロパティ</th><th>値</th></tr>
+<tr><td><code>軸</code></td><td>回る軸（部品のローカルの X・Y・Z）。なければメインは <code>Z</code>、名前に テール は <code>X</code>、プロペラ は <code>Y</code></td></tr>
+<tr><td><code>回転</code></td><td><code>逆</code>：反対向きに回る（2 つのローターを逆回りに）</td></tr></table>
+<p>速く回るとぼんやりした円が見えます。オスプレイのように向きを変えるときは、ローターを <code>動作</code>=<code>回転</code> の部品（エンジン）の<b>子</b>にします。</p>
+<h4>ギア（車輪の格納）</h4>
+<p>名前に <b>ギア</b> が入った部品が脚になり、<b>G キー</b>・☰「ギアを上げる」でしまえます。<b>原点が蝶番</b>（ちょうつがい）。ギアの子の部品（タイヤ）もいっしょに動きます。</p>
+<table><tr><th>プロパティ</th><th>値</th></tr>
+<tr><td><code>軸</code></td><td><code>X</code> <code>Y</code> <code>Z</code>（Blender の軸）。なければ <code>X</code></td></tr>
+<tr><td><code>格納角度</code></td><td>しまうときに回る角度（<code>90</code> か <code>-90</code> など）。なければ 90（+90 は X 軸で後ろへたたむ）</td></tr>
+<tr><td><code>速さ</code> <code>順番</code></td><td>1 秒に何度（なければ 30）・しまう順番（1〜9）</td></tr>
+<tr><td><code>格納</code>=<code>なし</code></td><td>ボディにつけると、どの脚もしまわない（固定脚）。1 本の脚につけると、その脚だけしまわない</td></tr></table>
+<p>名前に <b>ギア扉</b> の部品は扉。扉が開く → ギアが動く → 扉が閉まる の順に動きます。扉は <code>開く角度</code>（なければ 90）・<code>軸</code>（なければ <code>Y</code>）、<code>開いたまま</code>=<code>する</code> でギアを下ろしたあと開いたまま。地上ではギアを上げられません。ギアを上げたまま着陸すると胴体着陸になります。</p>`;
+const HELP_FX = `<h4>エフェクト</h4>
+<p>部品に <code>エフェクト</code>=<code>爆発</code> のように書くと、<b>原点</b>から出ます：<code>爆発</code> <code>炎</code> <code>煙</code> <code>蒸気</code> <code>排気</code> <code>放水</code> <code>水しぶき</code> <code>泡</code> <code>火花</code> <code>ビーム</code> <code>キラキラ</code> <code>花火</code> <code>砂ぼこり</code> <code>紙吹雪</code> <code>軌跡</code>。形のない「空（エンプティ）」でもよい。</p>
+<table><tr><th>プロパティ</th><th>値</th></tr>
+<tr><td><code>向き</code></td><td><code>上</code> <code>下</code> <code>前</code> <code>後</code> <code>左</code> <code>右</code>（書き出した形での向き。部品が回ると、いっしょに回る）</td></tr>
+<tr><td><code>色</code> <code>大きさ</code></td><td><code>赤</code> <code>青</code>… か <code>#ff8800</code>・1 がふつう（2 で 2 倍）</td></tr>
+<tr><td><code>いつ</code></td><td><code>ボタン</code>（乗り物のふだん）・<code>いつも</code>・<code>運転中</code>（排気のふだん）・<code>走ると</code>（砂ぼこり・軌跡のふだん）。置物・建物はいつも出る</td></tr></table>
+<p>ボタンは ☰「🎛️ ボタンを作る」で：ON／OFF・押している間・運転に連動 に ✨ エフェクトを入れられます。爆発・花火は 1 回出ます。</p>
+<h4>発射・切り離し（砲弾・爆弾・ミサイル）</h4>
+<p><code>動作</code>=<code>発射</code>：ボタンで、その部品の<b>コピー</b>が飛んでいく（元の部品は残る。砲身の子にすると砲身の向きへ）。<code>動作</code>=<code>切り離し</code>：部品そのものがはずれて落ちる（もう 1 回押すか「もどす」で元にもどる）。☰「🎛️ ボタンを作る」→「発射・切り離し」でボタンを作ります。</p>
+<table><tr><th>プロパティ</th><th>値</th></tr>
+<tr><td><code>速さ</code> <code>向き</code></td><td>m／秒（発射は 80、切り離しは 0）・<code>前</code>（発射）／<code>下</code>（切り離し）</td></tr>
+<tr><td><code>弾数</code> <code>間隔</code></td><td>何発まで（なければいくらでも。20 秒で補充）・何秒ごとに撃てるか（0.5）</td></tr>
+<tr><td><code>重さ</code></td><td>kg。当たった物を押す強さ（なければ大きさから）</td></tr>
+<tr><td><code>当たると</code></td><td><code>爆発</code>・<code>止まる</code>・<code>はねる</code>・<code>消える</code>（なければ止まって 10 秒で消える）</td></tr>
+<tr><td><code>時間で</code> <code>時間</code></td><td><code>爆発</code> か <code>消える</code>・何秒で（3）</td></tr>
+<tr><td><code>重力</code></td><td><code>なし</code>：まっすぐ飛ぶ（ミサイル・ビーム弾）</td></tr></table>
+<p>飛んでいく部品の子に <code>エフェクト</code>=<code>炎</code> などをつけると、飛んでいる間ずっと出ます。当たった物は<b>押されるだけ</b>で、こわれません。</p>
+<h4>当たり判定</h4>
+<p>乗り物の<b>形の面そのもの</b>で当たります。動く部品（アーム・砲塔・ドア）も、動いた形で当たります（上がったアームの下は通れる）。形がこまかすぎるときは、かんたんな形の部品を <code>当たり判定</code> という名前で入れると、それだけで当たります（見えなくなります。動く部品の子にすれば、いっしょに動く）。</p>
+<h4>中に入れる乗り物（荷室・客室）</h4>
+<p>ボディに <code>中に入れる</code>=<code>する</code>。中を空洞にした形（壁・床・天井に 10cm ほどの厚み）にすると、中を歩けます。中の人・積んだ車・置物はいっしょに動きます。中では一人称の視点になります。</p>
+<table><tr><th>部品</th><th>できること</th></tr>
+<tr><td><code>ドア_1</code>…（<code>ハッチ</code> <code>扉</code>）</td><td>E で開け閉め（原点が蝶番。<code>開き方</code>=<code>横</code> で引き戸、<code>開く角度</code>）。ボタンでも動かせる。後ろの傾斜扉は <code>動作</code>=<code>回転</code>・<code>軸</code>=<code>X</code> などを自分で書く</td></tr>
+<tr><td><code>イス_1</code>…・<code>座席_1</code>…</td><td>E で座る。<code>運転席</code>（<code>操縦席</code>、なければ <code>イス_1</code>）に座ると運転できる。降りると席の横に立つ</td></tr></table>
+<h4>スペックと重さ（ボディに書く。なければ自動）</h4>
+<table><tr><th>プロパティ</th><th>値</th></tr>
+<tr><td><code>重量</code></td><td>kg。なければ大きさと種類から</td></tr>
+<tr><td><code>最高速度</code> <code>出力</code> <code>ブレーキ</code></td><td>km/h・馬力（大きいほど加速がよく、たくさん積める）・止まる強さ（ふつう 16）</td></tr>
+<tr><td><code>最大積載</code></td><td>kg。こえると、飛行機は離陸できない・ヘリは上がれない・車は加速がとても悪い</td></tr>
+<tr><td><code>離陸速度</code> <code>上昇力</code> <code>旋回力</code></td><td>飛行機：km/h・m／秒・1 がふつう</td></tr>
+<tr><td><code>上昇速度</code> <code>ホバリング</code></td><td>ヘリ：m／秒・<code>しない</code> で止まると下がる</td></tr></table>
+<p>のせた車・置物・人、つった物・引いている物の重さが足されます。重いほど加速・上昇・旋回がにぶく、飛行機は離陸に長い距離がいります。つった物でヘリがかたむきます。運転中に ☰「📋 スペック」で見られます。総重量は速さの下に小さく出ます。</p>`;
 function renderPlaceHelp(s) {
   const body = el('placeHelpBody');
   if (!body) return;
   let h;
-  if (s === 'ctype' || s === 'car') h = HELP_CAR + HELP_STEER + HELP_PARTS + HELP_MOVE;
-  else if (s === 'vehicle' || s === 'boat') h = HELP_BOAT + `<p>自動車は「自動車」を選ぶと、種類ごとのつくり方が出ます。</p>`;
+  if (s === 'ctype' || s === 'car') h = HELP_CAR + HELP_STEER + HELP_PARTS + HELP_MOVE + HELP_FX;
+  else if (s === 'vehicle' || s === 'boat') h = HELP_BOAT + HELP_AIR + `<p>自動車は「自動車」を選ぶと、種類ごとのつくり方が出ます。動く部品とボタンも、そこに出ます。</p>` + HELP_FX;
   else h = HELP_MAIN;
   body.innerHTML = h + HELP_BASE;
 }
@@ -6063,7 +7021,7 @@ document.addEventListener('keydown', (e) => {
   if (e.code === 'KeyR') rescueBoat();
   if (e.code === 'KeyP') setPeriscope(!periscope);
   if (e.code === 'KeyV') toggleBusView();
-  if (e.code === 'KeyG') fireTorpedo();
+  if (e.code === 'KeyG') { if (driving && ride && ride.item.gear) gearToggle(ride); else fireTorpedo(); }   // 航空機のギア
   if (e.code === 'KeyB') loadTubes();
   if (e.code === 'KeyN') sendPing();
   if (e.code === 'KeyX' && ride && vtype(ride) === 'robot') ejectRobot();
@@ -6293,7 +7251,7 @@ function leaveRide(force) {
   if (!car) return;
   if (!force && vtype(car) === 'plane' && car.y > floorAt(car.pos.x, car.pos.y) + 0.5) { showMsg('着陸してから降りてください'); return; }
   if (!force && Math.abs(car.vF) > 3) { showMsg('止まってから降りてください'); return; }
-  dropPlayerAt(exitPoint(car), visYaw(car), car.y);
+  if (!hollowExit(car)) dropPlayerAt(exitPoint(car), visYaw(car), car.y);   // 中から運転していたら、席の横に
   ride = null; driving = false; avatar.visible = true;
   stopAuto(); SEMI.on = false;
   CARL.turn = 0; CARL.hazard = false; car.workOn = false; car.patOn = false;
@@ -6322,6 +7280,7 @@ function toggleRide() {
   if (busRide) { leaveBus(false); return; }
   if (aboard) { getOff(); return; }
   if (ride) { leaveRide(false); return; }
+  { const va = vehNearAction(); if (va) { doVehAction(va); return; } }   // 乗り物のドア・イス
   const nb = nearBusDoor();
   if (!nb && !nearCar()) { const ba = nearBldAction(); if (ba) { doBldAction(ba); return; } const ta = townNearAction(); if (ta) { openTown(null, ta); return; } }
   if (nb) { boardBus(nb); return; }
@@ -8851,6 +9810,7 @@ function pushFromCar(V, cx, cz, cy, h) {
   }
 }
 function stepPlayer(dt) {
+  if (stepVehSit()) return;   // 乗り物のイスに座っている
   if (bldSeat) {   // イスに座っている：動こうとしたら立つ
     const mv = !PG.open && (keys.KeyW || keys.ArrowUp || keys.KeyS || keys.ArrowDown || keys.Space || touch.act || (touch.stickId !== null && Math.hypot(touch.x, touch.y) > 0.3));
     if (mv) standUp();
@@ -8936,7 +9896,19 @@ function stepPlayer(dt) {
 
   // 車にめり込まない（車の高さより上なら乗り越えられる）。自分の車も、ほかの人の車も
   for (const a of AIR.planes) if (a.v && a.onGround && !driving) jetPushPlayer(a.v, ox, oz);
-  for (const v of vehicles) if (!(aboard && aboard.v === v)) { if (v.item.jet && v.item.jet.hit) jetPushPlayer(v, ox, oz); else if (!(v.item.hf && surfOf(v, player.pos.x, player.pos.z) <= player.pos.y + 0.5)) pushFromCar(v.item.def.vehicle, v.pos.x, v.pos.y, v.y, visYaw(v)); }   // 乗れる高さなら押し出さない
+  // 2026-11-16：形の面で判定する乗り物（hf）は、ぶつかる所へは進めない（横にすべる）。乗り物のほうが来てめりこんだら外へ押し出す（中に入れる乗り物はそのまま）
+  const hfNear = [];
+  for (const v of vehicles) if (!(aboard && aboard.v === v)) { if (v.item.jet && v.item.jet.hit) jetPushPlayer(v, ox, oz); else if (v.item.hf) hfNear.push(v); else pushFromCar(v.item.def.vehicle, v.pos.x, v.pos.y, v.y, visYaw(v)); }
+  if (hfNear.length) {
+    const hitAt = (x, z) => hfNear.some((v) => hfHitsMan(v, x, z, player.pos.y, P_R));
+    if (hitAt(player.pos.x, player.pos.z)) {
+      const nx = player.pos.x, nz = player.pos.z;
+      if (!hitAt(nx, oz)) player.pos.z = oz;
+      else if (!hitAt(ox, nz)) player.pos.x = ox;
+      else if (!hitAt(ox, oz)) { player.pos.x = ox; player.pos.z = oz; }
+      else for (const v of hfNear) if (!v.item.hollow && hfHitsMan(v, player.pos.x, player.pos.z, player.pos.y, P_R)) pushFromCar(v.item.def.vehicle, v.pos.x, v.pos.y, v.y, visYaw(v));
+    }
+  }
   pushFromTraffic();   // 路線バスや車にははね飛ばされず、押しのけられる
   for (const o of net.others.values()) {
     if (o.carObj) pushFromCar(ITEM_DEFS.mini.vehicle, o.carObj.position.x, o.carObj.position.z, o.carObj.position.y, o.carObj.rotation.y);
@@ -9016,10 +9988,10 @@ function stepCar(car, dt) {
   }
   if (gas > 0) {
     if (car.vF < -0.3) car.vF += V.brake * gas * dt;
-    else car.vF += V.accel * gas * (1 - Math.pow(Math.max(0, car.vF) / V.maxSpeed, V.pw ?? 1)) * dt;
+    else car.vF += V.accel * (car.item.spec ? weightK(car) * (overLoad(car) ? 0.3 : 1) : 1) * gas * (1 - Math.pow(Math.max(0, car.vF) / V.maxSpeed, V.pw ?? 1)) * dt;   // 重い物を積むと加速がにぶい
   }
   if (brk > 0) {
-    if (car.vF > 0.3) car.vF -= V.brake * brk * dt;
+    if (car.vF > 0.3) car.vF -= V.brake * (car.item.spec ? Math.sqrt(weightK(car)) : 1) * brk * dt;
     else car.vF = Math.max(-V.reverseMax, car.vF - V.accel * 0.7 * brk * dt);
   }
   car.vF -= 9.8 * Math.sin(car.pitch) * 0.8 * dt;   // 坂道：上りは遅く、下りは速く
@@ -9485,39 +10457,101 @@ function stepBoat(v, dt) {
 /* ---- 航空機：W/S で出力、A/D で曲がる、Space で上昇・C で下降。遅いと浮かない ---- */
 function stepPlane(v, dt) {
   if (v.item.jet) { stepJet(v, dt); return; }
-  const V = v.item.def.vehicle, mine = v === ride;
+  const V = v.item.def.vehicle, mine = v === ride, S = v.item.spec || { vto: V.maxSpeed * 3.6 * 0.35, climb: 12, turnK: 1, vclimb: 8, hover: true };
+  if (V.air && V.air !== 'plane') { stepHeli(v, dt); return; }
   const k = driveInput(mine);
+  const wk = weightK(v), heavy = overLoad(v);   // 重いほど、加速・上昇・旋回がにぶく、離陸に長い距離がいる
   v.throttle = mine ? THREE.MathUtils.clamp((v.throttle || 0) + k.thr * dt * 0.45, 0, 1) : 0;
   const fl0 = floorAt(v.pos.x, v.pos.y), air = v.y > fl0 + 0.3;
-  v.vF += (v.throttle * V.maxSpeed - v.vF) * Math.min(1, dt * 0.45);
+  const gearDrag = v.item.gear && !gearUp(v) ? 0.88 : 1;   // ギアを出していると少し遅い
+  v.vF += (v.throttle * V.maxSpeed * gearDrag - v.vF) * Math.min(1, dt * 0.45 * Math.pow(wk, 0.7));
   if (!air && k.thr < 0 && v.throttle === 0) v.vF = Math.max(0, v.vF - 8 * dt);   // 地上でブレーキ
   if (!air && !mine) v.vF = 0;
-  const stall = V.maxSpeed * 0.3, lift = Math.min(1, v.vF / stall);
+  // ギアを上げたまま地面に：胴体着陸（火花を出して止まる）
+  if (!air && v.item.gear && gearUp(v) && v.vF > 1) { v.vF = Math.max(0, v.vF - 12 * dt); if (Math.random() < dt * 30) fxEmit(true, v.pos.x + rnd(1), v.y + 0.1, v.pos.y + rnd(1), rnd(4), Math.random() * 3, rnd(4), 1, 0.75, 0.3, 0.1, 0, 0.5, 1, 9.8, 0.3); if (mine) showMsg('ギアが上がっています（G で下ろす）'); }
+  const stall = Math.max(3, S.vto / 3.6 / Math.sqrt(wk)), lift = Math.min(1, v.vF / stall);
   let vy = 0;
-  if (lift >= 1) vy = k.up * Math.min(14, v.vF * 0.35);
-  else if (air) vy = -5 * (1 - lift) + Math.max(0, k.up) * v.vF * 0.2;
+  if (heavy && !air) { vy = 0; if (mine && v.vF > stall * 0.8) showMsg(`重すぎて離陸できません（最大積載 ${Math.round(v.item.spec.maxLoad)}kg）`); }
+  else if (lift >= 1) vy = k.up * Math.min(S.climb * wk, v.vF * 0.35);
+  else if (air) vy = -5 * (1 - lift) + Math.max(0, k.up) * v.vF * 0.2 * wk;
   v.vy = (v.vy || 0) + (vy - (v.vy || 0)) * Math.min(1, dt * 3);
-  const yawRate = k.turn * (air ? 0.65 : 0.9 * Math.min(1, v.vF / 3));
+  const yawRate = k.turn * (air ? 0.65 * S.turnK * Math.sqrt(wk) : 0.9 * Math.min(1, v.vF / 3));
   v.h += yawRate * dt;
   v.pos.x += Math.sin(v.h) * v.vF * dt; v.pos.y += Math.cos(v.h) * v.vF * dt;
   v.y += v.vy * dt;
-  // 箱のかべ
-  const lim = Math.max(V.halfWidth, V.halfLength) * 0.6;
-  if (outsideBox(v.pos.x, v.pos.y, lim)) {
-    v.pos.x = clampX(v.pos.x, lim); v.pos.y = clampZ(v.pos.y, lim);
-    v.vF *= 0.3; if (mine) showMsg('世界のはしです。向きを変えてください');
-  }
-  const fl = floorAt(v.pos.x, v.pos.y);
-  if (v.y < fl) { v.y = fl; v.vy = Math.max(0, v.vy); }
-  if (v.y > Y_TOP - 4) { v.y = Y_TOP - 4; v.vy = Math.min(0, v.vy); }
-  if (v.y < fl + 2 && bumpProps(v, Math.min(V.halfWidth, V.halfLength) * 0.6)) v.vF *= 0.3;
-  const airNow = v.y > fl + 0.3;
+  airLimits(v, V, mine);
+  const airNow = v.y > floorAt(v.pos.x, v.pos.y) + 0.3;
   const tp = airNow ? Math.atan2(v.vy, Math.max(4, v.vF)) : 0, tr = airNow ? -k.turn * 0.45 : 0;
   const kk = Math.min(1, dt * 4);
   v.pitch += (tp - v.pitch) * kk; v.roll += (tr - v.roll) * kk;
   showCar(v);
 }
-
+// 箱のかべ・地面・天井・置物
+function airLimits(v, V, mine) {
+  const lim = Math.max(V.halfWidth, V.halfLength) * 0.6;
+  if (outsideBox(v.pos.x, v.pos.y, lim)) {
+    v.pos.x = clampX(v.pos.x, lim); v.pos.y = clampZ(v.pos.y, lim);
+    v.vF *= 0.3; if (mine) showMsg('世界のはしです。向きを変えてください');
+  }
+  let fl = floorAt(v.pos.x, v.pos.y);
+  if (blds.length) { const bf = bldFloor(v.pos.x, v.pos.y, v.y + 0.3); if (bf > fl) fl = bf; }   // 建物の屋上（ヘリポート）
+  const s = v.item.hf ? surfTop(v.pos.x, v.pos.y, v.y + 0.3, v, cpSkip(v)) : null;   // ほかの乗り物の上（船の甲板・空母）
+  if (s && s.y > fl) fl = s.y;
+  if (v.y < fl) { v.y = fl; v.vy = Math.max(0, v.vy); }
+  if (v.y > Y_TOP - 4) { v.y = Y_TOP - 4; v.vy = Math.min(0, v.vy); }
+  if (v.y < fl + 2 && bumpProps(v, Math.min(V.halfWidth, V.halfLength) * 0.6)) v.vF *= 0.3;
+  if (v.item.hf) { const nb = s && v.y <= s.y + 0.05 ? { v: s.v, P: s.P } : null; if (!nb) v.base = null; else setBase(v, nb); }
+}
+// 風（飛行船・気球が流される）：天気の風の強さ。向きは 1 時間ごとに変わる
+function windVec(out) {
+  const w = WX && WX.now ? WX.now.wind : 3, a = (Math.floor(Date.now() / 3600000) * 2.399963) % (Math.PI * 2);
+  return out.set(Math.sin(a) * w, 0, Math.cos(a) * w);
+}
+const _wv = new THREE.Vector3();
+/* ---- ヘリコプター・飛行船・気球：Space で上昇・C で下降、W/S で前後、A/D で向き。ローターが回りきるまで浮かない ----
+   ヘリは進む向きに機体がかたむく（傾き=しない でかたむかない）。重い物を積む・つるすと上昇がにぶく、最大積載をこえると浮かない */
+function stepHeli(v, dt) {
+  const V = v.item.def.vehicle, mine = v === ride, S = v.item.spec || { vclimb: 8, hover: true, turnK: 1 };
+  const k = driveInput(mine);
+  const wk = weightK(v), heavy = overLoad(v), ship = V.air === 'airship' || V.air === 'balloon';
+  const fl0 = floorAt(v.pos.x, v.pos.y), air = v.y > fl0 + 0.4;
+  const ready = ship || (v.rotK || 0) > 0.85;
+  if (mine && !ready && k.up > 0 && !air) showMsg('ローターが回りきるまで待ってください');
+  // 前後：スティック・W/S。地上ではゆっくり（タキシング）
+  const tgt = k.thr * V.maxSpeed * (k.thr < 0 ? 0.4 : 1) * (air || ship ? 1 : 0.08);
+  v.vF += (tgt - v.vF) * Math.min(1, dt * (ship ? 0.25 : 0.8) * Math.sqrt(wk));
+  if (!mine) v.vF *= Math.exp(-dt);
+  // 上下
+  const climbK = heavy ? 0 : THREE.MathUtils.clamp(1 - (1 - wk) * 1.6, 0.15, 1);
+  let want = 0;
+  if (!mine) want = air ? -2 : 0;
+  else if (!ready) want = air ? -3 : 0;
+  else if (k.up > 0) want = k.up * S.vclimb * climbK;
+  else if (k.up < 0) want = k.up * S.vclimb * 1.1;
+  if (mine && heavy && k.up > 0) { want = Math.min(want, air ? -1 : 0); showMsg(`重すぎて上がれません（最大積載 ${Math.round(v.item.spec.maxLoad)}kg）`); }
+  if (mine && !S.hover && air && Math.abs(v.vF) < 6) want = Math.min(want, -2.5);   // ホバリングできない：止まると下がる
+  v.vy = (v.vy || 0) + (want - (v.vy || 0)) * Math.min(1, dt * (ship ? 0.8 : 2));
+  const yawRate = k.turn * (ship ? 0.25 : 0.9) * (S.turnK || 1) * Math.sqrt(wk) * (air || ship ? 1 : 0.5);
+  v.h += yawRate * dt;
+  v.pos.x += Math.sin(v.h) * v.vF * dt; v.pos.y += Math.cos(v.h) * v.vF * dt;
+  if (ship && air) { windVec(_wv); v.pos.x += _wv.x * dt * 0.5; v.pos.y += _wv.z * dt * 0.5; }   // 風に流される
+  v.y += v.vy * dt;
+  if (!air && !mine) v.vF = 0;
+  airLimits(v, V, mine);
+  const airNow = v.y > floorAt(v.pos.x, v.pos.y) + 0.4;
+  let tp = 0, tr = 0;
+  if (!V.noTilt && airNow) {
+    v._aF = ((v._aF || 0) * 0.9) + (v.vF - (v._vF0 ?? v.vF)) / Math.max(dt, 1e-3) * 0.1;
+    tp = THREE.MathUtils.clamp(-(v.vF / Math.max(10, V.maxSpeed)) * 0.22 - v._aF * 0.03, -0.35, 0.3);   // 前へ進むと機首が下がる
+    tr = -yawRate * Math.min(1, Math.abs(v.vF) / 15) * 0.35;
+    // つるした物：フックの位置と重さで、機体がかたむく
+    for (const L of CP.links) if ((L.own === v || L.host === v) && L.hang) { const lz = L.k.o.getWorldPosition(_wv); const dz = (lz.x - v.pos.x) * Math.sin(v.h) + (lz.z - v.pos.y) * Math.cos(v.h); tp += THREE.MathUtils.clamp(dz / Math.max(2, V.halfLength) * (1 - wk) * 0.6, -0.15, 0.15); }
+  }
+  v._vF0 = v.vF;
+  const kk = Math.min(1, dt * 3);
+  v.pitch += (tp - v.pitch) * kk; v.roll += (tr - v.roll) * kk;
+  showCar(v);
+}
 
 /* ================= 旅客機（ジェット）：DC-10-30（2026-11-13） =================
    航空機の .glb に「ノーズギア」「メインギア…」の部品があるか、長さが 35m をこえると旅客機として飛ぶ。
@@ -10445,6 +11479,7 @@ function syncPeers(peers) {
     o.t.lt = pr.lt === 1; o.t.py = num(pr.py, -7, 7); o.t.ns = pr.ns === 1; o.t.sp = num(pr.sp, 0, 99, 0);
     o.t.mp = Array.isArray(pr.mp) ? pr.mp.slice(0, 32).map((x) => (typeof x === 'number' && Number.isFinite(x) ? THREE.MathUtils.clamp(x, -360, 360) : null)) : null;   // 動く部品の値（砲塔の角度など）
     o.t.cp = Array.isArray(pr.cp) ? pr.cp.slice(0, 8).filter((e) => Array.isArray(e) && (e[0] === 'v' || e[0] === 'p') && typeof e[1] === 'string' && /^[A-Za-z0-9_-]{1,40}$/.test(e[1])).map((e) => [e[0], e[1], num(e[2], 0, 31) | 0, num(e[3], -1, 7, -1) | 0, num(e[4], -60, 60), num(e[5], -60, 60), num(e[6], -60, 60), num(e[7], 0, 60)]) : null;   // 連結している物
+    o.t.fx = Number.isInteger(pr.fx) ? pr.fx & 0x3fffffff : 0;
     o.t.gy = Array.isArray(pr.gy) ? [num(pr.gy[0], -2, 2), num(pr.gy[1], -2, 2)] : null;
     o.tc = Array.isArray(pr.c) ? { x: num(pr.c[0], X0, X1), y: num(pr.c[1], Y_BOTTOM, Y_AIR), z: num(pr.c[2], Z0, Z1), h: num(pr.c[3], -100, 100), pitch: num(pr.c[4], -1, 1), roll: num(pr.c[5], -1, 1) } : null;
     o.t.v = typeof pr.v === 'string' && /^[A-Za-z0-9_-]{1,40}$/.test(pr.v) ? pr.v : null;
@@ -10463,7 +11498,7 @@ function syncPeers(peers) {
   }
   // みんなの車：だれかが運転中なら、その人の位置に合わせる
   const driven = new Map();
-  for (const [peer, o] of net.others) if (o.t && o.t.v && o.t.vc) driven.set(o.t.v, Object.assign({ peer, lt: o.t.lt, py: o.t.py, gy: o.t.gy, cl: o.t.cl, mp: o.t.mp, cp: o.t.cp }, o.t.vc));
+  for (const [peer, o] of net.others) if (o.t && o.t.v && o.t.vc) driven.set(o.t.v, Object.assign({ peer, lt: o.t.lt, py: o.t.py, gy: o.t.gy, cl: o.t.cl, mp: o.t.mp, cp: o.t.cp, fx: o.t.fx }, o.t.vc));
   for (const v of vehicles) {
     if (!v.shared) continue;
     const d = driven.get(v.id);
@@ -10493,6 +11528,7 @@ function sendPresence() {
     cl: ride && ride.shared ? ((ride.item.lamps ? ride.lampBits & 47 : 0) | (ride.workOn ? 16 : 0) | (ride.item.jet ? jetBits(ride) : 0)) : 0,   // 旅客機：32 ギアを上げた・64〜 フラップの段   // 車のライト（1 ライト・2 ブレーキ・4 左・8 右）と作業中（16）
     mp: ride && ride.shared && ride.item.moves ? ride.item.moves.chans.slice(0, 32).map((a) => r(a.val, 10)) : null,   // 動く部品の値（度・m）
     cp: ride && ride.shared ? cpEncode() : null,   // 連結している車・置物
+    fx: ride && ride.shared && ride.item.fx ? fxBits(ride) : 0,   // 出しているエフェクト（ボタン）
     c: myCar ? pose(myCar) : null,
     v: ride && ride.shared ? ride.id : runShown ? runShown.id : null,       // みんなの車を運転中なら、その車の番号と位置（運転していないときは、配達中の自分のトラック）
     vc: ride && ride.shared ? pose(ride) : runShown ? pose(runShown) : null,
@@ -10759,6 +11795,7 @@ async function startNet() {
   ch.on('broadcast', { event: 'load' }, ({ payload }) => { const p = heard(payload); if (p) onLoadSound(p); });
   ch.on('broadcast', { event: 'eject' }, ({ payload }) => { const p = heard(payload); if (p) onEject(p); });
   ch.on('broadcast', { event: 'bld' }, ({ payload }) => { const p = heard(payload); if (p) onBldMsg(p); });
+  ch.on('broadcast', { event: 'vfx' }, ({ payload }) => { const p = heard(payload); if (p) onVfx(p); });   // 発射・切り離し・1 回のエフェクト・乗り物のドア
   ch.on('presence', { event: 'leave' }, ({ key }) => { if (others.delete(key)) syncPeers(peerList()); });
   // 置いた物の知らせは別の通り道にする（こちらがうまくいかなくても、みんなの姿は見える）
   sb.channel('world-props').on('postgres_changes', { event: '*', schema: 'public', table: 'props' }, (m) => {
@@ -10870,7 +11907,7 @@ function updateCamera(dt) {
     sun.position.set(b.x + SUN_DIR.x, b.y + SUN_DIR.y, b.z + SUN_DIR.z);
     return;
   }
-  const inB = !driving && !aboard && !(pod && pod.mine && !pod.landed) && blds.length ? insideBld() : null;
+  const inB = (!driving && !aboard && !(pod && pod.mine && !pod.landed) && blds.length ? insideBld() : null) || insideVeh();   // 中に入れる乗り物の中も一人称
   if (inB) {   // 建物の中は一人称：目の高さから。見回すと体もそちらを向き、A・D で向きを変えると視線もついてくる
     if (!fpView) { fpView = true; camPitch = 0.05; camera.near = 0.05; camera.updateProjectionMatrix(); }
     else if (Math.abs(wrapA(camYaw - fpYaw)) > 1e-6) player.face = camYaw - Math.PI;
@@ -10952,7 +11989,7 @@ const KEYS_HTML = {
   car: K(['W'], 'アクセル') + K(['S'], 'ブレーキ／バック') + K(['A', 'D'], 'ハンドル') + K(['Space'], 'サイドブレーキ') + K(['E'], '降りる') + '<span>ドラッグで視点</span>',
   ship: K(['W'], '前へ') + K(['S'], '後ろへ') + K(['A', 'D'], 'かじ') + K(['R'], '救出') + K(['E'], '降りる') + '<span>ドラッグで視点</span>',
   sub: K(['←', '→'], '進路') + K(['↑', '↓'], '速力') + K(['Space'], '浅く') + K(['C'], '深く') + K(['B'], '装填') + K(['G'], '発射（艦首の向き）') + K(['N'], 'ピンガー') + K(['L'], 'ライト') + K(['P'], '潜望鏡') + K(['Z', 'X'], '潜望鏡を回す') + K(['R'], '救出') + K(['E'], '降りる'),
-  plane: K(['W'], '出力を上げる') + K(['S'], '下げる・ブレーキ') + K(['A', 'D'], '曲がる') + K(['Space'], '上昇') + K(['C'], '下降') + K(['E'], '降りる'),
+  plane: K(['W'], '出力を上げる') + K(['S'], '下げる・ブレーキ') + K(['A', 'D'], '曲がる') + K(['Space'], '上昇') + K(['C'], '下降') + K(['G'], 'ギア') + K(['E'], '降りる'),
   jet: K(['W', 'S'], '推力（地上で出力ゼロのまま S：ブレーキ・逆噴射）') + K(['A', 'D'], 'かたむける・地上はハンドル') + K(['Space', '↓'], '機首上げ') + K(['C', '↑'], '機首下げ') + K(['G'], 'ギア') + K([',', '.'], 'フラップ') + K(['/'], 'スピードブレーキ') + K(['U'], 'AP') + K(['Y'], 'オートスロットル') + K(['E'], '降りる'),
   ride: K(['E'], '降りる') + '<span>ドラッグで視点・ホイールで距離</span>',
   bus: K(['W'], '前へ') + K(['S'], '後ろへ') + K(['A', 'D'], '見回す') + K(['Shift'], '急ぐ') + K(['Space'], '座る・立つ') + K(['V'], '車内・車外視点') + K(['E'], '降りる（止まってドアがあいたら）') + '<span>ドラッグで見回す</span>',
@@ -10983,7 +12020,7 @@ function updateUi() {
   const cg = driving ? cargoAction() : null, ct = !cg && driving ? cargoTruck() : null, cgTxt = cg ? cg.text : ct && ct.f.load && ct.f.load.kg ? `荷台：${BIZ_G[ct.f.load.g] ? BIZ_G[ct.f.load.g].name : '荷物'} ${yen(ct.f.load.kg)}kg（卸す先か自分の店の前で おろす）` : '';
   const nv = !ride && !aboard ? nearCar() : null;
   const near = !!nv;
-  const ba = !ride && !aboard && !nv ? (blds.length && nearBldAction()) || townNearAction() : null;   // ドア・スイッチ・イス、お店の前
+  const ba = !ride && !aboard ? vehNearAction() || (!nv ? (blds.length && nearBldAction()) || townNearAction() : null) : null;   // 乗り物のドア・イスも   // ドア・スイッチ・イス、お店の前
   const vt = ride ? vtype(ride) : null;
   const sea = ride && isBoat(ride);   // 船・潜水艦はノット（1 ノット = 1.852 km/h）
   const kmh = ride ? Math.round(Math.abs(ride.vF) * (sea ? 3.6 / 1.852 : 3.6)) : 0;
@@ -10997,7 +12034,11 @@ function updateUi() {
   const sv2 = vt === 'sub' ? ride : aboard && vtype(aboard.v) === 'sub' ? aboard.v : null;
   const navTxt = sv2 ? `方位 ${String(Math.round(bearingOf(sv2.h)) % 360).padStart(3, '0')}°（${compassName(bearingOf(sv2.h))}）　海底 ${seabedAt(sv2.pos.x, sv2.pos.y).toFixed(1)}m` : '';
   const shipV = !sv2 && ride && vt === 'ship' ? ride : null, ag = shipV && shipV.item.def.vehicle.aegis ? shipV : null;
-  const hpTxt = sv2 ? `HP ${subHp(sv2)}／${HP_MAX}（最高 ${maxKt(sv2)}kt・安全 ${safeDepth(sv2)}m）` : shipV ? `HP ${subHp(shipV)}／${HP_MAX}` : '';
+  // 2026-11-16：総重量（航空機はいつも、ほかは荷物があるとき）とギア。小さく 1 行で
+  const wv = !sv2 && !shipV && driving && ride && ride.item.spec ? ride : null, ld = wv ? Math.max(0, (wv.loadKg || 0) - 70) : 0;
+  const kgT = (n) => (n >= 1000 ? `${(n / 1000).toFixed(1)}t` : `${Math.round(n / 10) * 10}kg`);
+  const wtTxt = wv && (wv.item.def.vehicle.air || ld > 50) ? `${wv.item.gear ? (gearUp(wv) ? 'ギア▲　' : 'ギア▼　') : ''}総重量 ${kgT(wv.item.spec.mass + ld)}${ld > 50 ? `（荷物 ${kgT(ld)}）` : ''}${overLoad(wv) ? '　⚠重すぎ' : ''}` : '';
+  const hpTxt = sv2 ? `HP ${subHp(sv2)}／${HP_MAX}（最高 ${maxKt(sv2)}kt・安全 ${safeDepth(sv2)}m）` : shipV ? `HP ${subHp(shipV)}／${HP_MAX}` : wtTxt;
   let tgtTxt = '';
   if (ag) {
     const t = targetNow(ag);
@@ -12367,7 +13408,7 @@ const menuEl = el('menu'), menuBtn = el('menuBtn');
 function setMenu(open) {
   menuEl.hidden = !open; menuBtn.setAttribute('aria-expanded', String(open));
   if (open) {
-    renderMyList(); renderMoveList(); renderVehMenu(); renderLampMenu(); renderMpMenu();
+    renderMyList(); renderMoveList(); renderVehMenu(); renderLampMenu(); renderMpMenu(); renderVxMenu();
     el('autoBtn').hidden = !canAuto(); el('autoBtn').textContent = AUTO.on && !AUTO.semi ? '🚗 自動運転をやめる' : '🚗 自動運転（地図で行き先をえらぶ）';
     el('semiBtn').hidden = !canAuto(); el('semiBtn').textContent = SEMI.on ? '🚙 半自動運転をやめる' : '🚙 半自動運転（行き先なしで道なりに）';
     // コンピュータ対戦は潜水艦を操縦しているときだけ（対戦中は「やめる」も）
@@ -12395,11 +13436,11 @@ const mpBtnById = (id) => MPB.list.find((o) => o.id === id);
 const mpBtnName = (o) => o ? (o.name || o.acts.map(mpActTxt).join('・').slice(0, 14)) : '？';
 const mpChan = (key) => (MPB.v && MPB.v.item.moves ? MPB.v.item.moves.chans.find((a) => a.key === key) : null);
 const mpChans = (key) => (MPB.v && MPB.v.item.moves ? MPB.v.item.moves.chans.filter((a) => a.key === key) : []);   // 同じ名前の部品（左右に分けたヘッドライトなど）はいっしょに動かす
-const mpVeh = () => (driving && ride && (ride.item.moves || hasLamps(ride)) ? ride : null);   // ボタンが作れる乗り物（動く部品かライトがある）
+const mpVeh = () => (driving && ride && (ride.item.moves || hasLamps(ride) || ride.item.fx || ride.item.launch) ? ride : null);   // ボタンが作れる乗り物（動く部品かライトがある）
 const mpClampXY = (n, d) => THREE.MathUtils.clamp(Number.isFinite(n) ? n : d, 0.04, 0.96);
 const mpRange = (a) => a.free ? 'ぐるぐる回る' : a.part.type === 'rot' ? `${a.min}°〜${a.max}°` : `${a.min}m〜${a.max}m`;
 const MP_PLUS_TXT = { rot: { Z: '上から見て左回り', X: '前が下がる向き（砲身なら下向き）', Y: '左（+X）に傾く向き' }, move: { Z: '上へ', X: '左へ（+X）', Y: '後ろへ（+Y）' } };
-const mpActTxt = (q) => { const o = q.n > 1 ? `(${q.n})` : ''; if (q.k === 'light') return 'ライト' + o; if (q.k === 'pat') return 'パトランプ' + o; if (q.k === 'cp') { const k = MPB.v && cpCps(MPB.v).find((c) => c.key === q.ch); return k ? k.name : '？'; } if (q.k === 'btn') return `[${mpBtnName(mpBtnById(q.id))}]${o}`; const a = mpChan(q.ch); return a ? `${a.part.name}${q.dir < 0 ? '−' : '＋'}${o}` : '？'; };
+const mpActTxt = (q) => { const o = q.n > 1 ? `(${q.n})` : ''; if (q.k === 'light') return 'ライト' + o; if (q.k === 'pat') return 'パトランプ' + o; if (q.k === 'cp') { const k = MPB.v && cpCps(MPB.v).find((c) => c.key === q.ch); return k ? k.name : '？'; } if (q.k === 'btn') return `[${mpBtnName(mpBtnById(q.id))}]${o}`; if (q.k === 'fx' || q.k === 'fire') return (q.k === 'fx' ? '✨' : '🎯') + q.ch.slice(q.ch.indexOf('|') + 1) + o; const a = mpChan(q.ch); return a ? `${a.part.name}${q.dir < 0 ? '−' : '＋'}${o}` : '？'; };
 // すること の順番（1〜9）。同じ番号はいっしょに、番号の小さい順に動く（前の番号がぜんぶ終わってから次）
 const mpOrd = (q) => THREE.MathUtils.clamp(Math.round(Number(q.n) || 1), 1, 9);
 function mpGroups(acts, desc) {
@@ -12411,13 +13452,15 @@ function mpStartGroup(g, mode) {
   for (const q of g) {
     if (q.k === 'light') { if (mode !== 'home') { CARL.mode = mode === 'on' ? 'on' : 'off'; renderLampMenu(); } continue; }
     if (q.k === 'pat') { if (mode !== 'home' && MPB.v) { MPB.v.patOn = mode === 'on'; renderLampMenu(); } continue; }
+    if (q.k === 'fx') { if (mode !== 'home') fxSetKey(MPB.v, q.ch, mode === 'on'); continue; }   // エフェクト：ON で出す
+    if (q.k === 'fire') { if (MPB.v) { if (mode === 'home') launchHome(MPB.v, q.ch); else if (mode === 'on') for (const L of MPB.v.item.launch || []) if (L.key === q.ch) launch(MPB.v, L); } continue; }
     for (const a of mpChans(q.ch)) {
       if (mode === 'home') { for (const r of a.part.axes) r.goal = r.init; continue; }
       a.goal = mode === 'off' ? a.init : a.free ? a.val + q.dir * 90 : q.dir < 0 ? a.min : a.max;
     }
   }
 }
-const mpGroupDone = (g) => g.every((q) => q.k === 'light' || q.k === 'pat' || mpChans(q.ch).every((a) => a.part.axes.every((r) => r.goal == null)));
+const mpGroupDone = (g) => g.every((q) => q.k === 'light' || q.k === 'pat' || q.k === 'fx' || q.k === 'fire' || mpChans(q.ch).every((a) => a.part.axes.every((r) => r.goal == null)));
 function mpRun(b, mode) {
   // ON は番号の小さい順、OFF・もどすは逆の順（最後に動いた物から元にもどる）
   const R = { groups: mpGroups(b.acts, mode !== 'on'), gi: 0, mode };
@@ -12450,6 +13493,7 @@ function mpPressSub(o) {
   else if (o.t === 'hold') mpRun(o, 'on');
   else if (o.t === 'home') mpRun(o, 'home');
   else if (o.t === 'couple') cpPress(o);
+  else if (o.t === 'fire' && MPB.v) fireBtn(MPB.v, o, true);
 }
 function mpSeqGroup(b) { const S = mpSeqs.get(b); for (const q of S.groups[S.gi]) mpPressSub(mpBtnById(q.id)); }
 function mpSeqPress(b) {
@@ -12474,10 +13518,10 @@ function renderMpButtons() {
   layer.hidden = !v; el('mpDone').hidden = !(v && MPB.edit);
   if (!v) return;
   MPB.list.forEach((b, i) => {
-    const ok = b.acts.filter((q) => q.k === 'light' ? hasLamps(v) : q.k === 'pat' ? hasPat(v) : q.k === 'cp' ? cpCps(v).some((k) => k.key === q.ch) : q.k === 'btn' ? !!mpBtnById(q.id) : mpChan(q.ch));
+    const ok = b.acts.filter((q) => q.k === 'light' ? hasLamps(v) : q.k === 'pat' ? hasPat(v) : q.k === 'cp' ? cpCps(v).some((k) => k.key === q.ch) : q.k === 'btn' ? !!mpBtnById(q.id) : q.k === 'fx' ? (v.item.fx || []).some((e) => e.key === q.ch) : q.k === 'fire' ? (v.item.launch || []).some((L) => L.key === q.ch) : mpChan(q.ch));
     const btn = document.createElement('button');
     btn.type = 'button'; btn.className = 'mpb' + (MPB.edit ? ' edit' : '') + (ok.length ? '' : ' dead') + ((b.t === 'toggle' || b.t === 'seq' || b.t === 'drive') && b.on ? ' on' : '');
-    btn.textContent = b.name || b.acts.map(mpActTxt).join('・').slice(0, 14) + (b.t === 'home' ? ' もどす' : b.t === 'couple' ? ' 連結' : b.t === 'drive' ? ' 連動' : '');
+    btn.textContent = b.name || b.acts.map(mpActTxt).join('・').slice(0, 14) + (b.t === 'home' ? ' もどす' : b.t === 'couple' ? ' 連結' : b.t === 'drive' ? ' 連動' : b.t === 'fire' ? ' 発射' : '');
     b._btn = btn;
     btn.title = ok.length ? `${MP_FUNCS[b.t].name}：${b.acts.map(mpActTxt).join('・')}` : 'この乗り物には、このボタンで動かす部品がありません';
     btn.style.left = mpClampXY(b.x, 0.5) * 100 + '%'; btn.style.top = mpClampXY(b.y, 0.45) * 100 + '%';
@@ -12500,23 +13544,33 @@ function renderMpButtons() {
     } else {
       // 押している間だけ動く（hold）。どこで離しても止まる（iPhone で離した合図が来ないときも holds で戻す）
       const h = { btn, id: null, mp: true, keys: [] };
-      h.release = () => { h.id = null; for (const k of h.keys) mpHeld.delete(k); h.keys = []; if (b.t === 'hold') btn.classList.remove('on'); };
+      h.release = () => {
+        h.id = null; for (const k of h.keys) mpHeld.delete(k); h.keys = []; if (b.t === 'hold' || b.t === 'fire') btn.classList.remove('on');
+        if (FIRE_HELD.has(b)) FIRE_HELD.delete(b);
+        if (b.t === 'hold' && h.fx) { for (const q of b.acts) if (q.k === 'fx') fxSetKey(v, q.ch, false); h.fx = false; }   // はなすとエフェクトも止まる
+      };
       btn.addEventListener('pointerdown', (e) => {
         e.preventDefault(); e.stopPropagation();
         if (!ok.length) { showMsg(btn.title); return; }
         if (b.t === 'toggle') { mpToggle(b, !b.on); btn.classList.toggle('on', b.on); return; }
         if (b.t === 'couple') { cpPress(b); return; }   // 連結：さわっている物とつなぐ／はずす
         if (b.t === 'seq') { mpSeqPress(b); return; }   // まとめたボタン：入れたボタンを順に押す
+        if (b.t === 'fire') {   // 撃つ（押している間は間隔ごとに撃ちつづける）。切り離しは押すたびに はずす／もどす
+          h.release(); h.id = e.pointerId; fireBtn(v, b, true); FIRE_HELD.set(b, clock.elapsedTime + 0.35); btn.classList.add('on');
+          try { btn.setPointerCapture(e.pointerId); } catch (_) {}
+          return;
+        }
         if (b.t === 'drive') { b.on = !b.on; btn.classList.toggle('on', b.on); showMsg(`${btn.textContent}：運転に連動 ${b.on ? 'ON' : 'OFF'}`); return; }
         if (b.t === 'home') {   // もどす：選んだ部品をはじめの値へ（ON／OFF のボタンも OFF にもどる）
           for (const o of MPB.list) if (o.t === 'toggle') { o.on = false; mpRuns.delete(o); }
-          mpRun({ acts: ok.filter((q) => q.k === 'part') }, 'home');
+          mpRun({ acts: ok.filter((q) => q.k === 'part' || q.k === 'fire') }, 'home');
           renderMpButtons();
           return;
         }
         h.release();
         h.id = e.pointerId;
         { const k = {}; mpHeld.set(k, { groups: mpGroups(ok.filter((q) => q.k === 'part')).map((g) => g.flatMap((q) => mpChans(q.ch).map((a) => ({ a, dir: q.dir })))) }); h.keys.push(k); }
+        for (const q of ok) if (q.k === 'fx') { fxSetKey(v, q.ch, true); h.fx = true; }   // 押している間、エフェクトを出す
         btn.classList.add('on');
         try { btn.setPointerCapture(e.pointerId); } catch (_) {}
       });
@@ -12528,6 +13582,17 @@ function renderMpButtons() {
   if (MPB.list.some((b) => b.t === 'couple')) cpButtons();   // 連結ボタンは、はじめから正しい色で
 }
 // ☰ の中：動く部品かライトのある乗り物を運転しているときだけ
+// 乗り物（glTF）：ギアの上げ下げ・スペック
+function renderVxMenu() {
+  const v = driving && ride && ride.item.spec ? ride : null;
+  el('vxMenu').hidden = !v;
+  if (!v) return;
+  el('mGear').hidden = !v.item.gear;
+  if (v.item.gear) el('mGear').textContent = `${v.item.gear.down ? '🛬 ギアを上げる' : '🛬 ギアを下ろす'}（G）`;
+}
+el('mGear').addEventListener('click', () => { if (driving && ride) gearToggle(ride); setMenu(false); });
+el('mSpec').addEventListener('click', () => { if (ride) showSpec(ride); setMenu(false); });
+el('specClose').addEventListener('click', () => { el('specDlg').hidden = true; cv.focus(); });
 function renderMpMenu() {
   const v = mpVeh();
   el('mpMenu').hidden = !v;
@@ -12570,17 +13635,24 @@ function mpActsUi() {
     mk('mpTrig', 'きっかけ', MP_TRIG); mk('mpSw', '動き方', MP_SWING);
   }
   if (t === 'seq') { /* 上で出した */ }
+  else if (t === 'fire') {   // 発射・切り離しの部品と、1 回だけのエフェクト（爆発・花火）
+    for (const L of ride.item.launch || []) if (!box.querySelector(`[data-k="${CSS.escape(L.key)}"]`)) row(L.key, `🎯 ${L.name}（${L.mode === 'fire' ? '発射' : '切り離し'}）`, false, true);
+    for (const f of ride.item.fx || []) if (fxIsShot(f) && !box.querySelector(`[data-k="${CSS.escape(f.key)}"]`)) row(f.key, `✨ ${f.name}（${f.T.n}）`, false, true);
+  }
   else if (t === 'couple') { for (const k of cpCps(ride)) if (!box.querySelector(`[data-k="${CSS.escape(k.key)}"]`)) row(k.key, `🔗 ${k.name}（連結器・フック）`, false, true); }
   else if (ride && ride.item.moves) for (const a of ride.item.moves.chans) if (!box.querySelector(`[data-k="${CSS.escape(a.key)}"]`)) row(a.key, `${a.part.name}（${a.ax}・${a.part.type === 'rot' ? '回転' : '移動'}・${mpRange(a)}）`, true);
+  if ((t === 'toggle' || t === 'hold' || t === 'drive') && ride.item.fx) for (const f of ride.item.fx) if ((t === 'toggle' || !fxIsShot(f)) && !box.querySelector(`[data-k="${CSS.escape(f.key)}"]`)) row(f.key, `✨ ${f.name}（エフェクト：${f.T.n}${fxIsShot(f) ? '・1 回' : ''}）`, false);
+  if (t === 'home' && ride.item.launch) for (const L of ride.item.launch) if (!box.querySelector(`[data-k="${CSS.escape(L.key)}"]`)) row(L.key, `🎯 ${L.name}（${L.mode === 'fire' ? '弾を補充' : 'もとにもどす'}）`, false);
   if (t === 'toggle' && hasLamps(ride) && (ride.item.lamps.has.head || ride.item.lamps.has.tail)) row('light', '💡 ライト（つける・消す）', false);
   if (t === 'toggle' && hasPat(ride)) row('pat', '🚨 パトランプ（つける・消す）', false);
-  if (!box.children.length) box.textContent = t === 'seq' ? '先に、まとめたいボタン（例：進む・もどる）を作ってください' : t === 'couple' ? '連結器がありません（部品のカスタムプロパティ 動作=連結）' : t === 'toggle' ? 'えらべるものがありません' : '動く部品がありません（ON／OFF ならライトをえらべます）';
+  if (!box.children.length) box.textContent = t === 'fire' ? '発射する部品がありません（部品のカスタムプロパティ 動作=発射 か 動作=切り離し）' : t === 'seq' ? '先に、まとめたいボタン（例：進む・もどる）を作ってください' : t === 'couple' ? '連結器がありません（部品のカスタムプロパティ 動作=連結）' : t === 'toggle' ? 'えらべるものがありません' : '動く部品がありません（ON／OFF ならライトをえらべます）';
   mpInfo();
 }
 function mpInfo() {
   const t = el('mpFn').value;
   const ord = '「○番」は順番：同じ番号はいっしょに動き、前の番号がぜんぶ終わってから次の番号が動く。';
-  el('mpInfo').textContent = t === 'seq' ? '入れたボタンを、番号の順に 1 回ずつ押します（同じ番号はいっしょ。前の番号のボタンの動きが終わってから次へ）。例：1番に「進む」、2番に「もどる」を入れると、1 回押すだけで行って帰る往復になります。「押している間うごく」ボタンは、はしに着くまで動きます。' + ord
+  el('mpInfo').textContent = t === 'fire' ? '押すと、動作=発射 の部品のコピーが飛んでいきます（押している間は 間隔 ごとに撃ちつづける）。動作=切り離し の部品は、押すとはずれて落ち、もう 1 回押すと元にもどります。爆発・花火のエフェクトも 1 回出せます。弾切れは「もどす」ボタンか 20 秒で補充。'
+    : t === 'seq' ? '入れたボタンを、番号の順に 1 回ずつ押します（同じ番号はいっしょ。前の番号のボタンの動きが終わってから次へ）。例：1番に「進む」、2番に「もどる」を入れると、1 回押すだけで行って帰る往復になります。「押している間うごく」ボタンは、はしに着くまで動きます。' + ord
     : t === 'drive' ? '運転の操作に合わせて部品が動きます（例：前進で羽がはばたく）。きっかけがある間だけ動き、なくなるとはじめの位置へもどります。往復は最小と最大のあいだを行ったり来たり（速さは部品の 速さ）。画面のボタンで連動の ON／OFF を切りかえられます。'
     : t === 'couple' ? '連結器（フック）を車や置物に当てて押すと連結。何にもさわっていないとき、ボタンは灰色で押せない。さわると黄色く光って押せる。連結中はもう 1 回押すとはずれる。つないだ所は自在に曲がり、持ち上げるとぶら下がってゆれる。連結した車の連結器が次の車にさわっていれば、押すたびに次々つながる（列車）。'
     : t === 'toggle' ? '1 回押すと ON：部品は ＋ なら最大、− なら最小まで動き、ライトはつく（1番→2番→…）。もう 1 回で OFF：逆の順（大きい番号から）にはじめの位置にもどり、ライトは消える。' + ord
@@ -12609,6 +13681,8 @@ el('mpOk').addEventListener('click', () => {
     else if (r.dataset.k === 'pat') acts.push({ k: 'pat', n });
     else if (r.dataset.k.startsWith('cp|')) acts.push({ k: 'cp', ch: r.dataset.k, n: 1 });
     else if (r.dataset.k.startsWith('btn|')) acts.push({ k: 'btn', id: r.dataset.k.slice(4), n });
+    else if (r.dataset.k.startsWith('fx|')) acts.push({ k: 'fx', ch: r.dataset.k, n });
+    else if (r.dataset.k.startsWith('fire|')) acts.push({ k: 'fire', ch: r.dataset.k, n });
     else acts.push({ k: 'part', ch: r.dataset.k, dir: r.querySelector('.mpdir') && r.querySelector('.mpdir').value === '-1' ? -1 : 1, n });
   }
   if (!MP_FUNCS[t]) return;
@@ -15491,6 +16565,7 @@ function frame() {
   stepHangParts(dt);   // ぶら下がる部品（フック）を真下へ
   stepCarry(dt);   // 乗り物の上の人・物・車をいっしょに動かす
   stepCouple(dt);   // 連結した車・置物を引っぱる・つり上げる
+  stepBundle(dt);   // 2026-11-16：エフェクト・弾・ローター・ギア・重さ
   stepBuildings(dt);
   stepTown();
   stepPaper();
