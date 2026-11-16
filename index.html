@@ -439,6 +439,8 @@ body.jetOn #map { display: none !important; }
 #mpDlg label { display: grid; gap: 4px; font: 800 13px var(--font-ui); }
 #mpDlg select, #mpDlg input { font: 500 16px var(--font-ui); color: var(--ink); background: #fff; border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; -webkit-user-select: text; user-select: text; }
 #mpDlg .mpacts { display: grid; gap: 6px; font: 800 13px var(--font-ui); }
+#mpOpts { display: grid; gap: 6px; }
+#mpOpts label { display: grid; gap: 4px; }
 #mpDlg .mpact { display: flex; align-items: center; gap: 8px; font: 500 14px var(--font-ui); }
 #mpDlg .mpact input { width: 20px; height: 20px; padding: 0; }
 #mpDlg .mpact span { flex: 1; }
@@ -681,7 +683,7 @@ body.jetOn #map { display: none !important; }
 <div id="mpDlg" role="dialog" aria-modal="true" aria-labelledby="mpDlgT" hidden>
   <p class="ptitle" id="mpDlgT">ボタンを作る</p>
   <label>1. ボタンの種類<select id="mpFn"></select></label>
-  <div class="mpacts"><b>2. すること（いくつでもえらべる）</b><div id="mpActs"></div></div>
+  <div class="mpacts"><b>2. すること（いくつでもえらべる）</b><div id="mpActs"></div><div id="mpOpts"></div></div>
   <label>3. ボタンの名前（8 文字まで・なくてもよい）<input id="mpNm" type="text" maxlength="8" autocomplete="off"></label>
   <p class="mpnote" id="mpInfo"></p>
   <div class="pfoot"><button type="button" class="pcancel" id="mpCancel">やめる</button><button type="button" class="pok" id="mpOk">作る</button></div>
@@ -1375,7 +1377,42 @@ const MP_FUNCS = {
   hold: { name: '押している間うごく（一方通行）' },
   home: { name: 'はじめの位置にもどす' },
   couple: { name: '連結／解除（さわっている物とつなぐ）' },
+  seq: { name: 'ボタンをまとめる（ほかのボタンを順に押す）' },
+  drive: { name: '運転に連動（前進・スティックで動く）' },
 };
+// 運転に連動：きっかけ（前進・後退・左・右・走っている間）と動き方（往復・その向きへ）。きっかけがなくなると、はじめの位置へもどる
+const MP_TRIG = { fwd: '前進（アクセル・スティック前）', back: '後退（ブレーキ・スティック後ろ）', left: '左へ曲がる', right: '右へ曲がる', run: '走っている間（自動運転も）' };
+const MP_SWING = { swing: '往復（最小と最大のあいだを行ったり来たり）', push: 'その向きへ動く（はなすともどる）' };
+function mpTrigOn(v, trig) {
+  const k = driveInput(true);
+  return trig === 'fwd' ? k.thr > 0.1 : trig === 'back' ? k.thr < -0.1 : trig === 'left' ? k.turn > 0.1 : trig === 'right' ? k.turn < -0.1 : Math.abs(v.vF || 0) > 0.5;
+}
+// 毎コマ：運転に連動するボタン（ON のものだけ）
+function mpDriveStep(v, M, dt) {
+  if (MPB.v !== v) return;
+  for (const b of MPB.list) {
+    if (b.t !== 'drive') continue;
+    const act = b.on !== false && mpTrigOn(v, b.trig || 'fwd');
+    for (const q of b.acts) {
+      if (q.k !== 'part') continue;
+      for (const a of mpChans(q.ch)) {
+        if (!M.chans.includes(a)) continue;
+        if (!act) { if (b._act) a.goal = a.init; continue; }
+        a.goal = null;
+        if (b.sw === 'push') { if (mpAtEnd(a, q.dir)) continue; a.val += q.dir * a.speed * dt; }
+        else {   // 往復：はしに着いたら向きを変える（ぐるぐる回る部品は回りつづける）
+          if (a._sw == null) a._sw = q.dir;
+          a.val += a._sw * a.speed * dt;
+          if (!a.free && a.val >= a.max) { a.val = a.max; a._sw = -1; } else if (!a.free && a.val <= a.min) { a.val = a.min; a._sw = 1; }
+        }
+        if (a.free) a.val = ((a.val + 540) % 360) - 180; else a.val = THREE.MathUtils.clamp(a.val, a.min, a.max);
+        M.dirty = true;
+      }
+    }
+    if (!act) for (const q of b.acts) for (const a of q.k === 'part' ? mpChans(q.ch) : []) a._sw = null;
+    b._act = act;
+  }
+}
 const mpHeld = new Map();   // 押しているボタン → { groups: [[{ a, dir }]] }（順番の小さい組から）
 const mpRuns = new Map();   // 順番どおりに動いているボタン → { groups, gi, mode }
 // 押している間：順番の小さい組から動かす。組の部品がぜんぶはし（最大か最小）に着いたら、次の組が動く（ぐるぐる回る部品は着かない）
@@ -1399,6 +1436,7 @@ function stepMoveParts(v, dt) {
         M.dirty = true;
       }
     }
+    mpDriveStep(v, M, dt);
     mpRunStep(M);
     for (const a of M.chans) if (a.goal != null) {   // 「もどす」：はじめの値へ動く
       const d = a.goal - a.val, s = a.speed * dt;
@@ -5813,6 +5851,8 @@ const HELP_BASE = `<details><summary>はじめに：Blender の基本（どの�
 <ul><li>フォークリフトのツメ：<code>動作</code>=<code>移動</code>・<code>軸</code>=<code>Z</code>・<code>最小</code>=<code>0</code>・<code>最大</code>=<code>3</code>（地面に下ろした形で書き出す）。</li>
 <li>はしご車：<code>ターンテーブル</code>（回転・Z）の子に <code>はしご</code>（回転・X。上げるのは −）、その子に <code>はしご先</code>（移動・Y。前へのばすのは −、例 <code>最小</code>=<code>-10</code>・<code>最大</code>=<code>0</code>）。親子にすると、回す・上げる・のばすが全部つながります。</li></ul>
 <p><b>ボタン</b>は .glb には入れません。乗り物を運転しているときに ☰ →「🎛️ ボタンを作る」で作ります。1. ボタンの種類：<b>ON／OFF</b>（1 回押すと部品が ＋ なら最大・− なら最小まで動いてライトがつく、もう 1 回で元にもどってライトが消える）・<b>押している間うごく</b>（一方通行。砲塔の右回りなど）・<b>はじめの位置にもどす</b>。2. すること：動かす部品（＋／−の向き）とライトを<b>いくつでも</b>えらべます（例：「ライト」ボタン＝ライト＋ヘッドライトの部品を開く）。それぞれに<b>順番</b>（1番・2番…）をつけると、同じ番号はいっしょに、前の番号が終わってから次の番号が動きます（OFF・もどすは逆の順）。3. 名前をつけて「作る」。ボタンをドラッグして好きな所に置き「完了」。並べかえ・消すのも ☰ から。ボタンの配置は乗り物の名前ごとに、その端末に覚えます。</p>
+<p><b>往復させたいとき</b>（例：部品Aを 0→1m 進めて、また 0m へもどす）：「押している間うごく」で ＋ の「進む」ボタンと − の「もどる」ボタンを作り、ボタンの種類 <b>ボタンをまとめる</b> で 1番に「進む」・2番に「もどる」を入れます。まとめたボタンを 1 回押すと、進んで、はしに着いたらもどります。「くりかえす」にすると、もう一度押すまで往復しつづけます。</p>
+<p><b>運転に連動</b>：前進・後退・左・右・走っている間 の操作に合わせて部品を動かします（例：前進で羽がはばたく＝羽の部品を「往復」で）。操作をやめるとはじめの位置へもどります。画面のボタンで連動の ON／OFF を切りかえられます。</p>
 <p class="tip">Blender のプロパティの歯車の「最小・最大・デフォルト」は書き出されません。最小・最大は、それぞれ別のプロパティ（<code>最小</code> <code>最大</code>）として作ってください。整数・浮動小数点数のプロパティに -90 などが入らないときは、歯車の「ソフト最小」「ソフト最大」を広げるか、タイプを「文字列」にしてください。</p></details>
 <details><summary>書き出し（.glb にする）</summary>
 <ol>
@@ -12345,17 +12385,21 @@ function mpLoad(v) {
     if (!Array.isArray(a)) return [];
     // 前の形（f：plus/minus/home と ch 1 つ）も読む
     return a.map((b) => b && (Array.isArray(b.acts) ? b : typeof b.ch === 'string' ? { t: b.f === 'home' ? 'home' : 'hold', acts: [{ k: 'part', ch: b.ch, dir: b.f === 'minus' ? -1 : 1 }], name: b.name, x: b.x, y: b.y } : null))
-      .filter((b) => b && MP_FUNCS[b.t] && b.acts.length).slice(0, 24);
+      .filter((b) => b && MP_FUNCS[b.t] && b.acts.length).slice(0, 24)
+      .map((b) => { if (!b.id) b.id = mpNewId(); if (b.t === 'drive') b.on = true; return b; });
   } catch (e) { return []; }
 }
-function mpSave() { if (MPB.v) try { localStorage.setItem(mpStoreKey(MPB.v), JSON.stringify(MPB.list.map(({ t, acts, name, x, y }) => ({ t, acts, name, x, y })))); } catch (e) { /* 覚えられなくても使える */ } }
+const mpNewId = () => Math.random().toString(36).slice(2, 10);
+function mpSave() { if (MPB.v) try { localStorage.setItem(mpStoreKey(MPB.v), JSON.stringify(MPB.list.map(({ id, t, acts, name, x, y, trig, sw, rep }) => ({ id, t, acts, name, x, y, trig, sw, rep })))); } catch (e) { /* 覚えられなくても使える */ } }
+const mpBtnById = (id) => MPB.list.find((o) => o.id === id);
+const mpBtnName = (o) => o ? (o.name || o.acts.map(mpActTxt).join('・').slice(0, 14)) : '？';
 const mpChan = (key) => (MPB.v && MPB.v.item.moves ? MPB.v.item.moves.chans.find((a) => a.key === key) : null);
 const mpChans = (key) => (MPB.v && MPB.v.item.moves ? MPB.v.item.moves.chans.filter((a) => a.key === key) : []);   // 同じ名前の部品（左右に分けたヘッドライトなど）はいっしょに動かす
 const mpVeh = () => (driving && ride && (ride.item.moves || hasLamps(ride)) ? ride : null);   // ボタンが作れる乗り物（動く部品かライトがある）
 const mpClampXY = (n, d) => THREE.MathUtils.clamp(Number.isFinite(n) ? n : d, 0.04, 0.96);
 const mpRange = (a) => a.free ? 'ぐるぐる回る' : a.part.type === 'rot' ? `${a.min}°〜${a.max}°` : `${a.min}m〜${a.max}m`;
 const MP_PLUS_TXT = { rot: { Z: '上から見て左回り', X: '前が下がる向き（砲身なら下向き）', Y: '左（+X）に傾く向き' }, move: { Z: '上へ', X: '左へ（+X）', Y: '後ろへ（+Y）' } };
-const mpActTxt = (q) => { const o = q.n > 1 ? `(${q.n})` : ''; if (q.k === 'light') return 'ライト' + o; if (q.k === 'pat') return 'パトランプ' + o; if (q.k === 'cp') { const k = MPB.v && cpCps(MPB.v).find((c) => c.key === q.ch); return k ? k.name : '？'; } const a = mpChan(q.ch); return a ? `${a.part.name}${q.dir < 0 ? '−' : '＋'}${o}` : '？'; };
+const mpActTxt = (q) => { const o = q.n > 1 ? `(${q.n})` : ''; if (q.k === 'light') return 'ライト' + o; if (q.k === 'pat') return 'パトランプ' + o; if (q.k === 'cp') { const k = MPB.v && cpCps(MPB.v).find((c) => c.key === q.ch); return k ? k.name : '？'; } if (q.k === 'btn') return `[${mpBtnName(mpBtnById(q.id))}]${o}`; const a = mpChan(q.ch); return a ? `${a.part.name}${q.dir < 0 ? '−' : '＋'}${o}` : '？'; };
 // すること の順番（1〜9）。同じ番号はいっしょに、番号の小さい順に動く（前の番号がぜんぶ終わってから次）
 const mpOrd = (q) => THREE.MathUtils.clamp(Math.round(Number(q.n) || 1), 1, 9);
 function mpGroups(acts, desc) {
@@ -12386,7 +12430,35 @@ function mpRunStep(M) {
     if (++R.gi >= R.groups.length) { mpRuns.delete(b); continue; }
     mpStartGroup(R.groups[R.gi], R.mode);
   }
+  // まとめたボタン：入れたボタンを番号の順に 1 回ずつ押す。前の番号のボタンの動きがぜんぶ終わってから次へ
+  for (const [b, S] of mpSeqs) {
+    const g = S.groups[S.gi];
+    if (g.some((q) => { const o = mpBtnById(q.id); return o && mpRuns.has(o); })) continue;
+    if (++S.gi >= S.groups.length) {
+      if (b.rep && b.on && ++S.loops < 10000) S.gi = 0;   // くりかえす：もう一度押すまで
+      else { mpSeqs.delete(b); b.on = false; if (b._btn) b._btn.classList.remove('on'); continue; }
+    }
+    mpSeqGroup(b);
+  }
   void M;
+}
+const mpSeqs = new Map();   // 動いている まとめたボタン → { groups, gi }
+// ほかのボタンを 1 回押したことにする（押している間のボタンは、はしに着くまで）
+function mpPressSub(o) {
+  if (!o || o.t === 'seq' || o.t === 'drive') return;
+  if (o.t === 'toggle') { mpToggle(o, !o.on); if (o._btn) o._btn.classList.toggle('on', o.on); }
+  else if (o.t === 'hold') mpRun(o, 'on');
+  else if (o.t === 'home') mpRun(o, 'home');
+  else if (o.t === 'couple') cpPress(o);
+}
+function mpSeqGroup(b) { const S = mpSeqs.get(b); for (const q of S.groups[S.gi]) mpPressSub(mpBtnById(q.id)); }
+function mpSeqPress(b) {
+  if (b.rep && b.on) { b.on = false; mpSeqs.delete(b); if (b._btn) b._btn.classList.remove('on'); return; }   // くりかえし中：止める
+  const acts = b.acts.filter((q) => q.k === 'btn' && mpBtnById(q.id));
+  if (!acts.length) return;
+  b.on = true; if (b._btn) b._btn.classList.add('on');
+  mpSeqs.set(b, { groups: mpGroups(acts), gi: 0, loops: 0 });
+  mpSeqGroup(b);
 }
 // ON／OFF：部品は ON で選んだ向きのはし（最大か最小）へ、OFF ではじめの値へ。ライトは ON でつく
 function mpToggle(b, on) {
@@ -12397,15 +12469,15 @@ function setMpEdit(on) { MPB.edit = !!on; MPB.drag = null; renderMpButtons(); }
 function renderMpButtons() {
   for (let i = holds.length - 1; i >= 0; i--) if (holds[i].mp) { holds[i].release(); holds.splice(i, 1); }
   const layer = el('mpLayer'), v = mpVeh();
-  if (MPB.v !== v) { MPB.v = v; MPB.list = v ? mpLoad(v) : []; MPB.edit = false; MPB.drag = null; mpRuns.clear(); }
+  if (MPB.v !== v) { MPB.v = v; MPB.list = v ? mpLoad(v) : []; MPB.edit = false; MPB.drag = null; mpRuns.clear(); mpSeqs.clear(); }
   layer.textContent = '';
   layer.hidden = !v; el('mpDone').hidden = !(v && MPB.edit);
   if (!v) return;
   MPB.list.forEach((b, i) => {
-    const ok = b.acts.filter((q) => q.k === 'light' ? hasLamps(v) : q.k === 'pat' ? hasPat(v) : q.k === 'cp' ? cpCps(v).some((k) => k.key === q.ch) : mpChan(q.ch));
+    const ok = b.acts.filter((q) => q.k === 'light' ? hasLamps(v) : q.k === 'pat' ? hasPat(v) : q.k === 'cp' ? cpCps(v).some((k) => k.key === q.ch) : q.k === 'btn' ? !!mpBtnById(q.id) : mpChan(q.ch));
     const btn = document.createElement('button');
-    btn.type = 'button'; btn.className = 'mpb' + (MPB.edit ? ' edit' : '') + (ok.length ? '' : ' dead') + (b.t === 'toggle' && b.on ? ' on' : '');
-    btn.textContent = b.name || b.acts.map(mpActTxt).join('・').slice(0, 14) + (b.t === 'home' ? ' もどす' : b.t === 'couple' ? ' 連結' : '');
+    btn.type = 'button'; btn.className = 'mpb' + (MPB.edit ? ' edit' : '') + (ok.length ? '' : ' dead') + ((b.t === 'toggle' || b.t === 'seq' || b.t === 'drive') && b.on ? ' on' : '');
+    btn.textContent = b.name || b.acts.map(mpActTxt).join('・').slice(0, 14) + (b.t === 'home' ? ' もどす' : b.t === 'couple' ? ' 連結' : b.t === 'drive' ? ' 連動' : '');
     b._btn = btn;
     btn.title = ok.length ? `${MP_FUNCS[b.t].name}：${b.acts.map(mpActTxt).join('・')}` : 'この乗り物には、このボタンで動かす部品がありません';
     btn.style.left = mpClampXY(b.x, 0.5) * 100 + '%'; btn.style.top = mpClampXY(b.y, 0.45) * 100 + '%';
@@ -12434,6 +12506,8 @@ function renderMpButtons() {
         if (!ok.length) { showMsg(btn.title); return; }
         if (b.t === 'toggle') { mpToggle(b, !b.on); btn.classList.toggle('on', b.on); return; }
         if (b.t === 'couple') { cpPress(b); return; }   // 連結：さわっている物とつなぐ／はずす
+        if (b.t === 'seq') { mpSeqPress(b); return; }   // まとめたボタン：入れたボタンを順に押す
+        if (b.t === 'drive') { b.on = !b.on; btn.classList.toggle('on', b.on); showMsg(`${btn.textContent}：運転に連動 ${b.on ? 'ON' : 'OFF'}`); return; }
         if (b.t === 'home') {   // もどす：選んだ部品をはじめの値へ（ON／OFF のボタンも OFF にもどる）
           for (const o of MPB.list) if (o.t === 'toggle') { o.on = false; mpRuns.delete(o); }
           mpRun({ acts: ok.filter((q) => q.k === 'part') }, 'home');
@@ -12471,7 +12545,7 @@ function mpActsUi() {
     const c = document.createElement('input'); c.type = 'checkbox'; c.checked = !!(keep.get(k) || {}).on;
     const sp = document.createElement('span'); sp.textContent = label;
     r.append(c, sp);
-    if (part && t !== 'home') {
+    if (part && t !== 'home') {   // 運転に連動 の往復は ＋ で最大から、− で最小から
       const sel = document.createElement('select'); sel.className = 'mpdir'; sel.setAttribute('aria-label', '向き');
       sel.innerHTML = `<option value="1">＋</option><option value="-1">−</option>`;
       sel.value = (keep.get(k) || {}).dir || '1';
@@ -12481,21 +12555,34 @@ function mpActsUi() {
     const ns = document.createElement('select'); ns.className = 'mpn'; ns.setAttribute('aria-label', '順番');
     ns.innerHTML = [1, 2, 3, 4, 5, 6, 7, 8, 9].map((n) => `<option value="${n}">${n}番</option>`).join('');
     ns.value = (keep.get(k) || {}).n || '1';
-    ns.hidden = !!noOrd;
+    ns.hidden = !!noOrd || t === 'drive';
     r.append(ns);
     box.append(r);
   };
-  if (t === 'couple') { for (const k of cpCps(ride)) if (!box.querySelector(`[data-k="${CSS.escape(k.key)}"]`)) row(k.key, `🔗 ${k.name}（連結器・フック）`, false, true); }
+  el('mpOpts').textContent = '';
+  if (t === 'seq') {   // ほかのボタン（まとめたボタン・運転に連動 はのぞく）
+    for (const o of MPB.list) if (o.t !== 'seq' && o.t !== 'drive') row('btn|' + o.id, `[${mpBtnName(o)}]（${MP_FUNCS[o.t].name.replace(/（.*$/, '')}）`, false);
+    const lb = document.createElement('label'); lb.className = 'mpact';
+    lb.innerHTML = `<input type="checkbox" id="mpRep"><span>くりかえす（もう一度押すと止まる）</span>`;
+    el('mpOpts').append(lb);
+  } else if (t === 'drive') {
+    const mk = (id, label, opts) => { const l = document.createElement('label'); l.textContent = label; const sel = document.createElement('select'); sel.id = id; sel.innerHTML = Object.entries(opts).map(([k, n]) => `<option value="${k}">${n}</option>`).join(''); l.append(sel); el('mpOpts').append(l); };
+    mk('mpTrig', 'きっかけ', MP_TRIG); mk('mpSw', '動き方', MP_SWING);
+  }
+  if (t === 'seq') { /* 上で出した */ }
+  else if (t === 'couple') { for (const k of cpCps(ride)) if (!box.querySelector(`[data-k="${CSS.escape(k.key)}"]`)) row(k.key, `🔗 ${k.name}（連結器・フック）`, false, true); }
   else if (ride && ride.item.moves) for (const a of ride.item.moves.chans) if (!box.querySelector(`[data-k="${CSS.escape(a.key)}"]`)) row(a.key, `${a.part.name}（${a.ax}・${a.part.type === 'rot' ? '回転' : '移動'}・${mpRange(a)}）`, true);
   if (t === 'toggle' && hasLamps(ride) && (ride.item.lamps.has.head || ride.item.lamps.has.tail)) row('light', '💡 ライト（つける・消す）', false);
   if (t === 'toggle' && hasPat(ride)) row('pat', '🚨 パトランプ（つける・消す）', false);
-  if (!box.children.length) box.textContent = t === 'couple' ? '連結器がありません（部品のカスタムプロパティ 動作=連結）' : t === 'toggle' ? 'えらべるものがありません' : '動く部品がありません（ON／OFF ならライトをえらべます）';
+  if (!box.children.length) box.textContent = t === 'seq' ? '先に、まとめたいボタン（例：進む・もどる）を作ってください' : t === 'couple' ? '連結器がありません（部品のカスタムプロパティ 動作=連結）' : t === 'toggle' ? 'えらべるものがありません' : '動く部品がありません（ON／OFF ならライトをえらべます）';
   mpInfo();
 }
 function mpInfo() {
   const t = el('mpFn').value;
   const ord = '「○番」は順番：同じ番号はいっしょに動き、前の番号がぜんぶ終わってから次の番号が動く。';
-  el('mpInfo').textContent = t === 'couple' ? '連結器（フック）を車や置物に当てて押すと連結。何にもさわっていないとき、ボタンは灰色で押せない。さわると黄色く光って押せる。連結中はもう 1 回押すとはずれる。つないだ所は自在に曲がり、持ち上げるとぶら下がってゆれる。連結した車の連結器が次の車にさわっていれば、押すたびに次々つながる（列車）。'
+  el('mpInfo').textContent = t === 'seq' ? '入れたボタンを、番号の順に 1 回ずつ押します（同じ番号はいっしょ。前の番号のボタンの動きが終わってから次へ）。例：1番に「進む」、2番に「もどる」を入れると、1 回押すだけで行って帰る往復になります。「押している間うごく」ボタンは、はしに着くまで動きます。' + ord
+    : t === 'drive' ? '運転の操作に合わせて部品が動きます（例：前進で羽がはばたく）。きっかけがある間だけ動き、なくなるとはじめの位置へもどります。往復は最小と最大のあいだを行ったり来たり（速さは部品の 速さ）。画面のボタンで連動の ON／OFF を切りかえられます。'
+    : t === 'couple' ? '連結器（フック）を車や置物に当てて押すと連結。何にもさわっていないとき、ボタンは灰色で押せない。さわると黄色く光って押せる。連結中はもう 1 回押すとはずれる。つないだ所は自在に曲がり、持ち上げるとぶら下がってゆれる。連結した車の連結器が次の車にさわっていれば、押すたびに次々つながる（列車）。'
     : t === 'toggle' ? '1 回押すと ON：部品は ＋ なら最大、− なら最小まで動き、ライトはつく（1番→2番→…）。もう 1 回で OFF：逆の順（大きい番号から）にはじめの位置にもどり、ライトは消える。' + ord
     : t === 'hold' ? '押している間だけ、選んだ向き（＋／−）に動く。何度押しても同じ向きに動く。＋は Blender の値が増える向き（回転 Z なら上から見て左回り、移動 Z なら上へ）。1番の部品がはし（最大か最小）に着くと 2番が動き出す。' + ord
     : '押すと、選んだ部品がはじめの位置にもどる（大きい番号から順に）。' + ord;
@@ -12521,13 +12608,17 @@ el('mpOk').addEventListener('click', () => {
     if (r.dataset.k === 'light') acts.push({ k: 'light', n });
     else if (r.dataset.k === 'pat') acts.push({ k: 'pat', n });
     else if (r.dataset.k.startsWith('cp|')) acts.push({ k: 'cp', ch: r.dataset.k, n: 1 });
+    else if (r.dataset.k.startsWith('btn|')) acts.push({ k: 'btn', id: r.dataset.k.slice(4), n });
     else acts.push({ k: 'part', ch: r.dataset.k, dir: r.querySelector('.mpdir') && r.querySelector('.mpdir').value === '-1' ? -1 : 1, n });
   }
   if (!MP_FUNCS[t]) return;
   if (!acts.length) { showMsg('することを 1 つ以上えらんでください'); return; }
   el('mpDlg').hidden = true;
   if (MPB.list.length >= 24) { showMsg('ボタンは 24 こまでです'); return; }
-  MPB.list.push({ t, acts: acts.slice(0, 12), name: el('mpNm').value.trim().slice(0, 8), x: 0.5, y: 0.42 });
+  const nb = { id: mpNewId(), t, acts: acts.slice(0, 12), name: el('mpNm').value.trim().slice(0, 8), x: 0.5, y: 0.42 };
+  if (t === 'seq') nb.rep = !!(el('mpRep') && el('mpRep').checked);
+  if (t === 'drive') { nb.trig = el('mpTrig').value; nb.sw = el('mpSw').value; nb.on = true; }
+  MPB.list.push(nb);
   mpSave();
   setMpEdit(true);
   showMsg('ボタンをドラッグして好きな所に置き、「完了」を押してください');
