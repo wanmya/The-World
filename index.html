@@ -5776,14 +5776,16 @@ function carryBy(o, pos, setYaw) {
   return true;
 }
 // 動いている乗り物のまわりの、止まっている車・置物を起こす（フォークが上がった、荷台に乗ってきた…）
+// 積める・つれる乗り物：車・ロボットと、航空機（旅客機のぞく）
+const liftable = (v) => { const t = vtype(v); return t === 'car' || t === 'robot' || (t === 'plane' && !v.item.jet); };
 const movingCars = () => vehicles.filter((v) => v.item.hf && (v === ride || v.remote || !v.settled || (v.item.moves && v.item.moves.dirty)));
 function stepCarry(dt) {
   hfFrame++;
   const mv = movingCars();
   for (const v of vehicles) {
     const t = vtype(v);
-    if (v.remote || (t !== 'car' && t !== 'robot')) continue;
-    if (v.base) {   // 積まれている車：下の乗り物といっしょに動く
+    if (v.remote || !liftable(v)) continue;
+    if (v.base) {   // 積まれている車（航空機も：トラックの荷台・船の甲板の上）：下の乗り物といっしょに動く
       const p = new THREE.Vector3(v.pos.x, v.y, v.pos.y);
       if (carryBy(v, p, (dy) => { v.h += dy; })) {
         v.pos.x = p.x; v.pos.y = p.z; v.y = p.y; v.settled = false; v.movedAt = performance.now();
@@ -5900,7 +5902,7 @@ function cpLocalBox(item) {
 // つなげる相手：止まっている車（ほかの人が運転していない）と、置物（押せる大きさの物）
 function cpTargets() {
   const out = [];
-  for (const v of vehicles) { const t = vtype(v); if (v === ride || v.remote || v.sunk || v.run || v.cpL || (t !== 'car' && t !== 'robot')) continue; out.push({ tk: 'v', o: v }); }
+  for (const v of vehicles) { const t = vtype(v); if (v === ride || v.remote || v.sunk || v.run || v.cpL || !liftable(v) || (t === 'plane' && v.y > floorAt(v.pos.x, v.pos.y) + 0.5 && !v.base)) continue; out.push({ tk: 'v', o: v }); }
   for (const pr of props) if (pr.loose && !pr.cpL && !pr.bld) out.push({ tk: 'p', o: pr });
   return out;
 }
@@ -10458,8 +10460,10 @@ function stepBoat(v, dt) {
 /* ---- 航空機：W/S で出力、A/D で曲がる、Space で上昇・C で下降。遅いと浮かない ---- */
 function stepPlane(v, dt) {
   if (v.item.jet) { stepJet(v, dt); return; }
+  if (v.cpL) { v.vF = 0; v.vy = 0; v.throttle = 0; if (v.cpHang) { showCar(v); return; } }   // クレーン・ヘリにつられている（cpStep が動かす）／引かれている
+  const ox = v.pos.x, oz = v.pos.y;
   const V = v.item.def.vehicle, mine = v === ride, S = v.item.spec || { vto: V.maxSpeed * 3.6 * 0.35, climb: 12, turnK: 1, vclimb: 8, hover: true };
-  if (V.air && V.air !== 'plane') { stepHeli(v, dt); return; }
+  if (V.air && V.air !== 'plane') { stepHeli(v, dt, ox, oz); return; }
   const k = driveInput(mine);
   const wk = weightK(v), heavy = overLoad(v);   // 重いほど、加速・上昇・旋回がにぶく、離陸に長い距離がいる
   v.throttle = mine ? THREE.MathUtils.clamp((v.throttle || 0) + k.thr * dt * 0.45, 0, 1) : 0;
@@ -10480,15 +10484,39 @@ function stepPlane(v, dt) {
   v.h += yawRate * dt;
   v.pos.x += Math.sin(v.h) * v.vF * dt; v.pos.y += Math.cos(v.h) * v.vF * dt;
   v.y += v.vy * dt;
-  airLimits(v, V, mine);
+  airLimits(v, V, mine, ox, oz);
   const airNow = v.y > floorAt(v.pos.x, v.pos.y) + 0.3;
+  airSettle(v, mine, airNow);
   const tp = airNow ? Math.atan2(v.vy, Math.max(4, v.vF)) : 0, tr = airNow ? -k.turn * 0.45 : 0;
   const kk = Math.min(1, dt * 4);
   v.pitch += (tp - v.pitch) * kk; v.roll += (tr - v.roll) * kk;
   showCar(v);
 }
-// 箱のかべ・地面・天井・置物
-function airLimits(v, V, mine) {
+// だれも乗っていない・地上で止まった航空機は「止まっている」（運ばれたあと、止まったら場所を保存する）
+function airSettle(v, mine, airNow) {
+  const still = !mine && !v.remote && !v.cpL && !airNow && Math.abs(v.vF) < 0.01 && Math.abs(v.vy || 0) < 0.05;
+  if (still) v.settled = true; else if (mine || airNow || v.cpL) v.settled = false;
+}
+// 航空機の機体が、ほかの乗り物の形（かべ・車体・クレーン）にぶつかるか。下の面（甲板・荷台）は足もとなので見ない
+function airBump(v, V) {
+  const h = visYaw(v), s = Math.sin(h), c = Math.cos(h), hl = V.halfLength * 0.85, hw = V.halfWidth * 0.6, cz = V.centerZ || 0;
+  const y0 = v.y + 0.4, y1 = v.y + Math.max(0.8, (V.height || 2) * 0.8);
+  for (const u of vehicles) {
+    if (u === v || !u.item.hf || u.sunk || (u.base && u.base.v === v) || (v.base && v.base.v === u) || (u.cpL && (u.cpL.own === v || u.cpL.host === v)) || (v.cpL && v.cpL.own === u)) continue;
+    const U = u.item.def.vehicle;
+    if (Math.hypot(u.pos.x - v.pos.x, u.pos.y - v.pos.y) > U.halfLength + U.halfWidth + V.halfLength + V.halfWidth) continue;
+    for (const [lx, lz] of [[0, cz], [0, cz + hl], [0, cz - hl], [hw, cz], [-hw, cz], [0, cz + hl / 2], [0, cz - hl / 2]]) {
+      if (hfSpanV(u, v.pos.x + lx * c + lz * s, v.pos.y - lx * s + lz * c, y0, y1)) return u;
+    }
+  }
+  return null;
+}
+// 箱のかべ・地面・天井・置物・ほかの乗り物
+function airLimits(v, V, mine, ox, oz) {
+  if (ox != null && (ox !== v.pos.x || oz !== v.pos.y) && airBump(v, V)) {   // ぶつかった：その前の位置にもどして止まる
+    v.pos.x = ox; v.pos.y = oz; v.vF *= -0.2;
+    if (mine) showMsg('ほかの乗り物にぶつかりました');
+  }
   const lim = Math.max(V.halfWidth, V.halfLength) * 0.6;
   if (outsideBox(v.pos.x, v.pos.y, lim)) {
     v.pos.x = clampX(v.pos.x, lim); v.pos.y = clampZ(v.pos.y, lim);
@@ -10511,7 +10539,7 @@ function windVec(out) {
 const _wv = new THREE.Vector3();
 /* ---- ヘリコプター・飛行船・気球：Space で上昇・C で下降、W/S で前後、A/D で向き。ローターが回りきるまで浮かない ----
    ヘリは進む向きに機体がかたむく（傾き=しない でかたむかない）。重い物を積む・つるすと上昇がにぶく、最大積載をこえると浮かない */
-function stepHeli(v, dt) {
+function stepHeli(v, dt, ox, oz) {
   const V = v.item.def.vehicle, mine = v === ride, S = v.item.spec || { vclimb: 8, hover: true, turnK: 1 };
   const k = driveInput(mine);
   const wk = weightK(v), heavy = overLoad(v), ship = V.air === 'airship' || V.air === 'balloon';
@@ -10538,8 +10566,9 @@ function stepHeli(v, dt) {
   if (ship && air) { windVec(_wv); v.pos.x += _wv.x * dt * 0.5; v.pos.y += _wv.z * dt * 0.5; }   // 風に流される
   v.y += v.vy * dt;
   if (!air && !mine) v.vF = 0;
-  airLimits(v, V, mine);
+  airLimits(v, V, mine, ox, oz);
   const airNow = v.y > floorAt(v.pos.x, v.pos.y) + 0.4;
+  airSettle(v, mine, airNow);
   let tp = 0, tr = 0;
   if (!V.noTilt && airNow) {
     v._aF = ((v._aF || 0) * 0.9) + (v.vF - (v._vF0 ?? v.vF)) / Math.max(dt, 1e-3) * 0.1;
