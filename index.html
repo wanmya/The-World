@@ -5728,7 +5728,7 @@ function hfSpanV(v, x, z, y0, y1) {
   return false;
 }
 // 人（足もと y・半径 R）がその乗り物の形にぶつかるか（足もとの段差 HF_STEP はこえられる、頭の上は通れる）
-const HFP = [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1], [0.7, 0.7], [-0.7, 0.7], [0.7, -0.7], [-0.7, -0.7]];
+const HFP = [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1], [0.7, 0.7], [-0.7, 0.7], [0.7, -0.7], [-0.7, -0.7], [0.45, 0], [-0.45, 0], [0, 0.45], [0, -0.45]];   // 内側の輪も見る（厚み 0 の面のかべもすりぬけない）
 function hfHitsMan(v, x, z, y, R) {
   for (const [ax, az] of HFP) if (hfSpanV(v, x + ax * R, z + az * R, y + HF_STEP, y + P_H - 0.1)) return true;
   return false;
@@ -9900,7 +9900,8 @@ function stepPlayer(dt) {
   const hfNear = [];
   for (const v of vehicles) if (!(aboard && aboard.v === v)) { if (v.item.jet && v.item.jet.hit) jetPushPlayer(v, ox, oz); else if (v.item.hf) hfNear.push(v); else pushFromCar(v.item.def.vehicle, v.pos.x, v.pos.y, v.y, visYaw(v)); }
   if (hfNear.length) {
-    const hitAt = (x, z) => hfNear.some((v) => hfHitsMan(v, x, z, player.pos.y, P_R));
+    const hit1 = (x, z) => hfNear.some((v) => hfHitsMan(v, x, z, player.pos.y, P_R));
+    const hitAt = (x, z) => hit1(x, z) || ((x - ox) ** 2 + (z - oz) ** 2 > 0.01 && hit1((x + ox) / 2, (z + oz) / 2));   // 動いたとちゅうも見る（速く走っても、うすいかべをこえない）
     if (hitAt(player.pos.x, player.pos.z)) {
       const nx = player.pos.x, nz = player.pos.z;
       if (!hitAt(nx, oz)) player.pos.z = oz;
