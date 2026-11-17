@@ -5767,8 +5767,15 @@ function hfSpanV(v, x, z, y0, y1) {
 }
 // 人（足もと y・半径 R）がその乗り物の形にぶつかるか（足もとの段差 HF_STEP はこえられる、頭の上は通れる）
 const HFP = [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1], [0.7, 0.7], [-0.7, 0.7], [0.7, -0.7], [-0.7, -0.7], [0.45, 0], [-0.45, 0], [0, 0.45], [0, -0.45]];   // 内側の輪も見る（厚み 0 の面のかべもすりぬけない）
+const MAN_STEP = 0.6;   // 人がのぼれる段（ヘリのゲートのつなぎ目・荷台のふち）。上があいているときだけ
 function hfHitsMan(v, x, z, y, R) {
-  for (const [ax, az] of HFP) if (hfSpanV(v, x + ax * R, z + az * R, y + HF_STEP, y + P_H - 0.1)) return true;
+  for (const [ax, az] of HFP) {
+    const px = x + ax * R, pz = z + az * R;
+    if (!hfSpanV(v, px, pz, y + HF_STEP, y + P_H - 0.1)) continue;
+    const sy = surfUnder(v, px, pz, y + MAN_STEP);   // 低い段・坂：その上に頭の高さまですきまがあれば、のぼれる
+    if (sy > y + HF_STEP - 0.05 && !hfSpanV(v, px, pz, sy + 0.05, sy + P_H - 0.1)) continue;
+    return true;
+  }
   return false;
 }
 // 乗り物の面のうち、yMax より下でいちばん高いもの。{ y, v, P } か null。skip の乗り物と、skip に積まれている乗り物は見ない
@@ -9950,9 +9957,14 @@ function stepPlayer(dt) {
   if (roof > g2 && player.pos.y > roof - 1.2) g2 = roof;
   if (blds.length) { const bf = bldFloor(player.pos.x, player.pos.z, player.pos.y - Math.min(0, player.vy * dt)); if (bf > g2) g2 = bf; }   // 建物の床・階段
   // 乗り物の上（荷台・屋根・フォーク）：落ちてきたか、歩いて上がれる高さなら立つ
-  const vs = surfTop(player.pos.x, player.pos.z, Math.max(player.pos.y, oy) + (wasG ? 0.3 : 0.05), null);
-  const vb = vs && vs.y > g2 ? { v: vs.v, P: vs.P } : null;
+  const vs = surfTop(player.pos.x, player.pos.z, Math.max(player.pos.y, oy) + (wasG ? MAN_STEP : 0.05), null);
+  let vb = vs && vs.y > g2 ? { v: vs.v, P: vs.P } : null;
   if (vb) g2 = vs.y;
+  // 乗り物の形の中にめりこんだ（坂の上で 1 コマに大きく動いた・乗り物が下から来た）：上があいていれば、その面の上へ
+  if (!vb || vs.y < player.pos.y - 0.05) {
+    const up = surfTop(player.pos.x, player.pos.z, player.pos.y + 1.6, null);
+    if (up && up.y > player.pos.y + 0.05 && up.y > g2 && hfSpanV(up.v, player.pos.x, player.pos.z, player.pos.y + 0.05, up.y - 0.05) && !hfSpanV(up.v, player.pos.x, player.pos.z, up.y + 0.05, up.y + P_H - 0.1)) { g2 = up.y; vb = { v: up.v, P: up.P }; }
+  }
   if (player.pos.y <= g2) { player.pos.y = g2; player.vy = Math.max(0, player.vy); player.onGround = true; if (!inWater) player.mode = 'walk'; setBase(player, vb); }
   else player.base = null;
 
@@ -9969,7 +9981,13 @@ function stepPlayer(dt) {
       if (!hitAt(nx, oz)) player.pos.z = oz;
       else if (!hitAt(ox, nz)) player.pos.x = ox;
       else if (!hitAt(ox, oz)) { player.pos.x = ox; player.pos.z = oz; }
-      else for (const v of hfNear) if (!v.item.hollow && hfHitsMan(v, player.pos.x, player.pos.z, player.pos.y, P_R)) pushFromCar(v.item.def.vehicle, v.pos.x, v.pos.y, v.y, visYaw(v));
+      else {   // まわりのどこへ動いてもぶつかる（乗り物のほうが来てめりこんだ）：いちばん近い、あいている所へ少しずつ出る（大きくはじき飛ばさない）
+        let done = false;
+        for (let r = 0.25; r <= 1.5 && !done; r += 0.25) for (let k = 0; k < 12 && !done; k++) {
+          const a = (k / 12) * Math.PI * 2, x = player.pos.x + Math.sin(a) * r, z = player.pos.z + Math.cos(a) * r;
+          if (!hit1(x, z)) { player.pos.x += (x - player.pos.x) * Math.min(1, dt * 8 / r); player.pos.z += (z - player.pos.z) * Math.min(1, dt * 8 / r); done = true; }
+        }
+      }
     }
   }
   pushFromTraffic();   // 路線バスや車にははね飛ばされず、押しのけられる
@@ -10604,13 +10622,17 @@ const _wv = new THREE.Vector3();
 function stepHeli(v, dt, ox, oz) {
   const V = v.item.def.vehicle, mine = v === ride, S = v.item.spec || { vclimb: 8, hover: true, turnK: 1 };
   const k = driveInput(mine);
+  // 2026-11-17：おだやかに。スティックは小さく倒すと小さく（2 乗）、入力はなめらかに変わる
+  const sm = Math.min(1, dt * 2.5), ex = (x) => Math.sign(x) * x * x;
+  v._kT = (v._kT || 0) + (ex(k.thr) - (v._kT || 0)) * sm; v._kR = (v._kR || 0) + (ex(k.turn) - (v._kR || 0)) * sm;
+  k.thr = v._kT; k.turn = v._kR;
   const wk = weightK(v), heavy = overLoad(v), ship = V.air === 'airship' || V.air === 'balloon';
   const fl0 = floorAt(v.pos.x, v.pos.y), air = v.y > fl0 + 0.4;
   const ready = ship || (v.rotK || 0) > 0.85;
   if (mine && !ready && k.up > 0 && !air) showMsg('ローターが回りきるまで待ってください');
   // 前後：スティック・W/S。地上ではゆっくり（タキシング）
   const tgt = k.thr * V.maxSpeed * (k.thr < 0 ? 0.4 : 1) * (air || ship ? 1 : 0.08);
-  v.vF += (tgt - v.vF) * Math.min(1, dt * (ship ? 0.25 : 0.8) * Math.sqrt(wk));
+  v.vF += (tgt - v.vF) * Math.min(1, dt * (ship ? 0.25 : 0.5) * Math.sqrt(wk));
   if (!mine) v.vF *= Math.exp(-dt);
   // 上下
   const climbK = heavy ? 0 : THREE.MathUtils.clamp(1 - (1 - wk) * 1.6, 0.15, 1);
@@ -10621,8 +10643,8 @@ function stepHeli(v, dt, ox, oz) {
   else if (k.up < 0) want = k.up * S.vclimb * 1.1;
   if (mine && heavy && k.up > 0) { want = Math.min(want, air ? -1 : 0); showMsg(`重すぎて上がれません（最大積載 ${Math.round(v.item.spec.maxLoad)}kg）`); }
   if (mine && !S.hover && air && Math.abs(v.vF) < 6) want = Math.min(want, -2.5);   // ホバリングできない：止まると下がる
-  v.vy = (v.vy || 0) + (want - (v.vy || 0)) * Math.min(1, dt * (ship ? 0.8 : 2));
-  const yawRate = k.turn * (ship ? 0.25 : 0.9) * (S.turnK || 1) * Math.sqrt(wk) * (air || ship ? 1 : 0.5);
+  v.vy = (v.vy || 0) + (want - (v.vy || 0)) * Math.min(1, dt * (ship ? 0.8 : 1.3));
+  const yawRate = k.turn * (ship ? 0.25 : 0.55) * (S.turnK || 1) * Math.sqrt(wk) * (air || ship ? 1 : 0.5);
   v.h += yawRate * dt;
   v.pos.x += Math.sin(v.h) * v.vF * dt; v.pos.y += Math.cos(v.h) * v.vF * dt;
   if (ship && air) { windVec(_wv); v.pos.x += _wv.x * dt * 0.5; v.pos.y += _wv.z * dt * 0.5; }   // 風に流される
@@ -10640,7 +10662,7 @@ function stepHeli(v, dt, ox, oz) {
     for (const L of CP.links) if ((L.own === v || L.host === v) && L.hang) { const lz = L.k.o.getWorldPosition(_wv); const dz = (lz.x - v.pos.x) * Math.sin(v.h) + (lz.z - v.pos.y) * Math.cos(v.h); tp += THREE.MathUtils.clamp(dz / Math.max(2, V.halfLength) * (1 - wk) * 0.6, -0.15, 0.15); }
   }
   v._vF0 = v.vF;
-  const kk = Math.min(1, dt * 3);
+  const kk = Math.min(1, dt * 2);
   v.pitch += (tp - v.pitch) * kk; v.roll += (tr - v.roll) * kk;
   showCar(v);
 }
