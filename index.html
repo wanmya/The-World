@@ -5829,11 +5829,12 @@ function hfSpanV(v, x, z, y0, y1) {
 // 人（足もと y・半径 R）がその乗り物の形にぶつかるか（足もとの段差 HF_STEP はこえられる、頭の上は通れる）
 const HFP = [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1], [0.7, 0.7], [-0.7, 0.7], [0.7, -0.7], [-0.7, -0.7], [0.45, 0], [-0.45, 0], [0, 0.45], [0, -0.45]];   // 内側の輪も見る（厚み 0 の面のかべもすりぬけない）
 const MAN_STEP = 0.6;   // 人がのぼれる段（ヘリのゲートのつなぎ目・荷台のふち）。上があいているときだけ
-function hfHitsMan(v, x, z, y, R) {
+const VEH_STEP = 0.8;   // 2026-11-17：その乗り物の中・上にいるときは 80cm まで（ゲートのふちをこえて外へ出られる。前はジャンプしないと出られなかった）
+function hfHitsMan(v, x, z, y, R, step = MAN_STEP) {
   for (const [ax, az] of HFP) {
     const px = x + ax * R, pz = z + az * R;
     if (!hfSpanV(v, px, pz, y + HF_STEP, y + P_H - 0.1)) continue;
-    const sy = surfUnder(v, px, pz, y + MAN_STEP);   // 低い段・坂：その上に頭の高さまですきまがあれば、のぼれる
+    const sy = surfUnder(v, px, pz, y + step);   // 低い段・坂：その上に頭の高さまですきまがあれば、のぼれる
     if (sy > y + HF_STEP - 0.05 && !hfSpanV(v, px, pz, sy + 0.05, sy + P_H - 0.1)) continue;
     return true;
   }
@@ -10057,7 +10058,8 @@ function stepPlayer(dt) {
     const nx = player.pos.x + dirx * speed * mag * dt, nz = player.pos.z + dirz * speed * mag * dt;
     // 歩きで登れないほど急なところ（高さ 1m 以上の段差に相当）は進めない
     const rise = pGround(nx, nz) - Math.max(player.pos.y, ground);
-    if (!(player.onGround && rise > speed * mag * dt * 1.6 + 0.02)) { player.pos.x = nx; player.pos.z = nz; }
+    // 乗り物の中・上（床のつなぎ目・ゲートのふち）は、ゆっくり歩いても 80cm までの段は上がれる（2026-11-17：5km/h では小さな段でも止まって降りられなかった）
+    if (!(player.onGround && rise > Math.max(speed * mag * dt * 1.6 + 0.02, player.base ? VEH_STEP : 0))) { player.pos.x = nx; player.pos.z = nz; }
   }
 
   const up = keys.Space || touch.act, down = keys.KeyC || keys.ControlLeft || keys.KeyQ || touch.dive;
@@ -10087,7 +10089,7 @@ function stepPlayer(dt) {
   if (roof > g2 && player.pos.y > roof - 1.2) g2 = roof;
   if (blds.length) { const bf = bldFloor(player.pos.x, player.pos.z, player.pos.y - Math.min(0, player.vy * dt)); if (bf > g2) g2 = bf; }   // 建物の床・階段
   // 乗り物の上（荷台・屋根・フォーク）：落ちてきたか、歩いて上がれる高さなら立つ
-  const vs = surfTop(player.pos.x, player.pos.z, Math.max(player.pos.y, oy) + (wasG ? MAN_STEP : 0.05), null);
+  const vs = surfTop(player.pos.x, player.pos.z, Math.max(player.pos.y, oy) + (wasG ? (player.base ? VEH_STEP : MAN_STEP) : 0.05), null);
   let vb = vs && vs.y > g2 ? { v: vs.v, P: vs.P } : null;
   if (vb) g2 = vs.y;
   // 乗り物の形の中にめりこんだ（坂の上で 1 コマに大きく動いた・乗り物が下から来た）：上があいていれば、その面の上へ
@@ -10104,7 +10106,7 @@ function stepPlayer(dt) {
   const hfNear = [];
   for (const v of vehicles) if (!(aboard && aboard.v === v)) { if (v.item.jet && v.item.jet.hit) jetPushPlayer(v, ox, oz); else if (v.item.hf) hfNear.push(v); else pushFromCar(v.item.def.vehicle, v.pos.x, v.pos.y, v.y, visYaw(v)); }
   if (hfNear.length) {
-    const hit1 = (x, z) => hfNear.some((v) => hfHitsMan(v, x, z, player.pos.y, P_R));
+    const hit1 = (x, z) => hfNear.some((v) => hfHitsMan(v, x, z, player.pos.y, P_R, player.base && player.base.v === v ? VEH_STEP : MAN_STEP));
     const hitAt = (x, z) => hit1(x, z) || ((x - ox) ** 2 + (z - oz) ** 2 > 0.01 && hit1((x + ox) / 2, (z + oz) / 2));   // 動いたとちゅうも見る（速く走っても、うすいかべをこえない）
     if (hitAt(player.pos.x, player.pos.z)) {
       const nx = player.pos.x, nz = player.pos.z;
