@@ -1898,6 +1898,7 @@ function vehDoorSet(v, i, open, net1) {
   const H = v.item.hollow, D = H && H.doors[i]; if (!D) return;
   D.open = open;
   for (const p of D.parts) for (const a of p.axes) a.goal = open ? (Math.abs(a.max) >= Math.abs(a.min) ? a.max : a.min) : a.init;
+  if (net1) v.mpMine = true;
   if (net1 && v.shared && v.id && net.room) net.room.emit('vfx', { t: 'door', v: v.id, i, on: open ? 1 : 0 }).catch(() => {});
 }
 // 止まっている乗り物（だれも運転していない）の、ドアなどの「もどす」動き
@@ -5663,7 +5664,9 @@ function hfBuild(frame, skip, only) {
     for (const [id, q] of cell) addI(id, q[0], q[1]);
   }
   let top = frame; while (top.parent && top.parent.type !== 'Scene') top = top.parent;
-  return { fr: frame, top, x0, z0, nx, nz, cx, cz, lo, hi, cnt, inv: new THREE.Matrix4(), invF: -1, x1, z1 };
+  let ya = Infinity, yb = -Infinity;
+  for (const arr of tris) for (let i = 1; i < arr.length; i += 3) { if (arr[i] < ya) ya = arr[i]; if (arr[i] > yb) yb = arr[i]; }
+  return { fr: frame, top, x0, z0, nx, nz, cx, cz, lo, hi, cnt, inv: new THREE.Matrix4(), invF: -1, x1, z1, ya, yb, tilt: false, wy0: 0, wy1: 0 };
 }
 // 自動車の地図をつくる（読み込んだとき。動く部品をつけたあと）
 function buildCarHf(item) {
@@ -5683,9 +5686,38 @@ function buildCarHf(item) {
 const _hfV = new THREE.Vector3();
 // 乗り物ぜんたいの行列を、1 コマに 1 回だけ新しくする（動く部品の位置も root から計算しなおす）
 function hfMats(P) { const r = P.top; if (r._mwF !== hfFrame) { r.updateMatrixWorld(true); r._mwF = hfFrame; } }
+// 1 コマに 1 回：逆行列と、大きくかたむいているか（ヘリのゲート・ダンプの荷台を開けた：地図の「上」が世界の上ではない）
+const _hfC = new THREE.Vector3();
+function hfPrep(P) {
+  if (P.invF === hfFrame) return;
+  hfMats(P); P.inv.copy(P.fr.matrixWorld).invert(); P.invF = hfFrame;
+  const e = P.fr.matrixWorld.elements, ly = Math.hypot(e[4], e[5], e[6]) || 1;
+  P.tilt = Math.abs(e[5]) / ly < 0.96 && P.ya != null;   // 約 16° より大きくかたむいた
+  if (!P.tilt) return;
+  P.ly = ly; P.wy0 = Infinity; P.wy1 = -Infinity;
+  for (const x of [P.x0, P.x1]) for (const y of [P.ya, P.yb]) for (const z of [P.z0, P.z1]) { _hfC.set(x, y, z).applyMatrix4(P.fr.matrixWorld); P.wy0 = Math.min(P.wy0, _hfC.y); P.wy1 = Math.max(P.wy1, _hfC.y); }
+}
+// かたむいた地図：世界の点 (x, y, z) が形の中か（近く 10cm まで）
+function hfSolid(P, x, y, z) {
+  _hfV.set(x, y, z).applyMatrix4(P.inv);
+  const i = Math.round((_hfV.x - P.x0) / P.cx), k = Math.round((_hfV.z - P.z0) / P.cz);
+  if (i < 0 || i >= P.nx || k < 0 || k >= P.nz) return false;
+  const id = k * P.nx + i, n = P.cnt[id], tol = 0.1 / P.ly;
+  for (let j = 0; j < n; j++) if (_hfV.y >= P.lo[id * HF_K + j] - tol && _hfV.y <= P.hi[id * HF_K + j] + tol) return true;
+  return false;
+}
+const HF_DY = 0.05;
 // yMax があれば、その高さより下でいちばん高い面（yMin より上のものだけ）。なければいちばん上の面
 function hfAt(P, x, y, z, yMax, yMin) {
-  if (P.invF !== hfFrame) { hfMats(P); P.inv.copy(P.fr.matrixWorld).invert(); P.invF = hfFrame; }
+  hfPrep(P);
+  if (P.tilt) {   // かたむいた部品：真上から下へ、形の上の面をさがす
+    let hi = Math.min(yMax != null ? yMax : P.wy1, P.wy1 + 0.1);
+    const lo = Math.max(yMin != null ? yMin : -Infinity, P.wy0 - 0.1);
+    if (hi < lo) return -Infinity;
+    let above = hfSolid(P, x, hi + HF_DY, z);
+    for (let yy = hi; yy >= lo; yy -= HF_DY) { const s = hfSolid(P, x, yy, z); if (s && !above) return yy; above = s; }
+    return -Infinity;
+  }
   _hfV.set(x, y, z).applyMatrix4(P.inv);
   const i = Math.round((_hfV.x - P.x0) / P.cx), k = Math.round((_hfV.z - P.z0) / P.cz);
   if (i < 0 || i >= P.nx || k < 0 || k >= P.nz) return -Infinity;
@@ -5707,7 +5739,13 @@ function hfAt(P, x, y, z, yMax, yMin) {
 }
 // 地図の 1 枚で、(x, z) の高さ y0〜y1 に形があるか（ぶつかる判定）
 function hfSpan(P, x, z, y0, y1) {
-  if (P.invF !== hfFrame) { hfMats(P); P.inv.copy(P.fr.matrixWorld).invert(); P.invF = hfFrame; }
+  hfPrep(P);
+  if (P.tilt) {
+    const a = Math.max(y0, P.wy0 - 0.1), b = Math.min(y1, P.wy1 + 0.1);
+    if (a > b) return false;
+    for (let yy = a; yy <= b; yy += HF_DY) if (hfSolid(P, x, yy, z)) return true;
+    return hfSolid(P, x, b, z);
+  }
   _hfV.set(x, (y0 + y1) / 2, z).applyMatrix4(P.inv);
   const i = Math.round((_hfV.x - P.x0) / P.cx), k = Math.round((_hfV.z - P.z0) / P.cz);
   if (i < 0 || i >= P.nx || k < 0 || k >= P.nz) return false;
@@ -5729,8 +5767,15 @@ function hfSpanV(v, x, z, y0, y1) {
 }
 // 人（足もと y・半径 R）がその乗り物の形にぶつかるか（足もとの段差 HF_STEP はこえられる、頭の上は通れる）
 const HFP = [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1], [0.7, 0.7], [-0.7, 0.7], [0.7, -0.7], [-0.7, -0.7], [0.45, 0], [-0.45, 0], [0, 0.45], [0, -0.45]];   // 内側の輪も見る（厚み 0 の面のかべもすりぬけない）
+const MAN_STEP = 0.6;   // 人がのぼれる段（ヘリのゲートのつなぎ目・荷台のふち）。上があいているときだけ
 function hfHitsMan(v, x, z, y, R) {
-  for (const [ax, az] of HFP) if (hfSpanV(v, x + ax * R, z + az * R, y + HF_STEP, y + P_H - 0.1)) return true;
+  for (const [ax, az] of HFP) {
+    const px = x + ax * R, pz = z + az * R;
+    if (!hfSpanV(v, px, pz, y + HF_STEP, y + P_H - 0.1)) continue;
+    const sy = surfUnder(v, px, pz, y + MAN_STEP);   // 低い段・坂：その上に頭の高さまですきまがあれば、のぼれる
+    if (sy > y + HF_STEP - 0.05 && !hfSpanV(v, px, pz, sy + 0.05, sy + P_H - 0.1)) continue;
+    return true;
+  }
   return false;
 }
 // 乗り物の面のうち、yMax より下でいちばん高いもの。{ y, v, P } か null。skip の乗り物と、skip に積まれている乗り物は見ない
@@ -6143,16 +6188,22 @@ function carBase(car) {
   return null;
 }
 // 自分の車の外形（8 点）が、ほかの乗り物の高い所（荷台の横・運転席など）に入るか
+const RAMP_K = 1;   // タイヤより前のはみ出した所で、のりこえられる坂：45° まで（車全体のかたむきは MAX_TILT まで）
 function hfBlocked(car) {
-  const V = car.item.def.vehicle, Bd = car.item.hfBody, hx = (Bd ? Bd.hx : V.halfWidth) * 0.95, z0 = Bd ? Bd.z0 : V.centerZ - V.halfLength, z1 = Bd ? Bd.z1 : V.centerZ + V.halfLength;
+  const V = car.item.def.vehicle, Bd = car.item.hfBody, wb = (V.wheelbase || 2) / 2, tp = Math.tan(car.pitch || 0), hx = (Bd ? Bd.hx : V.halfWidth) * 0.95, z0 = Bd ? Bd.z0 : V.centerZ - V.halfLength, z1 = Bd ? Bd.z1 : V.centerZ + V.halfLength;
   const zm = (z0 + z1) / 2, r = Math.max(hx, z1 - zm, zm - z0) + 1;
   for (const u of vehicles) {
     if (u === car || !u.item.hf || u.sunk || u.cpL || (u.base && u.base.v === car) || u.y > car.y + (V.height || 1.5) - 0.3) continue;
     const U = u.item.def.vehicle;
     if (Math.hypot(u.pos.x - car.pos.x, u.pos.y - car.pos.y) > r + U.halfLength + U.halfWidth) continue;
-    for (const [lx, lz] of [[hx, z1], [-hx, z1], [hx, z0], [-hx, z0], [0, z1], [0, z0], [hx, zm], [-hx, zm]]) {
-      const p = carLocalToWorld(car, lx, lz * 0.97);
-      if (hfSpanV(u, p.x, p.y, car.y + HF_STEP, car.y + (V.height || 1.5) - 0.1)) return true;   // 2026-11-16：形のある高さで（アームの下・中に入れる乗り物の中へは入れる）
+    for (const [lx, lz] of [[hx, z1], [-hx, z1], [hx, z0], [-hx, z0], [0, z1], [0, z0], [hx, zm], [-hx, zm], [0, wb], [0, -wb]]) {
+      const p = carLocalToWorld(car, lx, lz * 0.97), yb = car.y + lz * tp, Ht = (V.height || 1.5) - 0.1;   // yb：そこでの車の底（坂ではかたむいている）
+      if (!hfSpanV(u, p.x, p.y, yb + HF_STEP, yb + Ht)) continue;   // 2026-11-16：形のある高さで（アームの下・中に入れる乗り物の中へは入れる）
+      // 坂（ゲート・スロープ）や小さな段の上で、その上があいていれば登れる。タイヤより前（後ろ）にはみ出した所は、45° の坂まで
+      const over = Math.max(0, Math.abs(lz) - wb);
+      const sy = surfUnder(u, p.x, p.y, yb + HF_STEP + 0.15 + over * RAMP_K);
+      if (sy > -Infinity && !hfSpanV(u, p.x, p.y, sy + 0.05, sy + Ht)) continue;
+      return true;
     }
   }
   return false;
@@ -7254,6 +7305,7 @@ function leaveRide(force) {
   if (!force && vtype(car) === 'plane' && car.y > floorAt(car.pos.x, car.pos.y) + 0.5) { showMsg('着陸してから降りてください'); return; }
   if (!force && Math.abs(car.vF) > 3) { showMsg('止まってから降りてください'); return; }
   if (!hollowExit(car)) dropPlayerAt(exitPoint(car), visYaw(car), car.y);   // 中から運転していたら、席の横に
+  if (car.item.moves) car.mpMine = true;   // 動く部品の値（開けたままのゲートなど）を、ほかの人に知らせつづける
   ride = null; driving = false; avatar.visible = true;
   stopAuto(); SEMI.on = false;
   CARL.turn = 0; CARL.hazard = false; car.workOn = false; car.patOn = false;
@@ -9905,9 +9957,14 @@ function stepPlayer(dt) {
   if (roof > g2 && player.pos.y > roof - 1.2) g2 = roof;
   if (blds.length) { const bf = bldFloor(player.pos.x, player.pos.z, player.pos.y - Math.min(0, player.vy * dt)); if (bf > g2) g2 = bf; }   // 建物の床・階段
   // 乗り物の上（荷台・屋根・フォーク）：落ちてきたか、歩いて上がれる高さなら立つ
-  const vs = surfTop(player.pos.x, player.pos.z, Math.max(player.pos.y, oy) + (wasG ? 0.3 : 0.05), null);
-  const vb = vs && vs.y > g2 ? { v: vs.v, P: vs.P } : null;
+  const vs = surfTop(player.pos.x, player.pos.z, Math.max(player.pos.y, oy) + (wasG ? MAN_STEP : 0.05), null);
+  let vb = vs && vs.y > g2 ? { v: vs.v, P: vs.P } : null;
   if (vb) g2 = vs.y;
+  // 乗り物の形の中にめりこんだ（坂の上で 1 コマに大きく動いた・乗り物が下から来た）：上があいていれば、その面の上へ
+  if (!vb || vs.y < player.pos.y - 0.05) {
+    const up = surfTop(player.pos.x, player.pos.z, player.pos.y + 1.6, null);
+    if (up && up.y > player.pos.y + 0.05 && up.y > g2 && hfSpanV(up.v, player.pos.x, player.pos.z, player.pos.y + 0.05, up.y - 0.05) && !hfSpanV(up.v, player.pos.x, player.pos.z, up.y + 0.05, up.y + P_H - 0.1)) { g2 = up.y; vb = { v: up.v, P: up.P }; }
+  }
   if (player.pos.y <= g2) { player.pos.y = g2; player.vy = Math.max(0, player.vy); player.onGround = true; if (!inWater) player.mode = 'walk'; setBase(player, vb); }
   else player.base = null;
 
@@ -9924,7 +9981,13 @@ function stepPlayer(dt) {
       if (!hitAt(nx, oz)) player.pos.z = oz;
       else if (!hitAt(ox, nz)) player.pos.x = ox;
       else if (!hitAt(ox, oz)) { player.pos.x = ox; player.pos.z = oz; }
-      else for (const v of hfNear) if (!v.item.hollow && hfHitsMan(v, player.pos.x, player.pos.z, player.pos.y, P_R)) pushFromCar(v.item.def.vehicle, v.pos.x, v.pos.y, v.y, visYaw(v));
+      else {   // まわりのどこへ動いてもぶつかる（乗り物のほうが来てめりこんだ）：いちばん近い、あいている所へ少しずつ出る（大きくはじき飛ばさない）
+        let done = false;
+        for (let r = 0.25; r <= 1.5 && !done; r += 0.25) for (let k = 0; k < 12 && !done; k++) {
+          const a = (k / 12) * Math.PI * 2, x = player.pos.x + Math.sin(a) * r, z = player.pos.z + Math.cos(a) * r;
+          if (!hit1(x, z)) { player.pos.x += (x - player.pos.x) * Math.min(1, dt * 8 / r); player.pos.z += (z - player.pos.z) * Math.min(1, dt * 8 / r); done = true; }
+        }
+      }
     }
   }
   pushFromTraffic();   // 路線バスや車にははね飛ばされず、押しのけられる
@@ -9967,7 +10030,9 @@ function carPose(car) {
   const V = car.item.def.vehicle, L = V.wheelbase / 2, Wd = V.halfWidth * 0.85;
   const f = carLocalToWorld(car, 0, L), b = carLocalToWorld(car, 0, -L);
   const l = carLocalToWorld(car, Wd, 0), r = carLocalToWorld(car, -Wd, 0);
-  const cy = car.y ?? -Infinity, hf = carGround(f.x, f.y, cy, car), hb = carGround(b.x, b.y, cy, car), hl = carGround(l.x, l.y, cy, car), hr = carGround(r.x, r.y, cy, car);
+  // 坂（ヘリのゲート・荷台のスロープ）を登っているときは、前のタイヤは高く、後ろは低い所にある
+  const cy = car.y ?? -Infinity, tp = Math.tan(car.pitch || 0) * L, tr = Math.tan(car.roll || 0) * Wd;
+  const hf = carGround(f.x, f.y, cy + tp, car), hb = carGround(b.x, b.y, cy - tp, car), hl = carGround(l.x, l.y, cy + tr, car), hr = carGround(r.x, r.y, cy - tr, car);
   const hc = carGround(car.pos.x, car.pos.y, cy, car);   // まん中だけで支えられているとき（フォークの上など）
   return { y: Math.max((hf + hb + hl + hr) / 4, hc), pitch: Math.atan2(hf - hb, 2 * L), roll: Math.atan2(hl - hr, 2 * Wd) };
 }
@@ -10557,13 +10622,17 @@ const _wv = new THREE.Vector3();
 function stepHeli(v, dt, ox, oz) {
   const V = v.item.def.vehicle, mine = v === ride, S = v.item.spec || { vclimb: 8, hover: true, turnK: 1 };
   const k = driveInput(mine);
+  // 2026-11-17：おだやかに。スティックは小さく倒すと小さく（2 乗）、入力はなめらかに変わる
+  const sm = Math.min(1, dt * 2.5), ex = (x) => Math.sign(x) * x * x;
+  v._kT = (v._kT || 0) + (ex(k.thr) - (v._kT || 0)) * sm; v._kR = (v._kR || 0) + (ex(k.turn) - (v._kR || 0)) * sm;
+  k.thr = v._kT; k.turn = v._kR;
   const wk = weightK(v), heavy = overLoad(v), ship = V.air === 'airship' || V.air === 'balloon';
   const fl0 = floorAt(v.pos.x, v.pos.y), air = v.y > fl0 + 0.4;
   const ready = ship || (v.rotK || 0) > 0.85;
   if (mine && !ready && k.up > 0 && !air) showMsg('ローターが回りきるまで待ってください');
   // 前後：スティック・W/S。地上ではゆっくり（タキシング）
   const tgt = k.thr * V.maxSpeed * (k.thr < 0 ? 0.4 : 1) * (air || ship ? 1 : 0.08);
-  v.vF += (tgt - v.vF) * Math.min(1, dt * (ship ? 0.25 : 0.8) * Math.sqrt(wk));
+  v.vF += (tgt - v.vF) * Math.min(1, dt * (ship ? 0.25 : 0.5) * Math.sqrt(wk));
   if (!mine) v.vF *= Math.exp(-dt);
   // 上下
   const climbK = heavy ? 0 : THREE.MathUtils.clamp(1 - (1 - wk) * 1.6, 0.15, 1);
@@ -10574,8 +10643,8 @@ function stepHeli(v, dt, ox, oz) {
   else if (k.up < 0) want = k.up * S.vclimb * 1.1;
   if (mine && heavy && k.up > 0) { want = Math.min(want, air ? -1 : 0); showMsg(`重すぎて上がれません（最大積載 ${Math.round(v.item.spec.maxLoad)}kg）`); }
   if (mine && !S.hover && air && Math.abs(v.vF) < 6) want = Math.min(want, -2.5);   // ホバリングできない：止まると下がる
-  v.vy = (v.vy || 0) + (want - (v.vy || 0)) * Math.min(1, dt * (ship ? 0.8 : 2));
-  const yawRate = k.turn * (ship ? 0.25 : 0.9) * (S.turnK || 1) * Math.sqrt(wk) * (air || ship ? 1 : 0.5);
+  v.vy = (v.vy || 0) + (want - (v.vy || 0)) * Math.min(1, dt * (ship ? 0.8 : 1.3));
+  const yawRate = k.turn * (ship ? 0.25 : 0.55) * (S.turnK || 1) * Math.sqrt(wk) * (air || ship ? 1 : 0.5);
   v.h += yawRate * dt;
   v.pos.x += Math.sin(v.h) * v.vF * dt; v.pos.y += Math.cos(v.h) * v.vF * dt;
   if (ship && air) { windVec(_wv); v.pos.x += _wv.x * dt * 0.5; v.pos.y += _wv.z * dt * 0.5; }   // 風に流される
@@ -10593,7 +10662,7 @@ function stepHeli(v, dt, ox, oz) {
     for (const L of CP.links) if ((L.own === v || L.host === v) && L.hang) { const lz = L.k.o.getWorldPosition(_wv); const dz = (lz.x - v.pos.x) * Math.sin(v.h) + (lz.z - v.pos.y) * Math.cos(v.h); tp += THREE.MathUtils.clamp(dz / Math.max(2, V.halfLength) * (1 - wk) * 0.6, -0.15, 0.15); }
   }
   v._vF0 = v.vF;
-  const kk = Math.min(1, dt * 3);
+  const kk = Math.min(1, dt * 2);
   v.pitch += (tp - v.pitch) * kk; v.roll += (tr - v.roll) * kk;
   showCar(v);
 }
@@ -11523,6 +11592,7 @@ function syncPeers(peers) {
     o.t.cl = Number.isInteger(pr.cl) ? pr.cl & 511 : 0;   // 車のライト（16 は作業中）、旅客機のギア（32）とフラップ（64〜448）
     o.t.lt = pr.lt === 1; o.t.py = num(pr.py, -7, 7); o.t.ns = pr.ns === 1; o.t.sp = num(pr.sp, 0, 99, 0);
     o.t.mp = Array.isArray(pr.mp) ? pr.mp.slice(0, 32).map((x) => (typeof x === 'number' && Number.isFinite(x) ? THREE.MathUtils.clamp(x, -360, 360) : null)) : null;   // 動く部品の値（砲塔の角度など）
+    o.t.pm = Array.isArray(pr.pm) ? pr.pm.slice(0, 4).filter((e) => Array.isArray(e) && typeof e[0] === 'string' && /^[A-Za-z0-9_-]{1,40}$/.test(e[0]) && Array.isArray(e[1])).map((e) => [e[0], e[1].slice(0, 32).map((x) => (typeof x === 'number' && Number.isFinite(x) ? THREE.MathUtils.clamp(x, -360, 360) : null))]) : null;   // 止めた乗り物の、動く部品の値（開けたままのゲートなど）
     o.t.cp = Array.isArray(pr.cp) ? pr.cp.slice(0, 8).filter((e) => Array.isArray(e) && (e[0] === 'v' || e[0] === 'p') && typeof e[1] === 'string' && /^[A-Za-z0-9_-]{1,40}$/.test(e[1])).map((e) => [e[0], e[1], num(e[2], 0, 31) | 0, num(e[3], -1, 7, -1) | 0, num(e[4], -60, 60), num(e[5], -60, 60), num(e[6], -60, 60), num(e[7], 0, 60)]) : null;   // 連結している物
     o.t.fx = Number.isInteger(pr.fx) ? pr.fx & 0x3fffffff : 0;
     o.t.gy = Array.isArray(pr.gy) ? [num(pr.gy[0], -2, 2), num(pr.gy[1], -2, 2)] : null;
@@ -11551,11 +11621,29 @@ function syncPeers(peers) {
       if (ride === v) { leaveRide(true); showMsg(`${v.name} はほかの人が運転しはじめました`); }
       v.remote = d; v.settled = false;
     } else if (v.remote && !v.run) { v.remote = null; v.settled = false; }
+    if (d) v.mpMine = false;   // ほかの人が動かしはじめた：止めたときの値を知らせるのは、その人
+  }
+  // だれも運転していない乗り物：最後に動かした人が知らせる、動く部品の値（開けたままのゲート・上げたままのアーム）
+  for (const o of net.others.values()) for (const [id, vals] of o.t.pm || []) {
+    const v = vehicles.find((u) => u.shared && u.id != null && String(u.id) === id), M = v && v.item.moves;
+    if (!M || v.remote || v === ride || v.mpMine) continue;
+    M.chans.forEach((a, i) => { const x = vals[i]; if (typeof x !== 'number') return; const t = a.free ? x : THREE.MathUtils.clamp(x, a.min, a.max); if (Math.abs(t - a.val) > 0.05 && a.goal !== t) a.goal = t; });
   }
   const n = net.others.size + 1;
   el('who').textContent = n > 1 ? `${n}人で遊んでいます` : 'いまはひとり';
 }
 function resolveName(by) { net.names.set(by, ''); }
+// 自分が最後に運転した（ドアを動かした）乗り物で、動く部品がはじめの値から動いているもの（4 台まで）
+function parkedMoves(r) {
+  const out = [];
+  for (const v of vehicles) {
+    const M = v.item.moves;
+    if (!M || !v.mpMine || !v.shared || !v.id || v === ride || v.remote || out.length >= 4) continue;
+    if (!M.chans.some((a) => Math.abs(a.val - a.init) > 0.05)) continue;
+    out.push([String(v.id), M.chans.slice(0, 32).map((a) => r(a.val, 10))]);
+  }
+  return out.length ? out : null;
+}
 function sendPresence() {
   if (!net.room) return;
   const r = (v, k = 100) => Math.round(v * k) / k;
@@ -11572,6 +11660,7 @@ function sendPresence() {
     gy: ride && ride.item.guns ? [r((ride.item.guns.main[0] || { pivot: { rotation: { y: 0 } } }).pivot.rotation.y), r((ride.item.guns.ciws[0] || { pivot: { rotation: { y: 0 } } }).pivot.rotation.y)] : null,   // イージス艦の砲塔の向き   // 潜水艦の音（動いている・装填中・撃った直後）
     cl: ride && ride.shared ? ((ride.item.lamps ? ride.lampBits & 47 : 0) | (ride.workOn ? 16 : 0) | (ride.item.jet ? jetBits(ride) : 0)) : 0,   // 旅客機：32 ギアを上げた・64〜 フラップの段   // 車のライト（1 ライト・2 ブレーキ・4 左・8 右）と作業中（16）
     mp: ride && ride.shared && ride.item.moves ? ride.item.moves.chans.slice(0, 32).map((a) => r(a.val, 10)) : null,   // 動く部品の値（度・m）
+    pm: parkedMoves(r),   // 自分が最後に動かして止めた乗り物の、動く部品の値
     cp: ride && ride.shared ? cpEncode() : null,   // 連結している車・置物
     fx: ride && ride.shared && ride.item.fx ? fxBits(ride) : 0,   // 出しているエフェクト（ボタン）
     c: myCar ? pose(myCar) : null,
