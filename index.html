@@ -6939,7 +6939,7 @@ const HELP_AIR = `<h4>航空機の種類（ボディに <code>種類</code>）</
 <p>名前に <b>ギア扉</b> の部品は扉。扉が開く → ギアが動く → 扉が閉まる の順に動きます。扉は <code>開く角度</code>（なければ 90）・<code>軸</code>（なければ <code>Y</code>）、<code>開いたまま</code>=<code>する</code> でギアを下ろしたあと開いたまま。地上ではギアを上げられません。ギアを上げたまま着陸すると胴体着陸になります。</p>`;
 const HELP_PROPX = `<h4>置物：動き続ける部品・木っ端みじん</h4>
 <p>置物の部品に <code>動作</code>=<code>回転</code>（<code>移動</code>）を書くと、置いた人がいなくても、みんなの画面で時計に合わせて動き続けます。<code>最小</code>・<code>最大</code> がなければ回り続け（風車）、あればその間を行ったり来たり。<code>軸</code>・<code>速さ</code> は乗り物と同じです。</p>
-<p>置物のどれかの部品に <code>壊れる</code>=<code>する</code> を書くと、近くで「爆発させる」を押すか、弾が当たると、細かい破片になって飛び散り消えます。近くで「元に戻す」を押すと何度でも戻ります。<code>復活</code>=<code>30</code> のように秒を書くと、その秒数で自動で戻ります。部品に <code>エフェクト</code>=<code>爆発</code> があれば、こわれるときにその爆発（色・大きさ）が出ます。</p>`;
+<p>置物のどれかの部品に <code>壊れる</code>=<code>する</code> を書くと、近くで「爆発させる」を押すか、弾が当たると、細かい破片になって飛び散り消えます。近くで「元に戻す」を押すと何度でも戻ります。<code>復活</code>=<code>30</code> のように秒を書くと、その秒数で自動で戻ります。<code>くり返し</code>=<code>60</code> のように書くと、だれもいなくても 60 秒ごとに爆発して、<code>復活</code> の秒数（なければ半分）で戻るのをくり返します（どの画面でも同じ時に）。部品に <code>エフェクト</code>=<code>爆発</code> があれば、こわれるときにその爆発（色・大きさ）が出ます。</p>`;
 const HELP_FX = `<h4>エフェクト</h4>
 <p>部品に <code>エフェクト</code>=<code>爆発</code> のように書くと、<b>原点</b>から出ます：<code>爆発</code> <code>炎</code> <code>煙</code> <code>蒸気</code> <code>排気</code> <code>放水</code> <code>水しぶき</code> <code>泡</code> <code>火花</code> <code>ビーム</code> <code>キラキラ</code> <code>花火</code> <code>砂ぼこり</code> <code>紙吹雪</code> <code>軌跡</code>。形のない「空（エンプティ）」でもよい。</p>
 <table><tr><th>プロパティ</th><th>値</th></tr>
@@ -10383,15 +10383,17 @@ function stepWrecks(dt) {
 /* ---- 置物を木っ端みじんに（2026-11-17）：置物の部品に 壊れる=する。近くで「爆発させる」、または弾が当たると、
    形を細かい破片に割って飛ばし、置物は消える。「元に戻す」（復活=秒 があればその秒数で自動）で何度でも戻る。
    こわした・戻したことは vfx の pbrk で知らせ、こわした人は presence の pb で知らせつづける（あとから来た人にも） ---- */
-const BRK_NAMES = ['壊れる', 'こわれる', '破壊', '爆破', 'BREAKABLE'], BRK_BACK = ['復活', 'ふっかつ', 'RESPAWN'];
+const BRK_NAMES = ['壊れる', 'こわれる', '破壊', '爆破', 'BREAKABLE'], BRK_BACK = ['復活', 'ふっかつ', 'RESPAWN'], BRK_REP = ['くり返し', '繰り返し', '繰返し', '爆発間隔', 'REPEAT'];
 function rigBreak(root) {
-  let yes = false, back = null;
+  let yes = false, back = null, rep = null;
   root.traverse((o) => {
-    const P = mpPropsOf(o), b = mpGet(P, BRK_NAMES), t = mpNum(mpGet(P, BRK_BACK));
+    const P = mpPropsOf(o), b = mpGet(P, BRK_NAMES), t = mpNum(mpGet(P, BRK_BACK)), q = mpNum(mpGet(P, BRK_REP));
     if (b != null && !mpNo(b)) yes = true;
     if (t != null && t > 0) back = Math.min(3600, t);
+    if (q != null && q >= 2) rep = Math.min(86400, q);
   });
-  return yes ? { back } : null;
+  // くり返し=秒：時計に合わせて、その秒ごとにこわれて、復活の秒数（なければ半分）で戻る。置いた人がいなくても、どの画面でも同じ時に
+  return yes ? { back, rep, down: rep ? Math.min(rep - 1, back || rep / 2) : 0 } : null;
 }
 // 形を細かい破片に割る：三角形を、置物の大きさの 1/4 の升目ごとにまとめて、1 つの破片にする
 const BRK_TRI = 80000, _bkA = new THREE.Vector3(), _bkB = new THREE.Vector3(), _bkC = new THREE.Vector3(), _bkN = new THREE.Matrix3();
@@ -10493,7 +10495,13 @@ function propNearAction() {
 function stepProps2(dt) {
   const now = performance.now(), T = Date.now() / 1000, cam = camera.position;
   for (const pr of props) {
-    if (pr.broken && pr.item.brk.back && now - pr.broken.t > pr.item.brk.back * 1000) propFix(pr, false);
+    const B = pr.item.brk;
+    if (B && B.rep) {   // くり返し：時計で決める（ずらしは置物の番号から。どの画面でも同じ）
+      let h = 0; for (const ch of String(pr.id ?? pr.name ?? '')) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+      const ph = (T + (h % 1000) / 1000 * B.rep) % B.rep, down = ph < B.down;
+      if (down && !pr.broken) propBreak(pr, ph < 1.5, false);   // こわれた直後に見えたときだけ、破片と爆発
+      else if (!down && pr.broken) propFix(pr, false);
+    } else if (pr.broken && B && B.back && now - pr.broken.t > B.back * 1000) propFix(pr, false);
     const M = pr.item.moves;
     if (!M || pr.broken) continue;
     const p = pr.item.root.position;
