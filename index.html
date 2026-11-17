@@ -9095,18 +9095,19 @@ function makeDigi(rnd, lay, opt) {
   rnd = rnd || Math.random; lay = lay || rnd; opt = opt || {};
   const SP = DIGI_SPEC;
   const W = 360, H = 440, CX = 180, CY = 220, R = 168, BR = 4, NR = 1.8, G = 700;
-  const LCD = { x0: 108, x1: 252, y0: 96, y1: 200 };
-  const HESO = { x: 176, y: 262, pay: 1 };
+  const LCD = { x0: 108, x1: 252, y0: 164, y1: 268 };   // 液晶は台のまん中
+  const BOX = { x0: LCD.x0, x1: LCD.x1, y0: 96, y1: LCD.y1 };   // 液晶と上の飾り（玉はここに当たって左右へ分かれる）
+  const HESO = { x: 176, y: 326, pay: 1 };
   const GATE = { x: 296, y: 214, r: 7 };
   const DEN = { x: 296, y: 244, pay: 1 };
   const ATT = { x0: 238, x1: 282, y: 336 };
-  const POCKETS = [{ x: 62, y: 300, pay: 5 }, { x: 116, y: 330, pay: 5 }, { x: 330, y: 352, pay: 5 }];
+  const POCKETS = [{ x: 104, y: 342, pay: 5 }, { x: 136, y: 364, pay: 5 }];
   const OUT = { x: CX, y: CY + R - 6, r: 20 };
   const RUBBER = { x: CX + (R - 7) * Math.cos(-0.45), y: CY + (R - 7) * Math.sin(-0.45), r: 7 };
   const nails = [];
   // 道釘：左の上から落ちた玉をヘソのほうへころがす（左から右下へ）
-  const ROAD = [];
-  for (let x = 26; x < (opt.roadEnd || 120); x += 8.5) ROAD.push({ x, y: 206 + (x - 26) * 0.34, r: NR });
+  const ROAD = [], ROADY = (x) => (opt.roadY || 276) + (x - 26) * 0.34;
+  for (let x = 46; x < (opt.roadEnd || 146); x += 8.5) ROAD.push({ x, y: ROADY(x), r: NR });
   const segD = (x, y, L) => { let m = 1e9; for (const n of L) m = Math.min(m, Math.hypot(x - n.x, y - n.y)); return m; };
   // 右の上のじょうご（スルーへあつめる）
   const FUN = [];
@@ -9115,15 +9116,15 @@ function makeDigi(rnd, lay, opt) {
   for (let y = 210; y < 226; y += 6) FUN.push({ x: 286, y, r: NR }, { x: 306, y, r: NR });   // スルーから電チューへの通り道
   const keep = (x, y) => {
     if (Math.hypot(x - CX, y - CY) > R - 22) return false;
-    if (x > LCD.x0 - 14 && x < LCD.x1 + 14 && y > LCD.y0 - 12 && y < LCD.y1 + 12) return false;
+    if (x > BOX.x0 - 14 && x < BOX.x1 + 14 && y > BOX.y0 - 12 && y < BOX.y1 + 12) return false;
     if (Math.hypot(x - HESO.x, y - HESO.y) < 20) return false;
     if (Math.hypot(x - DEN.x, y - DEN.y) < 18) return false;
     if (x > 250 && y > 160 && y < 262) return false;   // じょうごとスルーのまわり
     if (x > ATT.x0 - 12 && x < ATT.x1 + 12 && y > ATT.y - 18 && y < ATT.y + 14) return false;
     for (const p of POCKETS) if (Math.hypot(x - p.x, y - p.y) < 16) return false;
     if (Math.hypot(x - OUT.x, y - OUT.y) < 34) return false;
-    if (x > 200 && x < 240 && y > 200 && y < 320) return false;   // 右と左のしきりのまわり
-    if (segD(x, y, ROAD) < 13 || (x < HESO.x - 10 && y > 190 && y < 206 + (x - 26) * 0.34 + 4)) return false;
+    if (x > 200 && x < 240 && y > LCD.y1 && y < 330) return false;   // 右と左のしきりのまわり
+    if (segD(x, y, ROAD) < 13 || (x < HESO.x - 10 && y > ROADY(x) - 16 && y < ROADY(x) + 4)) return false;
     return y > 54 && y < 392;
   };
   for (let row = 0, y = 58; y < 392; row++, y += 17) for (let x = 20 + (row % 2) * 11; x < W; x += 22) if (keep(x, y)) nails.push({ x: x + (lay() - 0.5) * 2.4, y: y + (lay() - 0.5) * 2, r: NR });
@@ -9135,7 +9136,7 @@ function makeDigi(rnd, lay, opt) {
   nails.push({ x: HESO.x + 9, y: HESO.y - 13, r: NR });   // ヘソの右上の釘（ころがってきた玉をはじく）
   // 右と左のしきり（液晶の右下から下へ）。右打ちの玉はここより右を落ちる
   const WALL = [];
-  for (let y = LCD.y1 + 6; y < 320; y += 7) WALL.push({ x: 222 - (y - LCD.y1) * 0.05, y, r: 2.6 });
+  for (let y = LCD.y1 + 6; y < 330; y += 7) WALL.push({ x: 222 - (y - LCD.y1) * 0.05, y, r: 2.6 });
   nails.push(...WALL);
   // アタッカーへの道（右の下を左へ流す）
   for (let i = 0; i < 7; i++) nails.push({ x: 340 - i * 8, y: 312 + i * 3.4, r: NR });
@@ -9143,7 +9144,7 @@ function makeDigi(rnd, lay, opt) {
   const gk = (i, j) => i * 1000 + j;
   for (const n of nails) { const k = gk(Math.floor(n.x / CELL), Math.floor(n.y / CELL)); let a = grid.get(k); if (!a) grid.set(k, (a = [])); a.push(n); }
   const S = {
-    W, H, CX, CY, R, BR, LCD, HESO, DEN, GATE, ATT, POCKETS, OUT, RUBBER, WALL, nails, SP,
+    W, H, CX, CY, R, BR, LCD, BOX, HESO, DEN, GATE, ATT, POCKETS, OUT, RUBBER, WALL, nails, SP,
     balls: [], fireT: 0, events: [],
     mode: 'normal', left: 0,          // normal・st（確変）・jt（時短）と、のこりの回数
     h1: [], h2: [],                   // 保留（特図1・特図2）
@@ -9209,7 +9210,8 @@ function makeDigi(rnd, lay, opt) {
     else if (reach) { const a = d9(); let c = d9(); if (c === a) c = a % 9 + 1; if (rnd() < 0.5) c = (a % 9) + 1; fin = [a, c, a]; }
     else { const a = d9(); let b = d9(); if (b === a) b = a % 9 + 1; fin = [a, d9(), b]; }
     // 左 → 右 → 中 の順に止まる（全回転は 3 つ同時）
-    const stop = reach === 4 ? [dur - 0.4, dur - 0.4, dur - 0.4] : reach && reach !== 9 ? [1.6, 2.6, dur - 0.3] : [dur * 0.45, dur * 0.7, dur - 0.25];
+    // stop は [左, 中, 右] の止まる時間。左 → 右 → 中 の順に止まる
+    const stop = reach === 4 ? [dur - 0.4, dur - 0.4, dur - 0.4] : reach && reach !== 9 ? [1.6, dur - 0.3, 2.6] : [dur * 0.45, dur - 0.25, dur * 0.7];
     S.spin = { tz, hit, kind, reach, dur, t: 0, fin, stop, mode, col: q.col, reachShown: false };
     ev({ t: 'spin', tz, reach });
   }
@@ -9235,6 +9237,8 @@ function makeDigi(rnd, lay, opt) {
     if (B.ph === 'op' && B.t >= 3) { B.ph = 'open'; B.t = 0; B.round = 1; B.count = 0; S.att = true; ev({ t: 'round', n: 1, R: B.R }); }
     else if (B.ph === 'open' && (B.count >= SP.count || B.t >= SP.roundMax)) {
       S.att = false;
+      // 1 ラウンドの出玉はかならず 150 玉（10 個入らないうちに時間切れでも、足りない分を払い出す）
+      if (B.count < SP.count) { const n = (SP.count - B.count) * SP.attPay; S.stats.won += n; ev({ t: 'pay', n, why: 'att' }); }
       if (B.round === B.vRound && !B.vDone) { B.vDone = true; B.v = B.kind.kk && B.count > 0; ev({ t: B.v ? 'vIn' : 'vMiss', kk: B.kind.kk }); }   // 確変でも、このラウンドで右打ちしていないと V に入らない
       B.ph = B.round >= B.R ? 'ed' : 'int'; B.t = 0;
     } else if (B.ph === 'int' && B.t >= 1.6) { B.ph = 'open'; B.t = 0; B.round++; B.count = 0; S.att = true; ev({ t: 'round', n: B.round, R: B.R }); }
@@ -9272,7 +9276,7 @@ function makeDigi(rnd, lay, opt) {
       S.stats.shot++; ev({ t: 'shot' });
     }
     if (S.bonus) stepBonus(dt);
-    else if (S.spin) { S.spin.t += dt; const sp = S.spin; if (sp.reach && sp.reach !== 9 && !sp.reachShown && sp.t >= sp.stop[1]) { sp.reachShown = true; ev({ t: 'reach', k: sp.reach }); } if (sp.t >= sp.dur) endSpin(); }
+    else if (S.spin) { S.spin.t += dt; const sp = S.spin; if (sp.reach && sp.reach !== 9 && !sp.reachShown && sp.t >= sp.stop[2]) { sp.reachShown = true; ev({ t: 'reach', k: sp.reach }); } if (sp.t >= sp.dur) endSpin(); }
     else if (S.h1.length || S.h2.length) startSpin();
     stepFu(dt);
     const h = 1 / 240;
@@ -9287,9 +9291,9 @@ function makeDigi(rnd, lay, opt) {
         const gi = Math.floor(b.x / CELL), gj = Math.floor(b.y / CELL);
         for (let a = gi - 1; a <= gi + 1; a++) for (let c = gj - 1; c <= gj + 1; c++) { const L = grid.get(gk(a, c)); if (L) for (const n of L) collide(b, n.x, n.y, n.r, 0.45, 45); }
         // 液晶のわく
-        const qx = Math.max(LCD.x0, Math.min(LCD.x1, b.x)), qy = Math.max(LCD.y0, Math.min(LCD.y1, b.y));
+        const qx = Math.max(BOX.x0, Math.min(BOX.x1, b.x)), qy = Math.max(BOX.y0, Math.min(BOX.y1, b.y));
         collide(b, qx, qy, 0, 0.3, 12);
-        if (!b.side && b.vy > 0 && b.age > 0.25 && b.y > LCD.y0 && b.y < LCD.y1 + 20) { b.side = b.x > CX ? 'R' : 'L'; if (b.side === 'R') S.stats.right++; }
+        if (!b.side && b.vy > 0 && b.age > 0.25 && b.y > BOX.y0 && b.y < BOX.y0 + 120) { b.side = b.x > CX ? 'R' : 'L'; if (b.side === 'R') S.stats.right++; }
         // アタッカー（とじているときは板）
         if (!S.att) { const ax = Math.max(ATT.x0, Math.min(ATT.x1, b.x)), ay = Math.max(ATT.y - 1, Math.min(ATT.y + 2, b.y)); collide(b, ax, ay, 0, 0.25, 8); }
         if (!S.den) { const ax = Math.max(DEN.x - 8, Math.min(DEN.x + 8, b.x)), ay = Math.max(DEN.y - 2, Math.min(DEN.y + 1, b.y)); if (collide(b, ax, ay, 0, 0.3, 30) && Math.abs(b.vx) < 50) b.vx = (b.x === DEN.x ? (rnd() < 0.5 ? -1 : 1) : Math.sign(b.x - DEN.x)) * 70; }   // とじた電チュー（山形のふた。玉は左右へころがり落ちる）
@@ -9298,7 +9302,7 @@ function makeDigi(rnd, lay, opt) {
         let gone = null;
         if (S.att && b.x > ATT.x0 && b.x < ATT.x1 && b.y > ATT.y - 3 && b.y < ATT.y + 6) {
           gone = 'att'; S.stats.att++; S.stats.won += SP.attPay; ev({ t: 'pay', n: SP.attPay, why: 'att', x: b.x, y: ATT.y });
-          if (S.bonus) S.bonus.count++;
+          if (S.bonus) { S.bonus.count++; if (S.bonus.count >= SP.count) S.att = false; }   // 10 個でとじる（オーバー入賞なし）
         }
         if (!gone && S.den && Math.abs(b.x - DEN.x) < 7 && b.y > DEN.y - 3 && b.y < DEN.y + 5 && b.vy > 0) {
           gone = 'den'; S.stats.den++; S.stats.won += DEN.pay; ev({ t: 'pay', n: DEN.pay, why: 'den', x: DEN.x, y: DEN.y }); addHold(2);
@@ -9401,6 +9405,17 @@ function drawDigiLcd(c, S, t) {
   else if (S.mode === 'st') { g.addColorStop(0, '#120a3a'); g.addColorStop(1, '#3a1b7a'); }
   else if (S.mode === 'jt') { g.addColorStop(0, '#0b3a3a'); g.addColorStop(1, '#1d7a6e'); }
   else { g.addColorStop(0, '#0c2f6b'); g.addColorStop(1, '#5aa8e8'); }
+  // 液晶の上の飾り（台のロゴ）。玉はここに当たって左右へ分かれる
+  const X = S.BOX, mid = (X.x0 + X.x1) / 2, rushOn = S.mode === 'st' || !!B;
+  const lg = c.createLinearGradient(0, X.y0, 0, L.y0);
+  lg.addColorStop(0, rushOn ? '#3a1b7a' : '#16407e'); lg.addColorStop(1, rushOn ? '#7a2fd0' : '#2f7fd8');
+  c.fillStyle = lg; c.strokeStyle = '#c9a227'; c.lineWidth = 2;
+  c.beginPath(); c.roundRect(X.x0, X.y0, X.x1 - X.x0, L.y0 - X.y0 + 6, 12); c.fill(); c.stroke();
+  c.fillStyle = 'rgba(255,255,255,0.18)';
+  for (const sd of [-1, 1]) { c.beginPath(); c.moveTo(mid + sd * 18, X.y0 + 40); c.quadraticCurveTo(mid + sd * 52, X.y0 + 6, mid + sd * 68, X.y0 + 18); c.quadraticCurveTo(mid + sd * 50, X.y0 + 30, mid + sd * 18, X.y0 + 48); c.fill(); }
+  c.fillStyle = Math.floor(t * 3) % 2 && rushOn ? '#ffe14d' : '#ffffff'; c.font = '900 24px sans-serif'; c.textAlign = 'center';
+  c.fillText('蒼天', mid, X.y0 + 34);
+  c.fillStyle = '#ffd23f'; c.font = '800 10px sans-serif'; c.fillText('BREAKER', mid, X.y0 + 50);
   c.fillStyle = '#111'; c.beginPath(); c.roundRect(L.x0 - 4, L.y0 - 4, w + 8, h + 8, 8); c.fill();
   c.save(); c.beginPath(); c.roundRect(L.x0, L.y0, w, h, 6); c.clip();
   c.fillStyle = g; c.fillRect(L.x0, L.y0, w, h);
@@ -9420,11 +9435,11 @@ function drawDigiLcd(c, S, t) {
   if (B) {   // 大当たり中：ラウンドとカウント
     const lit = Math.floor(t * 5) % 2;
     c.fillStyle = lit ? '#fff6b0' : '#ffffff'; c.font = '900 22px sans-serif';
-    c.fillText(B.ph === 'op' ? (B.R === 10 ? '10R 大当たり！' : '大当たり！') : B.ph === 'ed' ? (B.v ? 'ラッシュ突入！' : 'チャンスタイムへ') : `ROUND ${B.round}/${B.R}`, (L.x0 + L.x1) / 2, L.y0 + 56);
+    c.fillText(B.ph === 'op' ? (B.R === 10 ? '10R 大当たり！' : '大当たり！') : B.ph === 'ed' ? (B.v ? 'ラッシュ突入！' : 'チャンスタイムへ') : `ROUND ${B.round}/${B.R}`, (L.x0 + L.x1) / 2, L.y0 + 42);
     c.font = '800 12px sans-serif';
-    if (B.ph === 'open' || B.ph === 'int') c.fillText(`${Math.min(B.count, S.SP.count)} / ${S.SP.count} カウント`, (L.x0 + L.x1) / 2, L.y0 + 78);
-    if (B.round === B.vRound && !B.vDone && B.ph === 'open') { c.fillStyle = lit ? '#ff3b4f' : '#fff'; c.font = '900 14px sans-serif'; c.fillText('V を狙え！', (L.x0 + L.x1) / 2, L.y0 + 98); }
-    else if (B.vDone) { c.fillStyle = B.v ? '#ffe14d' : '#cfe0f5'; c.font = '900 13px sans-serif'; c.fillText(B.v ? 'V 入賞！ ラッシュ確定' : 'V ならず… 時短へ', (L.x0 + L.x1) / 2, L.y0 + 98); }
+    if (B.ph === 'open' || B.ph === 'int') c.fillText(`${Math.min(B.count, S.SP.count)} / ${S.SP.count} カウント`, (L.x0 + L.x1) / 2, L.y0 + 60);
+    if (B.round === B.vRound && !B.vDone && B.ph === 'open') { c.fillStyle = lit ? '#ff3b4f' : '#fff'; c.font = '900 14px sans-serif'; c.fillText('V を狙え！', (L.x0 + L.x1) / 2, L.y0 + 80); }
+    else if (B.vDone) { c.fillStyle = B.v ? '#ffe14d' : '#cfe0f5'; c.font = '900 13px sans-serif'; c.fillText(B.v ? 'V 入賞！ ラッシュ確定' : 'V ならず… 時短へ', (L.x0 + L.x1) / 2, L.y0 + 80); }
   } else {
     // 3 つの数字（左・中・右）
     const digs = [0, 1, 2].map((i) => {
@@ -9436,22 +9451,22 @@ function drawDigiLcd(c, S, t) {
     });
     const bw = 40, gap = 6, x0 = (L.x0 + L.x1) / 2 - (bw * 1.5 + gap);
     digs.forEach((q, i) => {
-      const x = x0 + i * (bw + gap), y = L.y0 + 22;
-      c.fillStyle = 'rgba(0,0,0,0.35)'; c.beginPath(); c.roundRect(x, y, bw, 52, 6); c.fill();
+      const x = x0 + i * (bw + gap), y = L.y0 + 17;
+      c.fillStyle = 'rgba(0,0,0,0.35)'; c.beginPath(); c.roundRect(x, y, bw, 48, 6); c.fill();
       const col = q.d === 7 ? '#ff3b4f' : q.d % 2 ? '#ffd23f' : '#7fd3ff';
-      c.font = '900 38px sans-serif';
-      if (q.all) { c.fillStyle = `hsl(${(t * 300 + i * 40) % 360},90%,60%)`; c.fillText(String(q.d), x + bw / 2, y + 41); }
-      else if (q.run) { c.fillStyle = 'rgba(255,255,255,0.7)'; c.fillText(String(q.d), x + bw / 2, y + 41 + (q.off - 0.5) * 30); }
-      else { c.fillStyle = col; c.fillText(String(q.d), x + bw / 2, y + 41); }
+      c.font = '900 35px sans-serif';
+      if (q.all) { c.fillStyle = `hsl(${(t * 300 + i * 40) % 360},90%,60%)`; c.fillText(String(q.d), x + bw / 2, y + 37); }
+      else if (q.run) { c.fillStyle = 'rgba(255,255,255,0.7)'; c.fillText(String(q.d), x + bw / 2, y + 37 + (q.off - 0.5) * 30); }
+      else { c.fillStyle = col; c.fillText(String(q.d), x + bw / 2, y + 37); }
     });
     if (reach) {
       const name = ['', 'リーチ', '流星リーチ', '決戦リーチ', '全回転'][reach] || '';
       c.fillStyle = Math.floor(t * 4) % 2 ? '#fff' : '#ffe14d'; c.font = '900 14px sans-serif';
-      c.fillText(name, (L.x0 + L.x1) / 2, L.y0 + 92);
+      c.fillText(name, (L.x0 + L.x1) / 2, L.y0 + 81);
     }
   }
   // 保留（特図1 は丸・特図2 はひし形）。下の段
-  const hy = L.y1 - 10;
+  const hy = L.y1 - 9;
   for (let i = 0; i < 4; i++) {
     const x = L.x0 + 14 + i * 13, q = S.h1[i];
     c.fillStyle = q ? DG_HOLDC[q.col] : 'rgba(255,255,255,0.15)'; c.beginPath(); c.arc(x, hy, 4.5, 0, Math.PI * 2); c.fill();
