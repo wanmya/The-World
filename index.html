@@ -239,6 +239,8 @@ body.apMinOn #prompt, body.apMinOn #hint { display: none !important; }
 #place .phelp table { border-collapse: collapse; width: 100%; margin: 4px 0; font-size: 12px; }
 #place .phelp th, #place .phelp td { border: 1px solid var(--line); padding: 3px 5px; text-align: left; vertical-align: top; }
 #place .phelp th { background: #eef3f8; }
+#placeProps code { white-space: nowrap; display: inline-block; margin: 1px 0; }
+#placeProps td:first-child { width: 28%; }
 #place .phelp code { background: #e9eef4; border-radius: 4px; padding: 0 3px; font-size: 12px; }
 #place .phelp details { margin-top: 6px; }
 #place .phelp details summary { padding: 4px 0; font-size: 12.5px; }
@@ -625,6 +627,7 @@ body.jetOn #map { display: none !important; }
     <button type="button" data-cat="sub" class="pveh"><b>潜水艦</b><small>水にもぐれる・相乗りできる</small></button>
   </div>
   <div class="perr" id="placeErr" role="alert" hidden></div>
+  <details class="phelp" id="placeProps"><summary>📋 カスタムプロパティ一覧</summary><div id="placePropsBody"></div></details>
   <details class="phelp" id="placeHelp"><summary>📘 Blender でのつくり方（説明書）</summary><div id="placeHelpBody"></div></details>
   <div class="pfoot"><button type="button" class="pcancel" id="placeBack" hidden>もどる</button><button type="button" class="pcancel" id="placeCancel">やめる</button></div>
 </div>
@@ -783,6 +786,7 @@ async function loadItem(def) {
       if (mt.name === '窓') { mt.transparent = true; mt.opacity = Math.min(mt.opacity, 0.85); mt.depthWrite = false; }
     }
   });
+  rigSheets(item, root);   // コマ割り画像のアニメ（コマ数）。ほかの仕組みがマテリアルをさわる前に
 
   // タイヤを「ハンドルで曲がる箱」と「転がる箱」に入れる
   if (def.vehicle) {
@@ -1291,6 +1295,50 @@ function mpPropsOf(o) {
   return out;
 }
 const mpGet = (P, names, ax) => { for (const n of names) { const k = mpKey(n); for (const kk of ax ? [k + ax, ax + k] : [k]) if (P[kk] != null) return P[kk]; } return null; };
+/* ---- コマ割り画像のアニメ（GIF のかわり） ----
+   1 枚の画像にコマを並べ（左上から右へ、はしまで来たら次の段）、部品かマテリアルに コマ数=8（横のコマ数=4・コマ速さ=10）。
+   UV は画像ぜんぶ（0〜1）。ワールドが 1 コマ分だけ切り取って、時計に合わせて送る（どの画面でも同じコマ） */
+const SHEET_NAMES = { n: ['コマ数', 'コマ', 'FRAMES'], cols: ['横のコマ数', '列', '列数', 'COLUMNS', 'COLS'], fps: ['コマ速さ', '1秒のコマ数', 'FPS'] };
+const sheets = [];
+function sheetSpec(P) {
+  const n = Math.round(mpNum(mpGet(P, SHEET_NAMES.n)) || 0);
+  if (!(n >= 2)) return null;
+  const c = Math.round(mpNum(mpGet(P, SHEET_NAMES.cols)) || 0), cols = THREE.MathUtils.clamp(c >= 1 ? c : n, 1, n);
+  const f = mpNum(mpGet(P, SHEET_NAMES.fps));
+  return { n: Math.min(n, 1024), cols, rows: Math.ceil(n / cols), fps: THREE.MathUtils.clamp(f > 0 ? f : 10, 0.1, 60) };
+}
+function rigSheets(item, root) {
+  const up = (o) => { for (let q = o; q && q !== root; q = q.parent) { const P = {}; for (const k in q.userData || {}) { const v = q.userData[k]; if (v != null && typeof v !== 'object') P[mpKey(k)] = v; } const sp = sheetSpec(P); if (sp) return sp; } return null; };
+  root.traverse((o) => {
+    if (!o.isMesh) return;
+    const mats = [].concat(o.material);
+    let ch = false;
+    const out = mats.map((m) => {
+      if (!m || !(m.map || m.emissiveMap)) return m;
+      const MP = {}; for (const k in m.userData || {}) MP[mpKey(k)] = m.userData[k];
+      const sp = sheetSpec(MP) || up(o);
+      if (!sp) return m;
+      const m2 = m.clone(), texs = [];
+      for (const key of ['map', 'emissiveMap', 'alphaMap']) if (m2[key]) { const t = m2[key].clone(); t.repeat.set(1 / sp.cols, 1 / sp.rows); t.offset.set(0, 0); t.rotation = 0; t.matrixAutoUpdate = true; t.needsUpdate = true; m2[key] = t; texs.push(t); }
+      ch = true;
+      sheets.push({ root, texs, ...sp, f: -1, born: performance.now() });
+      return m2;
+    });
+    if (ch) o.material = Array.isArray(o.material) ? out : out[0];
+  });
+}
+function stepSheets() {
+  const T = Date.now() / 1000, now = performance.now();
+  for (let i = sheets.length - 1; i >= 0; i--) {
+    const s = sheets[i];
+    if (!s.root.parent) { if (now - s.born > 20000) sheets.splice(i, 1); continue; }   // 片づけられた物
+    const f = Math.floor(T * s.fps) % s.n;
+    if (f === s.f) continue;
+    s.f = f;
+    const cx = f % s.cols, cy = Math.floor(f / s.cols);
+    for (const t of s.texs) t.offset.set(cx / s.cols, cy / s.rows);   // glTF の画像は上が v=0：1 段目が上
+  }
+}
 function rigMoveParts(item, modelOf) {
   const parts = [], cps = [];
   item.root.traverse((o) => {
@@ -6940,6 +6988,8 @@ const HELP_AIR = `<h4>航空機の種類（ボディに <code>種類</code>）</
 const HELP_PROPX = `<h4>置物：動き続ける部品・木っ端みじん</h4>
 <p>置物の部品に <code>動作</code>=<code>回転</code>（<code>移動</code>）を書くと、置いた人がいなくても、みんなの画面で時計に合わせて動き続けます。<code>最小</code>・<code>最大</code> がなければ回り続け（風車）、あればその間を行ったり来たり。<code>軸</code>・<code>速さ</code> は乗り物と同じです。</p>
 <p>置物のどれかの部品に <code>壊れる</code>=<code>する</code> を書くと、近くで「爆発させる」を押すか、弾が当たると、細かい破片になって飛び散り消えます。近くで「元に戻す」を押すと何度でも戻ります。<code>復活</code>=<code>30</code> のように秒を書くと、その秒数で自動で戻ります。<code>くり返し</code>=<code>60</code> のように書くと、だれもいなくても 60 秒ごとに爆発して、<code>復活</code> の秒数（なければ半分）で戻るのをくり返します（どの画面でも同じ時に）。部品に <code>エフェクト</code>=<code>爆発</code> があれば、こわれるときにその爆発（色・大きさ）が出ます。</p>`;
+const HELP_SHEET = `<h4>コマ割りアニメ（GIF のように動く絵）</h4>
+<p>GIF は .glb に入らないので、コマを 1 枚の画像（PNG）に並べて貼ります。左上から右へ並べ、はしまで来たら次の段へ。画像の貼ってある部品（かマテリアル）に <code>コマ数</code>=<code>8</code>（横に 4 コマ×2 段なら <code>横のコマ数</code>=<code>4</code> も）、速さは <code>コマ速さ</code>=<code>10</code>（1 秒に 10 コマ）。UV は画像ぜんぶ（平面ならはじめのまま）。どの画面でも同じコマで、ずっと動きます。</p>`;
 const HELP_FX = `<h4>エフェクト</h4>
 <p>部品に <code>エフェクト</code>=<code>爆発</code> のように書くと、<b>原点</b>から出ます：<code>爆発</code> <code>炎</code> <code>煙</code> <code>蒸気</code> <code>排気</code> <code>放水</code> <code>水しぶき</code> <code>泡</code> <code>火花</code> <code>ビーム</code> <code>キラキラ</code> <code>花火</code> <code>砂ぼこり</code> <code>紙吹雪</code> <code>軌跡</code>。形のない「空（エンプティ）」でもよい。</p>
 <table><tr><th>プロパティ</th><th>値</th></tr>
@@ -6972,13 +7022,76 @@ const HELP_FX = `<h4>エフェクト</h4>
 <tr><td><code>離陸速度</code> <code>上昇力</code> <code>旋回力</code></td><td>飛行機：km/h・m／秒・1 がふつう</td></tr>
 <tr><td><code>上昇速度</code> <code>ホバリング</code></td><td>ヘリ：m／秒・<code>しない</code> で止まると下がる</td></tr></table>
 <p>のせた車・置物・人、つった物・引いている物の重さが足されます。重いほど加速・上昇・旋回がにぶく、飛行機は離陸に長い距離がいります。つった物でヘリがかたむきます。運転中に ☰「📋 スペック」で見られます。総重量は速さの下に小さく出ます。</p>`;
+const HELP_PROPLIST = `<table><tr><th>名前</th><th>値</th><th>意味</th></tr>
+<tr><th colspan="3">動く部品（どの部品にも）</th></tr>
+<tr><td><code>動作</code></td><td><code>回転</code> <code>移動</code> <code>連結</code> <code>発射</code> <code>切り離し</code></td><td>部品の動き方</td></tr>
+<tr><td><code>軸</code></td><td><code>X</code> <code>Y</code> <code>Z</code>（<code>ZX</code> など）</td><td>動く向き（Blender の軸）</td></tr>
+<tr><td><code>最小</code> <code>最大</code></td><td>数</td><td>回転は度、移動は m（<code>最小Z</code> のように軸ごとも）</td></tr>
+<tr><td><code>初期</code></td><td>数</td><td>はじめの値</td></tr>
+<tr><td><code>速さ</code></td><td>数</td><td>1 秒に動く量（度・m）。発射は m／秒</td></tr>
+<tr><td><code>ぶら下がり</code></td><td><code>する</code></td><td>いつも真下を向いてゆれる</td></tr>
+<tr><th colspan="3">エフェクト（どの部品にも。原点から出る）</th></tr>
+<tr><td><code>エフェクト</code></td><td><code>爆発</code> <code>炎</code> <code>煙</code> <code>蒸気</code> <code>排気</code> <code>放水</code> <code>水しぶき</code> <code>泡</code> <code>火花</code> <code>ビーム</code> <code>キラキラ</code> <code>花火</code> <code>砂ぼこり</code> <code>紙吹雪</code> <code>軌跡</code></td><td>出すもの</td></tr>
+<tr><td><code>向き</code></td><td><code>上</code> <code>下</code> <code>前</code> <code>後</code> <code>左</code> <code>右</code></td><td>出る向き</td></tr>
+<tr><td><code>色</code></td><td><code>赤</code> <code>青</code>… か <code>#ff8800</code></td><td>色</td></tr>
+<tr><td><code>大きさ</code></td><td>数</td><td>1 がふつう</td></tr>
+<tr><td><code>いつ</code></td><td><code>ボタン</code> <code>いつも</code> <code>運転中</code> <code>走ると</code></td><td>出るとき</td></tr>
+<tr><th colspan="3">発射・切り離し（動作=発射 / 切り離し の部品）</th></tr>
+<tr><td><code>弾数</code></td><td>数</td><td>何発まで</td></tr>
+<tr><td><code>間隔</code></td><td>数（秒）</td><td>何秒ごとに撃てるか</td></tr>
+<tr><td><code>重さ</code></td><td>数（kg）</td><td>当たった物を押す強さ</td></tr>
+<tr><td><code>当たると</code></td><td><code>爆発</code> <code>止まる</code> <code>はねる</code> <code>消える</code></td><td>当たったとき</td></tr>
+<tr><td><code>時間で</code></td><td><code>爆発</code> <code>消える</code></td><td>時間がたったとき</td></tr>
+<tr><td><code>時間</code></td><td>数（秒）</td><td>「時間で」までの秒</td></tr>
+<tr><td><code>重力</code></td><td><code>なし</code></td><td>まっすぐ飛ぶ</td></tr>
+<tr><th colspan="3">コマ割りアニメ（画像の貼ってある部品かマテリアル）</th></tr>
+<tr><td><code>コマ数</code></td><td>数</td><td>画像に並べたコマの数（2 以上でアニメ）</td></tr>
+<tr><td><code>横のコマ数</code></td><td>数</td><td>横 1 段のコマ数（なければ全部 1 段）</td></tr>
+<tr><td><code>コマ速さ</code></td><td>数</td><td>1 秒に何コマ（なければ 10）</td></tr>
+<tr><th colspan="3">置物</th></tr>
+<tr><td><code>壊れる</code></td><td><code>する</code></td><td>こっぱみじんにできる</td></tr>
+<tr><td><code>復活</code></td><td>数（秒）</td><td>こわれてから自動で戻るまで</td></tr>
+<tr><td><code>くり返し</code></td><td>数（秒）</td><td>この秒ごとに勝手に爆発する</td></tr>
+<tr><th colspan="3">乗り物のボディ</th></tr>
+<tr><td><code>種類</code></td><td><code>ダンプ</code> <code>バス</code> <code>戦車</code> <code>トラクター</code> <code>コンバイン</code> <code>飛行機</code> <code>ヘリ</code> <code>飛行船</code> <code>気球</code> など</td><td>できること・飛び方</td></tr>
+<tr><td><code>最高速度</code></td><td>数（km/h）</td><td>いちばん速い速さ</td></tr>
+<tr><td><code>重量</code></td><td>数（kg）</td><td>重さ</td></tr>
+<tr><td><code>出力</code></td><td>数（馬力）</td><td>加速・積める量</td></tr>
+<tr><td><code>ブレーキ</code></td><td>数</td><td>止まる強さ（ふつう 16）</td></tr>
+<tr><td><code>最大積載</code></td><td>数（kg）</td><td>積める重さ</td></tr>
+<tr><td><code>定員</code></td><td>数（人）</td><td>乗れる人数（表示）</td></tr>
+<tr><td><code>中に入れる</code></td><td><code>する</code></td><td>中を歩ける</td></tr>
+<tr><td><code>離陸速度</code> <code>上昇力</code> <code>旋回力</code></td><td>数</td><td>飛行機：km/h・m／秒・1 がふつう</td></tr>
+<tr><td><code>上昇速度</code></td><td>数（m／秒）</td><td>ヘリが上がる速さ</td></tr>
+<tr><td><code>ホバリング</code></td><td><code>しない</code></td><td>ヘリが止まると下がる</td></tr>
+<tr><td><code>傾き</code></td><td><code>しない</code></td><td>ヘリがかたむかない</td></tr>
+<tr><th colspan="3">乗り物の部品</th></tr>
+<tr><td><code>操舵</code></td><td><code>する</code> <code>しない</code> <code>同じ</code></td><td>タイヤ：曲がるか</td></tr>
+<tr><td><code>容量</code></td><td>数</td><td>ドラム（㎥）・タンク（L）</td></tr>
+<tr><td><code>積荷</code></td><td>文字</td><td>タンクの中身の名前</td></tr>
+<tr><td><code>色</code></td><td><code>赤</code> <code>青</code> <code>黄</code> <code>緑</code> <code>白</code> <code>紫</code> <code>オレンジ</code></td><td>パトランプの色</td></tr>
+<tr><td><code>光り方</code></td><td><code>点滅</code></td><td>パトランプを点滅に</td></tr>
+<tr><td><code>回転</code></td><td><code>逆</code></td><td>ローターを逆回りに</td></tr>
+<tr><td><code>軸</code></td><td><code>X</code> <code>Y</code> <code>Z</code></td><td>ローター・ギアの回る軸</td></tr>
+<tr><td><code>格納角度</code></td><td>数（度）</td><td>ギアをしまう角度</td></tr>
+<tr><td><code>格納</code></td><td><code>なし</code></td><td>ギアをしまわない</td></tr>
+<tr><td><code>順番</code></td><td>数（1〜9）</td><td>ギアをしまう順</td></tr>
+<tr><td><code>開く角度</code></td><td>数（度）</td><td>ドア・ギア扉の開く角度</td></tr>
+<tr><td><code>開いたまま</code></td><td><code>する</code></td><td>ギア扉を開いたままに</td></tr>
+<tr><th colspan="3">建物</th></tr>
+<tr><td><code>用途</code></td><td><code>店</code></td><td>明かりがつけっぱなし</td></tr>
+<tr><td><code>開き方</code></td><td><code>横</code></td><td>ドアを引き戸に</td></tr>
+<tr><td><code>閉まる</code></td><td>数（秒）</td><td>ドアが自動で閉まるまで</td></tr>
+</table>
+<p class="tip">値は文字列でも数でもよい（単位はつけない）。オブジェクト・メッシュ・マテリアルのどれにつけても読みます。書き出しで「カスタムプロパティ」にチェック。</p>`;
 function renderPlaceHelp(s) {
+  const pl = el('placePropsBody'); if (pl && !pl.innerHTML) pl.innerHTML = HELP_PROPLIST;
   const body = el('placeHelpBody');
   if (!body) return;
   let h;
-  if (s === 'ctype' || s === 'car') h = HELP_CAR + HELP_STEER + HELP_PARTS + HELP_MOVE + HELP_FX;
-  else if (s === 'vehicle' || s === 'boat') h = HELP_BOAT + HELP_AIR + `<p>自動車は「自動車」を選ぶと、種類ごとのつくり方が出ます。動く部品とボタンも、そこに出ます。</p>` + HELP_FX;
-  else h = HELP_MAIN + HELP_PROPX;
+  if (s === 'ctype' || s === 'car') h = HELP_CAR + HELP_STEER + HELP_PARTS + HELP_MOVE + HELP_FX + HELP_SHEET;
+  else if (s === 'vehicle' || s === 'boat') h = HELP_BOAT + HELP_AIR + `<p>自動車は「自動車」を選ぶと、種類ごとのつくり方が出ます。動く部品とボタンも、そこに出ます。</p>` + HELP_FX + HELP_SHEET;
+  else h = HELP_MAIN + HELP_PROPX + HELP_SHEET;
   body.innerHTML = h + HELP_BASE;
 }
 /* ---- 置くときに、何として置くかを選ぶ ---- */
@@ -10493,6 +10606,7 @@ function propNearAction() {
 }
 // 毎コマ：自動で戻る置物。置物の動く部品（時計に合わせて：どの画面でも同じ角度）
 function stepProps2(dt) {
+  stepSheets();
   const now = performance.now(), T = Date.now() / 1000, cam = camera.position;
   for (const pr of props) {
     const B = pr.item.brk;
