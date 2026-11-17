@@ -811,6 +811,7 @@ async function loadItem(def) {
     const box = new THREE.Box3().setFromObject(model);
     const c = box.getCenter(new THREE.Vector3());
     model.position.x -= c.x; model.position.z -= c.z; model.position.y -= box.min.y;
+    item.moves = rigMoveParts(item, model);   // 2026-11-17：置物の動く部品は、時計に合わせていつも動く（風車など。置いた人がいなくても）
   }
   return item;
 }
@@ -1627,7 +1628,7 @@ function stepFx(dt) {
       return v.remote ? !!(bits & (1 << F.indexOf(e))) : !!e.on;
     }, _fxVel, v === ride ? Math.max(v.throttle || 0, Math.min(1, Math.abs(v.vF || 0) / Math.max(1, v.item.def.vehicle.maxSpeed || 10))) : 0.4);
   }
-  for (const pr of props) { const F = pr.item.fx; if (F) run(F, () => true, null, 1); }
+  for (const pr of props) { const F = pr.item.fx; if (F) run(F, (e) => !pr.broken && !(pr.item.brk && fxIsShot(e)), null, 1); }   // こわれる置物の爆発・花火は、こわれるときだけ
   for (const s of SHOTS) if (s.fx) run(s.fx, (e) => !fxIsShot(e), s.vel, 1);
   stepWorks(dt);
   stepFxPool(FXP.add, dt); stepFxPool(FXP.norm, dt);
@@ -1809,6 +1810,7 @@ function stepShots(dt) {
       if (L.hit === 'gone') { fxEmit(true, p.x, p.y, p.z, 0, 0, 0, 1, 0.8, 0.5, 0.6, 2, 0.15, 1, 0, 0); killShot(s); continue; }
       if (hit.k === 'water') { for (let i = 0; i < 25; i++) fxEmit(false, p.x, SEA, p.z, rnd(2), 3 + Math.random() * 5, rnd(2), 0.85, 0.93, 1, 0.25, 0.4, 1.2, 0.7, 9.8, 0.3); }
       if (hit.k === 'veh' || hit.k === 'prop') shotPush(s, p.x, p.y, p.z, 1.5, L.mass * s.vel.length() * 0.05);
+      if (hit.k === 'prop' && hit.pr.item.brk) propBreak(hit.pr, true, s.mine);   // こわれる置物：弾が当たると木っ端みじん
       if (L.hit === 'bounce' && hit.k !== 'water' && s.vel.length() > 2) {
         p.addScaledVector(s.vel, -h); s.vel.y = Math.abs(s.vel.y) * 0.45; s.vel.x *= 0.6; s.vel.z *= 0.6; continue;
       }
@@ -1823,6 +1825,11 @@ function stepShots(dt) {
 }
 function onVfx(p) {
   const d = p && p.data;
+  if (d && d.t === 'pbrk' && typeof d.p === 'string' && OK_ID.test(d.p)) {   // 置物がこわれた・元に戻った
+    const pr = props.find((q) => q.id != null && String(q.id) === d.p);
+    if (pr && pr.item.brk) { if (d.on) propBreak(pr, true, false); else propFix(pr, false); }
+    return;
+  }
   if (!d || typeof d.v !== 'string' || !OK_ID.test(d.v)) return;
   const v = vehicles.find((u) => u.id === d.v); if (!v) return;
   if (d.t === 'fx') { const e = v.item.fx && v.item.fx[d.i | 0]; if (e) fxShot(e); return; }
@@ -2175,7 +2182,7 @@ function stepBundle(dt) {
 function rigBundle(item, root, model, def) {
   const veh = def.kind === 'vehicle';
   item.fx = rigFx(item, root, model, veh);
-  if (!veh) return;
+  if (!veh) { item.brk = rigBreak(root); return; }
   item.launch = rigLaunchers(item, root, model);
   if (item.hollowPrep) item.hollow = rigHollow(item, root);
   item.rotors = rigRotors(item, root);
@@ -5883,7 +5890,7 @@ function stepLoose(dt, mv) {
   const t = performance.now();
   for (const pr of props) {
     const L = pr.loose;
-    if (!L || pr.cpL) continue;   // 連結中は cpStep が動かす
+    if (!L || pr.cpL || pr.broken) continue;   // 連結中は cpStep が動かす。こわれている置物は動かない
     const p = pr.pos, x0 = p.x, z0 = p.z, y0 = p.y, rot0 = pr.item.root.rotation.y;
     const near = mv.filter((u) => Math.abs(u.pos.x - p.x) < 16 && Math.abs(u.pos.y - p.z) < 16);
     if (L.rest && !near.length && !pr.base) continue;
@@ -5954,7 +5961,7 @@ function cpLocalBox(item) {
 function cpTargets() {
   const out = [];
   for (const v of vehicles) { const t = vtype(v); if (v === ride || v.remote || v.sunk || v.run || v.cpL || !liftable(v) || (t === 'plane' && v.y > floorAt(v.pos.x, v.pos.y) + 0.5 && !v.base)) continue; out.push({ tk: 'v', o: v }); }
-  for (const pr of props) if (pr.loose && !pr.cpL && !pr.bld) out.push({ tk: 'p', o: pr });
+  for (const pr of props) if (pr.loose && !pr.cpL && !pr.bld && !pr.broken) out.push({ tk: 'p', o: pr });
   return out;
 }
 // 点 H（連結器の原点）にさわっている物。相手の連結器の近くなら、そこでつなぐ（ta）。self は連結器の持ち主（自分にはつながない）
@@ -6510,6 +6517,7 @@ function nearBldAction() {
   return best;
 }
 function doBldAction(a) {
+  if (a.kind === 'pbrk') { if (a.pr.broken) propFix(a.pr, true); else propBreak(a.pr, true, true); return; }   // 置物を爆発させる・元に戻す
   if (a.kind && a.kind[0] === 'v') { doVehAction(a); return; }
   if (a.kind === 'door') {   // となりあう 2 枚のドア（両開き・両引き）はいっしょに動かす
     const d0 = a.b.doors[a.k], open = !d0.want;
@@ -6929,6 +6937,9 @@ const HELP_AIR = `<h4>航空機の種類（ボディに <code>種類</code>）</
 <tr><td><code>速さ</code> <code>順番</code></td><td>1 秒に何度（なければ 30）・しまう順番（1〜9）</td></tr>
 <tr><td><code>格納</code>=<code>なし</code></td><td>ボディにつけると、どの脚もしまわない（固定脚）。1 本の脚につけると、その脚だけしまわない</td></tr></table>
 <p>名前に <b>ギア扉</b> の部品は扉。扉が開く → ギアが動く → 扉が閉まる の順に動きます。扉は <code>開く角度</code>（なければ 90）・<code>軸</code>（なければ <code>Y</code>）、<code>開いたまま</code>=<code>する</code> でギアを下ろしたあと開いたまま。地上ではギアを上げられません。ギアを上げたまま着陸すると胴体着陸になります。</p>`;
+const HELP_PROPX = `<h4>置物：動き続ける部品・木っ端みじん</h4>
+<p>置物の部品に <code>動作</code>=<code>回転</code>（<code>移動</code>）を書くと、置いた人がいなくても、みんなの画面で時計に合わせて動き続けます。<code>最小</code>・<code>最大</code> がなければ回り続け（風車）、あればその間を行ったり来たり。<code>軸</code>・<code>速さ</code> は乗り物と同じです。</p>
+<p>置物のどれかの部品に <code>壊れる</code>=<code>する</code> を書くと、近くで「爆発させる」を押すか、弾が当たると、細かい破片になって飛び散り消えます。近くで「元に戻す」を押すと何度でも戻ります。<code>復活</code>=<code>30</code> のように秒を書くと、その秒数で自動で戻ります。部品に <code>エフェクト</code>=<code>爆発</code> があれば、こわれるときにその爆発（色・大きさ）が出ます。</p>`;
 const HELP_FX = `<h4>エフェクト</h4>
 <p>部品に <code>エフェクト</code>=<code>爆発</code> のように書くと、<b>原点</b>から出ます：<code>爆発</code> <code>炎</code> <code>煙</code> <code>蒸気</code> <code>排気</code> <code>放水</code> <code>水しぶき</code> <code>泡</code> <code>火花</code> <code>ビーム</code> <code>キラキラ</code> <code>花火</code> <code>砂ぼこり</code> <code>紙吹雪</code> <code>軌跡</code>。形のない「空（エンプティ）」でもよい。</p>
 <table><tr><th>プロパティ</th><th>値</th></tr>
@@ -6967,7 +6978,7 @@ function renderPlaceHelp(s) {
   let h;
   if (s === 'ctype' || s === 'car') h = HELP_CAR + HELP_STEER + HELP_PARTS + HELP_MOVE + HELP_FX;
   else if (s === 'vehicle' || s === 'boat') h = HELP_BOAT + HELP_AIR + `<p>自動車は「自動車」を選ぶと、種類ごとのつくり方が出ます。動く部品とボタンも、そこに出ます。</p>` + HELP_FX;
-  else h = HELP_MAIN;
+  else h = HELP_MAIN + HELP_PROPX;
   body.innerHTML = h + HELP_BASE;
 }
 /* ---- 置くときに、何として置くかを選ぶ ---- */
@@ -7342,7 +7353,7 @@ function toggleRide() {
   if (ride) { leaveRide(false); return; }
   { const va = vehNearAction(); if (va) { doVehAction(va); return; } }   // 乗り物のドア・イス
   const nb = nearBusDoor();
-  if (!nb && !nearCar()) { const ba = nearBldAction(); if (ba) { doBldAction(ba); return; } const ta = townNearAction(); if (ta) { openTown(null, ta); return; } }
+  if (!nb && !nearCar()) { const ba = propNearAction() || nearBldAction(); if (ba) { doBldAction(ba); return; } const ta = townNearAction(); if (ta) { openTown(null, ta); return; } }
   if (nb) { boardBus(nb); return; }
   const v = nearCar();
   if (!v) return;
@@ -10366,7 +10377,135 @@ function stepWrecks(dt) {
       const k = Math.max(0, 1 - Math.max(0, f.t - f.life * 0.6) / (f.life * 0.4));
       f.mesh.scale.copy(f.s0).multiplyScalar(k);
     }
-    if (f.t > f.life) { scene.remove(f.mesh); if (f.puff) f.mesh.material.dispose(); frags.splice(frags.indexOf(f), 1); }
+    if (f.t > f.life) { scene.remove(f.mesh); if (f.puff) f.mesh.material.dispose(); if (f.own) f.mesh.geometry.dispose(); frags.splice(frags.indexOf(f), 1); }
+  }
+}
+/* ---- 置物を木っ端みじんに（2026-11-17）：置物の部品に 壊れる=する。近くで「爆発させる」、または弾が当たると、
+   形を細かい破片に割って飛ばし、置物は消える。「元に戻す」（復活=秒 があればその秒数で自動）で何度でも戻る。
+   こわした・戻したことは vfx の pbrk で知らせ、こわした人は presence の pb で知らせつづける（あとから来た人にも） ---- */
+const BRK_NAMES = ['壊れる', 'こわれる', '破壊', '爆破', 'BREAKABLE'], BRK_BACK = ['復活', 'ふっかつ', 'RESPAWN'];
+function rigBreak(root) {
+  let yes = false, back = null;
+  root.traverse((o) => {
+    const P = mpPropsOf(o), b = mpGet(P, BRK_NAMES), t = mpNum(mpGet(P, BRK_BACK));
+    if (b != null && !mpNo(b)) yes = true;
+    if (t != null && t > 0) back = Math.min(3600, t);
+  });
+  return yes ? { back } : null;
+}
+// 形を細かい破片に割る：三角形を、置物の大きさの 1/4 の升目ごとにまとめて、1 つの破片にする
+const BRK_TRI = 80000, _bkA = new THREE.Vector3(), _bkB = new THREE.Vector3(), _bkC = new THREE.Vector3(), _bkN = new THREE.Matrix3();
+function shatterItem(root, c, r) {
+  root.updateMatrixWorld(true);
+  const cell = Math.max(0.2, r / 4);
+  let tris = 0, made = 0;
+  root.traverse((o) => {
+    if (!o.isMesh || !o.geometry || !o.geometry.attributes.position || !visibleUp(o)) return;
+    const g = o.geometry, P = g.attributes.position, N = g.attributes.normal, U = g.attributes.uv, C = g.attributes.color, I = g.index, n = (I ? I.count : P.count) / 3;
+    const mats = Array.isArray(o.material) ? o.material : null, groups = mats && g.groups.length ? g.groups : null;
+    const one = tris + n > BRK_TRI || made > 400;   // 重すぎる形は、部品ごと 1 つの破片に
+    tris += n;
+    _bkN.getNormalMatrix(o.matrixWorld);
+    const bins = new Map();
+    for (let t = 0; t < n; t++) {
+      const ia = I ? I.getX(t * 3) : t * 3, ib = I ? I.getX(t * 3 + 1) : t * 3 + 1, ic = I ? I.getX(t * 3 + 2) : t * 3 + 2;
+      _bkA.fromBufferAttribute(P, ia).applyMatrix4(o.matrixWorld); _bkB.fromBufferAttribute(P, ib).applyMatrix4(o.matrixWorld); _bkC.fromBufferAttribute(P, ic).applyMatrix4(o.matrixWorld);
+      let mi = 0;
+      if (groups) for (const gr of groups) if (t * 3 >= gr.start && t * 3 < gr.start + gr.count) { mi = gr.materialIndex || 0; break; }
+      const key = one ? 'a|' + mi : Math.floor((_bkA.x + _bkB.x + _bkC.x) / 3 / cell) + ',' + Math.floor((_bkA.y + _bkB.y + _bkC.y) / 3 / cell) + ',' + Math.floor((_bkA.z + _bkB.z + _bkC.z) / 3 / cell) + '|' + mi;
+      let b = bins.get(key); if (!b) bins.set(key, (b = { mi, p: [], n: [], u: [], c: [] }));
+      for (const [v, i] of [[_bkA, ia], [_bkB, ib], [_bkC, ic]]) {
+        b.p.push(v.x, v.y, v.z);
+        if (N) { const q = _cpV.fromBufferAttribute(N, i).applyMatrix3(_bkN).normalize(); b.n.push(q.x, q.y, q.z); }
+        if (U) b.u.push(U.getX(i), U.getY(i));
+        if (C) b.c.push(C.getX(i), C.getY(i), C.getZ(i));
+      }
+    }
+    for (const b of bins.values()) {
+      let cx = 0, cy = 0, cz = 0; const m = b.p.length / 3;
+      for (let i = 0; i < b.p.length; i += 3) { cx += b.p[i]; cy += b.p[i + 1]; cz += b.p[i + 2]; }
+      cx /= m; cy /= m; cz /= m;
+      for (let i = 0; i < b.p.length; i += 3) { b.p[i] -= cx; b.p[i + 1] -= cy; b.p[i + 2] -= cz; }
+      const gg = new THREE.BufferGeometry();
+      gg.setAttribute('position', new THREE.Float32BufferAttribute(b.p, 3));
+      if (N) gg.setAttribute('normal', new THREE.Float32BufferAttribute(b.n, 3)); else gg.computeVertexNormals();
+      if (U) gg.setAttribute('uv', new THREE.Float32BufferAttribute(b.u, 2));
+      if (C) gg.setAttribute('color', new THREE.Float32BufferAttribute(b.c, 3));
+      const mat = mats ? mats[b.mi] || mats[0] : o.material, mesh = new THREE.Mesh(gg, mat);
+      mesh.position.set(cx, cy, cz); mesh.castShadow = true;
+      scene.add(mesh); made++;
+      const dir = new THREE.Vector3(cx - c.x, Math.abs(cy - c.y) + r * 0.15, cz - c.z);
+      if (dir.lengthSq() < 1e-6) dir.set(Math.random() - 0.5, 1, Math.random() - 0.5);
+      dir.normalize();
+      const sp = (4 + Math.random() * 8) * THREE.MathUtils.clamp(Math.sqrt(r / 2), 0.7, 3);
+      frags.push({ mesh, own: true, vel: dir.multiplyScalar(sp).add(new THREE.Vector3(0, 3 + Math.random() * 5, 0)), spin: new THREE.Vector3(Math.random() * 10 - 5, Math.random() * 10 - 5, Math.random() * 10 - 5), t: 0, life: 3 + Math.random() * 2, s0: mesh.scale.clone() });
+    }
+  });
+  return made;
+}
+// こわす。fx：破片・爆発を出す（あとから来て、もうこわれている置物は出さない）。net1：ほかの人に知らせる
+function propBreak(pr, fx, net1) {
+  if (pr.broken || !pr.item.brk) return;
+  const root = pr.item.root;
+  root.updateMatrixWorld(true);
+  const box = pr.box.isEmpty() ? new THREE.Box3().setFromObject(root) : pr.box.clone();
+  const c = box.getCenter(new THREE.Vector3()), sz = box.getSize(new THREE.Vector3()), r = Math.max(0.3, sz.x, sz.y, sz.z);
+  if (fx && c.distanceTo(camera.position) < 800) {
+    shatterItem(root, c, r);
+    const shots = (pr.item.fx || []).filter(fxIsShot);
+    if (shots.length) for (const e of shots) fxShot(e);
+    else fxBoom(c.x, c.y, c.z, THREE.MathUtils.clamp(r / 3, 0.6, 6), null);
+    flashAt(c.x, c.y, c.z, THREE.MathUtils.clamp(r / 2, 1, 5));
+  }
+  pr.box0 = box; pr.box.makeEmpty();   // 当たり判定もなくなる
+  root.visible = false;
+  pr.broken = { t: performance.now(), mine: !!net1 };
+  if (net1 && pr.id != null && net.room) net.room.emit('vfx', { t: 'pbrk', p: String(pr.id), on: 1 }).catch(() => {});
+}
+function propFix(pr, net1) {
+  if (!pr.broken) return;
+  pr.broken = null; pr.fixedAt = performance.now();
+  const root = pr.item.root;
+  root.visible = true; root.updateMatrixWorld(true);
+  pr.box.setFromObject(root);
+  if (pr.loose) { pr.loose.rest = false; pr.loose.vy = 0; }
+  const c = pr.box.getCenter(new THREE.Vector3());
+  if (c.distanceTo(camera.position) < 800) flashAt(c.x, c.y, c.z, 0.8);
+  if (net1 && pr.id != null && net.room) net.room.emit('vfx', { t: 'pbrk', p: String(pr.id), on: 0 }).catch(() => {});
+}
+const brokenMine = () => { const out = props.filter((pr) => pr.broken && pr.broken.mine && pr.id != null).slice(0, 20).map((pr) => String(pr.id)); return out.length ? out : null; };
+// 近くの、こわせる置物（こわれていれば、元に戻す）
+const _bkP = new THREE.Vector3(), _bkQ = new THREE.Vector3();
+function propNearAction() {
+  if (driving || aboard || busRide) return null;
+  let best = null, bd = 2.5;
+  _bkP.set(player.pos.x, player.pos.y + 1, player.pos.z);
+  for (const pr of props) {
+    if (!pr.item.brk || pr.bld) continue;
+    const b = pr.broken ? pr.box0 : pr.box;
+    if (!b || b.isEmpty()) continue;
+    const d = b.clampPoint(_bkP, _bkQ).distanceTo(_bkP);
+    if (d < bd) { bd = d; best = { kind: 'pbrk', pr, text: `${pr.name || '置物'}を`, btn: pr.broken ? '元に戻す' : '爆発させる' }; }
+  }
+  return best;
+}
+// 毎コマ：自動で戻る置物。置物の動く部品（時計に合わせて：どの画面でも同じ角度）
+function stepProps2(dt) {
+  const now = performance.now(), T = Date.now() / 1000, cam = camera.position;
+  for (const pr of props) {
+    if (pr.broken && pr.item.brk.back && now - pr.broken.t > pr.item.brk.back * 1000) propFix(pr, false);
+    const M = pr.item.moves;
+    if (!M || pr.broken) continue;
+    const p = pr.item.root.position;
+    if (Math.abs(p.x - cam.x) > 600 || Math.abs(p.z - cam.z) > 600) continue;
+    for (const a of M.chans) {
+      if (a.free) { a.val = ((a.speed * T) % 360 + 540) % 360 - 180; continue; }
+      const span = a.max - a.min;
+      if (!(span > 1e-6)) continue;
+      const ph = (a.speed * T) % (2 * span);
+      a.val = a.min + (ph < span ? ph : 2 * span - ph);
+    }
+    mpApply(M);
   }
 }
 function followPod() {
@@ -11592,6 +11731,7 @@ function syncPeers(peers) {
     o.by = p.by;
     o.t = { x: num(pr.p[0], X0, X1), y: num(pr.p[1], Y_BOTTOM, Y_AIR), z: num(pr.p[2], Z0, Z1), f: num(pr.f, -100, 100), m: ['walk', 'swim', 'dive', 'drive', 'ride', 'bus'].includes(pr.m) ? pr.m : 'walk' };
     o.t.rv = Array.isArray(pr.rv) && typeof pr.rv[0] === 'string' && /^[A-Za-z0-9_-]{1,40}$/.test(pr.rv[0]) ? [pr.rv[0], num(pr.rv[1], -300, 300), num(pr.rv[2], -300, 300), num(pr.rv[3], -300, 300), num(pr.rv[4], -7, 7)] : null;   // 乗り物の中・上に立っている
+    o.t.pb = Array.isArray(pr.pb) ? pr.pb.slice(0, 20).filter((x) => typeof x === 'string' && /^[A-Za-z0-9_-]{1,40}$/.test(x)) : null;
     o.t.bb = o.t.m === 'bus' && Number.isInteger(pr.bb) && buses[pr.bb] ? pr.bb : null;
     o.t.bl = o.t.bb != null && Array.isArray(pr.bl) ? [num(pr.bl[0], -2, 2), num(pr.bl[1], -6, 6), pr.bl[2] === 1 ? 1 : 0] : null;
     o.t.pv = o.t.m === 'ride' && typeof pr.pv === 'string' && /^[A-Za-z0-9_-]{1,40}$/.test(pr.pv) ? pr.pv : null;
@@ -11629,6 +11769,11 @@ function syncPeers(peers) {
       v.remote = d; v.settled = false;
     } else if (v.remote && !v.run) { v.remote = null; v.settled = false; }
     if (d) v.mpMine = false;   // ほかの人が動かしはじめた：止めたときの値を知らせるのは、その人
+  }
+  // ほかの人がこわした置物（あとから来たとき・見えていなかったとき）
+  for (const o of net.others.values()) for (const id of o.t.pb || []) {
+    const pr = props.find((q) => q.id != null && String(q.id) === id);
+    if (pr && pr.item.brk && !pr.broken && !(pr.fixedAt && performance.now() - pr.fixedAt < 5000)) propBreak(pr, false, false);
   }
   // だれも運転していない乗り物：最後に動かした人が知らせる、動く部品の値（開けたままのゲート・上げたままのアーム）
   for (const o of net.others.values()) for (const [id, vals] of o.t.pm || []) {
@@ -11671,7 +11816,8 @@ function sendPresence() {
     p: at.map((v) => r(v)), f: r(wrapA(ride ? ride.h : player.face)), m: ride ? 'drive' : aboard ? 'ride' : busRide ? 'bus' : player.mode, col: myColor,
     bb: busRide ? busRide.b.id : null, bl: busRide ? [r(busRide.lx), r(busRide.lz), busRide.seat ? 1 : 0] : null,   // 乗っている路線バスと、車内の位置
     pv: aboard && aboard.v.shared ? aboard.v.id : null, ps: aboard ? aboard.seat : null,   // 相乗りしている船と、立っている場所
-    rv: onVehMsg(r),   // 乗り物の中・上に立っている：その乗り物と、乗り物から見た位置・向き
+    rv: onVehMsg(r),
+    pb: brokenMine(),   // 自分がこわした置物（あとから来た人にも、こわれて見える）   // 乗り物の中・上に立っている：その乗り物と、乗り物から見た位置・向き
     lt: ride && ride.item.light && ride.item.light.on ? 1 : 0, py: ride && ride.item.periscope ? r(periYaw) : 0,   // 潜水艦のライトと潜望鏡の向き
     ns: ride && isBoat(ride) && (vtype(ride) === 'sub' || ride.item.def.vehicle.aegis ? subNoisy(ride) : Math.abs(ride.vF) > 0.3) ? 1 : 0,   // スクリューの音
     sp: ride && isBoat(ride) ? Math.round(Math.abs(ride.vF) / KT) : 0,   // 速さ（ノット）。5 ノット以下は 300m まで近づかないと聞こえない
@@ -12180,7 +12326,7 @@ function updateUi() {
   const cg = driving ? cargoAction() : null, ct = !cg && driving ? cargoTruck() : null, cgTxt = cg ? cg.text : ct && ct.f.load && ct.f.load.kg ? `荷台：${BIZ_G[ct.f.load.g] ? BIZ_G[ct.f.load.g].name : '荷物'} ${yen(ct.f.load.kg)}kg（卸す先か自分の店の前で おろす）` : '';
   const nv = !ride && !aboard ? nearCar() : null;
   const near = !!nv;
-  const ba = !ride && !aboard ? vehNearAction() || (!nv ? (blds.length && nearBldAction()) || townNearAction() : null) : null;   // 乗り物のドア・イスも   // ドア・スイッチ・イス、お店の前
+  const ba = !ride && !aboard ? vehNearAction() || (!nv ? propNearAction() || (blds.length && nearBldAction()) || townNearAction() : null) : null;   // 乗り物のドア・イスも   // ドア・スイッチ・イス、お店の前
   const vt = ride ? vtype(ride) : null;
   const sea = ride && isBoat(ride);   // 船・潜水艦はノット（1 ノット = 1.852 km/h）
   const kmh = ride ? Math.round(Math.abs(ride.vF) * (sea ? 3.6 / 1.852 : 3.6)) : 0;
@@ -16721,6 +16867,7 @@ function frame() {
   else if (pod && pod.mine && !pod.landed) followPod(); else if (!driving && !aboard) stepPlayer(dt);
   stepPods(dt);
   stepWrecks(dt);
+  stepProps2(dt);   // 2026-11-17：置物の動く部品・こわれた置物の復活
   for (const v of vehicles) stepVehicle(v, dt);
   stepHangParts(dt);   // ぶら下がる部品（フック）を真下へ
   stepCarry(dt);   // 乗り物の上の人・物・車をいっしょに動かす
