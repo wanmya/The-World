@@ -1969,13 +1969,19 @@ function hollowExit(car) {
   player.vy = 0; player.face = f;
   return true;
 }
-// 乗り物の中（屋根の下）にいる：一人称
+// 乗り物の中・上（荷台・甲板・ヘリの中）にいる：一人称（2026-11-17：中に入れる=する でなくても、乗り物の面に立てば）
 function insideVeh() {
   if (driving || aboard || busRide) return null;
   const v = vehSit ? vehSit.v : player.base && player.base.v;
-  if (!v || !v.item.hollow) return null;
-  for (const P of v.item.hf || []) { const y = hfAt(P, player.pos.x, player.pos.y, player.pos.z, player.pos.y + 6, player.pos.y + P_H - 0.2); if (y > -Infinity) return v; }
-  return null;
+  if (!v || v === ride || !vehicles.includes(v)) return null;
+  return v;
+}
+// 地面から足がはなれても、立っていた乗り物の面が 3m 以内の下にあれば、乗ったまま
+function onVehStill() {
+  const B = player.base;
+  if (!B || !vehicles.includes(B.v) || B.v.sunk) return false;
+  const s = surfTop(player.pos.x, player.pos.z, player.pos.y + 0.05, null);
+  return !!(s && s.v === B.v && s.y > player.pos.y - 3);
 }
 
 /* ---------------- 航空機の種類（種類=飛行機／ヘリ／飛行船・気球）・ローター・ギア ---------------- */
@@ -9863,7 +9869,7 @@ function stepBusRider(dt) {
 }
 
 /* ================= 歩く・泳ぐ ================= */
-const IN_WALK = 4 / 3.6, IN_TURN = Math.PI * 2 / 3;
+const IN_WALK = 4 / 3.6, IN_TURN = Math.PI * 2 / 3, VEH_WALK = 5 / 3.6;   // 乗り物の中・上は時速 5km
 const GRAVITY = 24, JUMP = 8.5, WALK = 4.5, RUN = 8, SWIM = 3, FLOAT_Y = SEA - 1.35;   // 浮いているときは頭だけ水の上
 function pushFromCar(V, cx, cz, cy, h) {
   if (player.pos.y >= cy + 1.1 || player.pos.y <= cy - 1.5) return;
@@ -9918,7 +9924,7 @@ function stepPlayer(dt) {
     }
   }
   // 建物の中：歩きは時速 4km（走らない）、向きは 3 秒で 1 回転（ユーザーの希望）
-  if (fpView) { speed = IN_WALK; if (!stick) player.face += turnIn * IN_TURN * dt; }
+  if (fpView) { speed = insideVeh() ? VEH_WALK : IN_WALK; if (!stick) player.face += turnIn * IN_TURN * dt; }
   else if (!stick) player.face += turnIn * 2.6 * dt;
   const mag = stick ? 0 : Math.min(1, Math.abs(fwdIn)) * (fwdIn < 0 ? 0.55 : 1);   // 後ろ歩きはゆっくり
   if (!stick) player.moving = mag > 0.05 || Math.abs(turnIn) > 0.05;
@@ -9966,7 +9972,7 @@ function stepPlayer(dt) {
     if (up && up.y > player.pos.y + 0.05 && up.y > g2 && hfSpanV(up.v, player.pos.x, player.pos.z, player.pos.y + 0.05, up.y - 0.05) && !hfSpanV(up.v, player.pos.x, player.pos.z, up.y + 0.05, up.y + P_H - 0.1)) { g2 = up.y; vb = { v: up.v, P: up.P }; }
   }
   if (player.pos.y <= g2) { player.pos.y = g2; player.vy = Math.max(0, player.vy); player.onGround = true; if (!inWater) player.mode = 'walk'; setBase(player, vb); }
-  else player.base = null;
+  else if (!onVehStill()) player.base = null;   // 乗り物の中・上でジャンプした・少しうき上がった：その乗り物の面が下にあるあいだは、いっしょに運ばれる（速く飛んでもふり落とされない）
 
   // 車にめり込まない（車の高さより上なら乗り越えられる）。自分の車も、ほかの人の車も
   for (const a of AIR.planes) if (a.v && a.onGround && !driving) jetPushPlayer(a.v, ox, oz);
@@ -11585,6 +11591,7 @@ function syncPeers(peers) {
     }
     o.by = p.by;
     o.t = { x: num(pr.p[0], X0, X1), y: num(pr.p[1], Y_BOTTOM, Y_AIR), z: num(pr.p[2], Z0, Z1), f: num(pr.f, -100, 100), m: ['walk', 'swim', 'dive', 'drive', 'ride', 'bus'].includes(pr.m) ? pr.m : 'walk' };
+    o.t.rv = Array.isArray(pr.rv) && typeof pr.rv[0] === 'string' && /^[A-Za-z0-9_-]{1,40}$/.test(pr.rv[0]) ? [pr.rv[0], num(pr.rv[1], -300, 300), num(pr.rv[2], -300, 300), num(pr.rv[3], -300, 300), num(pr.rv[4], -7, 7)] : null;   // 乗り物の中・上に立っている
     o.t.bb = o.t.m === 'bus' && Number.isInteger(pr.bb) && buses[pr.bb] ? pr.bb : null;
     o.t.bl = o.t.bb != null && Array.isArray(pr.bl) ? [num(pr.bl[0], -2, 2), num(pr.bl[1], -6, 6), pr.bl[2] === 1 ? 1 : 0] : null;
     o.t.pv = o.t.m === 'ride' && typeof pr.pv === 'string' && /^[A-Za-z0-9_-]{1,40}$/.test(pr.pv) ? pr.pv : null;
@@ -11633,6 +11640,16 @@ function syncPeers(peers) {
   el('who').textContent = n > 1 ? `${n}人で遊んでいます` : 'いまはひとり';
 }
 function resolveName(by) { net.names.set(by, ''); }
+// 乗り物の中・上に立っているとき：[乗り物の番号, x, y, z（乗り物の root から見た位置）, 向き（乗り物から見て）]
+const _rvV = new THREE.Vector3();
+function onVehMsg(r) {
+  if (driving || aboard || busRide) return null;
+  const v = vehSit ? vehSit.v : player.base && player.base.v;
+  if (!v || !v.shared || v.id == null || !vehicles.includes(v)) return null;
+  const R = v.item.root; R.updateMatrixWorld(true);
+  _rvV.set(player.pos.x, player.pos.y, player.pos.z); R.worldToLocal(_rvV);
+  return [String(v.id), r(_rvV.x), r(_rvV.y), r(_rvV.z), r(wrapA(player.face - visYaw(v)))];
+}
 // 自分が最後に運転した（ドアを動かした）乗り物で、動く部品がはじめの値から動いているもの（4 台まで）
 function parkedMoves(r) {
   const out = [];
@@ -11654,6 +11671,7 @@ function sendPresence() {
     p: at.map((v) => r(v)), f: r(wrapA(ride ? ride.h : player.face)), m: ride ? 'drive' : aboard ? 'ride' : busRide ? 'bus' : player.mode, col: myColor,
     bb: busRide ? busRide.b.id : null, bl: busRide ? [r(busRide.lx), r(busRide.lz), busRide.seat ? 1 : 0] : null,   // 乗っている路線バスと、車内の位置
     pv: aboard && aboard.v.shared ? aboard.v.id : null, ps: aboard ? aboard.seat : null,   // 相乗りしている船と、立っている場所
+    rv: onVehMsg(r),   // 乗り物の中・上に立っている：その乗り物と、乗り物から見た位置・向き
     lt: ride && ride.item.light && ride.item.light.on ? 1 : 0, py: ride && ride.item.periscope ? r(periYaw) : 0,   // 潜水艦のライトと潜望鏡の向き
     ns: ride && isBoat(ride) && (vtype(ride) === 'sub' || ride.item.def.vehicle.aegis ? subNoisy(ride) : Math.abs(ride.vF) > 0.3) ? 1 : 0,   // スクリューの音
     sp: ride && isBoat(ride) ? Math.round(Math.abs(ride.vF) / KT) : 0,   // 速さ（ノット）。5 ノット以下は 300m まで近づかないと聞こえない
@@ -11681,6 +11699,14 @@ function stepOthers(dt) {
     o.face = lerpAngle(o.face, t.f, k);
     const pv = t.pv ? vehicles.find((v) => v.id === t.pv) : null;
     if (pv) { o.pos.copy(seatWorld(pv, t.ps)); o.face = visYaw(pv); }   // 相乗りの人は、こちらの画面の船の上に立たせる
+    const rv = !pv && t.rv ? vehicles.find((v) => v.id != null && String(v.id) === t.rv[0]) : null;
+    if (rv) {   // 乗り物の中・上の人は、こちらの画面のその乗り物の中に立たせる（乗り物が速く動いても、ずれない）
+      if (!o.rl || o.rlv !== rv) { o.rl = new THREE.Vector3(t.rv[1], t.rv[2], t.rv[3]); o.rlv = rv; }
+      o.rl.x += (t.rv[1] - o.rl.x) * k; o.rl.y += (t.rv[2] - o.rl.y) * k; o.rl.z += (t.rv[3] - o.rl.z) * k;
+      rv.item.root.updateMatrixWorld(true);
+      o.pos.copy(o.rl).applyMatrix4(rv.item.root.matrixWorld);
+      o.face = visYaw(rv) + t.rv[4];
+    } else { o.rl = null; o.rlv = null; }
     if (t.bl && trafficReady) {   // バスの中の人は、こちらの画面のバスの中に立たせる（バスはどの画面でも同じ位置）
       const bb = buses[t.bb];
       if (!o.bl) o.bl = t.bl.slice();
