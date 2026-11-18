@@ -474,7 +474,16 @@ body.jetOn #map { display: none !important; }
 #monBattle { position: fixed; left: 50%; bottom: calc(150px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); z-index: 4; font: 800 15px var(--font-ui); color: #fff; background: #c8502a; border: 0; border-radius: 999px; padding: 10px 20px; box-shadow: 0 4px 14px rgba(0,0,0,.25); cursor: pointer; }
 #specBtn { position: fixed; right: calc(12px + env(safe-area-inset-right, 0px)); top: calc(96px + env(safe-area-inset-top, 0px)); z-index: 4; font: 800 13px var(--font-ui); color: #fff; background: rgba(120, 30, 10, .85); border: 0; border-radius: 999px; padding: 7px 12px; cursor: pointer; }
 #specBar { position: fixed; left: 50%; bottom: calc(10px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); z-index: 6; width: min(560px, calc(100vw - 24px)); box-sizing: border-box; display: grid; gap: 6px; padding: 8px 10px; background: rgba(20, 24, 32, .82); color: #fff; border-radius: 16px; font: 800 12px var(--font-ui); }
-#specBar[hidden], #specBtn[hidden] { display: none; }
+#specBar[hidden], #specBtn[hidden], #pvpBtn[hidden], #pvpFire[hidden], #pvpAsk[hidden] { display: none; }
+#pvpBtn { position: fixed; left: 50%; bottom: calc(150px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); z-index: 4; font: 800 15px var(--font-ui); color: #fff; background: #c8502a; border: 0; border-radius: 999px; padding: 10px 20px; box-shadow: 0 4px 14px rgba(0,0,0,.25); cursor: pointer; }
+#pvpFire { position: fixed; right: calc(16px + env(safe-area-inset-right, 0px)); bottom: calc(190px + env(safe-area-inset-bottom, 0px)); z-index: 4; width: 76px; height: 76px; border-radius: 50%; font: 800 14px var(--font-ui); color: #fff; background: rgba(200, 40, 20, .88); border: 3px solid rgba(255,255,255,.7); box-shadow: 0 4px 14px rgba(0,0,0,.3); touch-action: none; user-select: none; -webkit-user-select: none; cursor: pointer; }
+#pvpFire:active { background: #ff3b1f; }
+#pvpAsk { position: fixed; left: 50%; top: 30%; transform: translateX(-50%); width: min(340px, calc(100vw - 32px)); box-sizing: border-box; display: grid; gap: 8px; padding: 14px 16px; background: #fff; color: var(--ink); border: 1px solid var(--line); border-radius: 16px; box-shadow: 0 12px 40px rgba(22, 50, 79, 0.25); z-index: 8; font: 500 14px var(--font-ui); }
+#pvpAsk .ptitle { margin: 0; font-weight: 800; font-size: 15px; }
+#pvpAsk .mpnote { margin: 0; font-size: 12px; line-height: 1.5; color: var(--ink-dim); }
+#pvpAsk .pfoot { display: flex; justify-content: flex-end; gap: 8px; }
+#pvpAsk .pfoot button { font: 800 13px var(--font-ui); border-radius: 999px; padding: 8px 16px; cursor: pointer; border: 1px solid var(--line); background: #fff; color: var(--ink); }
+#pvpAsk .pfoot .pok { color: #fff; background: #c8502a; border-color: #c8502a; }
 #specTxt { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: center; }
 #specBar .sv { display: flex; flex-wrap: wrap; gap: 4px; justify-content: center; }
 #specBar .sv button { font: 800 12px var(--font-ui); color: #fff; background: rgba(255,255,255,.14); border: 1px solid rgba(255,255,255,.25); border-radius: 999px; padding: 5px 10px; cursor: pointer; }
@@ -761,6 +770,9 @@ body.jetOn #map { display: none !important; }
 
 <button type="button" id="monBattle" hidden>⚔ バトル</button>
 <button type="button" id="specBtn" hidden>👁 観戦</button>
+<button type="button" id="pvpBtn" hidden>⚔ 対戦</button>
+<button type="button" id="pvpFire" hidden>🔫 攻撃</button>
+<div id="pvpAsk" role="dialog" aria-modal="true" aria-labelledby="pvpAskT" hidden><p class="ptitle" id="pvpAskT"></p><p class="mpnote">受けると対戦が始まります。負けると爆発して、乗り物ごと対戦を始めた場所にもどります（消えません）。</p><div class="pfoot"><button type="button" id="pvpAskNo">ことわる</button><button type="button" class="pok" id="pvpAskGo">⚔ 受ける</button></div></div>
 <div id="specBar" hidden><span id="specTxt"></span><div class="sv"><button type="button" data-sv="eyeA"></button><button type="button" data-sv="eyeB"></button><button type="button" data-sv="backA"></button><button type="button" data-sv="backB"></button><button type="button" data-sv="top"></button><button type="button" data-sv="side"></button><button type="button" data-sv="auto"></button><button type="button" id="specX" aria-label="観戦をやめる">✕</button></div></div>
 <div id="monHud" hidden><span id="monHudTxt"></span><button type="button" id="monHudStop">やめる</button></div>
 <div id="monSet" role="dialog" aria-modal="true" aria-labelledby="monSetT" hidden>
@@ -7162,6 +7174,8 @@ ${['sword', 'spear', 'gun', 'beam', 'cannon', 'missile'].map((k) => { const W = 
 <tr><td>バランス</td><td>相手のまわりを回りながら撃つ（ときどき回る向きを変える）。HP が半分を切ると物かげを使う</td></tr>
 <tr><td>防御型</td><td>遠くから撃つ。建物や車のかげにかくれ、撃つときだけ横に顔を出す</td></tr></table>
 <p><b>能力の配分</b>：速さ・攻撃・守り（HP）に<b>合計 9 点</b>（1〜5、ふつうは 3・3・3）。1 点で ±15%（速さは回避も ±3%）。どれかを上げると、ほかを下げることになります（例：速さ 5・攻撃 2・守り 2）。変えたいときは置きなおします。</p>
+<h4>乗り物にしてプレイヤーどうしで対戦</h4>
+<p>武器のある .glb を<b>乗り物</b>（自動車・戦車・ヘリなど）として置いて運転すると、その武器が使えます。強さはモンスターと同じきまり（大きさで HP と攻撃力の合計、武器の数で分ける、射程、銃口、攻撃のシーケンス）。運転中、200m 以内に武器のある乗り物を運転している人がいると「⚔ 対戦」が出ます。申しこんで相手が受けると始まります。<b>「🔫 攻撃」を押している間</b>（PC は <b>J</b>）、銃口が相手のほうを向いている武器から自動でねらって撃ちます（乗り物を相手に向けるのは自分）。ミサイルの撃ち落としはいつも自動。負けると爆発して、乗り物ごと対戦を始めた場所にもどります（消えません）。時間切れ・やめる・降りるは引き分け。対戦中は位置を 1 秒に 10 回送ります。</p>
 <h4>遮蔽物（物かげ）</h4>
 <p>町の家や会社・置いた建物と置物・町の車とバス・置いた乗り物に、銃・ビーム・大砲・ミサイルが当たると止まります。かげにいると爆風は 1/4。銃とビームは相手が見えないと撃たず、<b>大砲</b>は高く投げて上からこえ、<b>ミサイル</b>は上にあがって上から落ちます。地面を動くモンスターは、背たけの 1/3 より高い物を通りぬけません（低い物はまたぐ）。</p>`;
 const HELP_BOAT = `<h4>船・潜水艦・航空機・ロボット</h4><table><tr><th>種類</th><th>きまり</th></tr>
@@ -12588,6 +12602,7 @@ async function startNet() {
   ch.on('broadcast', { event: 'eject' }, ({ payload }) => { const p = heard(payload); if (p) onEject(p); });
   ch.on('broadcast', { event: 'bld' }, ({ payload }) => { const p = heard(payload); if (p) onBldMsg(p); });
   ch.on('broadcast', { event: 'vfx' }, ({ payload }) => { const p = heard(payload); if (p) onVfx(p); });
+  ch.on('broadcast', { event: 'pvp' }, ({ payload }) => { const p = heard(payload); if (p) onPvpNet(p); });   // プレイヤーどうしの対戦
   ch.on('broadcast', { event: 'mon' }, ({ payload }) => { const p = heard(payload); if (p) onMonNet(p); });   // モンスターの位置・HP・攻撃   // 発射・切り離し・1 回のエフェクト・乗り物のドア
   ch.on('presence', { event: 'leave' }, ({ key }) => { if (others.delete(key)) syncPeers(peerList()); });
   // 置いた物の知らせは別の通り道にする（こちらがうまくいかなくても、みんなの姿は見える）
@@ -17521,7 +17536,7 @@ function weaponOf(v) {
 }
 // 読み込んだ置物の形から、モンスターの能力を決める
 //   攻撃力の合計（1 秒あたり）は体格で決まり、武器の数で等分する。射程が短いほど 1 回が強い（rangeMult）
-function rigMonster(item, forceMove, cfg) {
+function rigMonster(item, forceMove, cfg, veh) {
   const root = item.root;
   root.position.set(0, 0, 0); root.rotation.set(0, 0, 0); root.updateMatrixWorld(true);
   const lb = new THREE.Box3().setFromObject(root);
@@ -17614,7 +17629,7 @@ function rigMonster(item, forceMove, cfg) {
     wheels.push({ o, q0: o.quaternion.clone(), ax, up, steer: /前|front/i.test(o.name || '') && !/後|rear|back/i.test(o.name || ''), r, a: 0 });
   });
   // ローター・プロペラ：乗り物と同じきまり（名前に ローター・プロペラ。部品自身の 軸、なければメイン Z・テール X・プロペラ Y。回転=逆）
-  item.rotors = rigRotors(item, root);
+  if (!veh) item.rotors = rigRotors(item, root);   // 乗り物（プレイヤーが運転）は、乗り物のほうで回っている
   const half = 0.5 * Math.max(sz.x, sz.z);   // 剣・槍は体のふちから届く
   const reachOf = (w) => (w.T.melee ? half + w.R : w.R);
   const ranges = use.map(reachOf);
@@ -17837,7 +17852,7 @@ function monTeleport(m, at, face) {
   m.h = f; m.vel.set(0, 0, 0);
 }
 // 武器を使う
-function monWeapons(m, t, now) {
+function monWeapons(m, t, now, noAttack) {
   const S = m.item.mon;
   const d = Math.hypot(t.pos.x - m.pos.x, t.pos.z - m.pos.z), tr = monRad(t);
   const facing = Math.abs(wrapA(Math.atan2(t.pos.x - m.pos.x, t.pos.z - m.pos.z) - m.h));
@@ -17854,6 +17869,7 @@ function monWeapons(m, t, now) {
       if (Math.random() < (T.instant ? 0.6 : 0.2) * (1 - rangeSpread(w.R) * 8)) missileDown(threat, true);
       return;
     }
+    if (noAttack) return;   // プレイヤーの乗り物：攻撃ボタンを押している間だけ撃つ（ミサイルの撃ち落としはいつも）
     if (d > S.reachOf(w) + tr) return;
     if ((T.melee || T.flame) && facing > 1.1) return;
     if (!T.melee && !T.homing && w.o && w.dl && !w.seq && !muzzleOk(w, t)) return;
@@ -17897,7 +17913,7 @@ function stepSeqs(m, dt) {
     const R = w.run; if (!R) return;
     R.t += dt;
     const tot = w.seq.total;
-    if (!R.fired && R.t >= tot) { R.fired = true; if (MONS.includes(m) && (!R.tgt || MONS.includes(R.tgt))) monFire(m, i, R.tgt, R.real, R.n); }
+    if (!R.fired && R.t >= tot) { R.fired = true; if (monAlive(m) && (!R.tgt || monAlive(R.tgt))) monFire(m, i, R.tgt, R.real, R.n); }
     const back = R.t > tot + 0.15 ? Math.min(tot, R.t - tot - 0.15) : 0;
     let off = 0;
     for (const st of w.seq.steps) {   // 出るときは順番どおり、もどるときは逆の順
@@ -17919,7 +17935,7 @@ function monFire(m, i, t, real, n) {
   if (T.melee) {
     w.swing = 0.0001;   // 振る
     if (t) setTimeout(() => {
-      if (!MONS.includes(t) || !MONS.includes(m)) return;
+      if (!monAlive(t) || !monAlive(m)) return;
       if (Math.hypot(t.pos.x - m.pos.x, t.pos.z - m.pos.z) > S.reachOf(w) + monRad(t) + 1.5) return;
       monCenter(t, _mc).lerp(m.pos, 0.3);
       for (let k = 0; k < 14; k++) fxEmit(true, _mc.x, _mc.y, _mc.z, rnd(5), rnd(4) + 2, rnd(5), 1, 0.9, 0.5, 0.18, 0, 0.35, 1, 9.8, 0.5);
@@ -17939,16 +17955,16 @@ function monFire(m, i, t, real, n) {
     for (let k = 0; k < 8; k++) fxEmit(true, from.x + rnd(0.4), from.y + rnd(0.4), from.z + rnd(0.4), 0, 0, 0, 0.5, 1, 1, 0.25 + k * 0.05, 0.5, T.charge, 0.9, 0, 0);
     const off = new THREE.Vector3().subVectors(aim, monCenter(t || m, new THREE.Vector3()));
     setTimeout(() => {
-      if (!MONS.includes(m)) return;
+      if (!monAlive(m)) return;
       weaponPos(m, w, from);
-      if (t && MONS.includes(t)) monCenter(t, aim).add(off);
+      if (t && monAlive(t)) monCenter(t, aim).add(off);
       const cb = covSeg(from, aim);   // 物にさえぎられたら、そこで止まる
       if (cb) aim.copy(cb.p);
       const g = new THREE.BufferGeometry().setFromPoints([from, aim]);
     const line = new THREE.Line(g, new THREE.LineBasicMaterial({ color: 0x7ff6ff, transparent: true, opacity: 0.95, blending: THREE.AdditiveBlending, depthWrite: false }));
       scene.add(line); MBEAMS.push({ line, t: 0.18 });
       for (let k = 0; k < 10; k++) fxEmit(true, aim.x, aim.y, aim.z, rnd(3), rnd(3), rnd(3), 0.5, 1, 1, 0.3, 0, 0.3, 1, 0, 1);
-      if (real && t && MONS.includes(t) && !cb && monHitBox(t, aim, 0.4)) monHit(t, dmg, false, from);
+      if (real && t && monAlive(t) && !cb && monHitBox(t, aim, 0.4)) monHit(t, dmg, false, from);
     }, T.charge * 1000);
     return;
   }
@@ -17966,7 +17982,7 @@ function monFire(m, i, t, real, n) {
   fxEmit(true, from.x, from.y, from.z, 0, 0, 0, 1, 0.85, 0.5, T.homing ? 1 : 0.5, 2, 0.1, 1, 0, 0);
 }
 function monHit(t, dmg, noDodge, fromPos) {
-  if (!MB.on || (MB.a !== t && MB.b !== t)) return;
+  if (t.pvp ? !(t.bt && t.bt.pair && t.bt.pair.on) : (!MB.on || (MB.a !== t && MB.b !== t))) return;
   if (!noDodge && Math.random() < t.item.mon.dodge) {   // よけた
     monCenter(t, _mc);
     for (let k = 0; k < 6; k++) fxEmit(false, _mc.x, _mc.y, _mc.z, rnd(2), 1, rnd(2), 0.9, 0.9, 0.9, 0.4, 1, 0.5, 0.5, 0, 1);
@@ -17980,6 +17996,7 @@ function monHit(t, dmg, noDodge, fromPos) {
       monCenter(t, _mc); for (let k = 0; k < 8; k++) fxEmit(true, _mc.x + Math.sin(a + t.h) * monRad(t) * 0.7, _mc.y, _mc.z + Math.cos(a + t.h) * monRad(t) * 0.7, rnd(3), rnd(3), rnd(3), 0.6, 0.8, 1, 0.25, 0, 0.3, 1, 0, 1);
     }
   }
+  if (t.pvp) { pvpDamage(t, Math.max(0.5, dmg)); return; }   // プレイヤーの乗り物：当たったことを持ち主へ
   t.hp -= Math.max(0.5, dmg);
   if (t.hp <= 0) { t.hp = 0; battleEnd(MB.a === t ? MB.b : MB.a, 'ko'); }
 }
@@ -17999,6 +18016,7 @@ function covIn(o, x, y, z, pad = 0) {
 const covExt = (o, ux, uz) => o.hw * Math.abs(ux * o.c - uz * o.s) + o.hd * Math.abs(ux * o.s + uz * o.c);
 function covUpdate(dt) {
   const pts = [];
+  for (const P of PVP.pairs) if (P.on) pts.push(P.a.pos, P.b.pos);
   if (MB.on) pts.push(MB.a.pos, MB.b.pos);
   else { for (const m of MONS) if (m.bt || m.preview) pts.push(m.pos); if (MSH.length) pts.push(MSH[0].p, MSH[MSH.length - 1].p); }
   if (!pts.length) { if (COV.on) { COV.on = false; COV.st.length = 0; COV.dyn.length = 0; COV.grid.clear(); COV.tS = 0; } return; }
@@ -18247,7 +18265,7 @@ function stepMonShots(dt) {
   for (let i = MSH.length - 1; i >= 0; i--) {
     const s = MSH[i], T = s.w;
     s.t += dt;
-    if (T.homing && s.tgt && MONS.includes(s.tgt) && s.t > 0.3) {   // ミサイル：追いかける
+    if (T.homing && s.tgt && monAlive(s.tgt) && s.t > 0.3) {   // ミサイル：追いかける
       monCenter(s.tgt, _mc);
       if (COV.on && (s.blkAt == null || s.t > s.blkAt)) { s.blkAt = s.t + 0.3; s.blk = !!covSeg(s.p, _mc, 2); }
       if (s.blk && Math.hypot(_mc.x - s.p.x, _mc.z - s.p.z) > 10) _mc.y += 14 + Math.hypot(_mc.x - s.p.x, _mc.z - s.p.z) * 0.15;   // 間に物：上にあがって、上から落ちる
@@ -18258,7 +18276,7 @@ function stepMonShots(dt) {
     let hit = null, ground = false, wall = null;
     for (let k = 0; k < n && !hit && !ground; k++) {
       s.p.addScaledVector(s.v, dt / n);
-      if (s.tgt && s.tgt !== s.dodged && MONS.includes(s.tgt) && monHitBox(s.tgt, s.p, 0.15)) hit = s.tgt;
+      if (s.tgt && s.tgt !== s.dodged && monAlive(s.tgt) && monHitBox(s.tgt, s.p, 0.15)) hit = s.tgt;
       if (!hit && s.p.y < Math.max(heightAt(s.p.x, s.p.z), SEA)) ground = true;
       if (!hit && !ground && COV.on && (wall = covAt(s.p.x, s.p.y, s.p.z, s.p0))) { ground = true; s.p.addScaledVector(s.v, -dt / n * 0.6); }   // 建物・車・置物で止まる（少しもどった所で爆発）
     }
@@ -18271,7 +18289,7 @@ function stepMonShots(dt) {
       if (T.splash && (hit || ground)) {
         fxBoom(s.p.x, s.p.y + 0.2, s.p.z, T.splash / 4, null);
         const q = s.tgt;
-        if (s.real && q && MONS.includes(q)) { monCenter(q, _mc); const d = Math.max(0, _mc.distanceTo(s.p) - monRad(q)); if (d < T.splash) monHit(q, s.dmg * (1 - (d / T.splash) * 0.6) * (covSeg(s.p, _mc, 0.8) ? 0.25 : 1), true, s.from.pos); }   // 物のかげなら爆風は 1/4
+        if (s.real && q && monAlive(q)) { monCenter(q, _mc); const d = Math.max(0, _mc.distanceTo(s.p) - monRad(q)); if (d < T.splash) monHit(q, s.dmg * (1 - (d / T.splash) * 0.6) * (covSeg(s.p, _mc, 0.8) ? 0.25 : 1), true, s.from.pos); }   // 物のかげなら爆風は 1/4
       } else if (hit) {
         if (T.homing) fxBoom(s.p.x, s.p.y, s.p.z, 0.6, null);
         else for (let k = 0; k < 8; k++) fxEmit(true, s.p.x, s.p.y, s.p.z, rnd(4), rnd(4), rnd(4), 1, 0.8, 0.3, 0.15, 0, 0.25, 1, 9.8, 0.5);
@@ -18387,7 +18405,7 @@ function stepMonsters(dt) {
 function monEmit(d) { if (net.room) net.room.emit('mon', d).catch(() => {}); }
 function onMonNet(p) {
   const d = p && p.data; if (!d || typeof d.t !== 'string') return;
-  const byId = (id) => (typeof id === 'string' && OK_ID.test(id) ? MONS.find((m) => m.id === id) : null);
+  const byId = (id) => (typeof id === 'string' && OK_ID.test(id) ? MONS.find((m) => m.id === id) || pvpById(id) : null);
   if (d.t === 'st' && Array.isArray(d.l)) {
     for (const a of d.l.slice(0, 40)) {
       if (!Array.isArray(a)) continue;
@@ -18517,7 +18535,7 @@ function openBattleDlg() {
   };
 }
 el('monBattle').addEventListener('click', openBattleDlg);
-el('monHudStop').addEventListener('click', () => battleEnd(null, 'stop'));
+el('monHudStop').addEventListener('click', () => { if (PVP.mine) pvpQuit(); else battleEnd(null, 'stop'); });
 // 置く：「glTF を置く」→ モンスター
 async function addMonsterFromBuffer(buf, name, move, cfg0) {
   const item = await buildThing(buf, name, 'prop');
@@ -18604,6 +18622,7 @@ const SPEC_AUTO = ['backA', 'side', 'backB', 'top', 'eyeA', 'eyeB'];
 function battlePairs() {
   const out = [], seen = new Set();
   if (MB.on && MONS.includes(MB.a) && MONS.includes(MB.b)) { out.push([MB.a, MB.b]); seen.add(MB.a); seen.add(MB.b); }
+  for (const P of PVP.pairs) if (P.on && monAlive(P.a) && monAlive(P.b)) out.push([P.a, P.b]);   // プレイヤーどうしの対戦
   for (const m of MONS) {
     if (!m.bt || !m.bt.remote || seen.has(m)) continue;
     let o = m.bt.vs && MONS.includes(m.bt.vs) && !seen.has(m.bt.vs) ? m.bt.vs : null;
@@ -18648,7 +18667,7 @@ function stepSpectate(dt) {
   if ((SPEC.uiT -= dt) <= 0) {
     SPEC.uiT = 0.5;
     const any = battlePairs().length > 0;
-    if (SPEC.on && !(MONS.includes(SPEC.pair[0]) && MONS.includes(SPEC.pair[1]) && (SPEC.pair[0].bt || SPEC.pair[1].bt))) specStop('👁 バトルが終わったので、観戦をおわります');
+    if (SPEC.on && !(monAlive(SPEC.pair[0]) && monAlive(SPEC.pair[1]) && (SPEC.pair[0].bt || SPEC.pair[1].bt))) specStop('👁 バトルが終わったので、観戦をおわります');
     el('specBtn').hidden = SPEC.on || !any;
     if (SPEC.on) { const [a, b] = SPEC.pair, hp = (q) => `${Math.ceil(q.hp)}/${q.item.mon.hpMax}`; el('specTxt').textContent = `👁 ${a.name} ${hp(a)}　vs　${b.name} ${hp(b)}`; }
   }
@@ -18682,7 +18701,186 @@ function stepSpectate(dt) {
   camera.position.copy(SPEC.cam); camera.lookAt(SPEC.look);
   if (camera.far < 3000) { camera.far = 3000; camera.updateProjectionMatrix(); }
 }
-window.__spec = SPEC; window.__mons = () => MONS; window.__mb = MB; window.__cov = COV; window.__covSeg = covSeg; window.__battle = battleStart; window.__addMon = addMonsterFromBuffer;   // テスト用
+/* ================= プレイヤーどうしの対戦（2026-11-19） =================
+   モンスターと同じ .glb（部品に 武器）を乗り物として置いて運転すると、その武器が使える。強さはモンスターと同じきまり（大きさで HP と攻撃力の合計）。
+   運転中、200m 以内に武器のある乗り物を運転している人がいると「⚔ 対戦」。申しこむ → 相手が受けると始まる。
+   撃つ：「🔫 攻撃」ボタンを押している間（PC は J）。ねらいは自動（銃口が相手のほうを向いている武器から撃つ）。ミサイルの撃ち落としはいつも自動。
+   当たったかどうかは撃った人の画面が決めて、当たった人の画面が HP を減らす。HP 0：爆発して、乗り物ごと始めた場所にもどる（消えない）。時間切れは引き分け。
+   対戦中は位置を 1 秒に 10 回送る */
+const PVP = { px: new Map(), pairs: [], mine: null, ask: null, uiT: 0, hpT: 0, near: null, fire: false };
+const monAlive = (q) => !!q && (q.pvp ? PVP.px.get(q.veh) === q && vehicles.includes(q.veh) : MONS.includes(q));
+const pvpById = (id) => { for (const P of PVP.px.values()) if (P.id === id) return P; return null; };
+// 乗り物の武器（はじめて使うときに、モンスターと同じ計算をする）
+function vehArms(v) {
+  const it = v && v.item; if (!it) return null;
+  if (it.arms !== undefined) return it.arms;
+  let has = false;
+  it.root.traverse((o) => { const x = mpGet(mpPropsOf(o), MON_NAMES.weapon); if (x != null && x !== '') has = true; });
+  if (!has) return (it.arms = null);
+  const r = it.root, p0 = r.position.clone(), q0 = r.quaternion.clone(), mon0 = it.mon;
+  try { it.arms = rigMonster(it, 'walk', null, true); } catch (e) { console.warn('vehArms', e); it.arms = null; }
+  it.mon = mon0;
+  r.position.copy(p0); r.quaternion.copy(q0); r.updateMatrixWorld(true);
+  return it.arms;
+}
+function pvpProxy(v) {
+  let P = PVP.px.get(v); if (P) return P;
+  const S = vehArms(v); if (!S) return null;
+  P = { pvp: true, veh: v, item: { mon: S, root: v.item.root, moves: v.item.moves }, root: v.item.root, name: v.name || (v.item.def && v.item.def.name) || '乗り物', id: v.id != null ? String(v.id) : null,
+    shared: !!v.shared, mine: false, pos: new THREE.Vector3(v.pos.x, v.y, v.pos.y), h: visYaw(v), vel: new THREE.Vector3(), hp: S.hpMax, bt: null, ix: 0, speedNow: 0, mode: 'stay' };
+  PVP.px.set(v, P);
+  return P;
+}
+function pvpSync(P, dt) {
+  const v = P.veh, x = v.pos.x, z = v.pos.y;
+  if (dt > 0) P.vel.set((x - P.pos.x) / dt, 0, (z - P.pos.z) / dt);
+  P.pos.set(x, v.y, z); P.h = visYaw(v); P.speedNow = Math.hypot(P.vel.x, P.vel.z); P.mine = v === ride && driving;
+}
+// 対戦を始められる相手：ほかの人が運転している、武器のある乗り物（200m 以内）
+function pvpCands() {
+  if (!(ride && driving && ride.shared && ride.id != null && vehArms(ride))) return [];
+  const me = new THREE.Vector3(ride.pos.x, ride.y, ride.pos.y);
+  return vehicles.filter((u) => u !== ride && u.remote && u.shared && u.id != null && !(PVP.px.get(u) && PVP.px.get(u).bt) && Math.hypot(u.pos.x - me.x, u.pos.y - me.z) < MON_NEAR && vehArms(u))
+    .sort((a, b) => Math.hypot(a.pos.x - me.x, a.pos.y - me.z) - Math.hypot(b.pos.x - me.x, b.pos.y - me.z)).slice(0, 6);
+}
+const pvpEmit = (d) => { if (net.room) net.room.emit('pvp', d).catch(() => {}); };
+const vById = (id) => (typeof id === 'string' ? vehicles.find((u) => u.id != null && String(u.id) === id) : null);
+function openPvpDlg() {
+  const list = pvpCands(); if (!list.length) return;
+  el('monDlgT').textContent = `${ride.name || '乗り物'} で対戦：相手は？`;
+  const box = el('monDlgList'); box.textContent = '';
+  const peerOf = (u) => { for (const o of net.others.values()) if (o.t && o.t.v === u.id) return o; return null; };
+  list.forEach((u, i) => {
+    const b = document.createElement('button'); b.type = 'button'; b.dataset.i = String(i);
+    const o = peerOf(u), S = vehArms(u);
+    b.innerHTML = `<b>${escH(u.name || '乗り物')}</b><small>${escH(o && o.name ? cleanName(o.name) + 'さん' : 'だれか')}・${Math.round(Math.hypot(u.pos.x - ride.pos.x, u.pos.y - ride.pos.y))}m・HP ${S.hpMax}</small>`;
+    if (i === 0) b.setAttribute('aria-pressed', 'true');
+    box.appendChild(b);
+  });
+  el('monDlgGo').textContent = '⚔ 申しこむ';
+  el('monDlg').hidden = false; el('pvpBtn').hidden = true;
+  el('monDlg').onclick = (e) => {
+    const b = e.target.closest('button'); if (!b) return;
+    if (b.dataset.i != null) { for (const x of box.querySelectorAll('button')) x.setAttribute('aria-pressed', String(x === b)); return; }
+    if (b.dataset.min) { for (const x of el('monDlgMin').querySelectorAll('button')) x.setAttribute('aria-pressed', String(x === b)); return; }
+    if (b.id === 'monDlgNo') { el('monDlg').hidden = true; el('monDlgGo').textContent = '⚔ バトル開始'; return; }
+    if (b.id === 'monDlgGo') {
+      const pick = box.querySelector('[aria-pressed="true"]'), mn = el('monDlgMin').querySelector('[aria-pressed="true"]');
+      const u = pick && list[+pick.dataset.i];
+      el('monDlg').hidden = true; el('monDlgGo').textContent = '⚔ バトル開始';
+      if (!u || !ride || !vehicles.includes(u)) return;
+      PVP.ask = { a: String(ride.id), b: String(u.id), min: mn ? +mn.dataset.min : 5, at: Date.now() };
+      pvpEmit({ t: 'ask', a: PVP.ask.a, b: PVP.ask.b, min: PVP.ask.min, n: myName || '' });
+      showMsg(`⚔ ${u.name || '相手'} に対戦を申しこみました（返事を待っています）`);
+    }
+  };
+}
+// 対戦の申しこみが来た
+function pvpAsked(d, who) {
+  const u = vById(d.a);
+  if (!u || !ride || String(ride.id) !== d.b || PVP.mine || !vehArms(ride) || !vehArms(u)) { pvpEmit({ t: 'no', a: d.a, b: d.b }); return; }
+  const min = THREE.MathUtils.clamp(d.min | 0, 1, 10);
+  el('pvpAskT').textContent = `⚔ ${who ? cleanName(who) + 'さん' : 'だれか'}（${u.name || '乗り物'}）から対戦の申しこみ（${min} 分）`;
+  el('pvpAsk').hidden = false;
+  el('pvpAsk').onclick = (e) => {
+    const b = e.target.closest('button'); if (!b) return;
+    el('pvpAsk').hidden = true;
+    if (b.id === 'pvpAskNo') { pvpEmit({ t: 'no', a: d.a, b: d.b }); return; }
+    if (b.id === 'pvpAskGo' && ride && String(ride.id) === d.b && vehicles.includes(u)) { const t0 = Date.now(); pvpEmit({ t: 'go', a: d.a, b: d.b, min, t0 }); pvpStart(u, ride, min, t0); }
+  };
+}
+function pvpStart(va, vb, min, t0) {
+  const a = pvpProxy(va), b = pvpProxy(vb); if (!a || !b || a.bt || b.bt) return;
+  const P = { on: true, a, b, t0, limit: Math.round(min * 60) };
+  PVP.pairs.push(P);
+  for (const q of [a, b]) { q.bt = { pvp: true, pair: P, vs: q === a ? b : a }; q.hp = q.item.mon.hpMax; for (const w of q.item.mon.weapons) { w.last = -99; w.run = null; } pvpSync(q, 0); }
+  const my = ride && (va === ride || vb === ride) ? (va === ride ? a : b) : null;
+  if (my) {
+    PVP.mine = P; P.me = my; P.foe = my === a ? b : a; P.home = [ride.pos.x, ride.y, ride.pos.y, ride.h];
+    el('monHud').hidden = false; el('pvpFire').hidden = false;
+    showMsg(`⚔ 対戦開始！ ${a.name} vs ${b.name}（${min} 分）。「🔫 攻撃」を押している間、撃ちます（PC は J）`);
+  } else showMsg(`⚔ ${a.name} と ${b.name} の対戦が始まりました（「👁 観戦」で見られます）`);
+}
+// 当たった：自分の乗り物なら HP を減らす。相手の乗り物なら、持ち主に知らせる
+function pvpDamage(t, dmg) {
+  if (t.mine) { t.hp = Math.max(0, t.hp - dmg); PVP.hpT = 0; if (t.hp <= 0) pvpKo(t, true); }
+  else if (t.id) pvpEmit({ t: 'hit', id: t.id, d: Math.round(dmg * 10) / 10 });
+}
+function pvpKo(lose, tell) {
+  const P = lose.bt && lose.bt.pair; if (!P || !P.on) return;
+  const win = lose === P.a ? P.b : P.a;
+  if (tell && lose.id) pvpEmit({ t: 'ko', id: lose.id });
+  pvpEnd(P, win, lose);
+}
+function pvpEnd(P, win, lose) {
+  if (!P.on) return;
+  P.on = false;
+  PVP.pairs = PVP.pairs.filter((q) => q !== P);
+  for (const q of [P.a, P.b]) { q.bt = null; q.hp = q.item.mon.hpMax; for (const w of q.item.mon.weapons) w.run = null; }
+  if (lose) { monCenter(lose, _mc); fxBoom(_mc.x, _mc.y, _mc.z, Math.min(4, 1 + lose.item.mon.s * 0.5), null); }
+  const mine = PVP.mine === P;
+  if (mine) {
+    PVP.mine = null; el('monHud').hidden = true; el('pvpFire').hidden = true; PVP.fire = false;
+    if (lose && lose === P.me && ride && vehicles.includes(ride)) {   // 負けた：爆発して、始めた場所へもどる
+      const H = P.home, v = ride;
+      setTimeout(() => { if (!vehicles.includes(v)) return; v.pos.x = H[0]; v.pos.y = H[2]; v.y = H[1]; v.h = H[3]; v.vF = 0; v.vL = 0; v.vy = 0; v.settled = false; }, 1500);
+    }
+  }
+  if (lose) showMsg(mine ? (lose === P.me ? `💥 負けました…（${win.name} の勝ち）。始めた場所にもどります` : `🏆 勝ちました！ ${lose.name} は爆発しました`) : `⚔ ${win.name} の勝ち！ ${lose.name} は爆発しました`);
+  else showMsg(`⚔ 対戦：${P.a.name} と ${P.b.name} は引き分け`);
+}
+function pvpQuit() {
+  const P = PVP.mine; if (!P) return;
+  pvpEmit({ t: 'end', a: P.a.id, b: P.b.id });
+  pvpEnd(P, null, null);
+}
+function onPvpNet(p) {
+  const d = p && p.data; if (!d || typeof d.t !== 'string') return;
+  if (d.t === 'ask') { if (ride && String(ride.id) === d.b) pvpAsked(d, typeof d.n === 'string' ? d.n : ''); return; }
+  if (d.t === 'no') { if (PVP.ask && PVP.ask.a === d.a && PVP.ask.b === d.b) { PVP.ask = null; showMsg('⚔ 対戦はことわられました'); } return; }
+  if (d.t === 'go') {
+    const va = vById(d.a), vb = vById(d.b); if (!va || !vb) return;
+    if (PVP.ask && PVP.ask.a === d.a && PVP.ask.b === d.b) PVP.ask = null;
+    if (!PVP.pairs.some((P) => P.a.veh === va || P.b.veh === vb)) pvpStart(va, vb, THREE.MathUtils.clamp(d.min | 0, 1, 10), num(d.t0, 0, 9e15, Date.now()));
+    return;
+  }
+  const P0 = (id) => { const q = pvpById(id); return q && q.bt && q.bt.pair && q.bt.pair.on ? q : null; };
+  if (d.t === 'hit') { const q = P0(d.id); if (q && q.mine) { q.hp = Math.max(0, q.hp - num(d.d, 0, 1e5)); PVP.hpT = 0; if (q.hp <= 0) pvpKo(q, true); } return; }
+  if (d.t === 'hp') { const q = P0(d.id); if (q && !q.mine) q.hp = num(d.hp, 0, q.item.mon.hpMax, q.hp); return; }
+  if (d.t === 'ko') { const q = P0(d.id); if (q) pvpKo(q, false); return; }
+  if (d.t === 'end') { const q = P0(d.a) || P0(d.b); if (q) pvpEnd(q.bt.pair, null, null); }
+}
+function stepPvp(dt) {
+  const now = clock.elapsedTime;
+  for (const [v, P] of PVP.px) { if (!vehicles.includes(v)) { PVP.px.delete(v); continue; } if (P.bt) pvpSync(P, dt); }
+  for (const P of [...PVP.pairs]) {
+    if (!P.on) continue;
+    if (!monAlive(P.a) || !monAlive(P.b)) { pvpEnd(P, null, null); continue; }
+    if ((Date.now() - P.t0) / 1000 > P.limit) { pvpEnd(P, null, null); continue; }
+    for (const q of [P.a, P.b]) { if (q.item.mon.seqParts.length) { stepSeqs(q, dt); if (q.veh.item.moves) q.veh.item.moves.dirty = true; } }
+  }
+  const M = PVP.mine;
+  if (M) {
+    if (!ride || ride !== M.me.veh || !driving) { pvpQuit(); showMsg('⚔ 運転をやめたので、対戦は引き分けになりました'); }
+    else {
+      monLos(M.me, M.foe, now);
+      monWeapons(M.me, M.foe, now, !(PVP.fire || keys.KeyJ));
+      if ((PVP.hpT -= dt) <= 0 && M.me.id) { PVP.hpT = 0.5; pvpEmit({ t: 'hp', id: M.me.id, hp: Math.round(M.me.hp) }); }
+    }
+  }
+  if ((PVP.uiT -= dt) > 0) return;
+  PVP.uiT = 0.3;
+  if (M && M.on) {
+    const left = Math.max(0, M.limit - (Date.now() - M.t0) / 1000), hp = (q) => `${Math.ceil(q.hp)}/${q.item.mon.hpMax}`;
+    el('monHudTxt').textContent = `⚔ ${Math.floor(left / 60)}:${String(Math.floor(left % 60)).padStart(2, '0')}　自分 ${hp(M.me)}　vs　${M.foe.name} ${hp(M.foe)}`;
+  }
+  el('pvpBtn').hidden = !!PVP.mine || !!PVP.ask && Date.now() - PVP.ask.at < 20000 || !el('monDlg').hidden || !pvpCands().length;
+  if (PVP.ask && Date.now() - PVP.ask.at > 20000) { PVP.ask = null; showMsg('⚔ 返事がありませんでした'); }
+}
+el('pvpBtn').addEventListener('click', openPvpDlg);
+{ const f = el('pvpFire'), on = (e) => { e.preventDefault(); PVP.fire = true; }, off = () => { PVP.fire = false; };
+  f.addEventListener('pointerdown', on); f.addEventListener('pointerup', off); f.addEventListener('pointercancel', off); f.addEventListener('pointerleave', off); }
+window.__pvp = PVP; window.__pvpStart = pvpStart; window.__pvpNet = onPvpNet; window.__spec = SPEC; window.__mons = () => MONS; window.__mb = MB; window.__cov = COV; window.__covSeg = covSeg; window.__battle = battleStart; window.__addMon = addMonsterFromBuffer;   // テスト用
 /* ================= ループ ================= */
 const clock = new THREE.Clock();
 let netTick = 0, firstFrame = true;
@@ -18705,6 +18903,7 @@ function frame() {
   stepCouple(dt);   // 連結した車・置物を引っぱる・つり上げる
   stepBundle(dt);   // 2026-11-16：エフェクト・弾・ローター・ギア・重さ
   stepMonsters(dt);   // 2026-11-18：モンスター
+  stepPvp(dt);   // 2026-11-19：プレイヤーどうしの対戦
   stepBuildings(dt);
   stepTown();
   stepPaper();
@@ -18733,7 +18932,7 @@ function frame() {
   stepShells(dt);
   stepBooms(dt);
   netTick += dt;
-  if (netTick > 0.25) { netTick = 0; sendPresence(); }
+  if (netTick > (PVP.mine ? 0.1 : 0.25)) { netTick = 0; sendPresence(); }   // 対戦中は 1 秒に 10 回
   if (window.__camOverride) { const c = window.__camOverride; camera.position.set(c.x, c.y, c.z); camera.lookAt(c.tx, c.ty, c.tz); camera.far = 3000; camera.updateProjectionMatrix(); }   // テスト用
   if (!WMAP.open) renderer.render(scene, camera);   // 地図を開いている間は、うしろの 3D は描かない（見えないのに重いので）。動きの計算はつづける
   requestAnimationFrame(frame);
