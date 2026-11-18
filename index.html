@@ -45,7 +45,8 @@ body { margin: 0; background: var(--sky); color: var(--ink); font-family: var(--
 .hud .speed small { font-size: 12px; color: var(--ink-dim); margin-left: 4px; font-family: var(--font-ui); }
 
 .side { position: fixed; top: calc(12px + env(safe-area-inset-top, 0px)); right: max(16px, env(safe-area-inset-right, 0px));
-  display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
+  display: flex; flex-direction: row; align-items: center; gap: 6px; }
+#viewBtn { padding: 7px 10px; }
 .pill { font: 800 13px var(--font-ui); color: var(--ink); background: var(--panel); border: 1px solid var(--line); border-radius: 999px; padding: 7px 12px; cursor: pointer; }
 .pill:focus-visible, .tbtn:focus-visible, #prompt button:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
 #clock { position: fixed; z-index: 3; top: calc(4px + env(safe-area-inset-top, 0px)); left: max(10px, env(safe-area-inset-left, 0px)); font: 700 10px var(--font-mono); color: #fff; text-shadow: 0 1px 2px rgba(0,0,0,0.6); pointer-events: none; }
@@ -266,6 +267,8 @@ body.apMinOn #prompt, body.apMinOn #hint { display: none !important; }
 #chat input:focus-visible { outline: 3px solid var(--accent); outline-offset: 1px; }
 #chat button { font: 800 14px var(--font-ui); color: #fff; background: var(--go); border: 0; border-radius: 999px; padding: 8px 16px; }
 #prompt #busViewBtn { background: #3d6f9e; }
+#prompt #pickBtn { background: #5b6470; padding: 8px 12px; }
+#prompt #pickBtn kbd { margin-left: 6px; color: var(--ink); padding: 0 4px; font-size: 11px; }
 #prompt kbd { font-family: var(--font-mono); font-size: 12px; border: 1px solid var(--line); border-radius: 4px; padding: 1px 6px; background: #fff; }
 #prompt button { font: 800 14px var(--font-ui); color: #fff; background: var(--go); border: 0; border-radius: 999px; padding: 8px 16px; cursor: pointer; }
 
@@ -502,6 +505,7 @@ body.jetOn #map { display: none !important; }
 </div>
 
 <div class="side">
+  <button class="pill" id="viewBtn" type="button" title="前方視点 ⇄ 後方視点（好きな角度のときは前方へ）・Q キー／ダブルクリックでも">視点</button>
   <button class="pill" id="menuBtn" type="button" aria-expanded="false" aria-controls="menu">☰ <span id="whoN">ひとり</span></button>
 </div>
 <div id="menu" hidden>
@@ -586,7 +590,7 @@ body.jetOn #map { display: none !important; }
 <canvas id="adi" hidden role="img" aria-label="姿勢指示器"></canvas>
 <div id="jetPanel" hidden aria-label="旅客機の操作">
   <button type="button" id="jPush" hidden title="地上係員にトーイングカーで押してもらう">プッシュバック</button>
-  <button type="button" id="jCam" title="操縦席の目線と外からの視点を切りかえる（V キー）">視点：操縦席</button>
+  <button type="button" id="jCam" title="操縦席の目線と外からの視点を切りかえる（V キー）">操縦席</button>
   <button type="button" id="jGear" title="G キー">ギア ⬇</button>
   <span class="jgrp"><button type="button" id="jFlapUp" aria-label="フラップを上げる" title=", キー">−</button><b id="jFlap">フラップ UP</b><button type="button" id="jFlapDn" aria-label="フラップを下げる" title=". キー">＋</button></span>
   <button type="button" id="jSb" aria-pressed="false" title="スピードブレーキ（/ キー）">減速板</button>
@@ -677,7 +681,7 @@ body.jetOn #map { display: none !important; }
     <div class="pgrow"><button type="button" id="pgLend">玉を借りる（500P＝125玉）</button><button type="button" id="pgQuit">精算して立つ</button></div>
   </div>
 </div>
-<div id="prompt" hidden><span><kbd>E</kbd> <span id="promptText">車に</span></span><button id="busViewBtn" type="button" hidden>車外視点</button><button id="cargoBtn" type="button" hidden>📦 積む</button><button id="promptBtn" type="button">乗る</button></div>
+<div id="prompt" hidden><span><kbd>E</kbd> <span id="promptText">車に</span></span><button id="busViewBtn" type="button" hidden>車外視点</button><button id="cargoBtn" type="button" hidden>📦 積む</button><button id="pickBtn" type="button" hidden aria-label="ほかの乗り物を選ぶ">⇄</button><button id="promptBtn" type="button">乗る</button></div>
 
 <div class="keys" id="keys">
   <span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd>移動</span>
@@ -849,6 +853,7 @@ async function loadItem(def) {
   if (def.kind === 'vehicle') item.moves = rigMoveParts(item, model);
   rigBundle(item, root, model, def);   // エフェクト・発射・イス・ローター・ギア
   if (def.rig === 'car' || def.rig === 'ship' || (def.rig === 'plane' && !item.jet)) item.hf = buildCarHf(item);   // 上に乗れる面の地図（船の甲板にも、車や置物をのせられる）
+  if (def.kind === 'vehicle') item.yuka = collectYuka(root);   // 2026-11-18：マテリアル名が「床」の面（客室の床）。その上に立つと一人称
 
   // 持ち込みの置物：地面に置いて、真ん中をそろえる
   if (def.kind === 'prop') {
@@ -2066,12 +2071,54 @@ function hollowExit(car) {
   player.vy = 0; player.face = f;
   return true;
 }
-// 乗り物の中・上（荷台・甲板・ヘリの中）にいる：一人称（2026-11-17：中に入れる=する でなくても、乗り物の面に立てば）
+// 乗り物の中（客室）にいる：一人称（2026-11-18）
+// ・イス_N に座っている → いつも中
+// ・「床」マテリアルのある乗り物 → 足の下が「床」の面のときだけ中（ボンネット・屋根・荷台の上は外）
+// ・「床」のない乗り物 → 頭の上に乗り物の形（天井）があれば中（ヘリ・バスの客室など。屋根の上・荷台は外）
+// 段のふちなどで一瞬はずれても切りかわらないように、外へ出るのは 0.4 秒つづいてから
+const VIN = { v: null, at: -10, t: 0, x: NaN, z: NaN, y: NaN, rv: null, r: false };
 function insideVeh() {
   if (driving || aboard || busRide) return null;
-  const v = vehSit ? vehSit.v : player.base && player.base.v;
-  if (!v || v === ride || !vehicles.includes(v)) return null;
-  return v;
+  if (vehSit) return vehicles.includes(vehSit.v) ? vehSit.v : null;
+  const v = player.base && player.base.v;
+  if (!v || v === ride || !vehicles.includes(v)) { VIN.v = null; return null; }
+  const now = clock.elapsedTime, q = player.pos;
+  let inn;
+  if (!player.onGround) inn = VIN.v === v;   // ジャンプ中は、そのまま
+  else if (VIN.rv === v && now - VIN.t < 0.12 && Math.abs(q.x - VIN.x) < 0.1 && Math.abs(q.z - VIN.z) < 0.1 && Math.abs(q.y - VIN.y) < 0.1) inn = VIN.r;   // 少しのあいだは前の答え
+  else {
+    VIN.t = now; VIN.x = q.x; VIN.y = q.y; VIN.z = q.z; VIN.rv = v;
+    inn = VIN.r = v.item.yuka && v.item.yuka.length ? onYuka(v, q) : hfSpanV(v, q.x, q.z, q.y + P_H, q.y + P_H + 3);
+  }
+  if (inn) { VIN.v = v; VIN.at = now; return v; }
+  if (VIN.v === v && now - VIN.at < 0.4) return v;
+  VIN.v = null;
+  return null;
+}
+// マテリアルの名前に「床」（floor）がある面を集める。1 つの形に色々なマテリアルがあるときは、床の三角形だけの見えない形を足す
+const YUKA_RE = /床|floor/i;
+function collectYuka(root) {
+  const out = [];
+  root.traverse((m) => {
+    if (!m.isMesh || !m.geometry || !m.geometry.attributes.position || m.userData.yukaOnly) return;
+    const mats = Array.isArray(m.material) ? m.material : [m.material];
+    if (!mats.some((x) => x && YUKA_RE.test(x.name || ''))) return;
+    if (!Array.isArray(m.material)) { out.push(m); return; }
+    const g = m.geometry, idx = g.index, sel = [];
+    for (const gr of g.groups) if (mats[gr.materialIndex] && YUKA_RE.test(mats[gr.materialIndex].name || '')) for (let i = gr.start; i < gr.start + gr.count; i++) sel.push(idx ? idx.getX(i) : i);
+    if (!sel.length) return;
+    const sub = new THREE.BufferGeometry(); sub.setAttribute('position', g.attributes.position); sub.setIndex(sel);
+    const sm = new THREE.Mesh(sub, new THREE.MeshBasicMaterial({ side: THREE.DoubleSide })); sm.visible = false; sm.userData.yukaOnly = true;
+    m.add(sm); out.push(sm);
+  });
+  return out;
+}
+// 足の下（30cm 上から 70cm 下まで）が「床」の面か
+const YUKA_RAY = new THREE.Raycaster(), YUKA_O = new THREE.Vector3(), DOWNV = new THREE.Vector3(0, -1, 0);
+function onYuka(v, q) {
+  YUKA_O.set(q.x, q.y + 0.3, q.z); YUKA_RAY.set(YUKA_O, DOWNV); YUKA_RAY.far = 1.0;
+  for (const m of v.item.yuka) { const sd = m.material.side; m.material.side = THREE.DoubleSide; const hit = YUKA_RAY.intersectObject(m, false).length > 0; m.material.side = sd; if (hit) return true; }
+  return false;
 }
 // 地面から足がはなれても、立っていた乗り物の面が 3m 以内の下にあれば、乗ったまま
 function onVehStill() {
@@ -6384,7 +6431,7 @@ function setupBuilding(pr) {
     if (r) roleOf.set(o, r);
     for (const c of o.children) walk(c, r);
   })(root, null);
-  const b = { pr, box: pr.box.clone().expandByScalar(0.5), floors: new Map(), walls: new Map(), tris: [], stamp: null, doors: [], lights: [], switches: [], chairs: [], manual: null, rayMeshes: [] };
+  const b = { pr, box: pr.box.clone().expandByScalar(0.5), floors: new Map(), walls: new Map(), tris: [], stamp: null, doors: [], lights: [], switches: [], chairs: [], manual: null, rayMeshes: [], yuka: new Set(), hasYuka: false };
   // ガラスは透かす
   for (const g of parts.glass) g.traverse((m) => { if (m.isMesh) { m.material = m.material.clone(); Object.assign(m.material, { transparent: true, opacity: 0.32, depthWrite: false }); m.castShadow = false; } });
   // 床と壁の三角形を集める（ドア・ライト・イス・スイッチは除く。ガラスは壁）
@@ -6395,6 +6442,8 @@ function setupBuilding(pr) {
     const r = roleOf.get(m);
     if (r && r !== 'glass') return;
     const pos = m.geometry.attributes.position, idx = m.geometry.index, n = idx ? idx.count : pos.count;
+    const mats = Array.isArray(m.material) ? m.material : null, yk0 = !mats && YUKA_RE.test((m.material && m.material.name) || '');
+    const ykAt = (i) => { if (!mats) return yk0; const gr = m.geometry.groups.find((g) => i >= g.start && i < g.start + g.count); return !!(gr && mats[gr.materialIndex] && YUKA_RE.test(mats[gr.materialIndex].name || '')); };
     for (let i = 0; i + 2 < n; i += 3) {
       const ia = idx ? idx.getX(i) : i, ib = idx ? idx.getX(i + 1) : i + 1, ic = idx ? idx.getX(i + 2) : i + 2;
       A.fromBufferAttribute(pos, ia).applyMatrix4(m.matrixWorld); B.fromBufferAttribute(pos, ib).applyMatrix4(m.matrixWorld); Cv.fromBufferAttribute(pos, ic).applyMatrix4(m.matrixWorld);
@@ -6404,6 +6453,7 @@ function setupBuilding(pr) {
       b.tris.push(t);
       rayPos.push(...t);
       const grid = Math.abs(N.y / len) > 0.6 ? b.floors : b.walls;
+      if (grid === b.floors && ykAt(i)) { b.yuka.add(k); b.hasYuka = true; }   // 2026-11-18：マテリアル名「床」の床
       const x0 = Math.floor(Math.min(A.x, B.x, Cv.x) / BLD_CELL), x1 = Math.floor(Math.max(A.x, B.x, Cv.x) / BLD_CELL);
       const z0 = Math.floor(Math.min(A.z, B.z, Cv.z) / BLD_CELL), z1 = Math.floor(Math.max(A.z, B.z, Cv.z) / BLD_CELL);
       for (let ix = x0; ix <= x1; ix++) for (let iz = z0; iz <= z1; iz++) { const key = ix * 100003 + iz; let a = grid.get(key); if (!a) grid.set(key, (a = [])); a.push(k); }
@@ -6505,6 +6555,21 @@ function bldFloor(x, z, y) {
     }
   }
   return best;
+}
+// その建物で、足もと（y より少し上まで）のいちばん上の床が「床」マテリアルの面か
+function bldOnYuka(b, x, z, y) {
+  const a = b.floors.get(Math.floor(x / BLD_CELL) * 100003 + Math.floor(z / BLD_CELL)); if (!a) return false;
+  let best = -Infinity, yk = false;
+  for (const k of a) {
+    const t = b.tris[k];
+    const d = (t[5] - t[8]) * (t[0] - t[6]) + (t[6] - t[3]) * (t[2] - t[8]);
+    if (Math.abs(d) < 1e-9) continue;
+    const l1 = ((t[5] - t[8]) * (x - t[6]) + (t[6] - t[3]) * (z - t[8])) / d, l2 = ((t[8] - t[2]) * (x - t[6]) + (t[0] - t[6]) * (z - t[8])) / d, l3 = 1 - l1 - l2;
+    if (l1 < -1e-4 || l2 < -1e-4 || l3 < -1e-4) continue;
+    const h = l1 * t[1] + l2 * t[4] + l3 * t[7];
+    if (h <= y + BLD_STEP && h > best) { best = h; yk = b.yuka.has(k); }
+  }
+  return yk && best > y - 0.8;
 }
 // 円（x, z, 半径 R）を、線分 (ax,az)-(bx,bz) から押し出す
 function pushCircle(p, R, ax, az, bx, bz) {
@@ -6632,7 +6697,12 @@ function insideBld() {
   const q = player.pos;
   if (Math.abs(q.x - IN_MEMO.x) < 0.15 && Math.abs(q.z - IN_MEMO.z) < 0.15 && Math.abs(q.y - IN_MEMO.y) < 0.15 && IN_MEMO.n === blds.length) return IN_MEMO.b;
   let res = null;
-  for (const b of blds) if (nearBld(b, q.x, q.z, -0.5) && q.y < b.pr.box.max.y - 1 && bldFloor(q.x, q.z, q.y) > -Infinity && hasRoof(b, q) && wallsAround(b, q) >= 3) { res = b; break; }
+  for (const b of blds) {
+    if (!nearBld(b, q.x, q.z, -0.5)) continue;
+    // 2026-11-18：「床」マテリアルのある建物は、「床」の面の上にいるときだけ中（屋上・ベランダ・入口は外にできる）
+    if (b.hasYuka) { if (bldOnYuka(b, q.x, q.z, q.y)) { res = b; break; } continue; }
+    if (q.y < b.pr.box.max.y - 1 && bldFloor(q.x, q.z, q.y) > -Infinity && hasRoof(b, q) && wallsAround(b, q) >= 3) { res = b; break; }
+  }
   Object.assign(IN_MEMO, { x: q.x, z: q.z, y: q.y, n: blds.length, b: res });
   return res;
 }
@@ -6882,6 +6952,9 @@ function unloadSharedProp(id) {
   if (m) { removeMonster(m); renderMonMenu(); }
 }
 /* ---- 説明書：Blender でのつくり方（「glTF を置く」の画面。いま選んでいる種類のところを出す） ---- */
+const HELP_YUKA = `<h4>一人称になる床（マテリアルの名前 <code>床</code>）</h4>
+<p>客室・部屋の床の面に、<b>マテリアル</b>を 1 つ作って名前を <code>床</code>（<code>床.001</code>・<code>floor</code> も可）にして割り当てます（編集モードで床の面を選ぶ → マテリアルの「割り当て」）。その面の上に立つと一人称の視点、ほかの所（ボンネット・屋根・荷台・甲板・屋上・ベランダ）では外からの視点です。</p>
+<p><code>床</code> がない乗り物は、頭の上に天井があれば一人称（屋根の上・荷台では外から）。<code>床</code> がない建物は、今までどおり屋根と壁のある所が中です。<code>イス_1</code> などに座っているときは、いつも一人称です。</p>`;
 const HELP_BASE = `<details><summary>はじめに：Blender の基本（どの種類も同じ）</summary>
 <ol>
 <li><b>大きさ</b>：Blender の 1 m がワールドの 1 m。右の「N」パネルの「寸法」で確かめる。</li>
@@ -6969,6 +7042,7 @@ const HELP_STEER = `<h4>自動車の区分</h4><p>区分は <b>🚗 自動車・
 <li>🏍️ バイクは <code>タイヤ前</code> <code>タイヤ後</code> を 1 本ずつ（左右に分けない）。</li>
 <li>🛡️ キャタピラは、部品の名前を <code>キャタピラ</code>（左右まとめて）か <code>キャタピラ右</code> <code>キャタピラ左</code>。止まったままその場で回れます。模様（テクスチャ）が走った分だけ流れます。ボディに <code>種類</code>=<code>戦車</code> でもキャタピラになります。</li></ul>
 <h4>乗る・積む・持ち上げる</h4><ul>
+<li>乗れる距離に乗り物が 2 台以上あるときは「乗る」の横に <b>⇄</b> が出ます（PC は Tab）。押すたびに次の乗り物に切りかわり、選んだ乗り物の上に黄色い ▼ が出ます。</li>
 <li>どの車も、上を向いた面（荷台・屋根・フォーク）に人が乗れて、置物をのせられます。車が動くと、のっている人・物・車もいっしょに動きます。</li>
 <li>車で荷台に乗り上げられるのは、段差 45cm まで。高い荷台は <b>スロープ</b>（坂の板）の部品をつけると、ほかの人の車を積めます。</li>
 <li>フォークは <code>動作</code>=<code>移動</code>・<code>軸</code>=<code>Z</code>・<code>最小</code>=<code>0</code>・<code>最大</code>=<code>3</code> の部品にして、ボタンで上げ下げ。フォークの上の置物や車が持ち上がります。</li>
@@ -7021,7 +7095,7 @@ const rangeSpread = (R) => 0.004 + R * 0.0004;   // ずれ（ラジアン）
 const TACKLE = { n: '体当たり', cost: 0, cd: 1.5, range: 0.8, melee: true, note: '武器がないとき' };
 
 const HELP_MAIN = `<h4>種類のえらび方</h4><table><tr><th>種類</th><th>いる部品</th></tr>
-<tr><td>建物</td><td>なくてもよい。<code>ドア_1</code>（原点が蝶番）・<code>ライト_1</code>・<code>ガラス</code>・<code>スイッチ</code>・<code>イス_1</code> で使える建物に。壁は 10〜20cm の厚み、階段は 1 段 40cm まで、入口は 80cm×2m 以上。カスタムプロパティ <code>用途</code>=<code>店</code> で明かりがつけっぱなし、ドアの <code>開き方</code>=<code>横</code> で引き戸、<code>閉まる</code>=<code>3</code> で 3 秒で閉まる。</td></tr>
+<tr><td>建物</td><td>なくてもよい。<code>ドア_1</code>（原点が蝶番）・<code>ライト_1</code>・<code>ガラス</code>・<code>スイッチ</code>・<code>イス_1</code> で使える建物に。壁は 10〜20cm の厚み、階段は 1 段 40cm まで、入口は 80cm×2m 以上。カスタムプロパティ <code>用途</code>=<code>店</code> で明かりがつけっぱなし、ドアの <code>開き方</code>=<code>横</code> で引き戸、<code>閉まる</code>=<code>3</code> で 3 秒で閉まる。部屋の床の面のマテリアルを <code>床</code> という名前にすると、その上だけが「中」（一人称の視点）になります。</td></tr>
 <tr><td>植物・置物</td><td>形だけでよい。地面に置かれます。</td></tr>
 <tr><td>乗り物</td><td>種類ごとに名前のきまりがあります。乗り物 → 種類を選ぶと、ここにくわしいつくり方が出ます。</td></tr>
 <tr><td>👾 モンスター</td><td>形は自由（車・飛行機・ロボット・動物…）。部品に <code>武器</code>=<code>剣</code> などを書くと、その部品で戦います（下の「モンスター」）。</td></tr></table>`;
@@ -7100,10 +7174,11 @@ const HELP_FX = `<h4>エフェクト</h4>
 <h4>当たり判定</h4>
 <p>乗り物の<b>形の面そのもの</b>で当たります。動く部品（アーム・砲塔・ドア）も、動いた形で当たります（上がったアームの下は通れる）。形がこまかすぎるときは、かんたんな形の部品を <code>当たり判定</code> という名前で入れると、それだけで当たります（見えなくなります。動く部品の子にすれば、いっしょに動く）。</p>
 <h4>中に入れる乗り物（荷室・客室）</h4>
-<p>ボディに <code>中に入れる</code>=<code>する</code>。中を空洞にした形（壁・床・天井に 10cm ほどの厚み）にすると、中を歩けます。中の人・積んだ車・置物はいっしょに動きます。中では一人称の視点になります。</p>
+<p>ボディに <code>中に入れる</code>=<code>する</code>。中を空洞にした形（壁・床・天井に 10cm ほどの厚み）にすると、中を歩けます。中の人・積んだ車・置物はいっしょに動きます。中では一人称の視点になります（下の「一人称になる床」）。</p>
 <table><tr><th>部品</th><th>できること</th></tr>
 <tr><td><code>ドア_1</code>…（<code>ハッチ</code> <code>扉</code>）</td><td>E で開け閉め（原点が蝶番。<code>開き方</code>=<code>横</code> で引き戸、<code>開く角度</code>）。ボタンでも動かせる。後ろの傾斜扉は <code>動作</code>=<code>回転</code>・<code>軸</code>=<code>X</code> などを自分で書く</td></tr>
 <tr><td><code>イス_1</code>…・<code>座席_1</code>…</td><td>E で座る。<code>運転席</code>（<code>操縦席</code>、なければ <code>イス_1</code>）に座ると運転できる。降りると席の横に立つ</td></tr></table>
+${HELP_YUKA}
 <h4>スペックと重さ（ボディに書く。なければ自動）</h4>
 <table><tr><th>プロパティ</th><th>値</th></tr>
 <tr><td><code>重量</code></td><td>kg。なければ大きさと種類から</td></tr>
@@ -7180,6 +7255,8 @@ const HELP_PROPLIST = `<table><tr><th>名前</th><th>値</th><th>意味</th></tr
 <tr><td><code>用途</code></td><td><code>店</code></td><td>明かりがつけっぱなし</td></tr>
 <tr><td><code>開き方</code></td><td><code>横</code></td><td>ドアを引き戸に</td></tr>
 <tr><td><code>閉まる</code></td><td>数（秒）</td><td>ドアが自動で閉まるまで</td></tr>
+<tr><th colspan="3">マテリアルの名前（カスタムプロパティではない）</th></tr>
+<tr><td><code>床</code>（<code>floor</code>）</td><td>マテリアル名</td><td>乗り物・建物で、その面の上に立つと一人称の視点（ないときは天井・壁で決める）</td></tr>
 </table>
 <p class="tip">値は文字列でも数でもよい（単位はつけない）。オブジェクト・メッシュ・マテリアルのどれにつけても読みます。書き出しで「カスタムプロパティ」にチェック。</p>`;
 function renderPlaceHelp(s) {
@@ -7189,7 +7266,7 @@ function renderPlaceHelp(s) {
   let h;
   if (s === 'monster') h = HELP_MONSTER;
   else if (s === 'ctype' || s === 'car') h = HELP_CAR + HELP_STEER + HELP_PARTS + HELP_MOVE + HELP_FX + HELP_SHEET;
-  else if (s === 'vehicle' || s === 'boat') h = HELP_BOAT + HELP_AIR + `<p>自動車は「自動車」を選ぶと、種類ごとのつくり方が出ます。動く部品とボタンも、そこに出ます。</p>` + HELP_FX + HELP_SHEET;
+  else if (s === 'vehicle' || s === 'boat') h = HELP_BOAT + HELP_AIR + HELP_YUKA + `<p>自動車は「自動車」を選ぶと、種類ごとのつくり方が出ます。動く部品とボタンも、そこに出ます。</p>` + HELP_FX + HELP_SHEET;
   else h = HELP_MAIN + HELP_MONSTER + HELP_PROPX + HELP_SHEET;
   body.innerHTML = h + HELP_BASE;
 }
@@ -7295,6 +7372,7 @@ document.addEventListener('keydown', (e) => {
   keys[e.code] = true;
   if (!e.repeat && jetKey(e.code)) { e.preventDefault(); return; }   // 旅客機：G ギア・, . フラップ・/ スピードブレーキ・U AP・Y オートスロットル
   if (e.code === 'KeyE' || e.code === 'KeyF') toggleRide();
+  if (e.code === 'Tab' && pickNext()) e.preventDefault();
   if (e.code === 'Space' && busRide && !e.repeat) toggleSeat();
   if (e.code === 'KeyL') { if (driving && hasLamps(ride)) cycleLampMode(); else toggleLight(); }
   if (driving && hasLamps(ride) && !e.repeat) { if (e.code === 'KeyZ') setTurnSignal(1); if (e.code === 'KeyX') setTurnSignal(-1); if (e.code === 'KeyH') setTurnSignal(2); }
@@ -7303,6 +7381,7 @@ document.addEventListener('keydown', (e) => {
   if (e.code === 'KeyR') rescueBoat();
   if (e.code === 'KeyP') setPeriscope(!periscope);
   if (e.code === 'KeyV') toggleBusView();
+  if (e.code === 'KeyQ' && !e.repeat) toggleRearView();   // 視点：前方 ⇄ 後方（好きな角度のときは前方へ）
   if (e.code === 'KeyG') { if (driving && ride && ride.item.gear) gearToggle(ride); else fireTorpedo(); }   // 航空機のギア
   if (e.code === 'KeyB') loadTubes();
   if (e.code === 'KeyN') sendPing();
@@ -7379,7 +7458,7 @@ const endPointer = (e) => {
   if (e.pointerId === camDrag.id) camDrag.id = null;
 };
 // 視点の前後切りかえ：画面をダブルクリック／ダブルタップ（スマホは上半分。下半分はスティック）。動かさずに 2 回すばやく押したときだけ
-let rearView = false, rearRide = null, rearSnap = -10;
+let rearView = false, rearRide = null;
 const dTap = { id: null, x: 0, y: 0, t: 0, lastT: -10, lx: 0, ly: 0, moved: false };
 cv.addEventListener('pointerdown', (e) => {
   if (e.pointerId !== camDrag.id || camPts.size > 1) { dTap.id = null; return; }
@@ -7394,15 +7473,34 @@ cv.addEventListener('pointerup', (e) => {
   dTap.id = null;
   const now = performance.now();
   if (dTap.moved || now - dTap.t > 300) { dTap.lastT = -10; return; }
-  if (now - dTap.lastT < 380 && Math.hypot(e.clientX - dTap.lx, e.clientY - dTap.ly) < 40) { dTap.lastT = -10; toggleRearView(); return; }
+  if (now - dTap.lastT < 380 && Math.hypot(e.clientX - dTap.lx, e.clientY - dTap.ly) < 40) { dTap.lastT = -10; if (camFollowV() || fpView) toggleRearView(); return; }
   dTap.lastT = now; dTap.lx = e.clientX; dTap.ly = e.clientY;
 });
+// 2026-11-18「視点」ボタン（ダブルタップ・Q キーも同じ）：前方視点 → 後方視点 → 前方視点…。見回して好きな角度にしているときは、前方視点にもどす
+// 乗り物ではカメラは乗り物といっしょに回るだけで、自分ではもどらない。前方視点＝乗り物の真後ろから前を見る
+const camFollowV = () => (driving && ride ? ride : aboard ? aboard.v : null);
+const camDefPitch = () => (fpView ? 0.05 : driving && ride && ride.item.jet ? 0.3 : 0.35);
+let camTurn = null;   // { rel, pitch } カメラをその向きへなめらかに回している
 function toggleRearView() {
-  if (!driving || periscope) return;
-  rearView = !rearView; rearRide = ride;
-  if (isBoat(ride) || AUTO.on || ride.item.jet) camYaw += Math.PI;   // 乗り物といっしょに回る視点は、そのまま反対へ
-  else { rearSnap = clock.elapsedTime; camDrag.last = -10; }   // ふつうの車：止まっていてもすぐ後ろ（前）を向く
-  showMsg(rearView ? '後ろを見る（ダブルタップで前へ）' : '前を見る');
+  if (periscope || busRide) return;
+  const v = camFollowV();
+  if (fpView) {   // 一人称：ふり返る。乗り物の中では、乗り物の前と後ろ
+    const iv = insideVeh(), base = iv ? visYaw(iv) : null;
+    const rel = base == null ? 0 : wrapA(player.face - base);
+    const front = base == null ? !rearView : Math.abs(rel) < 0.2;
+    if (base == null) player.face += Math.PI; else player.face = base + (front ? Math.PI : 0);
+    rearView = base == null ? !rearView : front;
+    camYaw = player.face + Math.PI; fpYaw = camYaw; camPitch = camDefPitch();
+    showMsg(rearView ? '後ろを見る（「視点」で前へ）' : '前を見る');
+    return;
+  }
+  const ref = v ? visYaw(v) : player.face;
+  const rel = wrapA(camYaw - ref), dp = Math.abs(camPitch - camDefPitch());
+  const atFront = Math.abs(wrapA(rel - Math.PI)) < 0.2 && dp < 0.15;
+  rearView = camTurn ? camTurn.rel === Math.PI : atFront;   // 前方視点なら後ろへ。後方視点・好きな角度なら前へ（回している途中に押したら反対へ）
+  camTurn = { rel: rearView ? 0 : Math.PI, pitch: camDefPitch(), t0: clock.elapsedTime };
+  rearRide = v;
+  showMsg(rearView ? '後方視点（「視点」で前へ）' : '前方視点');
 }
 cv.addEventListener('pointerup', endPointer);
 cv.addEventListener('pointercancel', endPointer);
@@ -7456,6 +7554,7 @@ document.addEventListener('visibilitychange', () => { if (document.hidden) relea
 setInterval(() => { for (const h of holds) if (h.id !== null && (h.btn.hidden || !h.btn.offsetParent)) h.release(); }, 200);
 document.getElementById('tWork').addEventListener('click', () => { toggleWork(); cv.focus(); });
 document.getElementById('promptBtn').addEventListener('click', toggleRide);
+document.getElementById('pickBtn').addEventListener('click', () => { pickNext(); });
 document.getElementById('busViewBtn').addEventListener('click', () => { toggleBusView(); cv.focus(); });
 document.getElementById('lightBtn').addEventListener('click', () => { toggleLight(); cv.focus(); });
 document.getElementById('rescueBtn').addEventListener('click', () => { rescueBoat(); cv.focus(); });
@@ -7508,17 +7607,44 @@ function restPose(v) {
   if (t === 'plane') return { y: floorAt(v.pos.x, v.pos.y), pitch: 0, roll: 0 };
   return carPose(v);
 }
-function nearCar() {
-  let best = null, bd = Infinity;
+// 2026-11-18：乗れる距離に 2 台以上あるときは「⇄」（PC は Tab）で、どれに乗るか選べる。選んだ 1 台の上に ▼ を出す
+const PICK = { v: null, list: [] };
+function rideCands() {
+  const out = [];
   for (const v of vehicles) {
     if (v.ai || v.doom) continue;   // コンピュータの潜水艦と、脱出したあとのロボットには乗れない
     const V = v.item.def.vehicle;
     if (Math.abs(player.pos.y - v.y) > Math.max(2, (V.height || 0) + 1)) continue;
     const d = Math.hypot(player.pos.x - v.pos.x, player.pos.z - v.pos.y) - Math.max(V.halfWidth, V.halfLength * 0.7);
     if (v.sunk) continue;
-    if (d < (isBoat(v) ? 2.6 : RIDE_DIST) && d < bd) { bd = d; best = v; }
+    if (d < (isBoat(v) ? 2.6 : RIDE_DIST)) out.push({ v, d });
   }
-  return best;
+  out.sort((a, b) => a.d - b.d);
+  return out.map((o) => o.v);
+}
+function nearCar() {
+  const L = rideCands();
+  PICK.list = L;
+  if (!L.length) { PICK.v = null; return null; }
+  if (!L.includes(PICK.v)) PICK.v = L[0];   // 選んだ車から離れたら、いちばん近い車にもどる
+  return PICK.v;
+}
+function pickNext() {   // 次の乗り物を選ぶ
+  const L = PICK.list;
+  if (L.length < 2 || ride || aboard || busRide) return false;
+  PICK.v = L[(L.indexOf(PICK.v) + 1) % L.length];
+  return true;
+}
+const pickMark = new THREE.Mesh(new THREE.ConeGeometry(0.35, 0.7, 4), new THREE.MeshBasicMaterial({ color: 0xffc400, depthTest: false, transparent: true }));
+pickMark.rotation.x = Math.PI; pickMark.renderOrder = 10; pickMark.visible = false;
+function updatePickMark(nv) {
+  const on = !!nv && PICK.list.length >= 2;
+  if (on && !pickMark.parent) scene.add(pickMark);
+  pickMark.visible = on;
+  if (!on) return;
+  const top = nv.y + Math.max(1.5, nv.item.def.vehicle.height || 1.5);
+  pickMark.position.set(nv.pos.x, top + 0.9 + Math.sin(performance.now() / 250) * 0.15, nv.pos.y);
+  pickMark.rotation.y += 0.04;
 }
 // glTF で置いた乗り物は、置いた本人か、本人が「みんな使える」にしたときだけ運転できる（相乗りはだれでも）
 const canDrive = (v) => !v.shared || !v.by || v.by === net.myId || !!v.share;
@@ -7601,6 +7727,7 @@ function toggleRide() {
     const seat = freeSeat(v);
     if (seat < 0) { showMsg(`${v.name} は満員です`); return; }
     aboard = { v, seat };
+    camYaw = visYaw(v) + Math.PI; camPitch = 0.35; camBoatYaw = visYaw(v); camFollowRef = v; rearView = false; rearRide = v; camTurn = null;
     showMsg(`${v.name} に相乗りしました。「降りる」でいつでも降りられます`);
     return;
   }
@@ -7612,7 +7739,8 @@ function takeWheel(v) {   // 運転席に座る
   v.settled = false;
   if (v.noPod) showPod(v);   // 脱出したロボットには、新しいコックピットがつく
   if (isBoat(v) && !v.item.def.vehicle.fixedBow) chooseBow(v);
-  if (v.item.jet) { camYaw = visYaw(v) + Math.PI; camBoatYaw = visYaw(v); jetView = 'chase'; jetCamLabel(); }   // 旅客機：乗ったときは後ろから
+  camYaw = visYaw(v) + Math.PI; camPitch = v.item.jet ? 0.3 : 0.35; camBoatYaw = visYaw(v); camFollowRef = v; rearView = false; rearRide = v; camTurn = null;   // 2026-11-18：乗ったときは前方視点（真後ろから前を見る）
+  if (v.item.jet) { jetView = 'chase'; jetCamLabel(); }
   if (vtype(v) === 'sub' || v.item.def.vehicle.aegis) initOrders(v);
 }
 
@@ -11866,7 +11994,7 @@ function jetCamCycle() {
   jetView = 'pit'; camYaw = visYaw(v) + Math.PI; camPitch = 0.3; camBoatYaw = visYaw(v);
   setMenu(false); showMsg('操縦席の目線です。もう一度押すと外から（後ろ）'); jetCamLabel();
 }
-function jetCamLabel() { const b = el('jCam'); if (b) b.textContent = jetView === 'pit' ? '視点：外へ' : '視点：操縦席'; }
+function jetCamLabel() { const b = el('jCam'); if (b) b.textContent = jetView === 'pit' ? '外から' : '操縦席'; }
 // 操縦席の目の位置：機首の先から 4.5m 後ろ、天井より 0.9m 下、左の席（+x）。形から一度だけ探す
 function jetEye(v) {
   const J = v.item.jet;
@@ -12412,8 +12540,18 @@ const eyeW = new THREE.Vector3(), lookW = new THREE.Vector3();
 let underwater = false;
 let camBoatYaw = null;
 let fpView = false, fpYaw = 0;   // 建物の中の一人称
+let camFollowRef = null;
+// 「視点」ボタンで決めた向き（乗り物・自分の向きから rel だけ回した所）へ、なめらかに回す。ドラッグしたらやめる
+function applyCamTurn(dt, ref) {
+  if (!camTurn) return;
+  if (camDrag.last > camTurn.t0) { camTurn = null; return; }
+  const d = wrapA(ref + camTurn.rel - camYaw), k = Math.min(1, dt * 8);
+  camYaw += d * k; camPitch += (camTurn.pitch - camPitch) * k;
+  if (Math.abs(d) < 0.02 && Math.abs(camTurn.pitch - camPitch) < 0.01) { camYaw = ref + camTurn.rel; camPitch = camTurn.pitch; camTurn = null; }
+}
 function updateCamera(dt) {
-  if (!(driving && ride && (isBoat(ride) || AUTO.on || ride.item.jet))) camBoatYaw = null;
+  { const fv = camFollowV(); if (fv !== camFollowRef) { camBoatYaw = null; camFollowRef = fv; } }
+  if (rearRide !== camFollowV()) { rearView = false; rearRide = camFollowV(); camTurn = null; }   // 乗りかえた・降りたら前向きにもどす
   if (periscope && !subRide()) setPeriscope(false);
   if (periscope) {
     // 潜望鏡のいちばん上から、潜望鏡の向きに見る
@@ -12482,6 +12620,7 @@ function updateCamera(dt) {
     const car = ride, R = car.item.root;
     if (camBoatYaw != null) camYaw += wrapA(visYaw(car) - camBoatYaw);
     camBoatYaw = visYaw(car);
+    applyCamTurn(dt, visYaw(car));
     R.updateMatrixWorld(true);
     eyeW.copy(jetEye(car)).applyMatrix4(R.matrixWorld);
     camera.position.copy(eyeW); camTarget.copy(eyeW);
@@ -12496,21 +12635,23 @@ function updateCamera(dt) {
   }
   if (driving) {
     const car = ride;
-    if (rearRide !== car) { rearView = false; rearRide = car; }   // 乗りかえたら前向きにもどす
     camTarget.set(car.pos.x, car.y + 1.1, car.pos.y);
-    if (isBoat(car) || AUTO.on || car.item.jet) {   // 船・潜水艦・旅客機・自動運転中：カメラは乗り物といっしょに回るだけ（後ろへ戻さない）。横や斜めから見つづけられる
-      if (camBoatYaw != null) camYaw += wrapA(visYaw(car) - camBoatYaw);
-      camBoatYaw = visYaw(car);
-    } else if (clock.elapsedTime - camDrag.last > 1.2 && (Math.abs(car.vF) > 1 || clock.elapsedTime - rearSnap < 1.5)) {
-      const behind = car.h + (rearView ? 0 : Math.PI);   // 後退しても前向きのまま。後ろを見るのはダブルタップで切りかえたときだけ
-      let d = behind - camYaw; d = Math.atan2(Math.sin(d), Math.cos(d));
-      camYaw += d * Math.min(1, dt * (clock.elapsedTime - rearSnap < 1.5 ? 5 : 2.5));
-    }
+    // 2026-11-18：どの乗り物（車・船・飛行機・ヘリ…）も、カメラは乗り物といっしょに回るだけ（自分では後ろへ戻さない）。もどすのは「視点」ボタン
+    if (camBoatYaw != null) camYaw += wrapA(visYaw(car) - camBoatYaw);
+    camBoatYaw = visYaw(car);
+    applyCamTurn(dt, visYaw(car));
   } else {
     camTarget.set(player.pos.x, player.pos.y + 1.5, player.pos.z);
-    if (!aboard && player.moving && clock.elapsedTime - camDrag.last > 1.2) {
-      let d = player.face + Math.PI - camYaw; d = Math.atan2(Math.sin(d), Math.cos(d));
-      camYaw += d * Math.min(1, dt * 2.5);
+    if (aboard) {   // 相乗り：乗り物といっしょに回る
+      if (camBoatYaw != null) camYaw += wrapA(visYaw(aboard.v) - camBoatYaw);
+      camBoatYaw = visYaw(aboard.v);
+      applyCamTurn(dt, visYaw(aboard.v));
+    } else {
+      if (player.moving && !camTurn && clock.elapsedTime - camDrag.last > 1.2) {   // 歩くと後ろ（後方視点なら前）からの視点へもどる
+        let d = player.face + (rearView ? 0 : Math.PI) - camYaw; d = Math.atan2(Math.sin(d), Math.cos(d));
+        camYaw += d * Math.min(1, dt * 2.5);
+      }
+      applyCamTurn(dt, player.face);
     }
   }
   const jetCam = driving && ride.item.jet;
@@ -12537,20 +12678,22 @@ function updateCamera(dt) {
 
 /* ================= 画面表示 ================= */
 const el = (id) => document.getElementById(id);
+const viewBtnEl = el('viewBtn');
+viewBtnEl.addEventListener('click', (e) => { e.currentTarget.blur(); toggleRearView(); });
 let lastUi = '';
 const STATE_TEXT = { walk: '歩いている', swim: '泳いでいる', dive: 'もぐっている', drive: '車を運転中' };
 const DRIVE_VERB = { car: '運転', ship: '操縦', sub: '操縦', plane: '操縦', robot: '操縦' };
 const K = (k, t) => `<span>${k.map((x) => `<kbd>${x}</kbd>`).join('')}${t}</span>`;
 const KEYS_HTML = {
-  car: K(['W'], 'アクセル') + K(['S'], 'ブレーキ／バック') + K(['A', 'D'], 'ハンドル') + K(['Space'], 'サイドブレーキ') + K(['E'], '降りる') + '<span>ドラッグで視点</span>',
-  ship: K(['W'], '前へ') + K(['S'], '後ろへ') + K(['A', 'D'], 'かじ') + K(['R'], '救出') + K(['E'], '降りる') + '<span>ドラッグで視点</span>',
-  sub: K(['←', '→'], '進路') + K(['↑', '↓'], '速力') + K(['Space'], '浅く') + K(['C'], '深く') + K(['B'], '装填') + K(['G'], '発射（艦首の向き）') + K(['N'], 'ピンガー') + K(['L'], 'ライト') + K(['P'], '潜望鏡') + K(['Z', 'X'], '潜望鏡を回す') + K(['R'], '救出') + K(['E'], '降りる'),
-  plane: K(['W'], '出力を上げる') + K(['S'], '下げる・ブレーキ') + K(['A', 'D'], '曲がる') + K(['Space'], '上昇') + K(['C'], '下降') + K(['G'], 'ギア') + K(['E'], '降りる'),
-  jet: K(['W', 'S'], '推力（地上で出力ゼロのまま S：ブレーキ・逆噴射）') + K(['A', 'D'], 'かたむける・地上はハンドル') + K(['Space', '↓'], '機首上げ') + K(['C', '↑'], '機首下げ') + K(['G'], 'ギア') + K([',', '.'], 'フラップ') + K(['/'], 'スピードブレーキ') + K(['U'], 'AP') + K(['Y'], 'オートスロットル') + K(['E'], '降りる'),
-  ride: K(['E'], '降りる') + '<span>ドラッグで視点・ホイールで距離</span>',
+  car: K(['W'], 'アクセル') + K(['S'], 'ブレーキ／バック') + K(['A', 'D'], 'ハンドル') + K(['Space'], 'サイドブレーキ') + K(['Q'], '視点') + K(['E'], '降りる') + '<span>ドラッグで視点</span>',
+  ship: K(['W'], '前へ') + K(['S'], '後ろへ') + K(['A', 'D'], 'かじ') + K(['R'], '救出') + K(['Q'], '視点') + K(['E'], '降りる') + '<span>ドラッグで視点</span>',
+  sub: K(['←', '→'], '進路') + K(['↑', '↓'], '速力') + K(['Space'], '浅く') + K(['C'], '深く') + K(['B'], '装填') + K(['G'], '発射（艦首の向き）') + K(['N'], 'ピンガー') + K(['L'], 'ライト') + K(['P'], '潜望鏡') + K(['Z', 'X'], '潜望鏡を回す') + K(['R'], '救出') + K(['Q'], '視点') + K(['E'], '降りる'),
+  plane: K(['W'], '出力を上げる') + K(['S'], '下げる・ブレーキ') + K(['A', 'D'], '曲がる') + K(['Space'], '上昇') + K(['C'], '下降') + K(['G'], 'ギア') + K(['Q'], '視点') + K(['E'], '降りる'),
+  jet: K(['W', 'S'], '推力（地上で出力ゼロのまま S：ブレーキ・逆噴射）') + K(['A', 'D'], 'かたむける・地上はハンドル') + K(['Space', '↓'], '機首上げ') + K(['C', '↑'], '機首下げ') + K(['G'], 'ギア') + K([',', '.'], 'フラップ') + K(['/'], 'スピードブレーキ') + K(['U'], 'AP') + K(['Y'], 'オートスロットル') + K(['Q'], '視点') + K(['E'], '降りる'),
+  ride: K(['Q'], '視点') + K(['E'], '降りる') + '<span>ドラッグで視点・ホイールで距離</span>',
   bus: K(['W'], '前へ') + K(['S'], '後ろへ') + K(['A', 'D'], '見回す') + K(['Shift'], '急ぐ') + K(['Space'], '座る・立つ') + K(['V'], '車内・車外視点') + K(['E'], '降りる（止まってドアがあいたら）') + '<span>ドラッグで見回す</span>',
-  robot: K(['W'], '加速') + K(['S'], 'ブレーキ／バック') + K(['A', 'D'], '向き') + K(['Space'], 'ブレーキ') + K(['X'], '脱出') + K(['E'], '降りる') + '<span>ドラッグで視点</span>',
-  aegis: K(['←', '→'], '進路') + K(['↑', '↓'], '速力') + K(['R'], '救出') + K(['E'], '降りる') + '<span>ドラッグで視点・ホイールで距離</span>',
+  robot: K(['W'], '加速') + K(['S'], 'ブレーキ／バック') + K(['A', 'D'], '向き') + K(['Space'], 'ブレーキ') + K(['X'], '脱出') + K(['Q'], '視点') + K(['E'], '降りる') + '<span>ドラッグで視点</span>',
+  aegis: K(['←', '→'], '進路') + K(['↑', '↓'], '速力') + K(['R'], '救出') + K(['Q'], '視点') + K(['E'], '降りる') + '<span>ドラッグで視点・ホイールで距離</span>',
   wet: K(['W'], '前へ') + K(['A', 'D'], '向きを変える') + K(['Space'], 'うく') + K(['C'], 'もぐる') + '<span>ドラッグで視点・ホイールで遠く／近く</span>',
   walk: K(['W'], '前へ') + K(['S'], '後ろへ') + K(['A', 'D'], '向きを変える') + K(['Shift'], '走る') + K(['Space'], 'ジャンプ') + K(['E'], '乗る') + K(['T'], 'ひとこと') + '<span>ドラッグで視点・ホイールで遠く／近く</span><span>.glb をドロップで置ける</span>',
 };
@@ -12570,12 +12713,15 @@ const HINT = {
   busOut: '車外視点。画面をなぞって見回す、2 本指でズーム。「車内視点」で車内にもどる',
 };
 function updateUi() {
+  { const vh = !!(busRide || periscope); if (viewBtnEl.hidden !== vh) viewBtnEl.hidden = vh; }   // 視点ボタン：バス（車内・車外視点のボタンがある）と潜望鏡のときだけかくす
   if (mpVeh() !== MPB.v) renderMpButtons();   // 動く部品のボタン：乗った・降りたとき
-  if (busRide || (!ride && !aboard && nearBusDoor())) { busUi(); return; }
+  if (busRide || (!ride && !aboard && nearBusDoor())) { pickMark.visible = false; el('pickBtn').hidden = true; busUi(); return; }
   if (lastUi.startsWith('bus|')) { el('navLine').hidden = true; el('speedBox').hidden = true; el('busViewBtn').hidden = true; }
   const cg = driving ? cargoAction() : null, ct = !cg && driving ? cargoTruck() : null, cgTxt = cg ? cg.text : ct && ct.f.load && ct.f.load.kg ? `荷台：${BIZ_G[ct.f.load.g] ? BIZ_G[ct.f.load.g].name : '荷物'} ${yen(ct.f.load.kg)}kg（卸す先か自分の店の前で おろす）` : '';
   const nv = !ride && !aboard ? nearCar() : null;
   const near = !!nv;
+  updatePickMark(nv);
+  const pk = nv && PICK.list.length >= 2 ? `${PICK.list.indexOf(nv) + 1}/${PICK.list.length}` : '';
   const ba = !ride && !aboard ? vehNearAction() || (!nv ? propNearAction() || (blds.length && nearBldAction()) || townNearAction() : null) : null;   // 乗り物のドア・イスも   // ドア・スイッチ・イス、お店の前
   const vt = ride ? vtype(ride) : null;
   const sea = ride && isBoat(ride);   // 船・潜水艦はノット（1 ノット = 1.852 km/h）
@@ -12607,7 +12753,7 @@ function updateUi() {
     autoTxt = `半自動${nx ? `・${Math.max(0, Math.round(nx.d / 10) * 10)}m 先を${tl}` : dl < 400 ? `・${Math.round(dl / 10) * 10}m 先で行き止まり` : ''}${AUTO.why ? '・' + AUTO.why : ''}`;
   } else if (SEMI.on && driving && !AUTO.on) autoTxt = '半自動：道路で「▶前進」を押すと走り出します';
   else if (AUTO.on && AUTO.route && driving) { const left = Math.max(0, AUTO.route.P.L - AUTO.s); autoTxt = `自動運転 →${AUTO.route.name} ${left < 1000 ? Math.round(left / 10) * 10 + 'm' : (left / 1000).toFixed(1) + 'km'}${AUTO.why ? '・' + AUTO.why : ''}`; }
-  const key = [mode, near, share, locked, kmh, alt, vname, vt, periscope, navTxt, hpTxt, tgtTxt, autoTxt, ba ? ba.text + ba.btn : '', cgTxt, cg ? cg.kind : ''].join('|');
+  const key = [mode, near, pk, share, locked, kmh, alt, vname, vt, periscope, navTxt, hpTxt, tgtTxt, autoTxt, ba ? ba.text + ba.btn : '', cgTxt, cg ? cg.kind : ''].join('|');
   if (key === lastUi) return;
   lastUi = key;
   el('state').textContent = mode === 'drive' ? `${vname}を${DRIVE_VERB[vt]}中` : mode === 'ride' ? `${vname}に相乗り中` : STATE_TEXT[mode];
@@ -12621,6 +12767,7 @@ function updateUi() {
   el('prompt').hidden = !(near || driving || aboard || ba);
   el('promptText').textContent = driving || aboard ? `${vname}から` : share ? `${vname}に相乗り` : locked ? `🔒${vname}（${ownerName(nv)}さん専用）` : ba ? ba.text : `${vname}に`;
   el('promptBtn').textContent = driving || aboard ? '降りる' : ba ? ba.btn : '乗る';
+  el('pickBtn').hidden = !pk || !!ba; el('pickBtn').innerHTML = pk ? `⇄ <small>${pk}</small><kbd>Tab</kbd>` : '⇄';
   const wet = !driving && !aboard && (mode === 'swim' || mode === 'dive');
   tAct.hidden = vt === 'ship' || vt === 'sub' || !!aboard;
   const jet = vt === 'plane' && !!ride.item.jet;
@@ -20137,7 +20284,7 @@ window.__world = {
   get mode() { return driving ? 'drive' : player.mode; },
   get car() { const car = ride || myCar; return car && { x: car.pos.x, z: car.pos.y, y: car.y, h: car.h, vF: car.vF, pitch: car.pitch, name: car.name }; },
   vehicles,
-  get driving() { return driving; },
+  get driving() { return driving; }, insideV: () => insideVeh(), toggleRearView, get fpView() { return fpView; }, get rearView() { return rearView; }, get camTurn() { return camTurn; }, get camPitch() { return camPitch; },
   set camYaw(v) { camYaw = v; }, get camYaw() { return camYaw; }, set camPitch(v) { camPitch = v; }, set camDist(v) { camDist = v; }, get camDist() { return camDist; },
   keys, touch, toggleRide, loadItem, ITEM_DEFS, heightAt, player, net, syncPeers,
   addPropFromBuffer, wallet, addPoints, PG, openPachi, touch, insideB: () => insideBld(), setCamYaw: (v) => { camYaw = v; }, bgmState: () => ({ name: bgm.name, vol: +bgm.vol.toFixed(2), playing: !!(bgm.el && !bgm.el.paused), t: bgm.el ? +bgm.el.currentTime.toFixed(1) : 0 }), blds, bldFloor, bldPush, roadNear, nearBldAction, placeAt, get bldSeat() { return bldSeat; }, get dayLight() { return dayLight; },
