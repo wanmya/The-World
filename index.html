@@ -777,7 +777,7 @@ body.jetOn #map { display: none !important; }
   <div id="monDlgList"></div>
   <p class="mpnote">制限時間（こえると引き分け）</p>
   <div id="monDlgMin"><button type="button" data-min="1" aria-pressed="false">1分</button><button type="button" data-min="3" aria-pressed="false">3分</button><button type="button" data-min="5" aria-pressed="true">5分</button><button type="button" data-min="10" aria-pressed="false">10分</button></div>
-  <p class="mpnote">負けたモンスターは爆発して消えます（もどりません）。引き分けは 2 体とも元の位置に帰ります。</p>
+  <p class="mpnote">負けたモンスターは爆発して消えます（もどりません）。勝ったほうは 5 秒その場で待ってから、引き分けは 2 体ともすぐ、元の位置に帰ります。</p>
   <div class="pfoot"><button type="button" class="pcancel" id="monDlgNo">やめる</button><button type="button" class="pok" id="monDlgGo">⚔ バトル開始</button></div>
 </div>
 <div id="specDlg" role="dialog" aria-modal="true" aria-labelledby="specT" hidden>
@@ -7132,7 +7132,7 @@ const HELP_MAIN = `<h4>種類のえらび方</h4><table><tr><th>種類</th><th>�
 <tr><td>乗り物</td><td>種類ごとに名前のきまりがあります。乗り物 → 種類を選ぶと、ここにくわしいつくり方が出ます。</td></tr>
 <tr><td>👾 モンスター</td><td>形は自由（車・飛行機・ロボット・動物…）。部品に <code>武器</code>=<code>剣</code> などを書くと、その部品で戦います（下の「モンスター」）。</td></tr></table>`;
 const HELP_MONSTER = `<h4>👾 モンスター</h4>
-<p>置いた場所に立っています（☰「👾 モンスター」で 呼ぶ／待て・能力）。前は <b>+Z</b>（Blender では −Y）。<b>バトル</b>：自分のモンスターに近づくと「⚔ バトル」が出ます。相手（200m 以内の、ほかの人のモンスターか、自分のもう 1 体）と制限時間（ふつう 5 分）を選ぶと、モンスターどうしが自動で戦います。相手の持ち主がいなくても戦えます。<b>負けたモンスターは爆発して消えます（もどりません）</b>。時間切れは引き分けで、2 体とも元の位置に帰ります。勝ったモンスターも元の位置に帰り、HP は満タンにもどります。</p>
+<p>置いた場所に立っています（☰「👾 モンスター」で 呼ぶ／待て・能力）。前は <b>+Z</b>（Blender では −Y）。<b>バトル</b>：自分のモンスターに近づくと「⚔ バトル」が出ます。相手（200m 以内の、ほかの人のモンスターか、自分のもう 1 体）と制限時間（ふつう 5 分）を選ぶと、モンスターどうしが自動で戦います。相手の持ち主がいなくても戦えます。<b>負けたモンスターは爆発して消えます（もどりません）</b>。時間切れは引き分けで、2 体とも元の位置に帰ります。勝ったモンスターはその場で 5 秒待ってから元の位置に帰り、HP は満タンにもどります。</p>
 <p>部品に <code>武器</code> を書くと、その部品から攻撃します（何個でも・どの部品でも。原点から撃つ）：</p>
 <table><tr><th>武器</th><th>射程・威力</th><th>重さ</th><th>とくちょう</th></tr>
 ${['sword', 'spear', 'gun', 'beam', 'cannon', 'missile'].map((k) => { const W = WEAPONS[k]; return `<tr><td><code>${W.n}</code></td><td>${W.range ? `${W.range}m・×${rangeMult(W.range).toFixed(1)}` : '—'}</td><td>${W.cost}</td><td>${W.note}</td></tr>`; }).join('')}</table>
@@ -18362,6 +18362,7 @@ function stepMonsters(dt) {
   if (!MONS.length && !MSH.length && !MBEAMS.length) return;
   const now = clock.elapsedTime;
   covUpdate(dt);   // 遮蔽物（バトル中・弾が飛んでいる間だけ）
+  for (const m of MONS) if (m.retAt && now >= m.retAt && !m.bt) monGoHome(m, m.retH, m.retSave);   // 勝ったモンスター：5 秒待ってから帰る
   if (MB.on && (Date.now() - MB.t0) / 1000 > MB.limit) battleEnd(null, 'time');
   for (const m of [...MONS]) {
     if (!MONS.includes(m)) continue;
@@ -18411,7 +18412,11 @@ function onMonNet(p) {
   }
   if (d.t === 'be') {   // バトルが終わった
     const b = byId(d.b);
-    for (const q of [m, b]) if (q && q.bt && q.bt.remote) { q.bt = null; q.hp = q.item.mon.hpMax; if (Array.isArray(d.h) && q.mine) { const H = d.h[q === m ? 0 : 1]; if (Array.isArray(H)) { q.pos.set(num(H[0], X0, X1), q.pos.y, num(H[1], Z0, Z1)); q.h = num(H[2], -10, 10); q.pos.y = monFloor(q, q.pos.x, q.pos.z, q.pos.y + 1.5); } } }
+    for (const q of [m, b]) if (q && q.bt && q.bt.remote) {
+      q.bt = null; q.hp = q.item.mon.hpMax;
+      const H = Array.isArray(d.h) ? d.h[q === m ? 0 : 1] : null;
+      if (Array.isArray(H)) { const HH = [num(H[0], X0, X1), num(H[1], Z0, Z1), num(H[2], -10, 10)]; if (d.r === 'ko' && q === m) { q.retAt = clock.elapsedTime + 5; q.retH = HH; q.retSave = false; } else monGoHome(q, HH, false); }   // 勝ったほうは 5 秒後に帰る
+    }
     if (d.r === 'ko' && m && b) { if (m.mine || b.mine) showMsg(`⚔ バトル：${m.name} の勝ち！ ${b.name} は爆発して消えました`); }
     else if (m && b && (m.mine || b.mine)) showMsg(`⚔ バトル：${m.name} と ${b.name} は引き分け。元の位置に帰りました`);
     return;
@@ -18439,11 +18444,9 @@ function battleEnd(win, why) {
   [a, b].forEach((q, i) => {
     q.bt = null; q.hp = q.item.mon.hpMax; q.vel.set(0, 0, 0);
     if (q === lose || !MONS.includes(q)) return;
-    const H = home[i];
-    for (let k = 0; k < 20; k++) fxEmit(true, q.pos.x + rnd(1), q.pos.y + q.item.mon.size.y * Math.random(), q.pos.z + rnd(1), 0, 1.5, 0, 0.7, 0.9, 1, 0.3, 0, 0.8, 1, 0, 1);
-    q.pos.x = H[0]; q.pos.z = H[1]; q.h = H[2]; q.pos.y = monFloor(q, H[0], H[1], heightAt(H[0], H[1]) + 2);
     q.mode = 'stay';
-    monSave(q);
+    if (q === win) { q.retAt = clock.elapsedTime + 5; q.retH = home[i]; q.retSave = true; return; }   // 勝ったほう：その場で 5 秒待ってから帰る
+    monGoHome(q, home[i], true);
   });
   if (a.shared && a.id && b.shared && b.id) monEmit({ t: 'be', id: win === b ? b.id : a.id, b: win === b ? a.id : b.id, r: win ? 'ko' : 'draw', h: win === b ? [home[1], home[0]] : home });
   if (lose) {
@@ -18455,6 +18458,14 @@ function battleEnd(win, why) {
   } else if (why === 'time') showMsg(`⚔ 時間切れ：${a.name} と ${b.name} は引き分け。元の位置に帰りました`);
   else showMsg('⚔ バトルをやめました（引き分け）。元の位置に帰りました');
   renderMonMenu();
+}
+// 元の位置へ帰る（光って消えて、元の場所に出る）
+function monGoHome(q, H, save) {
+  q.retAt = 0;
+  for (let k = 0; k < 20; k++) fxEmit(true, q.pos.x + rnd(1), q.pos.y + q.item.mon.size.y * Math.random(), q.pos.z + rnd(1), 0, 1.5, 0, 0.7, 0.9, 1, 0.3, 0, 0.8, 1, 0, 1);
+  q.pos.x = H[0]; q.pos.z = H[1]; q.h = H[2]; q.vel.set(0, 0, 0); q.airborne = false; q.pos.y = monFloor(q, H[0], H[1], heightAt(H[0], H[1]) + 2);
+  q.mode = 'stay'; q.net = null;
+  if (save) monSave(q); else q.home = [H[0], H[1], H[2]];
 }
 // 画面：自分のモンスターの近くで「⚔ バトル」・バトル中の残り時間と HP
 function battleCands(m) {
