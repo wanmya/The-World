@@ -7280,6 +7280,32 @@ const endPointer = (e) => {
   if (e.pointerId === touch.stickId) { touch.stickId = null; touch.x = touch.y = 0; stickEl.hidden = true; }
   if (e.pointerId === camDrag.id) camDrag.id = null;
 };
+// 視点の前後切りかえ：画面をダブルクリック／ダブルタップ（スマホは上半分。下半分はスティック）。動かさずに 2 回すばやく押したときだけ
+let rearView = false, rearRide = null, rearSnap = -10;
+const dTap = { id: null, x: 0, y: 0, t: 0, lastT: -10, lx: 0, ly: 0, moved: false };
+cv.addEventListener('pointerdown', (e) => {
+  if (e.pointerId !== camDrag.id || camPts.size > 1) { dTap.id = null; return; }
+  dTap.id = e.pointerId; dTap.x = e.clientX; dTap.y = e.clientY; dTap.t = performance.now(); dTap.moved = false;
+});
+cv.addEventListener('pointermove', (e) => {
+  if (e.pointerId === dTap.id && Math.hypot(e.clientX - dTap.x, e.clientY - dTap.y) > 12) dTap.moved = true;
+  if (camPts.size > 1) dTap.id = null;
+});
+cv.addEventListener('pointerup', (e) => {
+  if (e.pointerId !== dTap.id) return;
+  dTap.id = null;
+  const now = performance.now();
+  if (dTap.moved || now - dTap.t > 300) { dTap.lastT = -10; return; }
+  if (now - dTap.lastT < 380 && Math.hypot(e.clientX - dTap.lx, e.clientY - dTap.ly) < 40) { dTap.lastT = -10; toggleRearView(); return; }
+  dTap.lastT = now; dTap.lx = e.clientX; dTap.ly = e.clientY;
+});
+function toggleRearView() {
+  if (!driving || periscope) return;
+  rearView = !rearView; rearRide = ride;
+  if (isBoat(ride) || AUTO.on || ride.item.jet) camYaw += Math.PI;   // 乗り物といっしょに回る視点は、そのまま反対へ
+  else { rearSnap = clock.elapsedTime; camDrag.last = -10; }   // ふつうの車：止まっていてもすぐ後ろ（前）を向く
+  showMsg(rearView ? '後ろを見る（ダブルタップで前へ）' : '前を見る');
+}
 cv.addEventListener('pointerup', endPointer);
 cv.addEventListener('pointercancel', endPointer);
 cv.addEventListener('lostpointercapture', endPointer);
@@ -12371,14 +12397,15 @@ function updateCamera(dt) {
   }
   if (driving) {
     const car = ride;
+    if (rearRide !== car) { rearView = false; rearRide = car; }   // 乗りかえたら前向きにもどす
     camTarget.set(car.pos.x, car.y + 1.1, car.pos.y);
     if (isBoat(car) || AUTO.on || car.item.jet) {   // 船・潜水艦・旅客機・自動運転中：カメラは乗り物といっしょに回るだけ（後ろへ戻さない）。横や斜めから見つづけられる
       if (camBoatYaw != null) camYaw += wrapA(visYaw(car) - camBoatYaw);
       camBoatYaw = visYaw(car);
-    } else if (clock.elapsedTime - camDrag.last > 1.2 && Math.abs(car.vF) > 1) {
-      const behind = car.h + (car.vF < -0.5 ? 0 : Math.PI);
+    } else if (clock.elapsedTime - camDrag.last > 1.2 && (Math.abs(car.vF) > 1 || clock.elapsedTime - rearSnap < 1.5)) {
+      const behind = car.h + (rearView ? 0 : Math.PI);   // 後退しても前向きのまま。後ろを見るのはダブルタップで切りかえたときだけ
       let d = behind - camYaw; d = Math.atan2(Math.sin(d), Math.cos(d));
-      camYaw += d * Math.min(1, dt * 2.5);
+      camYaw += d * Math.min(1, dt * (clock.elapsedTime - rearSnap < 1.5 ? 5 : 2.5));
     }
   } else {
     camTarget.set(player.pos.x, player.pos.y + 1.5, player.pos.z);
