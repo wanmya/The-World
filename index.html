@@ -458,20 +458,31 @@ body.jetOn #map { display: none !important; }
 #mpDlg .pcancel { color: var(--ink); background: transparent; border: 1px solid var(--line); }
 #mpDlg .pok { color: #fff; background: var(--go); border: 0; }
 #specDlg .monpv { display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap; }
-#specDlg[hidden], #monDlg[hidden], #monHud[hidden], #monBattle[hidden] { display: none; }
-#monDlg { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); width: min(340px, calc(100vw - 32px)); max-height: calc(100% - 32px); overflow-y: auto; box-sizing: border-box; display: grid; gap: 8px; padding: 14px 16px; background: #fff; color: var(--ink); border: 1px solid var(--line); border-radius: 16px; box-shadow: 0 12px 40px rgba(22, 50, 79, 0.25); z-index: 7; font: 500 14px var(--font-ui); }
-#monDlg .ptitle { margin: 0; font-weight: 800; font-size: 16px; }
-#monDlg .mpnote { margin: 0; font-size: 12px; line-height: 1.5; color: var(--ink-dim); }
+#specDlg[hidden], #monDlg[hidden], #monSet[hidden], #monHud[hidden], #monBattle[hidden] { display: none; }
+#monDlg, #monSet { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); width: min(340px, calc(100vw - 32px)); max-height: calc(100% - 32px); overflow-y: auto; box-sizing: border-box; display: grid; gap: 8px; padding: 14px 16px; background: #fff; color: var(--ink); border: 1px solid var(--line); border-radius: 16px; box-shadow: 0 12px 40px rgba(22, 50, 79, 0.25); z-index: 7; font: 500 14px var(--font-ui); }
+#monDlg .ptitle, #monSet .ptitle { margin: 0; font-weight: 800; font-size: 16px; }
+#monDlg .mpnote, #monSet .mpnote { margin: 0; font-size: 12px; line-height: 1.5; color: var(--ink-dim); }
 #monDlgList { display: grid; gap: 6px; }
 #monDlgList button { display: grid; text-align: left; gap: 2px; font: 800 14px var(--font-ui); color: var(--ink); background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 8px 12px; cursor: pointer; }
 #monDlgList button small { font-weight: 600; font-size: 12px; color: var(--ink-dim); }
 #monDlgList button[aria-pressed="true"], #monDlgMin button[aria-pressed="true"] { background: #fff1e6; border-color: #e08a3c; }
 #monDlgMin { display: flex; gap: 6px; }
 #monDlgMin button { flex: 1; font: 800 13px var(--font-ui); color: var(--ink); background: #fff; border: 1px solid var(--line); border-radius: 999px; padding: 6px 0; cursor: pointer; }
-#monDlg .pfoot { display: flex; justify-content: flex-end; gap: 8px; }
-#monDlg .pfoot button { font: 800 13px var(--font-ui); border-radius: 999px; padding: 8px 16px; cursor: pointer; border: 1px solid var(--line); background: #fff; color: var(--ink); }
-#monDlg .pfoot .pok { color: #fff; background: #c8502a; border-color: #c8502a; }
+#monDlg .pfoot, #monSet .pfoot { display: flex; justify-content: flex-end; gap: 8px; }
+#monDlg .pfoot button, #monSet .pfoot button { font: 800 13px var(--font-ui); border-radius: 999px; padding: 8px 16px; cursor: pointer; border: 1px solid var(--line); background: #fff; color: var(--ink); }
+#monDlg .pfoot .pok, #monSet .pfoot .pok { color: #fff; background: #c8502a; border-color: #c8502a; }
 #monBattle { position: fixed; left: 50%; bottom: calc(150px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); z-index: 4; font: 800 15px var(--font-ui); color: #fff; background: #c8502a; border: 0; border-radius: 999px; padding: 10px 20px; box-shadow: 0 4px 14px rgba(0,0,0,.25); cursor: pointer; }
+#monSetTend { display: flex; gap: 6px; }
+#monSetTend button { flex: 1; font: 800 13px var(--font-ui); color: var(--ink); background: #fff; border: 1px solid var(--line); border-radius: 999px; padding: 6px 0; cursor: pointer; }
+#monSetTend button[aria-pressed="true"] { background: #fff1e6; border-color: #e08a3c; }
+#monSetPts { display: grid; gap: 4px; }
+#monSetPts .mrow { display: grid; grid-template-columns: 3.5em 34px 1fr 34px; align-items: center; gap: 6px; font-weight: 800; }
+#monSetPts b { text-align: center; color: #c8502a; letter-spacing: 1px; }
+#monSetPts button { font: 800 16px var(--font-ui); height: 30px; border-radius: 999px; border: 1px solid var(--line); background: #fff; color: var(--ink); cursor: pointer; }
+#monSetPts button:disabled { opacity: .35; cursor: default; }
+#monSetPrev table { width: 100%; border-collapse: collapse; font-size: 13px; }
+#monSetPrev th { text-align: left; font-weight: 700; color: var(--ink-dim); padding: 2px 0; }
+#monSetPrev td { text-align: right; font-weight: 800; }
 #monHud { position: fixed; left: 50%; top: calc(8px + env(safe-area-inset-top, 0px)); transform: translateX(-50%); z-index: 4; display: flex; align-items: center; gap: 8px; max-width: calc(100vw - 24px); box-sizing: border-box; font: 800 12px var(--font-ui); color: #fff; background: rgba(120, 30, 10, .82); border-radius: 999px; padding: 5px 6px 5px 12px; }
 #monHud span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 #monHud button { flex: none; font: 800 12px var(--font-ui); color: #7a1e0a; background: #fff; border: 0; border-radius: 999px; padding: 4px 10px; cursor: pointer; }
@@ -743,6 +754,15 @@ body.jetOn #map { display: none !important; }
 
 <button type="button" id="monBattle" hidden>⚔ バトル</button>
 <div id="monHud" hidden><span id="monHudTxt"></span><button type="button" id="monHudStop">やめる</button></div>
+<div id="monSet" role="dialog" aria-modal="true" aria-labelledby="monSetT" hidden>
+  <p class="ptitle" id="monSetT">戦い方と能力</p>
+  <div id="monSetTend"><button type="button" data-tend="a">攻撃型</button><button type="button" data-tend="b">バランス</button><button type="button" data-tend="d">防御型</button></div>
+  <p class="mpnote" id="monSetTendTxt"></p>
+  <div id="monSetPts"><div class="mrow"><span>速さ</span><button type="button" data-k="v" data-d="-1" aria-label="速さを下げる">−</button><b data-lv="v"></b><button type="button" data-k="v" data-d="1" aria-label="速さを上げる">＋</button></div><div class="mrow"><span>攻撃</span><button type="button" data-k="a" data-d="-1" aria-label="攻撃を下げる">−</button><b data-lv="a"></b><button type="button" data-k="a" data-d="1" aria-label="攻撃を上げる">＋</button></div><div class="mrow"><span>守り</span><button type="button" data-k="d" data-d="-1" aria-label="守りを下げる">−</button><b data-lv="d"></b><button type="button" data-k="d" data-d="1" aria-label="守りを上げる">＋</button></div></div>
+  <p class="mpnote" id="monSetLeft"></p>
+  <div id="monSetPrev"></div>
+  <div class="pfoot"><button type="button" class="pcancel" id="monSetNo">やめる</button><button type="button" class="pok" id="monSetGo">置く</button></div>
+</div>
 <div id="monDlg" role="dialog" aria-modal="true" aria-labelledby="monDlgT" hidden>
   <p class="ptitle" id="monDlgT">バトル：相手は？</p>
   <div id="monDlgList"></div>
@@ -6914,7 +6934,7 @@ async function loadSharedProp(d) {
     if (num(d.bytes, 0, 1e9) > SHARE_MAX) throw new Error('大きすぎます');
     const buf = await net.db.file(id);
     if (buf.byteLength > SHARE_MAX) throw new Error('大きすぎます');
-    if (/^mon/.test(String(d.kind || ''))) { if (net.loading.has(id)) await loadSharedMonster(d, buf, name); return; }   // 2026-11-18：モンスター
+    if (/^(mon|mx)/.test(String(d.kind || ''))) { if (net.loading.has(id)) await loadSharedMonster(d, buf, name); return; }   // 2026-11-18：モンスター
     let item, asCat = cat;
     try { item = await buildThing(buf, name, cat, undefined, VKINDS[d.kind] || STEERS[d.kind] ? d.kind : undefined); }
     catch (e) { if (!VEHICLE_CATS.has(cat)) throw e; asCat = 'prop'; item = await buildThing(buf, name, 'prop'); }
@@ -7123,7 +7143,15 @@ ${['sword', 'spear', 'gun', 'beam', 'cannon', 'missile'].map((k) => { const W = 
 <h4>攻撃のシーケンス（ため時間）</h4>
 <p>「ハッチが開く → 発射台が向きを変える → ミサイル発射」のように、攻撃の前に部品を動かせます。動く部品（<code>動作</code>=<code>回転</code>／<code>移動</code>・<code>軸</code>・<code>最小</code>・<code>最大</code>・<code>速さ</code>）に <code>攻撃</code>=<b>武器の部品の名前</b>（<code>ミサイル左</code> など。武器の種類 <code>ミサイル</code> や <code>すべて</code> でもよい）と <code>順番</code>=<code>1</code>〜<code>9</code> を書きます。攻撃のとき、順番どおりに 初期 から遠いほうのはし（最小か最大）まで動き（同じ番号はいっしょに）、撃ったあと逆の順にもどります。</p>
 <p>動いている時間が<b>ため時間</b>になり、その武器の威力が上がります：<b>1 秒で +25%、2 秒以上は +50%（上限）</b>。そのかわり、動いて・撃って・もどるまで次は撃てません。剣の部品は攻撃のとき X 軸で振ります（原点がにぎり）。</p>
-<p>自分のモンスターは「能力」の画面で <b>▶ 動きを見る</b>・<b>▶ 攻撃を見る</b>（ダメージなし）で事前に確かめられます。</p>`;
+<p>自分のモンスターは「能力」の画面で <b>▶ 動きを見る</b>・<b>▶ 攻撃を見る</b>（ダメージなし）で事前に確かめられます。</p>
+<h4>置くときに決める：戦い方と能力の配分</h4>
+<table><tr><th>戦い方</th><th>動き</th></tr>
+<tr><td>攻撃型</td><td>多少当たっても前に出て、近くで撃ち合う。かくれない。さえぎられたら、さらにつめる</td></tr>
+<tr><td>バランス</td><td>相手のまわりを回りながら撃つ（ときどき回る向きを変える）。HP が半分を切ると物かげを使う</td></tr>
+<tr><td>防御型</td><td>遠くから撃つ。建物や車のかげにかくれ、撃つときだけ横に顔を出す</td></tr></table>
+<p><b>能力の配分</b>：速さ・攻撃・守り（HP）に<b>合計 9 点</b>（1〜5、ふつうは 3・3・3）。1 点で ±15%（速さは回避も ±3%）。どれかを上げると、ほかを下げることになります（例：速さ 5・攻撃 2・守り 2）。変えたいときは置きなおします。</p>
+<h4>遮蔽物（物かげ）</h4>
+<p>町の家や会社・置いた建物と置物・町の車とバス・置いた乗り物に、銃・ビーム・大砲・ミサイルが当たると止まります。かげにいると爆風は 1/4。銃とビームは相手が見えないと撃たず、<b>大砲</b>は高く投げて上からこえ、<b>ミサイル</b>は上にあがって上から落ちます。地面を動くモンスターは、背たけの 1/3 より高い物を通りぬけません（低い物はまたぐ）。</p>`;
 const HELP_BOAT = `<h4>船・潜水艦・航空機・ロボット</h4><table><tr><th>種類</th><th>きまり</th></tr>
 <tr><td>船</td><td>形だけでよい（長さ 30m まで）。長いほうに進む。<code>主砲</code>・<code>CIWS</code>・<code>前方</code> をつけるとイージス艦（200m まで）。甲板に相乗りできる。</td></tr>
 <tr><td>潜水艦</td><td><code>ライト</code>（ある側が前）と <code>潜望鏡</code> がいる。</td></tr>
@@ -17281,7 +17309,7 @@ function weaponOf(v) {
 }
 // 読み込んだ置物の形から、モンスターの能力を決める
 //   攻撃力の合計（1 秒あたり）は体格で決まり、武器の数で等分する。射程が短いほど 1 回が強い（rangeMult）
-function rigMonster(item, forceMove) {
+function rigMonster(item, forceMove, cfg) {
   const root = item.root;
   root.position.set(0, 0, 0); root.rotation.set(0, 0, 0); root.updateMatrixWorld(true);
   const lb = new THREE.Box3().setFromObject(root);
@@ -17381,7 +17409,9 @@ function rigMonster(item, forceMove) {
     atk, share, weight, carry, over, shields, shieldDirs, weapons: use, all: ws, odd, half, reachOf, range: Math.max(...ranges), minRange: Math.min(...ranges),
     closeIn: use.some((w) => w.T.melee && reachOf(w) === Math.min(...ranges)), limbs,
   };
-  return item.mon;
+  item.mon.base = { speed: item.mon.speed, hp, atk, share, dodge: item.mon.dodge };   // 配分の前（monApplyCfg がここから決める）
+  for (const w of use) w.dmg0 = w.dmg;
+  return monApplyCfg(item.mon, cfg);
 }
 function monStatsHtml(S) {
   const cnt = {};
@@ -17392,7 +17422,9 @@ function monStatsHtml(S) {
     ['体格', `${S.s.toFixed(1)}（${S.size.x.toFixed(1)}×${S.size.z.toFixed(1)}×高さ${S.size.y.toFixed(1)}m）`],
     ['HP', S.hpMax.toLocaleString()],
     ['攻撃力', `${Math.round(S.atk)}（武器 ${nW} 個で分けて 1 つ ${S.share.toFixed(1)}）`],
-    ['動き方', `${MON_MOVES[S.move].n}・${Math.round(S.speed * 3.6)}km/h${monFlies(S) ? `・高さ ${Math.round(S.alt)}m` : ''}${Math.abs(S.speed - S.autoSp) > 0.05 ? '（最高速度を変えた分、HP も変わる）' : ''}`],
+    ['動き方', `${MON_MOVES[S.move].n}・${Math.round(S.speed * 3.6)}km/h${monFlies(S) ? `・高さ ${Math.round(S.alt)}m` : ''}${Math.abs(S.base.speed - S.autoSp) > 0.05 ? '（最高速度を変えた分、HP も変わる）' : ''}`],
+    ['戦い方', `${MON_TEND[S.cfg.tend].n}：${MON_TEND[S.cfg.tend].d}`],
+    ['能力の配分', `速さ ${'★'.repeat(S.cfg.v)}・攻撃 ${'★'.repeat(S.cfg.a)}・守り ${'★'.repeat(S.cfg.d)}`],
     ['回避', `${Math.round(S.dodge * 100)}%`],
     ['武器', wl],
     ['武器の重さ', `${S.weight} ／ 積める ${S.carry}${S.over > 0 ? '（こえた分おそい）' : ''}`],
@@ -17401,7 +17433,7 @@ function monStatsHtml(S) {
   if (S.all.filter((w) => !w.T.shield).length > MON_WMAX) rows.push(['注意', `武器は ${MON_WMAX} 個まで使います（残りは飾り）`]);
   if (S.odd.length) rows.push(['注意', `わからない武器（${S.odd.join('・')}）は銃にしました`]);
   return `<table>${rows.map(([k, x]) => `<tr><th>${k}</th><td>${escH(x)}</td></tr>`).join('')}</table>`
-    + `<p class="mpnote">攻撃力の合計は大きさで決まり、武器の数で分けます（数をふやしても強くならない）。射程が短い武器ほど 1 回が強く、長いほどずれます。大きいほど HP と攻撃力が大きく、遅く当たりやすい。小さいほど速く、よけやすい。</p>`;
+    + `<p class="mpnote">攻撃力の合計は大きさで決まり、武器の数で分けます（数をふやしても強くならない）。能力の配分は合計 9 点で、どれかを上げると、ほかが下がります（1 点 ±15%）。射程が短い武器ほど 1 回が強く、長いほどずれます。大きいほど HP と攻撃力が大きく、遅く当たりやすい。小さいほど速く、よけやすい。</p>`;
 }
 function showMonStats(m) {
   el('specT').textContent = `${m.name} の能力`;
@@ -17463,7 +17495,7 @@ function removeMonster(m) {
 function monFloor(m, x, z, yRef) {
   const S = m.item.mon, g = Math.max(heightAt(x, z), groundAt(x, z, yRef));
   if (S.move === 'swim') return Math.max(g, SEA - S.size.y * 0.45);
-  if (S.move === 'heli' || (S.move === 'plane' && m.airborne)) return Math.max(g, SEA) + S.alt;
+  if (S.move === 'heli' || (S.move === 'plane' && m.airborne)) return Math.max(g, SEA, covTop(x, z, monRad(m) * 0.6) + 1) + S.alt * (covTop(x, z, monRad(m) * 0.6) > -Infinity ? 0.5 : 1);
   return Math.max(g, SEA - S.size.y * 0.35);   // 歩く物は海では浮いて泳ぐ
 }
 const monCenter = (m, out) => out.set(m.pos.x, m.pos.y + m.item.mon.size.y * 0.5, m.pos.z);
@@ -17490,13 +17522,11 @@ function stepMyMonster(m, dt, now) {
   const S = m.item.mon;
   const t = MB.on && MB.a === m ? MB.b : MB.on && MB.b === m ? MB.a : null;
   let goal = null, face = null, stop = 0.5;
-  if (t) {
-    const d = Math.hypot(t.pos.x - m.pos.x, t.pos.z - m.pos.z);
-    const want = S.closeIn ? S.minRange * 0.8 + monRad(t) * 0.8 : THREE.MathUtils.clamp(S.minRange * 0.6, 6, 60) + monRad(t);
-    const ang = Math.atan2(m.pos.x - t.pos.x, m.pos.z - t.pos.z) + Math.sin(now * (0.6 + S.dodge * 3) + m.ix) * (0.3 + S.dodge * 2) * (want > 8 ? 1 : 0.3);   // 小さいほど回りこむ
-    goal = _mt.set(t.pos.x + Math.sin(ang) * want, 0, t.pos.z + Math.cos(ang) * want);
+  if (t) {   // 戦い方（攻撃型・バランス・防御型）で動く。まわりこむ・物かげにかくれる
+    monLos(m, t, now);
+    const G = monBattleGoal(m, t, now, dt, _mt);
+    goal = G.goal; stop = G.stop;
     face = Math.atan2(t.pos.x - m.pos.x, t.pos.z - m.pos.z);
-    stop = d < want + 2 ? 0.8 : 0.5;
   } else if (m.mode === 'follow') {
     ownerAt(_mo);
     const d = Math.hypot(_mo.x - m.pos.x, _mo.z - m.pos.z);
@@ -17552,6 +17582,7 @@ function stepMyMonster(m, dt, now) {
     if (d < r && d > 1e-3 && (t || m.mode === 'follow')) { m.pos.x += (dx / d) * (r - d) * Math.min(1, dt * 5); m.pos.z += (dz / d) * (r - d) * Math.min(1, dt * 5); }
   }
   m.pos.x = clampX(m.pos.x + m.vel.x * dt, 4); m.pos.z = clampZ(m.pos.z + m.vel.z * dt, 4);
+  if (!monFlies(S)) covPush(m);   // 建物・車を通りぬけない（低い物はまたぐ）
   if (face != null && S.move !== 'car' && !(S.move === 'plane' && m.airborne)) m.h += THREE.MathUtils.clamp(wrapA(face - m.h), -S.turn * dt, S.turn * dt);
   else if (face != null && S.move === 'car' && t && m.speedNow < 0.5) m.h += THREE.MathUtils.clamp(wrapA(face - m.h), -S.turn * 0.3 * dt, S.turn * 0.3 * dt);   // 止まって撃つときは、ゆっくり向きを変える
   if (!goal || S.move !== 'car' && S.move !== 'plane') m.bank = (m.bank || 0) * Math.exp(-dt * 3);
@@ -17600,7 +17631,8 @@ function monWeapons(m, t, now) {
     }
     if (d > S.reachOf(w) + tr) return;
     if ((T.melee || T.flame) && facing > 1.1) return;
-    if (!T.melee && !T.homing && w.o && w.dl && !w.seq && !muzzleOk(w, t)) return;   // 銃口が相手のほうを向いていない（シーケンスのある武器は、動いてから向く）
+    if (!T.melee && !T.homing && w.o && w.dl && !w.seq && !muzzleOk(w, t)) return;
+    if (!T.melee && !T.homing && !T.grav && m.los === false) return;   // 物にさえぎられて見えない：まっすぐ飛ぶ武器は撃たない（大砲は山なり、ミサイルは上から）   // 銃口が相手のほうを向いていない（シーケンスのある武器は、動いてから向く）
     w.last = now + Math.random() * T.cd * 0.15;
     const n = ++monShotN;
     monAttack(m, i, t, true, n);
@@ -17657,6 +17689,7 @@ function monFire(m, i, t, real, n) {
   const S = m.item.mon, w = S.weapons[i]; if (!w) return;
   const T = w.T, from = weaponPos(m, w, new THREE.Vector3());
   const aim = t ? monCenter(t, new THREE.Vector3()) : from.clone().add(new THREE.Vector3(Math.sin(m.h) * 30, 0, Math.cos(m.h) * 30));
+  if (t && m.aimY) aim.y += m.aimY;   // 体が物かげ：見えている上のほうをねらう
   const dmg = w.dmg || 1;
   if (T.melee) {
     w.swing = 0.0001;   // 振る
@@ -17684,19 +17717,26 @@ function monFire(m, i, t, real, n) {
       if (!MONS.includes(m)) return;
       weaponPos(m, w, from);
       if (t && MONS.includes(t)) monCenter(t, aim).add(off);
+      const cb = covSeg(from, aim);   // 物にさえぎられたら、そこで止まる
+      if (cb) aim.copy(cb.p);
       const g = new THREE.BufferGeometry().setFromPoints([from, aim]);
     const line = new THREE.Line(g, new THREE.LineBasicMaterial({ color: 0x7ff6ff, transparent: true, opacity: 0.95, blending: THREE.AdditiveBlending, depthWrite: false }));
       scene.add(line); MBEAMS.push({ line, t: 0.18 });
       for (let k = 0; k < 10; k++) fxEmit(true, aim.x, aim.y, aim.z, rnd(3), rnd(3), rnd(3), 0.5, 1, 1, 0.3, 0, 0.3, 1, 0, 1);
-      if (real && t && MONS.includes(t) && monHitBox(t, aim, 0.4)) monHit(t, dmg, false, from);
+      if (real && t && MONS.includes(t) && !cb && monHitBox(t, aim, 0.4)) monHit(t, dmg, false, from);
     }, T.charge * 1000);
     return;
   }
   const v = _md.subVectors(aim, from);
-  if (T.grav) { const tt = Math.max(0.3, v.length() / T.sp); v.divideScalar(tt); v.y += 4.9 * tt; }   // 山なりに投げる
+  if (T.grav) {   // 山なりに投げる。間に物があれば、高く投げて上からこえる
+    let tt = Math.max(0.3, v.length() / T.sp);
+    const cb = covSeg(from, aim, 2);
+    if (cb) tt = Math.max(tt, Math.sqrt((8 * Math.max(4, cb.o.y1 - Math.min(from.y, aim.y) + 3)) / 9.8));
+    v.divideScalar(tt); v.y += 4.9 * tt;
+  }
   else if (T.homing && w.o && w.dl) muzzleDir(w, v).setLength(T.sp * 0.6);   // ミサイル：銃口の向きに出てから追いかける
   else v.setLength(T.sp);
-  MSH.push({ n, p: from, v: v.clone(), w: T, from: m, tgt: t, t: 0, life: T.homing ? Math.max(3, (w.R * 1.6) / T.sp) : Math.max(1.5, (w.R * 1.4) / T.sp), real, dmg, turn: 2.2 * THREE.MathUtils.clamp(Math.sqrt(140 / w.R), 0.6, 1.6) });
+  MSH.push({ n, p: from, p0: from.clone(), v: v.clone(), w: T, from: m, tgt: t, t: 0, life: T.homing ? Math.max(3, (w.R * 1.6) / T.sp) : Math.max(1.5, (w.R * 1.4) / T.sp), real, dmg, turn: 2.2 * THREE.MathUtils.clamp(Math.sqrt(140 / w.R), 0.6, 1.6) });
   while (MSH.length > 200) MSH.shift();
   fxEmit(true, from.x, from.y, from.z, 0, 0, 0, 1, 0.85, 0.5, T.homing ? 1 : 0.5, 2, 0.1, 1, 0, 0);
 }
@@ -17718,6 +17758,265 @@ function monHit(t, dmg, noDodge, fromPos) {
   t.hp -= Math.max(0.5, dmg);
   if (t.hp <= 0) { t.hp = 0; battleEnd(MB.a === t ? MB.b : MB.a, 'ko'); }
 }
+/* ---- 遮蔽物（2026-11-18）：町の家・会社・置いた建物と置物・町の車とバス・置いた乗り物で、弾・ビーム・爆発が止まる
+   バトル中（か弾が飛んでいる間）だけ、まわりの物を「向きのついた箱」にして覚えておく。動かない物は 1.5 秒ごと、車は 0.2 秒ごと */
+const COV = { st: [], dyn: [], grid: new Map(), C: 16, tS: 0, tD: 0, cx: 0, cz: 0, R: 0, on: false };
+function covBox(x, z, rot, hw, hd, y0, y1, ref) { return { x, z, c: Math.cos(rot), s: Math.sin(rot), hw, hd, y0, y1, r: Math.hypot(hw, hd), ref }; }
+function covIn(o, x, y, z, pad = 0) {
+  if (y < o.y0 - pad || y > o.y1 + pad) return false;
+  const dx = x - o.x, dz = z - o.z, rr = o.r + pad; if (dx * dx + dz * dz > rr * rr) return false;
+  const u = dx * o.c - dz * o.s, v = dx * o.s + dz * o.c;
+  if (Math.abs(u) > o.hw + pad || Math.abs(v) > o.hd + pad) return false;
+  if (o.ref && o.ref.item && o.ref.item.hf) return hfSpanV(o.ref, x, z, y - 0.25 - pad, y + 0.25 + pad);   // 置いた乗り物は形のとおり
+  return true;
+}
+// 箱の中心から向き (ux, uz) へ、箱のはしまでの長さ
+const covExt = (o, ux, uz) => o.hw * Math.abs(ux * o.c - uz * o.s) + o.hd * Math.abs(ux * o.s + uz * o.c);
+function covUpdate(dt) {
+  const pts = [];
+  if (MB.on) pts.push(MB.a.pos, MB.b.pos);
+  else { for (const m of MONS) if (m.bt || m.preview) pts.push(m.pos); if (MSH.length) pts.push(MSH[0].p, MSH[MSH.length - 1].p); }
+  if (!pts.length) { if (COV.on) { COV.on = false; COV.st.length = 0; COV.dyn.length = 0; COV.grid.clear(); COV.tS = 0; } return; }
+  let sx = 0, sz = 0;
+  for (const p of pts) { sx += p.x; sz += p.z; }
+  const cx = sx / pts.length, cz = sz / pts.length;
+  let R = 0; for (const p of pts) R = Math.max(R, Math.hypot(p.x - cx, p.z - cz));
+  R = Math.min(450, R + 90);
+  const first = !COV.on; COV.on = true;
+  if (first || (COV.tS -= dt) <= 0 || Math.hypot(cx - COV.cx, cz - COV.cz) > 30 || R > COV.R + 20) { COV.tS = 1.5; COV.cx = cx; COV.cz = cz; COV.R = R; covStatic(); }
+  if (first || (COV.tD -= dt) <= 0) { COV.tD = 0.2; covDynamic(); }
+}
+function covStatic() {
+  const L = COV.st, { cx, cz, R } = COV; L.length = 0; COV.grid.clear();
+  if (TOWN.occ) {   // 町の家・マンション・会社
+    const G = TOWN.OCC;
+    for (let gx = Math.floor((cx - R - 50) / G); gx <= Math.floor((cx + R + 50) / G); gx++) for (let gz = Math.floor((cz - R - 50) / G); gz <= Math.floor((cz + R + 50) / G); gz++) {
+      const a = TOWN.occ.get(gx * 65536 + gz); if (!a) continue;
+      for (const o of a) {
+        if (o.kind === 'field' || o.kind === 'lot' || o.hidden || o.kind === 'park' || !(o.h > 0.5)) continue;
+        if (Math.hypot(o.x - cx, o.z - cz) > R + (o.r || 20)) continue;
+        const y = o.g ? o.y : (o.yy != null ? o.yy : townMeshes.yOf(o));
+        L.push(covBox(o.x, o.z, o.rot || 0, o.w / 2, o.d / 2, y - 0.5, y + o.h, null));
+      }
+    }
+  }
+  for (const pr of props) {   // 置いた置物・建物（外側の箱）
+    const b = pr.box; if (!b || b.isEmpty() || (pr.root && !pr.root.visible)) continue;
+    const hy = b.max.y - b.min.y, hx = (b.max.x - b.min.x) / 2, hz = (b.max.z - b.min.z) / 2;
+    if (hy < 0.4 || hx < 0.15 || hz < 0.15) continue;
+    const x = (b.min.x + b.max.x) / 2, z = (b.min.z + b.max.z) / 2;
+    if (Math.hypot(x - cx, z - cz) > R + Math.hypot(hx, hz)) continue;
+    L.push(covBox(x, z, 0, hx, hz, b.min.y, b.max.y, null));
+  }
+  const C = COV.C;
+  for (const o of L) for (let gx = Math.floor((o.x - o.r) / C); gx <= Math.floor((o.x + o.r) / C); gx++) for (let gz = Math.floor((o.z - o.r) / C); gz <= Math.floor((o.z + o.r) / C); gz++) {
+    const k = gx * 65536 + gz; let a = COV.grid.get(k); if (!a) COV.grid.set(k, a = []); a.push(o);
+  }
+}
+function covDynamic() {
+  const D = COV.dyn, { cx, cz, R } = COV; D.length = 0;
+  const near = (x, z, r) => Math.abs(x - cx) < R + r && Math.abs(z - cz) < R + r;
+  for (const arr of [traffic, HWT.vs]) for (const v of arr) {   // 町の車・バス
+    if (!v.root || !v.root.visible || !v.T || !near(v.x, v.z, 8)) continue;
+    D.push(covBox(v.x, v.z, v.h, v.T.hw, v.T.hl, v.y - 0.2, v.y + (v.T.h || 3), null));
+  }
+  for (const u of vehicles) {   // 置いた乗り物
+    const V = u.item.def.vehicle; if (u.sunk || !V || !near(u.pos.x, u.pos.y, V.halfLength + 2)) continue;
+    const h = visYaw(u), cz0 = V.centerZ || 0;
+    D.push(covBox(u.pos.x + Math.sin(h) * cz0, u.pos.y + Math.cos(h) * cz0, h, V.halfWidth, V.halfLength, u.y - 0.2, u.y + (V.height || 1.5), u));
+  }
+}
+// 点 (x, y, z) にある遮蔽物。a・b（撃った所・ねらった所）が中にある物は見ない（自分がくっついている物で止まらない）
+function covAt(x, y, z, a, b) {
+  if (!COV.on) return null;
+  const L = COV.grid.get(Math.floor(x / COV.C) * 65536 + Math.floor(z / COV.C));
+  if (L) for (const o of L) if (covIn(o, x, y, z) && !(a && covIn(o, a.x, a.y, a.z, 0.3)) && !(b && covIn(o, b.x, b.y, b.z, 0.3))) return o;
+  for (const o of COV.dyn) if (covIn(o, x, y, z) && !(a && covIn(o, a.x, a.y, a.z, 0.3)) && !(b && covIn(o, b.x, b.y, b.z, 0.3))) return o;
+  return null;
+}
+// a → b のまっすぐな線をさえぎる物：{ o, p（当たった所）} か null
+const _cvP = new THREE.Vector3();
+function covSeg(a, b, step = 1.2) {
+  if (!COV.on) return null;
+  const L = a.distanceTo(b), n = Math.ceil(L / step);
+  for (let k = 1; k < n; k++) {
+    _cvP.lerpVectors(a, b, k / n);
+    const o = covAt(_cvP.x, _cvP.y, _cvP.z, a, b);
+    if (o) return { o, p: _cvP.clone() };
+  }
+  return null;
+}
+// その場所でいちばん高い物の上（飛ぶモンスターがめりこまない）
+function covTop(x, z, r) {
+  if (!COV.on) return -Infinity;
+  let top = -Infinity;
+  const L = COV.grid.get(Math.floor(x / COV.C) * 65536 + Math.floor(z / COV.C));
+  if (L) for (const o of L) { const dx = x - o.x, dz = z - o.z, u = dx * o.c - dz * o.s, v = dx * o.s + dz * o.c; if (Math.abs(u) < o.hw + r && Math.abs(v) < o.hd + r) top = Math.max(top, o.y1); }
+  return top;
+}
+// 地面を動くモンスターは、自分の背たけの 1/3 より高い物を通りぬけない（低い物はまたぐ）
+function covPush(m) {
+  if (!COV.on) return;
+  const S = m.item.mon, R = monRad(m) * 0.7, step = Math.max(0.6, S.size.y * 0.35);
+  const one = (o) => {
+    if (o.y1 - m.pos.y < step || o.y0 > m.pos.y + S.size.y) return;
+    const dx = m.pos.x - o.x, dz = m.pos.z - o.z; if (dx * dx + dz * dz > (o.r + R) * (o.r + R)) return;
+    const u = dx * o.c - dz * o.s, v = dx * o.s + dz * o.c, hw = o.hw + R, hd = o.hd + R;
+    if (Math.abs(u) >= hw || Math.abs(v) >= hd) return;
+    let nu = u, nv = v;
+    if (hw - Math.abs(u) < hd - Math.abs(v)) nu = Math.sign(u || 1) * hw; else nv = Math.sign(v || 1) * hd;
+    m.pos.x = o.x + nu * o.c + nv * o.s; m.pos.z = o.z - nu * o.s + nv * o.c;
+    m.ai && (m.ai.bump = (m.ai.bump || 0) + 1);
+  };
+  const C = COV.C, seen = new Set();
+  for (let gx = Math.floor((m.pos.x - R) / C); gx <= Math.floor((m.pos.x + R) / C); gx++) for (let gz = Math.floor((m.pos.z - R) / C); gz <= Math.floor((m.pos.z + R) / C); gz++) {
+    const L = COV.grid.get(gx * 65536 + gz); if (L) for (const o of L) if (!seen.has(o)) { seen.add(o); one(o); }
+  }
+  for (const o of COV.dyn) one(o);
+}
+/* ---- 戦い方（置くときに決める）
+   攻撃型：多少当たっても近づいて撃ち合う。かくれない。物にさえぎられたら、さらにつめる
+   バランス：まわりこみながら撃つ（ときどき回る向きを変える）。HP が半分を切ると物かげを使う
+   防御型：遠くから撃つ。建物や車のかげにかくれて、撃つときだけ横に顔を出す */
+const MON_TEND = {
+  a: { n: '攻撃型', d: '多少当たっても前に出て、近くで撃ち合う。かくれない' },
+  b: { n: 'バランス', d: 'まわりこみながら撃つ。HP が半分を切ると物かげを使う' },
+  d: { n: '防御型', d: '遠くから撃ち、建物や車のかげにかくれて、撃つときだけ顔を出す' },
+};
+// かくれる場所：相手から見て物の向こう側。顔を出す場所：その横
+function monFindCover(m, t, want) {
+  const S = m.item.mon, rM = monRad(m), need = S.size.y * 0.6, wM = Math.max(S.size.x, S.size.z) * 0.5;
+  const tc = monCenter(t, new THREE.Vector3()), p = new THREE.Vector3();
+  let best = null, bs = Infinity, tried = 0;
+  const C = COV.C, R = 60, seen = new Set();
+  for (let gx = Math.floor((m.pos.x - R) / C); gx <= Math.floor((m.pos.x + R) / C); gx++) for (let gz = Math.floor((m.pos.z - R) / C); gz <= Math.floor((m.pos.z + R) / C); gz++) {
+    const L = COV.grid.get(gx * 65536 + gz); if (!L) continue;
+    for (const o of L) {
+      if (seen.has(o)) continue; seen.add(o);
+      if (o.y1 - m.pos.y < need || Math.max(o.hw, o.hd) < wM * 0.6) continue;
+      const ox = o.x - t.pos.x, oz = o.z - t.pos.z, od = Math.hypot(ox, oz) || 1;
+      if (od < 8 || od > S.range + 30) continue;
+      const ux = ox / od, uz = oz / od, back = covExt(o, ux, uz) + rM + 1;
+      const hx = o.x + ux * back, hz = o.z + uz * back, dMe = Math.hypot(hx - m.pos.x, hz - m.pos.z);
+      if (dMe > 70) continue;
+      const g = heightAt(hx, hz); if (S.move !== 'swim' && g < SEA - 0.5) continue;
+      const sc = dMe + Math.abs(od + back - want) * 0.4;
+      if (sc >= bs || ++tried > 40) continue;
+      p.set(hx, Math.max(g, m.pos.y) + S.size.y * 0.5, hz);
+      if (!covSeg(tc, p)) continue;   // ほんとうにかくれられるか
+      // 顔を出す場所：横へ（相手が見える側）
+      const px = -uz, pz = ux, side = covExt(o, px, pz) + rM + 0.8;
+      let peek = null;
+      for (const sg of [m.ai && m.ai.side || 1, -(m.ai && m.ai.side || 1)]) {
+        const qx = hx + px * side * sg - ux * (back - covExt(o, ux, uz)) * 0.5, qz = hz + pz * side * sg - uz * (back - covExt(o, ux, uz)) * 0.5;
+        p.set(qx, Math.max(heightAt(qx, qz), m.pos.y) + S.size.y * 0.6, qz);
+        if (!covSeg(p, tc)) { peek = [qx, qz]; break; }
+      }
+      if (!peek) continue;
+      bs = sc; best = { o, hide: [hx, hz], peek };
+    }
+  }
+  return best;
+}
+// バトルのときの行き先
+function monBattleGoal(m, t, now, dt, out) {
+  const S = m.item.mon, tend = (S.cfg && S.cfg.tend) || 'b';
+  const A = m.ai || (m.ai = { side: Math.random() < 0.5 ? 1 : -1, flip: 0, cover: null, coverT: 0, peek: false, phaseT: 0, stuckT: 0, bump: 0 });
+  const dx = m.pos.x - t.pos.x, dz = m.pos.z - t.pos.z, d = Math.hypot(dx, dz) || 1, rT = monRad(t);
+  let want;
+  if (S.closeIn) want = S.minRange * 0.8 + rT * 0.8;
+  else want = (tend === 'a' ? THREE.MathUtils.clamp(S.minRange * 0.45, 5, 40) : tend === 'd' ? THREE.MathUtils.clamp(S.range * 0.8, 10, 120) : THREE.MathUtils.clamp(S.minRange * 0.65, 6, 60)) + rT;
+  const careful = !S.closeIn && (tend === 'd' || (tend === 'b' && m.hp < S.hpMax * 0.5)) && !monFlies(S);
+  // 回る向きをときどき変える（読まれにくい）。ぶつかって止まったら反対へ
+  if (now > A.flip) { if (Math.random() < 0.6) A.side = -A.side; A.flip = now + 1.5 + Math.random() * (tend === 'a' ? 2 : 3.5); }
+  if (m.speedNow != null && m.speedNow < S.speed * 0.2) { if ((A.stuckT += dt) > 1.2) { A.stuckT = 0; A.side = -A.side; A.flip = now + 2.5; A.cover = null; A.coverT = now + 3; } } else A.stuckT = 0;
+  if (careful && COV.on) {
+    if (now > A.coverT) { A.coverT = now + 1.5; A.cover = monFindCover(m, t, want); }
+    const c = A.cover;
+    if (c) {
+      if (now > A.phaseT) {   // かくれる ⇄ 顔を出す
+        const ready = S.weapons.some((w) => !w.run && now - w.last >= (w.period || w.T.cd) - 0.4);
+        A.peek = !A.peek && ready;
+        A.phaseT = now + (A.peek ? 1.4 + Math.random() * 1.2 : 1 + Math.random() * 1.5);
+      }
+      const P = A.peek ? c.peek : c.hide;
+      return { goal: out.set(P[0], 0, P[1]), stop: 0.4 };
+    }
+  }
+  // まわりこむ：相手のまわりを回りながら、ほしい距離をたもつ
+  let rr = want;
+  if (tend === 'a') rr = want * (0.75 + 0.25 * Math.sin(now * 0.8 + m.ix)) * (m.los === false ? 0.6 : 1);   // 攻撃型：前へ前へ
+  const turnRate = (tend === 'a' ? 0.9 : 1.1) * Math.min(1, (S.speed * 0.9) / Math.max(want, 4));
+  const ang = Math.atan2(dx, dz) + A.side * Math.min(0.8, turnRate + (m.los === false ? 0.3 : 0));
+  return { goal: out.set(t.pos.x + Math.sin(ang) * rr, 0, t.pos.z + Math.cos(ang) * rr), stop: 0.3 };
+}
+// 相手が見えるか（0.2 秒ごと）。体のまん中が見えなければ頭の上をねらう
+function monLos(m, t, now) {
+  if (m.losAt && now < m.losAt) return;
+  m.losAt = now + 0.2;
+  if (!COV.on) { m.los = true; m.aimY = 0; return; }
+  const a = new THREE.Vector3(m.pos.x, m.pos.y + m.item.mon.size.y * 0.6, m.pos.z), b = monCenter(t, new THREE.Vector3());
+  if (!covSeg(a, b)) { m.los = true; m.aimY = 0; return; }
+  const up = t.item.mon.size.y * 0.38; b.y += up;
+  if (!covSeg(a, b)) { m.los = true; m.aimY = up; return; }
+  m.los = false; m.aimY = 0;
+}
+/* ---- 能力の配分（置くときに決める）：速さ・攻撃・守り に合計 9 点（1〜5）。どれかを上げると、ほかを下げることになる
+   1 点で ±15%（速さは回避も ±3%）。3・3・3 がふつう */
+const MON_PT = 9, MON_MV1 = { walk: 'w', car: 'c', heli: 'h', plane: 'p', swim: 's' }, MON_LV = 'abcde';
+function monCfgFix(c) {
+  c = c || {};
+  const L = (x) => THREE.MathUtils.clamp(Math.round(Number(x)) || 3, 1, 5);
+  let v = L(c.v), a = L(c.a), d = L(c.d);
+  if (v + a + d > MON_PT) v = a = d = 3;
+  return { tend: MON_TEND[c.tend] ? c.tend : 'b', v, a, d };
+}
+// 共有の kind（英小文字だけ・あとから変えられない）：mx + 動き方 + 戦い方 + 速さ・攻撃・守り（a〜e）。例 mxgbccc
+function monKindOf(move, cfg) { const c = monCfgFix(cfg); return 'mx' + (MON_MV1[move] || 'g') + c.tend + MON_LV[c.v - 1] + MON_LV[c.a - 1] + MON_LV[c.d - 1]; }
+function monKindParse(k) {
+  k = String(k || '');
+  if (/^mx[wchpsg][abd][a-e]{3}$/.test(k)) return { move: Object.keys(MON_MV1).find((q) => MON_MV1[q] === k[2]) || null, cfg: monCfgFix({ tend: k[3], v: MON_LV.indexOf(k[4]) + 1, a: MON_LV.indexOf(k[5]) + 1, d: MON_LV.indexOf(k[6]) + 1 }) };
+  return { move: k.slice(3) || null, cfg: monCfgFix() };   // monwalk・moncar…（monster は .glb で決める）
+}
+const monK = (x) => 1 + 0.15 * (x - 3);
+function monApplyCfg(S, cfg) {
+  const c = S.cfg = monCfgFix(cfg), B = S.base;
+  S.speed = Math.max(0.8, B.speed * monK(c.v));
+  S.dodge = THREE.MathUtils.clamp(B.dodge + 0.03 * (c.v - 3), 0, 0.36);
+  S.hpMax = Math.round(B.hp * monK(c.d));
+  S.atk = B.atk * monK(c.a); S.share = B.share * monK(c.a);
+  for (const w of S.weapons) w.dmg = (w.dmg0 || 1) * monK(c.a);
+  return S;
+}
+// 置く前の画面：戦い方と配分。決めたら cfg、やめたら null
+function monSetup(S, name) {
+  return new Promise((done) => {
+    const c = monCfgFix(S.cfg), D = el('monSet');
+    el('monSetT').textContent = `${name} の戦い方と能力`;
+    const draw = () => {
+      for (const b of D.querySelectorAll('[data-tend]')) b.setAttribute('aria-pressed', String(b.dataset.tend === c.tend));
+      el('monSetTendTxt').textContent = MON_TEND[c.tend].d;
+      const left = MON_PT - c.v - c.a - c.d;
+      for (const k of ['v', 'a', 'd']) {
+        D.querySelector(`[data-lv="${k}"]`).textContent = '★'.repeat(c[k]) + '☆'.repeat(5 - c[k]);
+        D.querySelector(`[data-k="${k}"][data-d="1"]`).disabled = c[k] >= 5 || left <= 0;
+        D.querySelector(`[data-k="${k}"][data-d="-1"]`).disabled = c[k] <= 1;
+      }
+      el('monSetLeft').textContent = left > 0 ? `のこり ${left} 点（どれかに入れてください）` : '合計 9 点。上げたいときは、ほかを下げます';
+      monApplyCfg(S, c);
+      el('monSetPrev').innerHTML = `<table><tr><th>HP（守り）</th><td>${S.hpMax.toLocaleString()}</td></tr><tr><th>攻撃力</th><td>${Math.round(S.atk)}</td></tr><tr><th>速さ</th><td>${Math.round(S.speed * 3.6)}km/h・回避 ${Math.round(S.dodge * 100)}%</td></tr></table>`;
+    };
+    D.onclick = (e) => {
+      const b = e.target.closest('button'); if (!b) return;
+      if (b.dataset.tend) { c.tend = b.dataset.tend; draw(); return; }
+      if (b.dataset.k) { c[b.dataset.k] = THREE.MathUtils.clamp(c[b.dataset.k] + +b.dataset.d, 1, 5); if (c.v + c.a + c.d > MON_PT) c[b.dataset.k]--; draw(); return; }
+      if (b.id === 'monSetNo') { D.hidden = true; done(null); return; }
+      if (b.id === 'monSetGo') { D.hidden = true; done(monCfgFix(c)); }
+    };
+    draw();
+    D.hidden = false;
+  });
+}
 const monSideOf = (s, q) => MB.on && s.from && ((s.from === MB.a && q === MB.b) || (s.from === MB.b && q === MB.a));
 function stepMonShots(dt) {
   for (let i = MSH.length - 1; i >= 0; i--) {
@@ -17725,15 +18024,18 @@ function stepMonShots(dt) {
     s.t += dt;
     if (T.homing && s.tgt && MONS.includes(s.tgt) && s.t > 0.3) {   // ミサイル：追いかける
       monCenter(s.tgt, _mc);
+      if (COV.on && (s.blkAt == null || s.t > s.blkAt)) { s.blkAt = s.t + 0.3; s.blk = !!covSeg(s.p, _mc, 2); }
+      if (s.blk && Math.hypot(_mc.x - s.p.x, _mc.z - s.p.z) > 10) _mc.y += 14 + Math.hypot(_mc.x - s.p.x, _mc.z - s.p.z) * 0.15;   // 間に物：上にあがって、上から落ちる
       s.v.lerp(_md.subVectors(_mc, s.p).setLength(T.sp), Math.min(1, dt * s.turn)).setLength(T.sp);
     }
     if (T.grav) s.v.y -= 9.8 * dt;
     const n = Math.max(1, Math.ceil((s.v.length() * dt) / 1.5));
-    let hit = null, ground = false;
+    let hit = null, ground = false, wall = null;
     for (let k = 0; k < n && !hit && !ground; k++) {
       s.p.addScaledVector(s.v, dt / n);
       if (s.tgt && s.tgt !== s.dodged && MONS.includes(s.tgt) && monHitBox(s.tgt, s.p, 0.15)) hit = s.tgt;
       if (!hit && s.p.y < Math.max(heightAt(s.p.x, s.p.z), SEA)) ground = true;
+      if (!hit && !ground && COV.on && (wall = covAt(s.p.x, s.p.y, s.p.z, s.p0))) { ground = true; s.p.addScaledVector(s.v, -dt / n * 0.6); }   // 建物・車・置物で止まる（少しもどった所で爆発）
     }
     // 見た目：曳光弾・煙
     if (T.homing) { fxEmit(false, s.p.x, s.p.y, s.p.z, rnd(0.3), rnd(0.3), rnd(0.3), 0.85, 0.85, 0.85, 0.5, 1.5, 1.2, 0.5, -0.2, 1); fxEmit(true, s.p.x, s.p.y, s.p.z, 0, 0, 0, 1, 0.6, 0.2, 0.45, 0, 0.08, 1, 0, 0); }
@@ -17744,12 +18046,13 @@ function stepMonShots(dt) {
       if (T.splash && (hit || ground)) {
         fxBoom(s.p.x, s.p.y + 0.2, s.p.z, T.splash / 4, null);
         const q = s.tgt;
-        if (s.real && q && MONS.includes(q)) { monCenter(q, _mc); const d = Math.max(0, _mc.distanceTo(s.p) - monRad(q)); if (d < T.splash) monHit(q, s.dmg * (1 - (d / T.splash) * 0.6), true, s.from.pos); }
+        if (s.real && q && MONS.includes(q)) { monCenter(q, _mc); const d = Math.max(0, _mc.distanceTo(s.p) - monRad(q)); if (d < T.splash) monHit(q, s.dmg * (1 - (d / T.splash) * 0.6) * (covSeg(s.p, _mc, 0.8) ? 0.25 : 1), true, s.from.pos); }   // 物のかげなら爆風は 1/4
       } else if (hit) {
         if (T.homing) fxBoom(s.p.x, s.p.y, s.p.z, 0.6, null);
         else for (let k = 0; k < 8; k++) fxEmit(true, s.p.x, s.p.y, s.p.z, rnd(4), rnd(4), rnd(4), 1, 0.8, 0.3, 0.15, 0, 0.25, 1, 9.8, 0.5);
         if (s.real) monHit(hit, s.dmg, true, s.from.pos);
       } else if (ground && T.homing) fxBoom(s.p.x, s.p.y, s.p.z, 0.5, null);
+      else if (wall) for (let k = 0; k < 6; k++) fxEmit(true, s.p.x, s.p.y, s.p.z, rnd(3), rnd(3) + 1, rnd(3), 1, 0.75, 0.35, 0.12, 0, 0.2, 1, 9.8, 0.5);   // 火花
       MSH.splice(i, 1);
     }
   }
@@ -17810,6 +18113,7 @@ function stepMonsters(dt) {
   stepBattleUi(dt);
   if (!MONS.length && !MSH.length && !MBEAMS.length) return;
   const now = clock.elapsedTime;
+  covUpdate(dt);   // 遮蔽物（バトル中・弾が飛んでいる間だけ）
   if (MB.on && (Date.now() - MB.t0) / 1000 > MB.limit) battleEnd(null, 'time');
   for (const m of [...MONS]) {
     if (!MONS.includes(m)) continue;
@@ -17956,9 +18260,12 @@ function openBattleDlg() {
 el('monBattle').addEventListener('click', openBattleDlg);
 el('monHudStop').addEventListener('click', () => battleEnd(null, 'stop'));
 // 置く：「glTF を置く」→ モンスター
-async function addMonsterFromBuffer(buf, name, move) {
+async function addMonsterFromBuffer(buf, name, move, cfg0) {
   const item = await buildThing(buf, name, 'prop');
   const S = rigMonster(item, move);
+  const cfg = cfg0 ? monCfgFix(cfg0) : await monSetup(S, name);   // 戦い方と能力の配分を決めてから置く
+  if (!cfg) { showMsg(`${name} を置くのをやめました`); return; }
+  monApplyCfg(S, cfg);
   const f = player.face, ahead = 2.5 + Math.max(S.size.x, S.size.z) * 0.6;
   const x = clampX(player.pos.x + Math.sin(f) * ahead, 4), z = clampZ(player.pos.z + Math.cos(f) * ahead, 4), rot = wrapA(f + Math.PI);
   const tris = countTris(item.root);
@@ -17968,7 +18275,7 @@ async function addMonsterFromBuffer(buf, name, move) {
     const id = newId();
     net.loading.add(id);
     try {
-      await net.db.add({ id, name, cat: 'prop', kind: MON_MOVES[move] ? 'mon' + move : 'monster', x: Math.round(x * 100) / 100, z: Math.round(z * 100) / 100, rot: Math.round(rot * 1000) / 1000, bytes: buf.byteLength, by: net.myId || null }, buf);
+      await net.db.add({ id, name, cat: 'prop', kind: monKindOf(MON_MOVES[move] ? move : null, cfg), x: Math.round(x * 100) / 100, z: Math.round(z * 100) / 100, rot: Math.round(rot * 1000) / 1000, bytes: buf.byteLength, by: net.myId || null }, buf);
       put(id);
       showMsg(`${name}（モンスター）をみんなの世界に置きました。近づくと「⚔ バトル」が出ます（近くに相手がいるとき）`);
       return;
@@ -17987,7 +18294,8 @@ async function addMonsterFromBuffer(buf, name, move) {
 // 共有の物の中のモンスター（props の kind = monster）
 async function loadSharedMonster(d, buf, name) {
   const item = await buildThing(buf, name, 'prop');
-  rigMonster(item, String(d.kind).slice(3));   // kind：monwalk・moncar…（monster は .glb で決める）
+  const K = monKindParse(d.kind);   // kind：mxwbccc（動き方・戦い方・配分）、前の monwalk・moncar…（monster は .glb で決める）
+  rigMonster(item, K.move, K.cfg);
   const x = num(d.x, X0 + 1, X1 - 1), z = num(d.z, Z0 + 1, Z1 - 1), rot = num(d.rot, -100, 100);
   const m = makeMonster(item, name, x, z, rot, { id: d.id, shared: true, by: typeof d.by === 'string' ? d.by : null, mine: !!(d.by && d.by === net.myId) });
   if (m.mine) renderMonMenu();
@@ -18030,7 +18338,7 @@ function monCall(m, on) {
   } else { m.mode = 'stay'; m.vel.set(0, 0, 0); monSave(m); showMsg(`${m.name}：ここで待ちます`); }
   monSendNow = true;
 }
-window.__mons = () => MONS; window.__mb = MB; window.__battle = battleStart; window.__addMon = addMonsterFromBuffer;   // テスト用
+window.__mons = () => MONS; window.__mb = MB; window.__cov = COV; window.__covSeg = covSeg; window.__battle = battleStart; window.__addMon = addMonsterFromBuffer;   // テスト用
 /* ================= ループ ================= */
 const clock = new THREE.Clock();
 let netTick = 0, firstFrame = true;
