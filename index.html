@@ -7136,7 +7136,7 @@ ${['sword', 'spear', 'gun', 'beam', 'cannon', 'missile'].map((k) => { const W = 
 <h4>動き方（置くときに選ぶ。「.glb で決める」ならボディの <code>移動</code>）</h4>
 <table><tr><th>動き方</th><th>とくちょう</th></tr>
 <tr><td>🚶 <code>歩く</code></td><td>ふつう。名前に <code>足</code> <code>脚</code> <code>腕</code>（<code>左</code>／<code>右</code> つき）の部品が前後にふれる（原点が付け根・X 軸）。海では泳ぐ</td></tr>
-<tr><td>🚗 <code>走る</code></td><td>速さ ×1.3。向いている方へしか進めない（その場で回れない）。名前に <code>タイヤ</code> <code>車輪</code> の部品が回る（X 軸）</td></tr>
+<tr><td>🚗 <code>走る</code></td><td>速さ ×1.3。向いている方へしか進めない（その場で回れない）。名前に <code>タイヤ</code> <code>車輪</code> の部品が回る。回る軸は体の左右（Blender の X）で、タイヤを回して置いていてもそのまま。ちがう軸にしたいときはタイヤに <code>軸</code>=<code>Y</code>／<code>Z</code>（Blender の軸）</td></tr>
 <tr><td>🚁 <code>飛ぶ</code></td><td>速さ ×1.35・HP −20%。空中で止まれる</td></tr>
 <tr><td>✈️ <code>飛行機</code></td><td>速さ ×1.7・HP −30%。止まれない（回りつづける）・旋回が大回り・曲がるとかたむく。待つときは地面におりる</td></tr>
 <tr><td>🚢 <code>泳ぐ</code></td><td>海の中。陸ではとてもおそい</td></tr></table>
@@ -17588,7 +17588,16 @@ function rigMonster(item, forceMove, cfg) {
   const alt = THREE.MathUtils.clamp(altP != null ? altP : move === 'plane' ? 10 + 2 * s : 3 + 1.2 * s, 1, 120);
   // 走る：名前に タイヤ・車輪 の部品が回る
   const wheels = [];
-  if (move === 'car') root.traverse((o) => { if (/タイヤ|車輪|ホイール|wheel|tire|tyre/i.test(o.name || '') && !wheels.some((w) => o.parent === w.o)) { const b = new THREE.Box3().setFromObject(o).getSize(new THREE.Vector3()); wheels.push({ o, q0: o.quaternion.clone(), r: Math.max(0.1, Math.max(b.y, b.z) / 2), a: 0 }); } });
+  //   回る軸は体の左右（Blender の X）。タイヤの部品が回してあっても（円柱を横に倒したなど）体の X で回る。軸=Y・Z（Blender の軸）で変えられる
+  if (move === 'car') root.traverse((o) => {
+    if (!/タイヤ|車輪|ホイール|wheel|tire|tyre/i.test(o.name || '') || wheels.some((w) => o.parent === w.o)) return;
+    const b = new THREE.Box3().setFromObject(o).getSize(new THREE.Vector3());
+    const L = (mpHalf(mpGet(mpPropsOf(o), MP_NAMES.axis) || 'X').toUpperCase().match(/[XYZ]/) || ['X'])[0];
+    const ab = new THREE.Vector3(...MP_AXV[L]).normalize();   // 体（モンスター）の向きでの軸
+    const ax = ab.clone().applyQuaternion(o.getWorldQuaternion(new THREE.Quaternion()).invert()).normalize();   // タイヤの部品の向きに直す
+    const r = Math.max(0.1, (Math.abs(ab.x) > 0.5 ? Math.max(b.y, b.z) : Math.abs(ab.y) > 0.5 ? Math.max(b.x, b.z) : Math.max(b.x, b.y)) / 2);
+    wheels.push({ o, q0: o.quaternion.clone(), ax, r, a: 0 });
+  });
   const half = 0.5 * Math.max(sz.x, sz.z);   // 剣・槍は体のふちから届く
   const reachOf = (w) => (w.T.melee ? half + w.R : w.R);
   const ranges = use.map(reachOf);
@@ -18267,7 +18276,7 @@ function poseMonster(m, dt, T) {
   root.position.set(m.pos.x, m.pos.y + bob, m.pos.z);
   const pitch = S.move === 'walk' || S.move === 'heli' ? -0.08 * amp * (S.move === 'heli' ? 2 : 1) : 0, roll = S.move === 'plane' && m.airborne ? -(m.bank || 0) * 0.9 : 0;
   root.rotation.set(pitch, m.h, roll, 'YXZ');
-  for (const W of S.wheels) { W.a += (sp * dt) / W.r; _mqq.setFromAxisAngle(_mx, W.a); W.o.quaternion.copy(W.q0).multiply(_mqq); }
+  for (const W of S.wheels) { W.a += (sp * dt) / W.r; _mqq.setFromAxisAngle(W.ax || _mx, W.a); W.o.quaternion.copy(W.q0).multiply(_mqq); }
   if (S.move !== 'walk') { /* 足・腕は歩くときだけ */ } else for (const L of S.limbs) { _mqq.setFromAxisAngle(_mx, Math.sin(m.walk * Math.PI + L.ph) * L.amp * amp); L.o.quaternion.copy(L.q0).multiply(_mqq); }
   for (const w of S.weapons) {
     if (!w.swing || !w.o) continue;
