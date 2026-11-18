@@ -454,6 +454,7 @@ body.jetOn #map { display: none !important; }
 #mpDlg .pcancel, #mpDlg .pok { font: 800 13px var(--font-ui); border-radius: 999px; padding: 8px 16px; cursor: pointer; }
 #mpDlg .pcancel { color: var(--ink); background: transparent; border: 1px solid var(--line); }
 #mpDlg .pok { color: #fff; background: var(--go); border: 0; }
+#specDlg .monpv { display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap; }
 #specDlg[hidden], #monDlg[hidden], #monHud[hidden], #monBattle[hidden] { display: none; }
 #monDlg { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); width: min(340px, calc(100vw - 32px)); max-height: calc(100% - 32px); overflow-y: auto; box-sizing: border-box; display: grid; gap: 8px; padding: 14px 16px; background: #fff; color: var(--ink); border: 1px solid var(--line); border-radius: 16px; box-shadow: 0 12px 40px rgba(22, 50, 79, 0.25); z-index: 7; font: 500 14px var(--font-ui); }
 #monDlg .ptitle { margin: 0; font-weight: 800; font-size: 16px; }
@@ -635,7 +636,15 @@ body.jetOn #map { display: none !important; }
     <button type="button" data-cat="plant"><b>植物</b><small>木・花・草など</small></button>
     <button type="button" data-cat="prop"><b>置物</b><small>そのほかの物</small></button>
     <button type="button" data-go="vehicle" class="pveh"><b>乗り物</b><small>自動車・船舶・航空機</small></button>
-    <button type="button" data-cat="monster" class="pveh"><b>👾 モンスター</b><small>召喚して戦わせる（部品に 武器=剣・銃 など）</small></button>
+    <button type="button" data-go="monster" class="pveh"><b>👾 モンスター</b><small>バトルさせる（部品に 武器=剣・銃 など）</small></button>
+  </div>
+  <div class="pcats" data-screen="monster" hidden>
+    <button type="button" data-cat="monster" data-mmove="walk" class="pveh"><b>🚶 歩く</b><small>ロボット・動物（足・腕がふれる）</small></button>
+    <button type="button" data-cat="monster" data-mmove="car" class="pveh"><b>🚗 走る</b><small>自動車・戦車（速い・その場で回れない）</small></button>
+    <button type="button" data-cat="monster" data-mmove="heli" class="pveh"><b>🚁 飛ぶ</b><small>ヘリ・ドラゴン（空中で止まれる）</small></button>
+    <button type="button" data-cat="monster" data-mmove="plane" class="pveh"><b>✈️ 飛行機</b><small>とても速い・止まれない・HP 少なめ</small></button>
+    <button type="button" data-cat="monster" data-mmove="swim" class="pveh"><b>🚢 泳ぐ</b><small>船・潜水艦・魚（海の中）</small></button>
+    <button type="button" data-cat="monster" data-mmove="" class="pveh"><b>📋 .glb で決める</b><small>ボディの 移動 プロパティ（なければ歩く）</small></button>
   </div>
   <div class="pcats" data-screen="vehicle" hidden>
     <button type="button" data-go="ctype" class="pveh"><b>自動車</b><small>車・トラック・フォークリフト・戦車など</small></button>
@@ -6764,7 +6773,7 @@ function kindInfo(V) {
   return t.length ? `（${t.join('・')}）` : '';
 }
 async function addPropFromBuffer(buf, name, cat, wheels, sub, strict, steer) {
-  if (cat === 'monster') return addMonsterFromBuffer(buf, name);   // 2026-11-18：モンスター
+  if (cat === 'monster') return addMonsterFromBuffer(buf, name, sub);   // 2026-11-18：モンスター（sub：動き方）
   const item = await buildThing(buf, name, cat, wheels, sub, strict, steer);   // 乗り物のルール違反はここで投げる
   const veh = VEHICLE_CATS.has(cat), V = veh ? item.def.vehicle : null;
   let chosen = null;
@@ -6835,7 +6844,7 @@ async function loadSharedProp(d) {
     if (num(d.bytes, 0, 1e9) > SHARE_MAX) throw new Error('大きすぎます');
     const buf = await net.db.file(id);
     if (buf.byteLength > SHARE_MAX) throw new Error('大きすぎます');
-    if (d.kind === 'monster') { if (net.loading.has(id)) await loadSharedMonster(d, buf, name); return; }   // 2026-11-18：モンスター
+    if (/^mon/.test(String(d.kind || ''))) { if (net.loading.has(id)) await loadSharedMonster(d, buf, name); return; }   // 2026-11-18：モンスター
     let item, asCat = cat;
     try { item = await buildThing(buf, name, cat, undefined, VKINDS[d.kind] || STEERS[d.kind] ? d.kind : undefined); }
     catch (e) { if (!VEHICLE_CATS.has(cat)) throw e; asCat = 'prop'; item = await buildThing(buf, name, 'prop'); }
@@ -7022,14 +7031,25 @@ const HELP_MONSTER = `<h4>👾 モンスター</h4>
 <table><tr><th>武器</th><th>射程・威力</th><th>重さ</th><th>とくちょう</th></tr>
 ${['sword', 'spear', 'gun', 'beam', 'cannon', 'missile'].map((k) => { const W = WEAPONS[k]; return `<tr><td><code>${W.n}</code></td><td>${W.range ? `${W.range}m・×${rangeMult(W.range).toFixed(1)}` : '—'}</td><td>${W.cost}</td><td>${W.note}</td></tr>`; }).join('')}</table>
 <p>武器の部品に <code>射程</code>=<code>30</code>（m）のように書くと、射程を変えられます。<b>射程が短いほど 1 回の威力が強く</b>（25m で 1 倍・いちばん強くて 2 倍・いちばん弱くて 0.5 倍）、<b>長いほどねらいがずれます</b>。剣・槍は、体のふちから届く長さ。</p>
-<p><b>銃口</b>：武器の部品の<b>原点</b>から撃ちます（原点を銃口の先に）。撃つ向きは <code>向き</code>（なければ <code>前</code>＝正面。<code>上</code> <code>下</code> <code>左</code> <code>右</code> <code>後</code>。部品が回れば、いっしょに回る）。<code>射角</code>=<code>60</code>（度）：銃口の向きから左右この角度の中に相手がいるときだけ撃つ。ミサイルは銃口の向きに出てから追いかけます。</p>
+<p><b>銃口</b>：武器の部品の子に <b><code>銃口</code></b> という名前の部品（小さな箱など。ゲームでは見えなくなる）を置くと、その原点から撃ちます。撃つ向きは<b>武器の原点 → 銃口の原点</b>の向き（銃の原点が (0,0,0)、銃口が (1,0,0) なら X の＋向き）。武器に <code>動作</code>=<code>回転</code> などをつけても、銃口はいっしょに動きます。<code>銃口</code> がなければ武器の<b>原点</b>から撃ち、向きは <code>向き</code>（なければ <code>前</code>＝正面。<code>上</code> <code>下</code> <code>左</code> <code>右</code> <code>後</code>）。<code>向き</code> を書けば、いつもそちらが先です。<code>射角</code>=<code>60</code>（度）：銃口の向きから左右この角度の中に相手がいるときだけ撃つ。ミサイルは銃口の向きに出てから追いかけます。</p>
 <p>にた名前でもよい（刀・ナイフ → 剣、ランス → 槍、ガン・ライフル → 銃、砲・キャノン・バズーカ → 大砲、ロケット → ミサイル、レーザー → ビーム）。ほかの名前は銃になります。</p>
 <h4>バランス：攻撃力は大きさで決まり、武器の数で分ける</h4>
 <p>体格（縦×横×高さの立方根）で <b>攻撃力の合計・HP・速さ・回避・積める重さ</b>が決まります。攻撃力の合計は<b>武器の数で分け合う</b>ので、武器 10 個なら 1 つ 1/10、5 個なら 1 つ 1/5 の強さ。数を増やしても強くはならず、いろいろな距離で戦えるようになるだけです。</p>
 <p>大きいほど攻撃力と HP が大きいが、遅く的が大きくて弾がよく当たり、よけられません。小さいほど速く小回りがきき、攻撃をよけますが、HP が少なめ。武器の「重さ」の合計が<b>積める重さ</b>をこえると、こえた分だけ遅くなります。動かす武器は 16 個まで。置いたとき・☰「能力」で数字が見られます。</p>
-<table><tr><th>ボディ（どれかの部品）に</th><th>値</th></tr>
-<tr><td><code>移動</code></td><td><code>歩く</code>（ふだん。海では泳ぐ）・<code>飛ぶ</code>（速いが HP −20%）・<code>泳ぐ</code>（海の中。陸ではとてもおそい）</td></tr></table>
-<p>名前に <code>足</code> <code>脚</code> <code>腕</code>（<code>左</code>／<code>右</code> つき）の部品は、歩くと前後にふれます（原点が付け根・X 軸で回る）。剣の部品は攻撃のとき X 軸で振ります（原点がにぎり）。<code>動作</code>=<code>回転</code> の部品（ローターなど）やエフェクトも動きます。</p>`;
+<h4>動き方（置くときに選ぶ。「.glb で決める」ならボディの <code>移動</code>）</h4>
+<table><tr><th>動き方</th><th>とくちょう</th></tr>
+<tr><td>🚶 <code>歩く</code></td><td>ふつう。名前に <code>足</code> <code>脚</code> <code>腕</code>（<code>左</code>／<code>右</code> つき）の部品が前後にふれる（原点が付け根・X 軸）。海では泳ぐ</td></tr>
+<tr><td>🚗 <code>走る</code></td><td>速さ ×1.3。向いている方へしか進めない（その場で回れない）。名前に <code>タイヤ</code> <code>車輪</code> の部品が回る（X 軸）</td></tr>
+<tr><td>🚁 <code>飛ぶ</code></td><td>速さ ×1.35・HP −20%。空中で止まれる</td></tr>
+<tr><td>✈️ <code>飛行機</code></td><td>速さ ×1.7・HP −30%。止まれない（回りつづける）・旋回が大回り・曲がるとかたむく。待つときは地面におりる</td></tr>
+<tr><td>🚢 <code>泳ぐ</code></td><td>海の中。陸ではとてもおそい</td></tr></table>
+<table><tr><th>ボディに</th><th>値</th></tr>
+<tr><td><code>最高速度</code></td><td>km/h。自動より速くすると HP が減り、おそくすると HP が増える（最大 +40%）</td></tr>
+<tr><td><code>飛ぶ高さ</code></td><td>m（飛ぶ・飛行機）</td></tr></table>
+<h4>攻撃のシーケンス（ため時間）</h4>
+<p>「ハッチが開く → 発射台が向きを変える → ミサイル発射」のように、攻撃の前に部品を動かせます。動く部品（<code>動作</code>=<code>回転</code>／<code>移動</code>・<code>軸</code>・<code>最小</code>・<code>最大</code>・<code>速さ</code>）に <code>攻撃</code>=<b>武器の部品の名前</b>（<code>ミサイル左</code> など。武器の種類 <code>ミサイル</code> や <code>すべて</code> でもよい）と <code>順番</code>=<code>1</code>〜<code>9</code> を書きます。攻撃のとき、順番どおりに 初期 から遠いほうのはし（最小か最大）まで動き（同じ番号はいっしょに）、撃ったあと逆の順にもどります。</p>
+<p>動いている時間が<b>ため時間</b>になり、その武器の威力が上がります：<b>1 秒で +25%、2 秒以上は +50%（上限）</b>。そのかわり、動いて・撃って・もどるまで次は撃てません。剣の部品は攻撃のとき X 軸で振ります（原点がにぎり）。</p>
+<p>自分のモンスターは「能力」の画面で <b>▶ 動きを見る</b>・<b>▶ 攻撃を見る</b>（ダメージなし）で事前に確かめられます。</p>`;
 const HELP_BOAT = `<h4>船・潜水艦・航空機・ロボット</h4><table><tr><th>種類</th><th>きまり</th></tr>
 <tr><td>船</td><td>形だけでよい（長さ 30m まで）。長いほうに進む。<code>主砲</code>・<code>CIWS</code>・<code>前方</code> をつけるとイージス艦（200m まで）。甲板に相乗りできる。</td></tr>
 <tr><td>潜水艦</td><td><code>ライト</code>（ある側が前）と <code>潜望鏡</code> がいる。</td></tr>
@@ -7126,7 +7146,10 @@ const HELP_PROPLIST = `<table><tr><th>名前</th><th>値</th><th>意味</th></tr
 <tr><td><code>武器</code></td><td><code>剣</code> <code>槍</code> <code>銃</code> <code>大砲</code> <code>ミサイル</code> <code>ビーム</code></td><td>その部品で攻撃する</td></tr>
 <tr><td><code>射程</code></td><td>数（m）</td><td>武器の届く距離。短いほど強く、長いほどずれる</td></tr>
 <tr><td><code>射角</code></td><td>数（度）</td><td>銃口の向きから左右この角度の中だけ撃つ（なければ 60）</td></tr>
-<tr><td><code>移動</code></td><td><code>歩く</code> <code>飛ぶ</code> <code>泳ぐ</code></td><td>動き方（ボディに）</td></tr>
+<tr><td>部品の名前 <code>銃口</code></td><td>武器の子</td><td>ここから撃つ。武器の原点→銃口の向きに撃つ（<code>向き</code> があればそちら）</td></tr>
+<tr><td><code>攻撃</code> <code>順番</code></td><td>武器の部品の名前・1〜9</td><td>動く部品に：攻撃の前に順に動く（ため時間で威力 +25%／秒、上限 +50%）</td></tr>
+<tr><td><code>最高速度</code> <code>飛ぶ高さ</code></td><td>km/h・m</td><td>ボディに：速くすると HP が減る・飛ぶ高さ</td></tr>
+<tr><td><code>移動</code></td><td><code>歩く</code> <code>走る</code> <code>飛ぶ</code> <code>飛行機</code> <code>泳ぐ</code></td><td>動き方（ボディに。置くときに選べば不要）</td></tr>
 <tr><th colspan="3">乗り物のボディ</th></tr>
 <tr><td><code>種類</code></td><td><code>ダンプ</code> <code>バス</code> <code>戦車</code> <code>トラクター</code> <code>コンバイン</code> <code>飛行機</code> <code>ヘリ</code> <code>飛行船</code> <code>気球</code> など</td><td>できること・飛び方</td></tr>
 <tr><td><code>最高速度</code></td><td>数（km/h）</td><td>いちばん速い速さ</td></tr>
@@ -7164,7 +7187,8 @@ function renderPlaceHelp(s) {
   const body = el('placeHelpBody');
   if (!body) return;
   let h;
-  if (s === 'ctype' || s === 'car') h = HELP_CAR + HELP_STEER + HELP_PARTS + HELP_MOVE + HELP_FX + HELP_SHEET;
+  if (s === 'monster') h = HELP_MONSTER;
+  else if (s === 'ctype' || s === 'car') h = HELP_CAR + HELP_STEER + HELP_PARTS + HELP_MOVE + HELP_FX + HELP_SHEET;
   else if (s === 'vehicle' || s === 'boat') h = HELP_BOAT + HELP_AIR + `<p>自動車は「自動車」を選ぶと、種類ごとのつくり方が出ます。動く部品とボタンも、そこに出ます。</p>` + HELP_FX + HELP_SHEET;
   else h = HELP_MAIN + HELP_MONSTER + HELP_PROPX + HELP_SHEET;
   body.innerHTML = h + HELP_BASE;
@@ -7173,8 +7197,8 @@ function renderPlaceHelp(s) {
 const placeEl = document.getElementById('place');
 let pendingFile = null, pendingCat = null;
 let placeScreen = 'main', placeBaseTitle = '';
-const SCREEN_UP = { vehicle: 'main', ctype: 'vehicle', car: 'ctype', boat: 'vehicle' };
-const SCREEN_TITLE = { vehicle: '乗り物の種類は？', ctype: '自動車の区分は？', car: 'タイヤはいくつ？', boat: '船の種類は？' };
+const SCREEN_UP = { vehicle: 'main', ctype: 'vehicle', car: 'ctype', boat: 'vehicle', monster: 'main' };
+const SCREEN_TITLE = { vehicle: '乗り物の種類は？', ctype: '自動車の区分は？', car: 'タイヤはいくつ？', boat: '船の種類は？', monster: 'モンスターの動き方は？' };
 let pendingKind = null;   // 自動車の種類（VKINDS のキー）
 // 自動車の区分は 3 つだけ：自動車・バイク・キャタピラ。タイヤの数は名前から決めるので聞かない。
 // 後輪で曲がる・前後で曲がるは、タイヤのカスタムプロパティ「操舵」（する／しない）で決める（ボディの 操舵=後輪/前後 でもよい）
@@ -7216,7 +7240,7 @@ const RULE_HEAD = { robot: '人型ロボットのルールに合いませんで�
 async function placeWithCategory(buf, name, cat, wheels, sub) {
   for (const x of placeEl.querySelectorAll('button')) x.disabled = true;
   try {
-    await addPropFromBuffer(buf, name, cat, wheels, sub, !!sub && !STEERS[sub]);
+    await addPropFromBuffer(buf, name, cat, wheels, sub, cat !== 'monster' && !!sub && !STEERS[sub]);
     closePlace();
   } catch (err) {
     pendingFile = { buf, name };
@@ -7249,7 +7273,7 @@ placeEl.addEventListener('click', (e) => {
   const cat = b.dataset.cat;
   if (!cat) return;
   const wheels = b.dataset.wheels ? Number(b.dataset.wheels) : undefined;
-  const sub = cat === 'car' ? b.dataset.steer || pendingKind || undefined : undefined;   // 動き方（STEERS のキー）
+  const sub = cat === 'car' ? b.dataset.steer || pendingKind || undefined : cat === 'monster' ? b.dataset.mmove || undefined : undefined;   // 動き方（STEERS のキー・モンスターの動き方）
   if (pendingFile) { placeWithCategory(pendingFile.buf, pendingFile.name, cat, wheels, sub); return; }
   // まだファイルがない：選んだ種類を覚えて、ファイル選びを開く（押した流れのまま開く）
   pendingCat = { cat, wheels, sub };
@@ -17090,7 +17114,16 @@ function bizShopHtml(c) {
      小さい：速くて小回りがきき、よける（回避）。そのかわり HP が少なく、武器をたくさん積めない。
      武器をたくさん積んでも、コストの上限をこえた分は「出力を分け合う」：1 つずつの威力が下がり（上限 ÷ 合計）、重くなって遅くなる。
      だから武器 100 個でも強さは上限ぶんだけ。武器の数・種類は自由（組み合わせで戦い方が変わる）。 */
-const MON_NAMES = { weapon: ['武器', 'ぶき', 'WEAPON'], move: ['移動', '移動の型', 'うごき方', '動き方', 'MOVE', 'MOVEMENT'], range: ['射程', 'レンジ', 'RANGE'], cone: ['射角', 'CONE'] };
+const MON_NAMES = { weapon: ['武器', 'ぶき', 'WEAPON'], move: ['移動', '移動の型', 'うごき方', '動き方', 'MOVE', 'MOVEMENT'], range: ['射程', 'レンジ', 'RANGE'], cone: ['射角', 'CONE'], seq: ['攻撃', 'こうげき', 'ATTACK'], alt: ['飛ぶ高さ', '高度', 'ALTITUDE'] };
+const MON_MOVES = { walk: { n: '歩く', sp: 1, hp: 1 }, car: { n: '走る', sp: 1.3, hp: 1 }, heli: { n: '飛ぶ', sp: 1.35, hp: 0.8 }, plane: { n: '飛行機', sp: 1.7, hp: 0.7 }, swim: { n: '泳ぐ', sp: 1, hp: 1 } };
+function monMoveOf(v) {
+  const t = String(v ?? '');
+  return /飛行機|plane|jet|ジェット/i.test(t) ? 'plane' : /飛|ヘリ|heli|fly|air|空/i.test(t) ? 'heli' : /泳|水|船|潜水|swim|sea|海|ship|boat/i.test(t) ? 'swim'
+    : /走|車|タイヤ|戦車|car|tank|wheel|drive/i.test(t) ? 'car' : 'walk';
+}
+// シーケンスで動く先：初期から遠いほうのはし（最小か最大）。最小・最大がなければ 90°
+const seqGoal = (a) => (a.free ? a.init + 90 : Math.abs(a.max - a.init) >= Math.abs(a.min - a.init) ? a.max : a.min);
+const monFlies = (S) => S.move === 'heli' || S.move === 'plane';
 const MON_WMAX = 16;   // 動かす武器は 16 個まで（それより多いと重くなるので）
 const MON_NEAR = 200;   // バトルの相手にえらべる距離
 const MONS = [];
@@ -17101,14 +17134,13 @@ function weaponOf(v) {
 }
 // 読み込んだ置物の形から、モンスターの能力を決める
 //   攻撃力の合計（1 秒あたり）は体格で決まり、武器の数で等分する。射程が短いほど 1 回が強い（rangeMult）
-function rigMonster(item) {
+function rigMonster(item, forceMove) {
   const root = item.root;
   root.position.set(0, 0, 0); root.rotation.set(0, 0, 0); root.updateMatrixWorld(true);
   const lb = new THREE.Box3().setFromObject(root);
   const sz = lb.getSize(new THREE.Vector3());
   const s = THREE.MathUtils.clamp(Math.cbrt(Math.max(1e-4, sz.x * sz.y * sz.z)), 0.3, 40);
-  const mv = String(bodyProp(root, MON_NAMES.move) ?? '');
-  const move = /飛|fly|air|空/i.test(mv) ? 'fly' : /泳|水|swim|sea|海/i.test(mv) ? 'swim' : 'walk';
+  const move = MON_MOVES[forceMove] ? forceMove : monMoveOf(bodyProp(root, MON_NAMES.move));
   // 武器：いちばん上の部品だけ数える（子の部品やマテリアルの重なりは 1 つ）
   const ws = [], odd = [];
   root.traverse((o) => {
@@ -17120,9 +17152,19 @@ function rigMonster(item) {
     const T = WEAPONS[k], rv = mpNum(mpGet(P, MON_NAMES.range));
     const R = T.range == null ? 0 : THREE.MathUtils.clamp(rv != null && rv > 0 ? rv : T.range, T.melee ? 0.3 : 3, T.melee ? 15 : 300);
     // 銃口：部品の原点。撃つ向きは 向き（なければ 前＝書き出した形の +Z。部品が回れば、いっしょに回る）。発射と同じきまり
-    const dl = new THREE.Vector3(...fxDirOf(mpGet(P, XP.dir), 'fwd')).applyQuaternion(o.getWorldQuaternion(new THREE.Quaternion()).invert()).normalize();
+    const dv = mpGet(P, XP.dir);
+    let dl = new THREE.Vector3(...fxDirOf(dv, 'fwd')).applyQuaternion(o.getWorldQuaternion(new THREE.Quaternion()).invert()).normalize();
+    // 銃口：武器の子に 銃口 という名前の部品（小さな箱など。見えなくなる）があれば、そこから撃つ。
+    //   向き を書かなければ、武器の原点 → 銃口の原点 の向きに撃つ（武器が回れば、いっしょに回る）
+    let mz = null;
+    o.traverse((q) => { if (!mz && q !== o && /^(銃口|発射口|砲口|muzzle)/i.test(q.name || '')) mz = q; });
+    if (mz) {
+      mz.traverse((q) => { if (q.isMesh) q.visible = false; });
+      const lp = o.worldToLocal(mz.getWorldPosition(new THREE.Vector3()));
+      if (dv == null && lp.lengthSq() > 1e-6) dl = lp.normalize();
+    }
     const cv = mpNum(mpGet(P, MON_NAMES.cone));
-    ws.push({ o, k, T, R, dl, cone: THREE.MathUtils.degToRad(THREE.MathUtils.clamp(cv != null ? cv : 60, 5, 180)), last: -99, q0: o.quaternion.clone(), swing: 0 });
+    ws.push({ o, k, T, R, dl, mz, cone: THREE.MathUtils.degToRad(THREE.MathUtils.clamp(cv != null ? cv : 60, 5, 180)), last: -99, q0: o.quaternion.clone(), swing: 0 });
   });
   const weight = ws.reduce((a, w) => a + w.T.cost, 0);
   const carry = Math.round(6 + 3 * s);   // 積める重さ
@@ -17133,13 +17175,46 @@ function rigMonster(item) {
   if (!use.length) use = [{ o: null, k: 'tackle', T: TACKLE, R: TACKLE.range, last: -99 }];
   const atk = 10 + 6 * s;   // 攻撃力の合計（1 秒あたりのダメージ）
   const share = atk / (use.length + shields);   // 1 つの武器の分け前（盾も 1 つ分使う）
-  for (const w of use) { w.mult = rangeMult(w.R); w.dmg = share * w.mult * w.T.cd; }   // 1 回のダメージ（射程が短いほど強い）
+  // 攻撃のシーケンス：動く部品（動作=回転／移動）に 攻撃=武器の部品の名前（か 武器の種類・すべて）と 順番=1〜9。
+  //   攻撃の前に 順番 どおりに 最大 まで動き（同じ番号はいっしょに）、撃ったあと逆の順にもどる。かかる時間＝ため時間
+  const M = item.moves, seqParts = [];
+  if (M) for (const p of M.parts) {
+    const P = mpPropsOf(p.o), v = mpGet(P, MON_NAMES.seq);
+    if (v == null || !p.axes.length) continue;
+    const dur = Math.max(0, ...p.axes.map((a) => { const goal = seqGoal(a); return Math.abs(goal - a.init) / Math.max(0.01, a.speed); }));
+    p.seq = { to: String(v).trim(), ord: THREE.MathUtils.clamp(Math.round(mpNum(mpGet(P, XP.order)) || 1), 1, 9), dur: Math.min(dur, 10) };
+    seqParts.push(p);
+  }
+  const baseName = (o) => String(o && o.name || '').replace(/\.\d+$/, '');
+  for (const w of use) {
+    const mine = seqParts.filter((p) => { const t = p.seq.to; return /^(すべて|全部|ぜんぶ|all)$/i.test(t) || (w.o && (t === baseName(w.o) || baseName(w.o).startsWith(t))) || (w.T.n === t || weaponOf(t) === w.k && !w.o); });
+    if (mine.length) {
+      const ords = [...new Set(mine.map((p) => p.seq.ord))].sort((a, b) => a - b);
+      w.seq = { steps: ords.map((o) => { const ps = mine.filter((p) => p.seq.ord === o); return { ps, dur: Math.max(...ps.map((p) => p.seq.dur)) }; }) };
+      w.seq.total = w.seq.steps.reduce((a, st) => a + st.dur, 0);
+    }
+    w.charge = w.seq ? w.seq.total : 0;
+    w.bonus = 1 + Math.min(0.5, 0.25 * w.charge);   // ため時間 1 秒で +25%、2 秒以上は +50%（上限）
+    w.period = Math.max(w.T.cd, w.charge * 2 + 0.3);   // 動いて、撃って、もどるまで次は撃てない
+    w.mult = rangeMult(w.R);
+    w.dmg = share * w.mult * w.period * w.bonus;   // 1 回のダメージ（射程が短いほど強い。1 秒あたりは share×mult×bonus）
+  }
   // 盾：盾のある側（体の中心から見た向き）から来た攻撃を弱める
   const shieldDirs = ws.filter((w) => w.T.shield).slice(0, 4).map((w) => { const p = w.o.getWorldPosition(new THREE.Vector3()); return Math.hypot(p.x, p.z) < 0.1 * Math.max(sz.x, sz.z) ? 0 : Math.atan2(p.x, p.z); });
   let speed = 11 / (0.55 + 0.45 * s) / (1 + 0.35 * over);
   let hp = Math.round(500 * Math.pow(s, 1.3));   // 5 分の中で決着がつくくらい
-  if (move === 'fly') { speed *= 1.35; hp = Math.round(hp * 0.8); }
+  const MV = MON_MOVES[move];
+  speed *= MV.sp; hp *= MV.hp;
+  // 最高速度（km/h）：自動より速くすると HP が減り、おそくすると HP が増える（最大 +40%）
+  const vk = mpNum(bodyProp(root, XP.vmax)), autoSp = speed;
+  if (vk && vk > 0) { const r = THREE.MathUtils.clamp(vk / 3.6 / speed, 0.3, 2); speed *= r; hp *= THREE.MathUtils.clamp(Math.pow(r, -0.7), 0.4, 1.4); }
+  hp = Math.round(hp);
   speed = Math.max(0.8, speed);
+  const altP = mpNum(bodyProp(root, MON_NAMES.alt));
+  const alt = THREE.MathUtils.clamp(altP != null ? altP : move === 'plane' ? 10 + 2 * s : 3 + 1.2 * s, 1, 120);
+  // 走る：名前に タイヤ・車輪 の部品が回る
+  const wheels = [];
+  if (move === 'car') root.traverse((o) => { if (/タイヤ|車輪|ホイール|wheel|tire|tyre/i.test(o.name || '') && !wheels.some((w) => o.parent === w.o)) { const b = new THREE.Box3().setFromObject(o).getSize(new THREE.Vector3()); wheels.push({ o, q0: o.quaternion.clone(), r: Math.max(0.1, Math.max(b.y, b.z) / 2), a: 0 }); } });
   const half = 0.5 * Math.max(sz.x, sz.z);   // 剣・槍は体のふちから届く
   const reachOf = (w) => (w.T.melee ? half + w.R : w.R);
   const ranges = use.map(reachOf);
@@ -17155,23 +17230,22 @@ function rigMonster(item) {
     limbs.push({ o, q0: o.quaternion.clone(), ph: (side ? Math.PI : 0) + (arm ? Math.PI : 0), amp: arm ? 0.35 : 0.5 });
   });
   item.mon = {
-    s, size: sz, lb, move, hpMax: hp, speed, turn: 4 / (0.6 + 0.4 * s), dodge: THREE.MathUtils.clamp(0.32 - 0.06 * s, 0, 0.3),
+    s, size: sz, lb, move, hpMax: hp, speed, autoSp, alt, wheels, seqParts, turn: (move === 'plane' ? 1.4 : 4) / (0.6 + 0.4 * s), dodge: THREE.MathUtils.clamp(0.32 - 0.06 * s, 0, 0.3),
     atk, share, weight, carry, over, shields, shieldDirs, weapons: use, all: ws, odd, half, reachOf, range: Math.max(...ranges), minRange: Math.min(...ranges),
     closeIn: use.some((w) => w.T.melee && reachOf(w) === Math.min(...ranges)), limbs,
   };
   return item.mon;
 }
-const MON_MOVE_TXT = { walk: '歩く', fly: '飛ぶ', swim: '泳ぐ' };
 function monStatsHtml(S) {
   const cnt = {};
-  for (const w of S.all) { const k = w.T.shield ? w.T.n : `${w.T.n}（${w.R}m・×${rangeMult(w.R).toFixed(1)}）`; cnt[k] = (cnt[k] || 0) + 1; }
+  for (const w of S.all) { const k = w.T.shield ? w.T.n : `${w.T.n}（${w.R}m・×${rangeMult(w.R).toFixed(1)}${w.charge ? `・ため ${w.charge.toFixed(1)} 秒 +${Math.round((w.bonus - 1) * 100)}%` : ''}）`; cnt[k] = (cnt[k] || 0) + 1; }
   const wl = Object.entries(cnt).map(([k, n]) => `${k}×${n}`).join('・') || 'なし（体当たり）';
   const nW = S.weapons.length + S.shields;
   const rows = [
     ['体格', `${S.s.toFixed(1)}（${S.size.x.toFixed(1)}×${S.size.z.toFixed(1)}×高さ${S.size.y.toFixed(1)}m）`],
     ['HP', S.hpMax.toLocaleString()],
     ['攻撃力', `${Math.round(S.atk)}（武器 ${nW} 個で分けて 1 つ ${S.share.toFixed(1)}）`],
-    ['速さ', `${Math.round(S.speed * 3.6)}km/h（${MON_MOVE_TXT[S.move]}）`],
+    ['動き方', `${MON_MOVES[S.move].n}・${Math.round(S.speed * 3.6)}km/h${monFlies(S) ? `・高さ ${Math.round(S.alt)}m` : ''}${Math.abs(S.speed - S.autoSp) > 0.05 ? '（最高速度を変えた分、HP も変わる）' : ''}`],
     ['回避', `${Math.round(S.dodge * 100)}%`],
     ['武器', wl],
     ['武器の重さ', `${S.weight} ／ 積める ${S.carry}${S.over > 0 ? '（こえた分おそい）' : ''}`],
@@ -17184,8 +17258,14 @@ function monStatsHtml(S) {
 }
 function showMonStats(m) {
   el('specT').textContent = `${m.name} の能力`;
-  el('specBody').innerHTML = monStatsHtml(m.item.mon);
+  el('specBody').innerHTML = monStatsHtml(m.item.mon) + (monCtl(m) ? '<div class="monpv"><button type="button" data-pv="move">▶ 動きを見る</button><button type="button" data-pv="atk">▶ 攻撃を見る</button></div>' : '');
   el('specDlg').hidden = false;
+  for (const b of el('specBody').querySelectorAll('[data-pv]')) b.addEventListener('click', () => {
+    if (!MONS.includes(m) || m.bt) return;
+    el('specDlg').hidden = true;
+    m.preview = { k: b.dataset.pv, t0: clock.elapsedTime, i: 0, next: 0 }; m.mode = 'stay';
+    showMsg(b.dataset.pv === 'move' ? `${m.name}：動きを見せます（9 秒）` : `${m.name}：武器を 1 つずつ使って見せます（ダメージなし）`);
+  });
 }
 // 名前と HP の札
 function monLabel(m) {
@@ -17236,7 +17316,7 @@ function removeMonster(m) {
 function monFloor(m, x, z, yRef) {
   const S = m.item.mon, g = Math.max(heightAt(x, z), groundAt(x, z, yRef));
   if (S.move === 'swim') return Math.max(g, SEA - S.size.y * 0.45);
-  if (S.move === 'fly') return Math.max(g, SEA) + 3 + S.s * 1.2;
+  if (S.move === 'heli' || (S.move === 'plane' && m.airborne)) return Math.max(g, SEA) + S.alt;
   return Math.max(g, SEA - S.size.y * 0.35);   // 歩く物は海では浮いて泳ぐ
 }
 const monCenter = (m, out) => out.set(m.pos.x, m.pos.y + m.item.mon.size.y * 0.5, m.pos.z);
@@ -17278,13 +17358,42 @@ function stepMyMonster(m, dt, now) {
     goal = _mt.set(_mo.x - Math.sin(f) * back + Math.cos(f) * side, 0, _mo.z - Math.cos(f) * back - Math.sin(f) * side);
     stop = 1 + S.s * 0.3;
   }
+  // 事前確認：動き（家のまわりを回る）
+  const pv = m.preview;
+  if (pv && !t) {
+    const age = now - pv.t0;
+    if (pv.k === 'move') {
+      if (age > 9) { m.preview = null; monHome(m); return; }
+      const R = 4 + S.s * 2, a = (age * S.speed * 0.8) / R;
+      goal = _mt.set(m.home[0] + Math.sin(a) * R, 0, m.home[1] + Math.cos(a) * R - R); stop = 0.3;
+    } else if (pv.k === 'atk') {
+      const busy = S.weapons.some((w) => w.run);
+      if (!busy && now >= pv.next) {
+        if (pv.i >= S.weapons.length) { m.preview = null; showMsg(`${m.name}：攻撃の確認おわり`); }
+        else { const i = pv.i++, n = ++monShotN; monAttack(m, i, null, false, n); if (m.shared && m.id) monEmit({ t: 'fire', id: m.id, w: i, tg: '', n }); pv.next = now + 0.8; }
+      }
+    }
+  }
+  if (S.move === 'plane') {   // 飛行機：止まれない。動くときは飛び上がり、待つときは地面におりる
+    const fly = !!(t || m.mode === 'follow' || (pv && pv.k === 'move'));
+    if (fly) m.airborne = true;
+    else if (m.airborne && m.speedNow < 1) m.airborne = false;
+  }
   if (goal) {
     const dx = goal.x - m.pos.x, dz = goal.z - m.pos.z, d = Math.hypot(dx, dz);
+    if (S.move === 'plane' && m.airborne && d <= stop) { stop = -1; }   // 着いても回りつづける
     if (d > stop) {
       const water = m.pos.y < SEA + 0.2 && S.move === 'walk', land = S.move === 'swim' && heightAt(m.pos.x, m.pos.z) > SEA - 0.5;
       const vmax = S.speed * (water ? 0.5 : land ? 0.3 : 1) * (t ? 1 : Math.min(1.6, 0.6 + d / 15));
-      const sp = Math.min(vmax, d * 2), dir = Math.atan2(dx, dz);
-      if (face == null) face = dir;
+      let sp = Math.min(vmax, d * 2), dir = Math.atan2(dx, dz);
+      if (S.move === 'car' || S.move === 'plane') {   // 車・飛行機：向いている方へしか進めない（その場で回れない）
+        if (S.move === 'plane') sp = Math.max(sp, S.speed * 0.55);
+        const dh = wrapA(dir - m.h), turnK = S.move === 'car' ? Math.min(1, (Math.hypot(m.vel.x, m.vel.z) + 0.5) / (1 + S.s)) : 1;
+        m.h += THREE.MathUtils.clamp(dh, -S.turn * turnK * dt, S.turn * turnK * dt);
+        m.bank = THREE.MathUtils.clamp(dh, -0.7, 0.7);
+        if (S.move === 'car' && Math.abs(dh) > 2.2 && d < 12) sp = -sp * 0.4;   // 真後ろが近い：バック
+        dir = m.h; face = null;
+      } else if (face == null) face = dir;
       m.vel.x += (Math.sin(dir) * sp - m.vel.x) * Math.min(1, dt * 4);
       m.vel.z += (Math.cos(dir) * sp - m.vel.z) * Math.min(1, dt * 4);
     } else { m.vel.x *= Math.exp(-dt * 6); m.vel.z *= Math.exp(-dt * 6); }
@@ -17296,15 +17405,23 @@ function stepMyMonster(m, dt, now) {
     if (d < r && d > 1e-3 && (t || m.mode === 'follow')) { m.pos.x += (dx / d) * (r - d) * Math.min(1, dt * 5); m.pos.z += (dz / d) * (r - d) * Math.min(1, dt * 5); }
   }
   m.pos.x = clampX(m.pos.x + m.vel.x * dt, 4); m.pos.z = clampZ(m.pos.z + m.vel.z * dt, 4);
-  if (face != null) m.h += THREE.MathUtils.clamp(wrapA(face - m.h), -S.turn * dt, S.turn * dt);
+  if (face != null && S.move !== 'car' && !(S.move === 'plane' && m.airborne)) m.h += THREE.MathUtils.clamp(wrapA(face - m.h), -S.turn * dt, S.turn * dt);
+  else if (face != null && S.move === 'car' && t && m.speedNow < 0.5) m.h += THREE.MathUtils.clamp(wrapA(face - m.h), -S.turn * 0.3 * dt, S.turn * 0.3 * dt);   // 止まって撃つときは、ゆっくり向きを変える
+  if (!goal || S.move !== 'car' && S.move !== 'plane') m.bank = (m.bank || 0) * Math.exp(-dt * 3);
   const fy = monFloor(m, m.pos.x, m.pos.z, m.pos.y + 1.5);
-  m.pos.y += (fy - m.pos.y) * Math.min(1, dt * (S.move === 'fly' ? 2 : 12));
+  m.pos.y += (fy - m.pos.y) * Math.min(1, dt * (monFlies(S) ? 1.5 : 12));
   m.speedNow = Math.hypot(m.vel.x, m.vel.z);
   if (t) monWeapons(m, t, now);
   else if (m.mine && m.shared && m.id && net.db) {   // 止まったら場所を保存（入りなおしても、そこにいる）
     if (m.speedNow > 0.3) m.saveAt = now + 3;
     else if (m.saveAt && now > m.saveAt) { m.saveAt = 0; monSave(m); }
   }
+}
+function monHome(m) {
+  const H = m.home;
+  for (let k = 0; k < 20; k++) fxEmit(true, m.pos.x + rnd(1), m.pos.y + m.item.mon.size.y * Math.random(), m.pos.z + rnd(1), 0, 1.5, 0, 0.7, 0.9, 1, 0.3, 0, 0.8, 1, 0, 1);
+  m.pos.x = H[0]; m.pos.z = H[1]; m.h = H[2]; m.vel.set(0, 0, 0); m.airborne = false;
+  m.pos.y = monFloor(m, H[0], H[1], heightAt(H[0], H[1]) + 2);
 }
 function monSave(m) {
   m.home = [m.pos.x, m.pos.z, wrapA(m.h)];
@@ -17326,7 +17443,7 @@ function monWeapons(m, t, now) {
   for (const s of MSH) if (s.w.homing && s.real && s.tgt === m) { const dd = s.p.distanceTo(m.pos); if (dd < td) { td = dd; threat = s; } }
   S.weapons.forEach((w, i) => {
     const T = w.T;
-    if (now - w.last < T.cd) return;
+    if (now - w.last < (w.period || T.cd) || w.run) return;
     if (threat && MSH.includes(threat) && (T.k === 'gun' || T.instant) && td < Math.min(w.R, 60) && td > 3) {
       w.last = now;
       const from = weaponPos(m, w, new THREE.Vector3()), to = threat.p;
@@ -17336,24 +17453,24 @@ function monWeapons(m, t, now) {
     }
     if (d > S.reachOf(w) + tr) return;
     if ((T.melee || T.flame) && facing > 1.1) return;
-    if (!T.melee && !T.homing && w.o && w.dl && !muzzleOk(w, t)) return;   // 銃口が相手のほうを向いていない
+    if (!T.melee && !T.homing && w.o && w.dl && !w.seq && !muzzleOk(w, t)) return;   // 銃口が相手のほうを向いていない（シーケンスのある武器は、動いてから向く）
     w.last = now + Math.random() * T.cd * 0.15;
     const n = ++monShotN;
-    monFire(m, i, t, true, n);
+    monAttack(m, i, t, true, n);
     if (m.shared && m.id) monEmit({ t: 'fire', id: m.id, w: i, tg: t.id || '', n });
   });
 }
 // 1 回撃つ（real：ダメージを決める画面＝バトルを始めた人。ほかの人の画面では見た目だけ）
 const MSH = [];   // 飛んでいる弾
 const MBEAMS = [];
-function weaponPos(m, w, out) { return w.o ? w.o.getWorldPosition(out) : monCenter(m, out); }
+function weaponPos(m, w, out) { return w.mz ? w.mz.getWorldPosition(out) : w.o ? w.o.getWorldPosition(out) : monCenter(m, out); }
 let monShotN = 0;
 // 銃口の向き（世界）と、相手が射角の中にいるか（左右だけで見る。真上・真下を向いた銃口はどちらでも撃てる）
 function muzzleDir(w, out) { return out.copy(w.dl).transformDirection(w.o.matrixWorld); }
 function muzzleOk(w, t) {
   const d = muzzleDir(w, _md), hl = Math.hypot(d.x, d.z);
   if (hl < 0.25) return true;
-  const want = Math.atan2(t.pos.x - w.o.matrixWorld.elements[12], t.pos.z - w.o.matrixWorld.elements[14]);
+  const e = (w.mz || w.o).matrixWorld.elements, want = Math.atan2(t.pos.x - e[12], t.pos.z - e[14]);
   return Math.abs(wrapA(want - Math.atan2(d.x, d.z))) <= w.cone;
 }
 // ミサイルが撃ち落とされた（空中で爆発。ダメージなし）
@@ -17362,6 +17479,32 @@ function missileDown(s, tell) {
   MSH.splice(i, 1);
   fxBoom(s.p.x, s.p.y, s.p.z, 0.45, null);
   if (tell && s.from && s.from.shared && s.from.id) monEmit({ t: 'xm', id: s.from.id, n: s.n });
+}
+// 攻撃：シーケンスがあれば、部品を動かしてから撃つ（poseMonster が進める）
+function monAttack(m, i, t, real, n) {
+  const w = m.item.mon.weapons[i]; if (!w) return;
+  if (w.seq) { w.run = { t: 0, tgt: t, real, n, fired: false }; return; }
+  monFire(m, i, t, real, n);
+}
+function stepSeqs(m, dt) {
+  const S = m.item.mon; if (!S.seqParts.length) return;
+  for (const p of S.seqParts) p.k = 0;   // 0：はじめの位置〜1：最大
+  S.weapons.forEach((w, i) => {
+    const R = w.run; if (!R) return;
+    R.t += dt;
+    const tot = w.seq.total;
+    if (!R.fired && R.t >= tot) { R.fired = true; if (MONS.includes(m) && (!R.tgt || MONS.includes(R.tgt))) monFire(m, i, R.tgt, R.real, R.n); }
+    const back = R.t > tot + 0.15 ? Math.min(tot, R.t - tot - 0.15) : 0;
+    let off = 0;
+    for (const st of w.seq.steps) {   // 出るときは順番どおり、もどるときは逆の順
+      const fOut = st.dur > 0 ? THREE.MathUtils.clamp((Math.min(R.t, tot) - off) / st.dur, 0, 1) : 1;
+      const offB = tot - off - st.dur, fBack = st.dur > 0 ? THREE.MathUtils.clamp((back - offB) / st.dur, 0, 1) : back > offB ? 1 : 0;
+      for (const p of st.ps) p.k = Math.max(p.k, fOut - fBack);
+      off += st.dur;
+    }
+    if (back >= tot) w.run = null;
+  });
+  for (const p of S.seqParts) for (const a of p.axes) { const goal = seqGoal(a); a.val = a.init + (goal - a.init) * p.k; }
 }
 function monFire(m, i, t, real, n) {
   const S = m.item.mon, w = S.weapons[i]; if (!w) return;
@@ -17471,10 +17614,12 @@ function poseMonster(m, dt, T) {
   const S = m.item.mon, root = m.root, sp = m.speedNow || 0;
   m.walk += dt * (sp > 0.3 ? 2 + sp / Math.max(0.5, S.s) * 1.2 : 0);
   const amp = Math.min(1, sp / Math.max(0.5, S.speed * 0.5));
-  const bob = S.move === 'walk' && sp > 0.3 ? Math.abs(Math.sin(m.walk * Math.PI)) * 0.06 * S.s * amp : S.move === 'fly' ? Math.sin(T * 1.5 + m.ix) * 0.15 * S.s : 0;
+  const bob = S.move === 'walk' && sp > 0.3 ? Math.abs(Math.sin(m.walk * Math.PI)) * 0.06 * S.s * amp : S.move === 'heli' ? Math.sin(T * 1.5 + m.ix) * 0.15 * S.s : 0;
   root.position.set(m.pos.x, m.pos.y + bob, m.pos.z);
-  root.rotation.set(-0.08 * amp * (S.move === 'fly' ? 2 : 1), m.h, 0, 'YXZ');
-  for (const L of S.limbs) { _mqq.setFromAxisAngle(_mx, Math.sin(m.walk * Math.PI + L.ph) * L.amp * amp); L.o.quaternion.copy(L.q0).multiply(_mqq); }
+  const pitch = S.move === 'walk' || S.move === 'heli' ? -0.08 * amp * (S.move === 'heli' ? 2 : 1) : 0, roll = S.move === 'plane' && m.airborne ? -(m.bank || 0) * 0.9 : 0;
+  root.rotation.set(pitch, m.h, roll, 'YXZ');
+  for (const W of S.wheels) { W.a += (sp * dt) / W.r; _mqq.setFromAxisAngle(_mx, W.a); W.o.quaternion.copy(W.q0).multiply(_mqq); }
+  if (S.move !== 'walk') { /* 足・腕は歩くときだけ */ } else for (const L of S.limbs) { _mqq.setFromAxisAngle(_mx, Math.sin(m.walk * Math.PI + L.ph) * L.amp * amp); L.o.quaternion.copy(L.q0).multiply(_mqq); }
   for (const w of S.weapons) {
     if (!w.swing || !w.o) continue;
     w.swing += dt / 0.45;
@@ -17486,10 +17631,12 @@ function poseMonster(m, dt, T) {
   if (M) {
     const Tw = Date.now() / 1000;
     for (const a of M.chans) {
+      if (a.part.seq) continue;   // 攻撃のシーケンスの部品は stepSeqs
       if (a.free) { a.val = ((a.speed * Tw) % 360 + 540) % 360 - 180; continue; }
       const span = a.max - a.min; if (!(span > 1e-6)) continue;
       const ph = (a.speed * Tw) % (2 * span); a.val = a.min + (ph < span ? ph : 2 * span - ph);
     }
+    stepSeqs(m, dt);
     mpApply(M);
   }
   if (m.label) {
@@ -17555,7 +17702,7 @@ function onMonNet(p) {
     return;
   }
   const m = byId(d.id);
-  if (d.t === 'fire') { if (!m || monCtl(m)) return; monFire(m, d.w | 0, byId(d.tg), false, d.n | 0); return; }
+  if (d.t === 'fire') { if (!m || monCtl(m)) return; monAttack(m, d.w | 0, byId(d.tg), false, d.n | 0); return; }
   if (d.t === 'xm') { const s = m && MSH.find((q) => q.from === m && q.n === (d.n | 0)); if (s) missileDown(s, false); return; }
   if (d.t === 'bt') {   // ほかの人がバトルを始めた：その 2 体は、その人の画面が動かす
     const b = byId(d.b);
@@ -17576,6 +17723,7 @@ function onMonNet(p) {
 function battleStart(a, b, min) {
   if (MB.on) { showMsg('いまバトル中です'); return; }
   if (a.bt || b.bt) { showMsg('どちらかが、ほかのバトルに出ています'); return; }
+  a.preview = b.preview = null;
   Object.assign(MB, { on: true, a, b, t0: Date.now(), limit: Math.round(min * 60), home: [[a.pos.x, a.pos.z, a.h], [b.pos.x, b.pos.z, b.h]] });
   for (const q of [a, b]) { q.bt = { host: true }; q.hp = q.item.mon.hpMax; q.vel.set(0, 0, 0); for (const w of q.item.mon.weapons) w.last = clock.elapsedTime - Math.random() * w.T.cd; }
   if (a.shared && a.id && b.shared && b.id) monEmit({ t: 'bt', id: a.id, b: b.id, n: myName || '' });
@@ -17661,9 +17809,9 @@ function openBattleDlg() {
 el('monBattle').addEventListener('click', openBattleDlg);
 el('monHudStop').addEventListener('click', () => battleEnd(null, 'stop'));
 // 置く：「glTF を置く」→ モンスター
-async function addMonsterFromBuffer(buf, name) {
+async function addMonsterFromBuffer(buf, name, move) {
   const item = await buildThing(buf, name, 'prop');
-  const S = rigMonster(item);
+  const S = rigMonster(item, move);
   const f = player.face, ahead = 2.5 + Math.max(S.size.x, S.size.z) * 0.6;
   const x = clampX(player.pos.x + Math.sin(f) * ahead, 4), z = clampZ(player.pos.z + Math.cos(f) * ahead, 4), rot = wrapA(f + Math.PI);
   const tris = countTris(item.root);
@@ -17673,7 +17821,7 @@ async function addMonsterFromBuffer(buf, name) {
     const id = newId();
     net.loading.add(id);
     try {
-      await net.db.add({ id, name, cat: 'prop', kind: 'monster', x: Math.round(x * 100) / 100, z: Math.round(z * 100) / 100, rot: Math.round(rot * 1000) / 1000, bytes: buf.byteLength, by: net.myId || null }, buf);
+      await net.db.add({ id, name, cat: 'prop', kind: MON_MOVES[move] ? 'mon' + move : 'monster', x: Math.round(x * 100) / 100, z: Math.round(z * 100) / 100, rot: Math.round(rot * 1000) / 1000, bytes: buf.byteLength, by: net.myId || null }, buf);
       put(id);
       showMsg(`${name}（モンスター）をみんなの世界に置きました。近づくと「⚔ バトル」が出ます（近くに相手がいるとき）`);
       return;
@@ -17692,7 +17840,7 @@ async function addMonsterFromBuffer(buf, name) {
 // 共有の物の中のモンスター（props の kind = monster）
 async function loadSharedMonster(d, buf, name) {
   const item = await buildThing(buf, name, 'prop');
-  rigMonster(item);
+  rigMonster(item, String(d.kind).slice(3));   // kind：monwalk・moncar…（monster は .glb で決める）
   const x = num(d.x, X0 + 1, X1 - 1), z = num(d.z, Z0 + 1, Z1 - 1), rot = num(d.rot, -100, 100);
   const m = makeMonster(item, name, x, z, rot, { id: d.id, shared: true, by: typeof d.by === 'string' ? d.by : null, mine: !!(d.by && d.by === net.myId) });
   if (m.mine) renderMonMenu();
