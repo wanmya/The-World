@@ -21683,6 +21683,8 @@ const BF_LAYOUT = [   // 種類, u, v, 向き（度）, おまけ（木箱の段
   ['cont', 65, 5, 0, 0x3f7a3a], ['wood', 55, 45, 30], ['sand', 40, 8, 90], ['wallS', 66, 40, 90], ['drums', 60, 60, 0],
   ['ruin', -10, 55, 90], ['cont', -40, 62, 90, 0xd08a2a], ['wall', 40, 65, 0], ['crate', 8, 68, 0, 2], ['sand', -25, 42, 20],
   ['tires', -60, 62, 0], ['wall', -60, 30, 90], ['wood', -45, 0, -30], ['crate', -8, -15, 45, 1], ['wallS', 50, -20, 0],
+  ['wall', 0, -48, 15], ['cont', -30, -68, 0, 0x6a4a8a], ['wallS', -46, -64, 70], ['crate', 35, 20, 30, 2], ['wall', 10, 40, -20], ['cont', 60, -28, 80, 0x9a3a3a],   // 2026-11-19 追加
+  ['sand', -15, -28, 40], ['crate', -48, 10, 0, 1], ['wallS', 28, -50, 30], ['wood', 56, 14, 90], ['sand', -70, -25, 90],
 ];
 function buildBattleField() {
   if (BF.built) return; BF.built = true;
@@ -21787,12 +21789,17 @@ function buildBattleField() {
 const BF_DXT = {
   house: { w: 7, d: 6, h: 5.4, hp: 170, n: '家' }, car: { w: 1.9, d: 4.4, h: 1.5, hp: 60, n: '車' },
   bldg: { w: 10, d: 8, h: 18, hp: 480, tall: true, n: 'ビル' }, chim: { w: 2.8, d: 2.8, h: 22, hp: 260, tall: true, n: '煙突' },
+  // 爆発する物（2026-11-19）：燃え出すと自分でも燃えて、最後に爆発。まわりのモンスターと物かげにもダメージ（R：半径 m、dmg：まん中のダメージ、fire：燃え続ける秒）
+  fuel: { w: 1.9, d: 1.9, h: 1.0, hp: 40, n: 'ガソリンのドラム缶', boom: { R: 9, dmg: 160, fire: 14, burn: 3 } },
+  tanker: { w: 2.5, d: 10, h: 3.6, hp: 130, n: 'タンクローリー', boom: { R: 20, dmg: 460, fire: 600, burn: 4, big: true } },
 };
 const BF_DXL = [   // 種類, u, v, 向き（度）, 色
   ['house', -48, -12, 10, 0xd9cdb4], ['house', 8, -62, -5, 0xc9d6dc], ['house', 47, 54, 25, 0xe2c9a5], ['house', -62, 46, 90, 0xd6d0c0],
   ['car', -32, -33, 30, 0xc0392b], ['car', 2, -6, 80, 0x2c6fb0], ['car', 64, 22, 0, 0xe0e0e0], ['car', -22, 64, 95, 0x2d2d2d], ['car', 38, -8, -20, 0xd4a017], ['car', 18, 30, 60, 0x3c8c4a],
   ['bldg', -64, -46, 0, 0x8fa3b5], ['bldg', 66, -8, 90, 0xb5a28f], ['bldg', 22, 64, 0, 0x9aa5a0],
   ['chim', 30, -70, 0, 0xb84a3a], ['chim', -68, -70, 0, 0xb84a3a], ['chim', 68, 70, 0, 0xb84a3a],
+  ['tanker', -20, -12, 25, 0xd8dde2], ['tanker', 50, -40, -70, 0xd8dde2],
+  ['fuel', -55, -22, 0, 0xc0301e], ['fuel', 25, -30, 0, 0xc0301e], ['fuel', -5, 45, 0, 0xc0301e], ['fuel', 52, 35, 0, 0xc0301e], ['fuel', -35, 50, 0, 0xc0301e],
 ];
 BF.dx = [];
 function bfBuildDx(g, lowAt) {
@@ -21826,6 +21833,20 @@ function bfBuildDx(g, lowAt) {
       const tex2 = tex.clone(); tex2.repeat.set(T.d / 2.5, h / 3); tex2.needsUpdate = true;
       B(M(col), T.w + 0.3, 0.5, T.d + 0.3, 0, h + 0.25, 0); B(M(0x777777), 2.4, 1.6, 2.4, 1.5, h + 1.2, 1); B(M(col), T.w, 1, T.d, 0, -0.5, 0);
       side.userData.tex = tex;
+    } else if (t === 'fuel') {   // ガソリンのドラム缶（赤・黄色の帯・火気厳禁）
+      const red = M(col), band = M(0xf2c12e);
+      for (const [a, b2] of [[-0.45, -0.45], [0.5, -0.4], [-0.4, 0.5], [0.45, 0.45]]) {
+        const cy = new THREE.Mesh(new THREE.CylinderGeometry(0.38, 0.38, 0.95, 14), red); cy.position.set(a, 0.48, b2); cy.castShadow = true; body.add(cy);
+        const rg = new THREE.Mesh(new THREE.CylinderGeometry(0.39, 0.39, 0.12, 14), band); rg.position.set(a, 0.62, b2); body.add(rg);
+      }
+    } else if (t === 'tanker') {   // タンクローリー：運転席・車体・銀のタンク（爆発するとタンクがなくなり、焼けた車体が燃え続ける）
+      const cab = M(0x2c5d9a), tankM = M(col), stripe = M(0xe8a01c);
+      B(dark, 2.3, 0.5, 9.8, 0, 0.95, 0);
+      B(cab, 2.4, 2.2, 2.2, 0, 2.0, 3.8); B(dark, 2.2, 0.8, 0.06, 0, 2.5, 4.92);
+      const tk = new THREE.Mesh(new THREE.CylinderGeometry(1.25, 1.25, 7, 20), tankM); tk.rotation.x = Math.PI / 2; tk.position.set(0, 2.45, -1.2); tk.castShadow = true; tk.userData.tank = true; body.add(tk);
+      for (const e of [-1, 1]) { const cap = new THREE.Mesh(new THREE.SphereGeometry(1.25, 16, 8, 0, Math.PI * 2, 0, Math.PI / 2), tankM); cap.rotation.x = e * Math.PI / 2; cap.scale.y = 0.35; cap.position.set(0, 2.45, -1.2 + e * 3.5); cap.userData.tank = true; body.add(cap); }
+      const st = new THREE.Mesh(new THREE.CylinderGeometry(1.27, 1.27, 6.6, 20, 1, true, -0.5, 1), stripe); st.rotation.x = Math.PI / 2; st.position.set(0, 2.45, -1.2); st.userData.tank = true; body.add(st);
+      for (const zz of [3.6, -2.4, -3.8]) for (const e of [-1, 1]) { const w = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.5, 0.4, 14), dark); w.rotation.z = Math.PI / 2; w.position.set(e * 1.05, 0.5, zz); body.add(w); }
     } else {   // 煙突：赤白のしま
       const red = M(col), white = M(0xeeeeee), r0 = T.w / 2, r1 = T.w / 2 * 0.72, n = 6;
       for (let k = 0; k < n; k++) { const y0 = k * h / n, y1 = (k + 1) * h / n, ra = r0 + (r1 - r0) * k / n, rb = r0 + (r1 - r0) * (k + 1) / n; const cy = new THREE.Mesh(new THREE.CylinderGeometry(rb, ra, y1 - y0, 16), k % 2 ? white : red); cy.position.y = (y0 + y1) / 2; cy.castShadow = true; body.add(cy); }
@@ -21883,6 +21904,7 @@ function bfDxHit(o, dmg, v) {
   }
   bfDxSet(D, s, dir);
   monEmit({ t: 'dx', i: D.i, s, d: dir });
+  if (s >= 3 && D.T.boom) bfDxBoomHit(D);
 }
 function bfDxSplash(p, R, dmg, v) {
   for (const D of BF.dx) {
@@ -21911,6 +21933,7 @@ function bfDxSet(D, s, dir) {
     if (D.pier) { D.pier.top = D.pier.bot = -1e5; }
     if (COV.on) covStatic();
   }
+  if (s >= 3 && D.T.boom) { bfDxBlast(D); D.st = s; return; }
   if (s >= 3) {   // 木っ端みじん：大爆発・破片が飛ぶ・がれきが残る（物かげではなくなる）
     const cy = D.st >= 2 && D.fall ? D.base + 2 : D.base + D.h * 0.4;
     D.outer.updateMatrixWorld(true);
@@ -21930,6 +21953,48 @@ function bfDxSet(D, s, dir) {
   }
   D.st = s;
 }
+// ガソリンのドラム缶・タンクローリーの爆発（見た目。ダメージは bfDxHit の中で、バトルを始めた人の画面だけ）
+function bfDxBlast(D) {
+  const B = D.T.boom, cx = D.x, cy = D.base + D.h * 0.6, cz = D.z, big = !!B.big;
+  monBoom(cx, cy, cz, big ? 7 : 3, null);
+  if (big) {   // 大爆発：何回も重なる火の玉・きのこ雲・まわりに火の粉
+    for (let k = 1; k <= 4; k++) setTimeout(() => monBoom(cx + rnd(4), cy + k * 1.5, cz + rnd(4), 5 - k * 0.6, null), k * 140);
+    for (let k = 0; k < 70; k++) { const a = Math.random() * Math.PI * 2, r = Math.random() * 6; fxEmit(true, cx + Math.sin(a) * r, cy + Math.random() * 3, cz + Math.cos(a) * r, Math.sin(a) * 6, 6 + Math.random() * 10, Math.cos(a) * 6, 1, 0.35 + Math.random() * 0.3, 0.05, 3 + Math.random() * 3, 1.5, 1.6, 1, -2, 0.9); }
+    for (let k = 0; k < 50; k++) fxEmit(false, cx + rnd(5), cy + 4 + Math.random() * 10, cz + rnd(5), rnd(2), 5 + Math.random() * 4, rnd(2), 0.12, 0.11, 0.1, 4 + Math.random() * 3, 3, 6, 0.75, -0.6, 0.9);
+    for (let k = 0; k < 60; k++) fxEmit(true, cx, cy, cz, rnd(25), 8 + Math.random() * 15, rnd(25), 1, 0.7, 0.2, 0.25, 0, 2.5, 1, 9.8, 0.3);
+  } else {
+    for (let k = 0; k < 25; k++) fxEmit(true, cx + rnd(1.5), cy, cz + rnd(1.5), rnd(4), 4 + Math.random() * 6, rnd(4), 1, 0.45, 0.08, 1.5 + Math.random() * 1.5, 1.2, 1, 1, -1.5, 0.9);
+  }
+  // 破片
+  D.outer.updateMatrixWorld(true);
+  const n = big ? 22 : 8, pm = D.mats.find((m) => !m.map) || D.mats[0];
+  for (let k = 0; k < n; k++) {
+    const sc = (big ? 1.1 : 0.5) * (0.4 + Math.random()), m = new THREE.Mesh(new THREE.BoxGeometry(sc, sc * 0.25, sc * 0.9), pm);
+    m.position.set(cx + rnd(D.hw), cy, cz + rnd(D.hd)); m.castShadow = true;
+    const vv = new THREE.Vector3(rnd(1), 0, rnd(1)).normalize().multiplyScalar(8 + Math.random() * (big ? 20 : 10)); vv.y = 8 + Math.random() * (big ? 16 : 8);
+    BF.group.add(m); D.deb.push({ m, v: vv, w: new THREE.Vector3(rnd(8), rnd(8), rnd(8)), rest: false });
+  }
+  for (const m of D.mats) m.color.copy(m.userData.c0).lerp(new THREE.Color(0x15110e), 0.8);
+  D.fireUntil = clock.elapsedTime + B.fire;
+  if (big) {   // 焼けた車体が残る（低い物かげ）。タンクはなくなる
+    D.body.traverse((o) => { if (o.userData.tank) o.visible = false; });
+    Object.assign(D.cov, { y1: D.base + 1.4 }); Object.assign(D.box, { y1: D.base + 1.4 }); if (D.pier) D.pier.top = D.base + 1.4;
+  } else {
+    D.outer.visible = false; D.rub.visible = true; D.rub.scale.set(0.5, 0.3, 0.5);
+    bfDxOff(D.cov); bfDxOff(D.box); if (D.pier) D.pier.top = D.pier.bot = -1e5;
+  }
+  if (COV.on) covStatic();
+}
+// 爆発のダメージ：まわりのモンスター（物のかげなら 4 割）・ほかの物かげ（つぎつぎ爆発することもある）
+function bfDxBoomHit(D) {
+  const B = D.T.boom, P = new THREE.Vector3(D.x, D.base + D.h * 0.6, D.z);
+  for (const q of [...MB.A, ...MB.B]) {
+    if (!MONS.includes(q) || !monAlive(q)) continue;
+    monCenter(q, _mc); const d = Math.max(0, _mc.distanceTo(P) - monRad(q));
+    if (d < B.R) monHit(q, B.dmg * (1 - (d / B.R) * 0.75) * (covSeg(P, _mc, 1) ? 0.4 : 1), true, P);
+  }
+  setTimeout(() => { if (MB.on) bfDxSplash(P, B.R * 0.6, B.dmg * 0.5, null); }, 250);   // 少しおくれて、まわりの物にも火が回る
+}
 // バトルが終わった：みんな元にもどる
 function bfDxReset() {
   for (const D of BF.dx) {
@@ -21937,7 +22002,8 @@ function bfDxReset() {
     D.st = 0; D.dmg = 0; D.fall = null;
     for (const m of D.mats) m.color.copy(m.userData.c0);
     D.tilt.position.set(0, 0, 0); D.tilt.rotation.set(0, 0, 0); D.body.position.set(0, 0, 0);
-    D.outer.visible = true; D.rub.visible = false;
+    D.outer.visible = true; D.rub.visible = false; D.rub.scale.set(1, 1, D.hd / D.hw || 1); D.fireUntil = 0;
+    D.body.traverse((o) => { if (o.userData.tank) o.visible = true; });
     for (const q of D.deb) { BF.group.remove(q.m); q.m.geometry.dispose(); }
     D.deb.length = 0;
     Object.assign(D.cov, D.c0); Object.assign(D.box, D.b0); if (D.pier && D.p0) Object.assign(D.pier, D.p0);
@@ -21961,13 +22027,21 @@ function stepBfDx(dt) {
         for (let k = 0; k < 24; k++) { const f = Math.random(); const qx = D.x + L[0] * (ext + D.h * f) * c + L[1] * (ext + D.h * f) * sn, qz = D.z - L[0] * (ext + D.h * f) * sn + L[1] * (ext + D.h * f) * c; fxEmit(false, qx, D.base + 0.5, qz, rnd(3), 1 + Math.random() * 2, rnd(3), 0.6, 0.55, 0.48, 1.5 + Math.random(), 2.2, 2.5, 0.6, -0.1, 1); }
       }
     }
-    if (near && (D.st === 1 || D.st === 2) && (D.fireT -= dt) <= 0) {   // 燃えている
-      D.fireT = D.T.tall ? 0.05 : 0.08;
+    if (D.T.boom && D.st === 1 && MB.on) bfDxHit(D.cov, D.T.boom.burn * dt, null);   // 火がついた燃料は、自分でも燃えて やがて爆発する
+    const fire3 = D.st === 3 && D.fireUntil > clock.elapsedTime;
+    if (near && (D.st === 1 || D.st === 2 || fire3) && (D.fireT -= dt) <= 0) {   // 燃えている
+      D.fireT = D.T.boom && D.T.boom.big ? 0.025 : D.T.tall ? 0.05 : 0.08;
+      if (fire3) {   // 爆発のあと：地面・車体が燃え続ける
+        const big = D.T.boom.big, px = D.x + rnd(D.hw * (big ? 1.3 : 1.5)), pz = D.z + rnd(D.hd * (big ? 0.9 : 1.5)), py = (big ? D.base + 1.4 : heightAt(px, pz) + 0.2);
+        fxEmit(true, px, py, pz, rnd(0.5), 2 + Math.random() * 2.5, rnd(0.5), 1, 0.4 + Math.random() * 0.3, 0.08, (big ? 1.6 : 0.9) + Math.random(), -0.4, 0.8, 0.95, -1.2, 1);
+        if (Math.random() < 0.5) fxEmit(false, px, py + 2, pz, rnd(0.6), 2.5 + Math.random(), rnd(0.6), 0.1, 0.09, 0.08, (big ? 2.5 : 1.2) + Math.random(), 2.4, 4, 0.6, -0.4, 1);
+      } else {
       D.outer.updateMatrixWorld(true);
       const lp = D.st === 2 && D.fall ? new THREE.Vector3(rnd(D.hw), D.h * Math.random(), rnd(D.hd)) : new THREE.Vector3(rnd(D.hw * 0.8), D.h * (0.7 + 0.3 * Math.random()), rnd(D.hd * 0.8));
       lp.applyMatrix4(D.body.matrixWorld);
       fxEmit(true, lp.x, lp.y, lp.z, rnd(0.4), 1.5 + Math.random() * 1.5, rnd(0.4), 1, 0.45 + Math.random() * 0.25, 0.1, 0.9 + Math.random() * 0.6, -0.5, 0.6, 0.9, -1, 1);
       if (Math.random() < 0.5) fxEmit(false, lp.x, lp.y + 1, lp.z, rnd(0.5), 2 + Math.random(), rnd(0.5), 0.18, 0.17, 0.16, 1.2 + Math.random(), 2, 3, 0.55, -0.4, 1);
+      }
     }
     for (const q of D.deb) {
       if (q.rest) continue;
