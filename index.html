@@ -547,6 +547,7 @@ body.jetOn #map { display: none !important; }
     <button class="mi" id="chatBtn" type="button">💬 ひとこと</button>
     <button class="mi" id="addItem" type="button">📦 glTF を置く</button>
     <button class="mi" id="renameBtn" type="button" hidden>なまえ</button>
+    <button class="mi" id="dayBtn" type="button" aria-pressed="false" title="自分の画面だけ、いつも昼の明るさで見る（時計・経済はそのまま）">🌞 いつも昼</button>
   </div>
   <div id="moveList" hidden></div>
   <div id="monList" hidden></div>
@@ -4287,10 +4288,13 @@ const stars = new THREE.Points((() => {
 stars.renderOrder = -2;
 scene.add(stars);
 let dayLight = 1, lastClock = '';
+// 🌞 いつも昼（2026-11-19）：自分の画面だけ、空・光・霧を昼 12 時の見た目にする。時計・暦・経済・バスなどは本当の時刻のまま。ほかの人には送らない
+let alwaysDay = false;
+try { alwaysDay = localStorage.getItem('world.alwaysDay') === '1'; } catch (e) { /* 覚えられなくても遊べる */ }
 const FAR_R = 3000;   // 3km 先まで描く（2026-11-14）。細かい地面は VIEW_R まで、その先は粗い地面（farLand）
 const FOG_NEAR = coarse ? 1300 : 1600, FOG_FAR = FAR_R;
 function updateAtmosphere() {
-  const hr = worldHour(), ang = ((hr - 6) / 24) * Math.PI * 2;   // 6 時に日の出、12 時に真上、18 時に日の入り
+  const hr = worldHour(), ang = (((alwaysDay ? 12 : hr) - 6) / 24) * Math.PI * 2;   // 6 時に日の出、12 時に真上、18 時に日の入り（いつも昼なら見た目だけ 12 時）
   const elev = Math.sin(ang);
   const day = ss(-0.12, 0.25, elev), dusk = Math.max(0, 1 - Math.abs(elev) / 0.3);
   dayLight = day;
@@ -15927,6 +15931,12 @@ el('townBody').addEventListener('click', (e) => {
   }
 });
 el('paperBtn').addEventListener('click', () => { setMenu(false); openTown('paper'); });
+{ const db = el('dayBtn'); db.setAttribute('aria-pressed', String(alwaysDay));
+  db.addEventListener('click', () => {
+    alwaysDay = !alwaysDay; db.setAttribute('aria-pressed', String(alwaysDay));
+    try { localStorage.setItem('world.alwaysDay', alwaysDay ? '1' : '0'); } catch (e) { /* そのまま */ }
+    showMsg(alwaysDay ? '🌞 いつも昼：あなたの画面だけ昼の明るさになります（時計・経済はそのまま）' : '🌙 いつも昼をやめました：本当の時刻の明るさにもどります');
+  }); }
 el('townBtn').addEventListener('click', () => { setMenu(false); openTown('stocks'); });
 el('bizBtn').addEventListener('click', () => { setMenu(false); openTown('biz'); });
 el('townBody').addEventListener('toggle', (e) => { const d = e.target; if (!d.dataset || !d.dataset.sec) return; TP.bizOpen = TP.bizOpen || new Set(); if (d.open) TP.bizOpen.add(d.dataset.sec); else TP.bizOpen.delete(d.dataset.sec); }, true);
