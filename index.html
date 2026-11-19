@@ -458,10 +458,10 @@ body.jetOn #map { display: none !important; }
 #mpDlg .pcancel { color: var(--ink); background: transparent; border: 1px solid var(--line); }
 #mpDlg .pok { color: #fff; background: var(--go); border: 0; }
 #specDlg .monpv { display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap; }
-#specDlg[hidden], #monDlg[hidden], #monSet[hidden], #monHud[hidden], #monBattle[hidden] { display: none; }
-#monDlg, #monSet { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); width: min(340px, calc(100vw - 32px)); max-height: calc(100% - 32px); overflow-y: auto; box-sizing: border-box; display: grid; gap: 8px; padding: 14px 16px; background: #fff; color: var(--ink); border: 1px solid var(--line); border-radius: 16px; box-shadow: 0 12px 40px rgba(22, 50, 79, 0.25); z-index: 7; font: 500 14px var(--font-ui); }
-#monDlg .ptitle, #monSet .ptitle { margin: 0; font-weight: 800; font-size: 16px; }
-#monDlg .mpnote, #monSet .mpnote { margin: 0; font-size: 12px; line-height: 1.5; color: var(--ink-dim); }
+#monLoad[hidden], #specDlg[hidden], #monDlg[hidden], #monSet[hidden], #monHud[hidden], #monBattle[hidden] { display: none; }
+#monDlg, #monSet, #monLoad { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); width: min(340px, calc(100vw - 32px)); max-height: calc(100% - 32px); overflow-y: auto; box-sizing: border-box; display: grid; gap: 8px; padding: 14px 16px; background: #fff; color: var(--ink); border: 1px solid var(--line); border-radius: 16px; box-shadow: 0 12px 40px rgba(22, 50, 79, 0.25); z-index: 7; font: 500 14px var(--font-ui); }
+#monDlg .ptitle, #monSet .ptitle, #monLoad .ptitle { margin: 0; font-weight: 800; font-size: 16px; }
+#monDlg .mpnote, #monSet .mpnote, #monLoad .mpnote { margin: 0; font-size: 12px; line-height: 1.5; color: var(--ink-dim); }
 #monDlgList { display: grid; gap: 6px; }
 #monDlgList button { display: grid; text-align: left; gap: 2px; font: 800 14px var(--font-ui); color: var(--ink); background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 8px 12px; cursor: pointer; }
 #monDlgList button small { font-weight: 600; font-size: 12px; color: var(--ink-dim); }
@@ -478,11 +478,25 @@ body.jetOn #map { display: none !important; }
 #monDlgCnt .mcnt button:disabled { opacity: 0.35; cursor: default; }
 #monDlgCnt .mcsum { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-weight: 800; font-size: 13px; }
 #monDlgCnt .mcsum.off span { color: #b8401a; }
+#monLoad { z-index: 8; }
+#monLoadList { display: grid; gap: 6px; }
+#monLoad .mlcnt { margin: 0; font-weight: 800; font-size: 13px; }
+#monLoad .mlrow { display: grid; gap: 4px; border: 1px solid var(--line); border-radius: 12px; padding: 6px 8px; }
+#monLoad .mlrow.on { background: #fff1e6; border-color: #e08a3c; }
+#monLoad .mlrow > button { display: grid; text-align: left; gap: 1px; font: 800 14px var(--font-ui); color: var(--ink); background: none; border: 0; padding: 2px 0; cursor: pointer; }
+#monLoad .mlrow > button small { font-weight: 600; font-size: 12px; color: var(--ink-dim); }
+#monLoad .mlrow > button:disabled { opacity: 0.45; cursor: default; }
+#monLoad .mlh { display: grid; grid-template-columns: 34px 1fr 34px; align-items: center; gap: 6px; text-align: center; font-size: 13px; }
+#monLoad .mlh button { height: 30px; font: 800 16px var(--font-ui); color: var(--ink); background: #fff; border: 1px solid var(--line); border-radius: 10px; cursor: pointer; }
+#monLoad .mlh button:disabled { opacity: 0.35; cursor: default; }
+#monLoadPrev table { width: 100%; border-collapse: collapse; font-size: 13px; }
+#monLoadPrev th { text-align: left; font-weight: 700; color: var(--ink-dim); padding: 2px 6px 2px 0; }
+#monDlgLoad { justify-self: start; font: 800 12px var(--font-ui); color: var(--ink); background: #fff; border: 1px solid var(--line); border-radius: 999px; padding: 5px 12px; cursor: pointer; }
 #monDlgEq { font: 800 12px var(--font-ui); color: #7a2a12; background: #fff1e6; border: 1px solid #e08a3c; border-radius: 999px; padding: 5px 10px; cursor: pointer; }
 #monDlgMin button { flex: 1; font: 800 13px var(--font-ui); color: var(--ink); background: #fff; border: 1px solid var(--line); border-radius: 999px; padding: 6px 0; cursor: pointer; }
-#monDlg .pfoot, #monSet .pfoot { display: flex; justify-content: flex-end; gap: 8px; }
-#monDlg .pfoot button, #monSet .pfoot button { font: 800 13px var(--font-ui); border-radius: 999px; padding: 8px 16px; cursor: pointer; border: 1px solid var(--line); background: #fff; color: var(--ink); }
-#monDlg .pfoot .pok, #monSet .pfoot .pok { color: #fff; background: #c8502a; border-color: #c8502a; }
+#monDlg .pfoot, #monSet .pfoot, #monLoad .pfoot { display: flex; justify-content: flex-end; gap: 8px; }
+#monDlg .pfoot button, #monSet .pfoot button, #monLoad .pfoot button { font: 800 13px var(--font-ui); border-radius: 999px; padding: 8px 16px; cursor: pointer; border: 1px solid var(--line); background: #fff; color: var(--ink); }
+#monDlg .pfoot .pok, #monSet .pfoot .pok, #monLoad .pfoot .pok { color: #fff; background: #c8502a; border-color: #c8502a; }
 #monBattle { position: fixed; left: 50%; bottom: calc(150px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); z-index: 4; font: 800 15px var(--font-ui); color: #fff; background: #c8502a; border: 0; border-radius: 999px; padding: 10px 20px; box-shadow: 0 4px 14px rgba(0,0,0,.25); cursor: pointer; }
 #specBtn { position: fixed; right: calc(12px + env(safe-area-inset-right, 0px)); top: calc(96px + env(safe-area-inset-top, 0px)); z-index: 4; font: 800 13px var(--font-ui); color: #fff; background: rgba(120, 30, 10, .85); border: 0; border-radius: 999px; padding: 7px 12px; cursor: pointer; }
 #specBar { position: fixed; left: 50%; bottom: calc(10px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); z-index: 6; width: min(560px, calc(100vw - 24px)); box-sizing: border-box; display: grid; gap: 6px; padding: 8px 10px; background: rgba(20, 24, 32, .82); color: #fff; border-radius: 16px; font: 800 12px var(--font-ui); }
@@ -786,8 +800,8 @@ body.jetOn #map { display: none !important; }
 <button type="button" id="pvpBtn" hidden>⚔ 対戦</button>
 <button type="button" id="pvpFire" hidden>🔫 攻撃</button>
 <div id="pvpAsk" role="dialog" aria-modal="true" aria-labelledby="pvpAskT" hidden><p class="ptitle" id="pvpAskT"></p><p class="mpnote">受けると対戦が始まります。負けると爆発して、乗り物ごと対戦を始めた場所にもどります（消えません）。</p><div class="pfoot"><button type="button" id="pvpAskNo">ことわる</button><button type="button" class="pok" id="pvpAskGo">⚔ 受ける</button></div></div>
-<div id="specBar" hidden><span id="specTxt"></span><div class="sv"><button type="button" data-sv="eyeA"></button><button type="button" data-sv="eyeB"></button><button type="button" data-sv="backA"></button><button type="button" data-sv="backB"></button><button type="button" data-sv="top"></button><button type="button" data-sv="side"></button><button type="button" data-sv="auto"></button><button type="button" id="specX" aria-label="観戦をやめる">✕</button></div></div>
-<div id="monHud" hidden><span id="monHudTxt"></span><button type="button" id="monHudStop">やめる</button></div>
+<div id="specBar" hidden><span id="specTxt"></span><div class="sv"><button type="button" data-sv="eyeA"></button><button type="button" data-sv="eyeB"></button><button type="button" data-sv="backA"></button><button type="button" data-sv="backB"></button><button type="button" data-sv="top"></button><button type="button" data-sv="side"></button><button type="button" data-sv="auto"></button><button type="button" id="specSnd">🔊</button><button type="button" id="specX" aria-label="観戦をやめる">✕</button></div></div>
+<div id="monHud" hidden><span id="monHudTxt"></span><button type="button" id="monHudSnd">🔊</button><button type="button" id="monHudStop">やめる</button></div>
 <div id="monSet" role="dialog" aria-modal="true" aria-labelledby="monSetT" hidden>
   <p class="ptitle" id="monSetT">戦い方と能力</p>
   <div id="monSetTend"><button type="button" data-tend="a">攻撃型</button><button type="button" data-tend="b">バランス</button><button type="button" data-tend="d">防御型</button></div>
@@ -797,6 +811,14 @@ body.jetOn #map { display: none !important; }
   <div id="monSetPrev"></div>
   <div class="pfoot"><button type="button" class="pcancel" id="monSetNo">やめる</button><button type="button" class="pok" id="monSetGo">置く</button></div>
 </div>
+<div id="monLoad" role="dialog" aria-modal="true" aria-labelledby="monLoadT" hidden>
+  <p class="ptitle" id="monLoadT">武器とため</p>
+  <p class="mpnote">バトルで使う武器を 5 個までえらびます。えらばない武器は重さも入りません（軽いほど速い）。<b>ため</b>：撃つ前に止まって力をためる秒数（0〜3 秒）。長いほど 1 回が強く、よく当たりますが、ためている間は止まるので撃たれやすくなります。</p>
+  <p class="mlcnt" id="monLoadCnt"></p>
+  <div id="monLoadList"></div>
+  <div id="monLoadPrev"></div>
+  <div class="pfoot"><button type="button" class="pcancel" id="monLoadNo">やめる</button><button type="button" class="pok" id="monLoadGo">決める</button></div>
+</div>
 <div id="monDlg" role="dialog" aria-modal="true" aria-labelledby="monDlgT" hidden>
   <p class="ptitle" id="monDlgT">バトル：相手は？</p>
   <div id="monDlgList"></div>
@@ -805,6 +827,7 @@ body.jetOn #map { display: none !important; }
     <div class="mcnt"><span data-cs="a"></span><button type="button" data-cn="a" data-d="-1" aria-label="へらす">−</button><b data-cv="a">1</b><button type="button" data-cn="a" data-d="1" aria-label="ふやす">＋</button></div>
     <div class="mcnt"><span data-cs="b"></span><button type="button" data-cn="b" data-d="-1" aria-label="へらす">−</button><b data-cv="b">1</b><button type="button" data-cn="b" data-d="1" aria-label="ふやす">＋</button></div>
     <div class="mcsum"><span id="monDlgSum"></span><button type="button" id="monDlgEq">⚖ そろえる</button></div>
+    <button type="button" id="monDlgLoad">🎯 自分の武器とため</button>
   </div>
   <p class="mpnote" id="monDlgWhereT">場所</p>
   <div id="monDlgWhere"><button type="button" data-where="field" aria-pressed="true">🏟 バトルフィールド</button><button type="button" data-where="here" aria-pressed="false">その場で</button></div>
@@ -17614,7 +17637,9 @@ function monMoveOf(v) {
 // シーケンスで動く先：初期から遠いほうのはし（最小か最大）。最小・最大がなければ 90°
 const seqGoal = (a) => (a.free ? a.init + 90 : Math.abs(a.max - a.init) >= Math.abs(a.min - a.init) ? a.max : a.min);
 const monFlies = (S) => S.move === 'heli' || S.move === 'plane';
-const MON_WMAX = 16;   // 動かす武器は 16 個まで（それより多いと重くなるので）
+const MON_WMAX = 5;   // 2026-11-19：バトルで使う武器は 5 個まで（ゲームの中の「🎯 武器とため」でえらぶ。えらばない武器の重さは入れない）
+const MON_HOLD = 3;   // ための長さ（秒）の上限
+const MON_LOSE = 4;   // この秒数見えないと、相手を見失う
 const MON_NEAR = 200;   // バトルの相手にえらべる距離
 const MONS = [];
 function weaponOf(v) {
@@ -17656,15 +17681,10 @@ function rigMonster(item, forceMove, cfg, veh) {
     const cv = mpNum(mpGet(P, MON_NAMES.cone));
     ws.push({ o, k, T, R, dl, mz, cone: THREE.MathUtils.degToRad(THREE.MathUtils.clamp(cv != null ? cv : 60, 5, 180)), last: -99, q0: o.quaternion.clone(), swing: 0 });
   });
-  const weight = ws.reduce((a, w) => a + w.T.cost, 0);
   const carry = Math.round(6 + 3 * s);   // 積める重さ
-  const over = Math.max(0, weight / carry - 1);
   const shields = Math.min(2, ws.filter((w) => w.T.shield).length);
-  let use = ws.filter((w) => !w.T.shield);
-  if (use.length > MON_WMAX) { const step = use.length / MON_WMAX; use = Array.from({ length: MON_WMAX }, (_, i) => use[Math.floor(i * step)]); }
-  if (!use.length) use = [{ o: null, k: 'tackle', T: TACKLE, R: TACKLE.range, last: -99 }];
+  const arms = ws.filter((w) => !w.T.shield);   // えらべる武器（使うのは monApplyLoad でえらんだ 5 個まで）
   const atk = 10 + 6 * s;   // 攻撃力の合計（1 秒あたりのダメージ）
-  const share = atk / (use.length + shields);   // 1 つの武器の分け前（盾も 1 つ分使う）
   // 攻撃のシーケンス：動く部品（動作=回転／移動）に 攻撃=武器の部品の名前（か 武器の種類・すべて）と 順番=1〜9。
   //   攻撃の前に 順番 どおりに 最大 まで動き（同じ番号はいっしょに）、撃ったあと逆の順にもどる。かかる時間＝ため時間
   const M = item.moves, seqParts = [];
@@ -17676,7 +17696,7 @@ function rigMonster(item, forceMove, cfg, veh) {
     seqParts.push(p);
   }
   const baseName = (o) => String(o && o.name || '').replace(/\.\d+$/, '');
-  for (const w of use) {
+  for (const w of arms) {
     const mine = seqParts.filter((p) => { const t = p.seq.to; return /^(すべて|全部|ぜんぶ|all)$/i.test(t) || (w.o && (t === baseName(w.o) || baseName(w.o).startsWith(t))) || (w.T.n === t || weaponOf(t) === w.k && !w.o); });
     if (mine.length) {
       const ords = [...new Set(mine.map((p) => p.seq.ord))].sort((a, b) => a - b);
@@ -17685,13 +17705,12 @@ function rigMonster(item, forceMove, cfg, veh) {
     }
     w.charge = w.seq ? w.seq.total : 0;
     w.bonus = 1 + Math.min(0.5, 0.25 * w.charge);   // ため時間 1 秒で +25%、2 秒以上は +50%（上限）
-    w.period = Math.max(w.T.cd, w.charge * 2 + 0.3);   // 動いて、撃って、もどるまで次は撃てない
+    w.period0 = Math.max(w.T.cd, w.charge * 2 + 0.3);   // 動いて、撃って、もどるまで次は撃てない（ため の秒数は monApplyLoad で足す）
     w.mult = rangeMult(w.R);
-    w.dmg = share * w.mult * w.period * w.bonus;   // 1 回のダメージ（射程が短いほど強い。1 秒あたりは share×mult×bonus）
   }
   // 盾：盾のある側（体の中心から見た向き）から来た攻撃を弱める
   const shieldDirs = ws.filter((w) => w.T.shield).slice(0, 4).map((w) => { const p = w.o.getWorldPosition(new THREE.Vector3()); return Math.hypot(p.x, p.z) < 0.1 * Math.max(sz.x, sz.z) ? 0 : Math.atan2(p.x, p.z); });
-  let speed = 5.5 / (0.55 + 0.45 * s) / (1 + 0.35 * over);   // 2026-11-19：前の半分（速すぎて、すぐ目の前で撃ち合いになっていた）
+  let speed = 5.5 / (0.55 + 0.45 * s);   // 2026-11-19：前の半分（速すぎて、すぐ目の前で撃ち合いになっていた）。武器の重さの分は monApplyLoad
   let hp = Math.round(500 * Math.pow(s, 1.3));   // 5 分の中で決着がつくくらい
   const MV = MON_MOVES[move];
   speed *= MV.sp; hp *= MV.hp;
@@ -17720,7 +17739,6 @@ function rigMonster(item, forceMove, cfg, veh) {
   if (!veh) item.rotors = rigRotors(item, root);   // 乗り物（プレイヤーが運転）は、乗り物のほうで回っている
   const half = 0.5 * Math.max(sz.x, sz.z);   // 剣・槍は体のふちから届く
   const reachOf = (w) => (w.T.melee ? half + w.R : w.R);
-  const ranges = use.map(reachOf);
   // 歩くと前後にふれる部品（足・腕）。原点が付け根
   const limbs = [];
   root.traverse((o) => {
@@ -17734,16 +17752,51 @@ function rigMonster(item, forceMove, cfg, veh) {
   });
   item.mon = {
     s, size: sz, lb, move, hpMax: hp, speed, autoSp, alt, wheels, seqParts, turn: (move === 'plane' ? 0.9 : 2.2) / (0.6 + 0.4 * s), dodge: THREE.MathUtils.clamp(0.32 - 0.06 * s, 0, 0.3),
-    atk, share, weight, carry, over, shields, shieldDirs, weapons: use, all: ws, odd, half, reachOf, range: Math.max(...ranges), minRange: Math.min(...ranges),
-    closeIn: use.some((w) => w.T.melee && reachOf(w) === Math.min(...ranges)), limbs,
+    atk, carry, shields, shieldDirs, all: ws, arms, odd, half, reachOf, limbs,
   };
-  item.mon.base = { speed: item.mon.speed, hp, atk, share, dodge: item.mon.dodge };   // 配分の前（monApplyCfg がここから決める）
-  for (const w of use) w.dmg0 = w.dmg;
+  item.mon.base = { speed0: item.mon.speed, speed: item.mon.speed, hp, atk, dodge: item.mon.dodge };   // 配分の前（monApplyCfg がここから決める）
+  monApplyLoad(item.mon, null, true);   // はじめは前から 5 個・ためなし
   return monApplyCfg(item.mon, cfg);
 }
+/* ---- 使う武器とため（2026-11-19 わんみゃさんの案）：ゲームの中で、武器を 5 個まで えらび、武器ごとに ため（0〜3 秒）を決める
+   L = { u: [えらんだ武器の番号（arms の中）], c: [それぞれの ため 秒] }。えらばない武器の重さは入れない（軽いほど速い）。
+   攻撃力の合計は えらんだ数で等分。ため 1 秒で 1 回の威力が「待った分 ＋15%」（ためている間は止まる・よく当たる） */
+function monLoadFix(S, L) {
+  const n = S.arms.length, u = [], c = [];
+  if (L && Array.isArray(L.u)) L.u.forEach((x, k) => { const i = x | 0; if (i >= 0 && i < n && !u.includes(i) && u.length < MON_WMAX) { u.push(i); c.push(THREE.MathUtils.clamp(Math.round((Number(Array.isArray(L.c) ? L.c[k] : 0) || 0) * 2) / 2, 0, MON_HOLD)); } });
+  if (!u.length) for (let i = 0; i < Math.min(n, MON_WMAX); i++) { u.push(i); c.push(0); }
+  return { u, c };
+}
+function monApplyLoad(S, L, noCfg) {
+  const F = S.load = monLoadFix(S, L);
+  let use = F.u.map((i, k) => { const w = S.arms[i]; w.hold = F.c[k]; return w; });
+  const weight = use.reduce((a, w) => a + w.T.cost, 0), over = Math.max(0, weight / S.carry - 1);
+  if (!use.length) use = [S.tackle || (S.tackle = { o: null, k: 'tackle', T: TACKLE, R: TACKLE.range, last: -99, hold: 0, charge: 0, bonus: 1, period0: TACKLE.cd, mult: rangeMult(TACKLE.range) })];
+  const share = S.atk / (use.length + S.shields);   // 1 つの武器の分け前（盾も 1 つ分使う）
+  for (const w of use) {
+    w.period = w.period0 + (w.hold || 0);
+    w.dmg0 = share * w.mult * w.period * w.bonus * (1 + 0.15 * (w.hold || 0));   // 1 回のダメージ（射程が短いほど強い。ため 1 秒で ＋15%）
+    w.dmg = w.dmg0;
+  }
+  const ranges = use.map(S.reachOf);
+  Object.assign(S, { weapons: use, weight, over, share, range: Math.max(...ranges), minRange: Math.min(...ranges), closeIn: use.some((w) => w.T.melee && S.reachOf(w) === Math.min(...ranges)) });
+  S.base.speed = S.base.speed0 / (1 + 0.35 * over); S.base.share = share;
+  if (!noCfg && S.cfg) monApplyCfg(S, S.cfg);
+  return S;
+}
+// 自分のモンスターの えらび（この端末に覚える）。ほかの人のモンスターは、持ち主から届いたもの
+const MON_LOADS = new Map();   // id → L（届いたもの）
+const monLoadKey = (m) => (m.id ? m.id : 'n:' + m.name);
+function monLoadSaved(m) { try { const o = JSON.parse(localStorage.getItem('world.monLoad') || '{}'); return o && o[monLoadKey(m)] || null; } catch (e) { return null; } }
+function monLoadSave(m, L) { try { const o = JSON.parse(localStorage.getItem('world.monLoad') || '{}') || {}; o[monLoadKey(m)] = L; localStorage.setItem('world.monLoad', JSON.stringify(o)); } catch (e) { /* 覚えられなくても遊べる */ } }
+function monLoadInit(m) {
+  const L = m.mine ? monLoadSaved(m) : (m.id && MON_LOADS.get(m.id)) || null;
+  if (L) monApplyLoad(m.item.mon, L);
+}
+const monLoadMsg = (m) => ({ t: 'lo', id: m.id, u: m.item.mon.load.u, c: m.item.mon.load.c });
 function monStatsHtml(S) {
   const cnt = {};
-  for (const w of S.all) { const k = w.T.shield ? w.T.n : `${w.T.n}（${w.R}m・×${rangeMult(w.R).toFixed(1)}${w.charge ? `・ため ${w.charge.toFixed(1)} 秒 +${Math.round((w.bonus - 1) * 100)}%` : ''}）`; cnt[k] = (cnt[k] || 0) + 1; }
+  for (const w of S.weapons) { const k = w.T.shield ? w.T.n : `${w.T.n}（${w.R}m・×${rangeMult(w.R).toFixed(1)}${w.hold ? `・ため ${w.hold} 秒` : ''}${w.charge ? `・動き ${w.charge.toFixed(1)} 秒 +${Math.round((w.bonus - 1) * 100)}%` : ''}）`; cnt[k] = (cnt[k] || 0) + 1; }
   const wl = Object.entries(cnt).map(([k, n]) => `${k}×${n}`).join('・') || 'なし（体当たり）';
   const nW = S.weapons.length + S.shields;
   const rows = [
@@ -17755,19 +17808,21 @@ function monStatsHtml(S) {
     ['戦い方', `${MON_TEND[S.cfg.tend].n}：${MON_TEND[S.cfg.tend].d}`],
     ['能力の配分', `速さ ${'★'.repeat(S.cfg.v)}・攻撃 ${'★'.repeat(S.cfg.a)}・守り ${'★'.repeat(S.cfg.d)}`],
     ['回避', `${Math.round(S.dodge * 100)}%`],
-    ['武器', wl],
+    ['使う武器', `${wl}${S.arms.length > S.weapons.length ? `（全部で ${S.arms.length} 個。「🎯 武器とため」でえらぶ）` : ''}`],
     ['武器の重さ', `${S.weight} ／ 積める ${S.carry}${S.over > 0 ? '（こえた分おそい）' : ''}`],
   ];
   if (S.shields) rows.push(['守り', `盾のある側から来た攻撃 −60%`]);
-  if (S.all.filter((w) => !w.T.shield).length > MON_WMAX) rows.push(['注意', `武器は ${MON_WMAX} 個まで使います（残りは飾り）`]);
+  if (S.arms.length > MON_WMAX) rows.push(['注意', `バトルで使う武器は ${MON_WMAX} 個まで（えらばない武器は重さも入れない）`]);
   if (S.odd.length) rows.push(['注意', `わからない武器（${S.odd.join('・')}）は銃にしました`]);
   return `<table>${rows.map(([k, x]) => `<tr><th>${k}</th><td>${escH(x)}</td></tr>`).join('')}</table>`
     + `<p class="mpnote">攻撃力の合計は大きさで決まり、武器の数で分けます（数をふやしても強くならない）。能力の配分は合計 9 点で、どれかを上げると、ほかが下がります（1 点 ±15%）。射程が短い武器ほど 1 回が強く、長いほどずれます。大きいほど HP と攻撃力が大きく、遅く当たりやすい。小さいほど速く、よけやすい。</p>`;
 }
 function showMonStats(m) {
   el('specT').textContent = `${m.name} の能力`;
-  el('specBody').innerHTML = monStatsHtml(m.item.mon) + (monCtl(m) ? '<div class="monpv"><button type="button" data-pv="move">▶ 動きを見る</button><button type="button" data-pv="atk">▶ 攻撃を見る</button></div>' : '');
+  el('specBody').innerHTML = monStatsHtml(m.item.mon) + (monCtl(m) ? '<div class="monpv"><button type="button" data-pv="move">▶ 動きを見る</button><button type="button" data-pv="atk">▶ 攻撃を見る</button>' + (m.mine && !m.bt ? '<button type="button" data-lo="1">🎯 武器とため</button>' : '') + '</div>' : '');
   el('specDlg').hidden = false;
+  const lo = el('specBody').querySelector('[data-lo]');
+  if (lo) lo.addEventListener('click', () => { el('specDlg').hidden = true; openMonLoad(m, () => showMonStats(m)); });
   for (const b of el('specBody').querySelectorAll('[data-pv]')) b.addEventListener('click', () => {
     if (!MONS.includes(m) || m.bt) return;
     el('specDlg').hidden = true;
@@ -17777,7 +17832,7 @@ function showMonStats(m) {
 }
 // 名前と HP の札
 function monLabel(m) {
-  const S = m.item.mon, f = Math.max(0, m.hp / S.hpMax), fight = !!m.bt, key = `${m.name}|${Math.ceil(f * 20)}|${fight ? 1 : 0}`;
+  const S = m.item.mon, f = Math.max(0, m.hp / S.hpMax), fight = !!m.bt, lost = fight && m.track === false, key = `${m.name}|${Math.ceil(f * 20)}|${fight ? 1 : 0}|${lost ? 1 : 0}`;
   if (m.labelKey === key) return;
   m.labelKey = key;
   let sp = m.label;
@@ -17791,7 +17846,7 @@ function monLabel(m) {
   const c = sp.userData.cv, g = c.getContext('2d');
   g.clearRect(0, 0, 256, 80);
   g.font = '800 26px "M PLUS Rounded 1c", "Hiragino Sans", sans-serif';
-  const txt = (fight ? '⚔ ' : '') + m.name;
+  const txt = (lost ? '❓ ' : fight ? '⚔ ' : '') + m.name;   // ❓：相手を見失っている
   const w = Math.min(248, g.measureText(txt).width + 28);
   g.fillStyle = fight ? 'rgba(255,232,214,0.94)' : 'rgba(255,255,255,0.9)';
   g.beginPath(); g.roundRect(128 - w / 2, 4, w, 40, 20); g.fill();
@@ -17853,7 +17908,7 @@ function mbFoe(m, now) {
   const k = mbSide(m); if (!k) return null;
   if (m.foe && m.foeT > now && mbSide(m.foe) === 3 - k && m.foe.hp > 0 && MONS.includes(m.foe)) return m.foe;
   let best = null, bd = Infinity;
-  for (const q of mbTeam(3 - k)) { const d = q.pos.distanceTo(m.pos) - (q === m.foe ? 8 : 0); if (d < bd) { bd = d; best = q; } }
+  for (const q of mbTeam(3 - k)) { const d = q.pos.distanceTo(m.pos) - (q === m.foe ? 8 : 0) + (monKnows(m, q, now) ? 0 : 150); if (d < bd) { bd = d; best = q; } }   // 場所を知っている相手が先
   m.foe = best; m.foeT = now + 1.5 + Math.random();
   return best;
 }
@@ -17866,9 +17921,13 @@ function stepMyMonster(m, dt, now) {
   let goal = null, face = null, stop = 0.5;
   if (t) {   // 戦い方（攻撃型・バランス・防御型）で動く。まわりこむ・物かげにかくれる
     monLos(m, t, now);
-    const G = monBattleGoal(m, t, now, dt, _mt);
-    goal = G.goal; stop = G.stop;
-    face = Math.atan2(t.pos.x - m.pos.x, t.pos.z - m.pos.z);
+    if (m.track) {
+      if (m.ai) m.ai.srch = false;
+      const G = monBattleGoal(m, t, now, dt, _mt);
+      goal = G.goal; stop = G.stop;
+      face = Math.atan2(t.pos.x - m.pos.x, t.pos.z - m.pos.z);
+    } else { goal = monSearch(m, now, _mt); stop = 1.5; }   // 見失った：最後に見た場所 → そのまわりをさがす
+    if (m.chg && S.move !== 'plane') { goal = null; if (m.track) face = Math.atan2(t.pos.x - m.pos.x, t.pos.z - m.pos.z); }   // ためている間は止まる（飛行機は止まれない）
   } else if (m.mode === 'follow') {
     ownerAt(_mo);
     const d = Math.hypot(_mo.x - m.pos.x, _mo.z - m.pos.z);
@@ -17934,7 +17993,7 @@ function stepMyMonster(m, dt, now) {
   const fy = monFloor(m, m.pos.x, m.pos.z, m.pos.y + 1.5);
   m.pos.y += (fy - m.pos.y) * Math.min(1, dt * (monFlies(S) ? 1.5 : 12));
   m.speedNow = Math.hypot(m.vel.x, m.vel.z);
-  if (t) monWeapons(m, t, now);
+  if (t) monWeapons(m, t, now, !m.track);   // 見失っている間は撃たない（ミサイルの撃ち落としはする）
   else if (m.mine && m.shared && m.id && net.db) {   // 止まったら場所を保存（入りなおしても、そこにいる）
     if (m.speedNow > 0.3) m.saveAt = now + 3;
     else if (m.saveAt && now > m.saveAt) { m.saveAt = 0; monSave(m); }
@@ -17964,9 +18023,20 @@ function monWeapons(m, t, now, noAttack) {
   // 飛んでくるミサイル：銃・ビームで撃ち落とす（いちばん近いもの）
   let threat = null, td = Infinity;
   for (const s of MSH) if (s.w.homing && s.real && s.tgt === m) { const dd = s.p.distanceTo(m.pos); if (dd < td) { td = dd; threat = s; } }
+  // ため：時間がたったら撃つ。相手が変わった・見失ったら やめる
+  if (m.chg) {
+    const C = m.chg;
+    if (noAttack || C.tgt !== t || !monAlive(t)) { m.chg = null; m.chgVis = null; }
+    else if (now >= C.until) {
+      m.chg = null; m.chgVis = null;
+      const n = ++monShotN;
+      monAttack(m, C.i, t, true, n);
+      if ((m.shared && m.id) || m.cid) monEmit({ t: 'fire', id: m.id || m.cid, w: C.i, tg: t.id || t.cid || '', n });
+    }
+  }
   S.weapons.forEach((w, i) => {
     const T = w.T;
-    if (now - w.last < (w.period || T.cd) || w.run) return;
+    if (now - w.last < (w.period || T.cd) || w.run || (m.chg && m.chg.i === i)) return;
     if (threat && MSH.includes(threat) && (T.k === 'gun' || T.instant) && td < Math.min(w.R, 60) && td > 3) {
       w.last = now;
       const from = weaponPos(m, w, new THREE.Vector3()), to = threat.p;
@@ -17979,10 +18049,17 @@ function monWeapons(m, t, now, noAttack) {
     if ((T.melee || T.flame) && facing > 1.1) return;
     if (!T.melee && !T.homing && w.o && w.dl && !w.seq && !muzzleOk(w, t)) return;
     if (!T.melee && !T.homing && !T.grav && m.los === false) return;   // 物にさえぎられて見えない：まっすぐ飛ぶ武器は撃たない（大砲は山なり、ミサイルは上から）   // 銃口が相手のほうを向いていない（シーケンスのある武器は、動いてから向く）
+    if (w.hold > 0) {   // ためてから撃つ（1 つずつ）
+      if (m.chg) return;
+      w.last = now + w.hold;
+      m.chg = { i, tgt: t, until: now + w.hold }; m.chgVis = { i, t0: now, until: now + w.hold }; monSnd('charge', m.pos.x, m.pos.y, m.pos.z, w.hold);
+      if ((m.shared && m.id) || m.cid) monEmit({ t: 'chg', id: m.id || m.cid, w: i, s: w.hold });
+      return;
+    }
     w.last = now + Math.random() * T.cd * 0.15;
     const n = ++monShotN;
     monAttack(m, i, t, true, n);
-    if (m.shared && m.id) monEmit({ t: 'fire', id: m.id, w: i, tg: t.id || '', n });
+    if ((m.shared && m.id) || m.cid) monEmit({ t: 'fire', id: m.id || m.cid, w: i, tg: t.id || t.cid || '', n });
   });
 }
 // 1 回撃つ（real：ダメージを決める画面＝バトルを始めた人。ほかの人の画面では見た目だけ）
@@ -18031,12 +18108,52 @@ function stepSeqs(m, dt) {
   });
   for (const p of S.seqParts) for (const a of p.axes) { const goal = seqGoal(a); a.val = a.init + (goal - a.init) * p.k; }
 }
+/* ---- バトルの音（2026-11-19）：発砲・大砲・ミサイル・ビーム・剣・爆発・ため。音はその場で作る（WebAudio。ファイルなし）
+   カメラから遠いほど小さく（400m より遠いと鳴らさない）、遠い音は少し遅れて届く。🔊 ボタンで消せる（端末に記憶） */
+let monSndOn = true; try { monSndOn = localStorage.getItem('world.battleSnd') !== '0'; } catch (e) { /* 覚えられなくても遊べる */ }
+const MSND = { noise: null, n: 0, sec: 0, out: null };
+function monSnd(kind, x, y, z, size = 1) {
+  if (!monSndOn) return;
+  const c = actx; if (!c || c.state !== 'running') return;
+  const d = Math.hypot(x - camera.position.x, y - camera.position.y, z - camera.position.z); if (d > 400) return;
+  const sec = Math.floor(c.currentTime * 4); if (sec !== MSND.sec) { MSND.sec = sec; MSND.n = 0; }
+  if (++MSND.n > (kind === 'gun' ? 6 : 10)) return;   // 一度にたくさん鳴らさない（0.25 秒に 6〜10）
+  if (!MSND.noise) { const L = c.sampleRate, buf = c.createBuffer(1, L, L), a = buf.getChannelData(0); for (let i = 0; i < L; i++) a[i] = Math.random() * 2 - 1; MSND.noise = buf; }
+  if (!MSND.out) { MSND.out = c.createDynamicsCompressor(); MSND.out.threshold.value = -14; MSND.out.ratio.value = 6; MSND.out.connect(c.destination); }
+  const vol = Math.min(1, 1.6 / (1 + d / 22)), t = c.currentTime + Math.min(0.6, d / 340) + 0.005, far = THREE.MathUtils.clamp(1 - d / 300, 0.15, 1);
+  const env = (g, a0, peak, len) => { g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(Math.max(0.0002, peak * vol), t + a0); g.gain.exponentialRampToValueAtTime(0.0001, t + len); };
+  const nz = (len, f0, f1, type, q, peak, a0 = 0.004) => {
+    const src = c.createBufferSource(); src.buffer = MSND.noise; src.loop = true;
+    const f = c.createBiquadFilter(); f.type = type; f.Q.value = q; f.frequency.setValueAtTime(f0 * (type === 'lowpass' ? far : 1), t); f.frequency.exponentialRampToValueAtTime(Math.max(20, f1), t + len);
+    const g = c.createGain(); env(g, a0, peak, len);
+    src.connect(f); f.connect(g); g.connect(MSND.out); src.start(t, Math.random() * 0.9); src.stop(t + len + 0.05);
+  };
+  const osc = (len, f0, f1, type, peak, a0 = 0.004) => {
+    const o = c.createOscillator(), g = c.createGain(); o.type = type; o.frequency.setValueAtTime(f0, t); o.frequency.exponentialRampToValueAtTime(Math.max(15, f1), t + len);
+    env(g, a0, peak, len); o.connect(g); g.connect(MSND.out); o.start(t); o.stop(t + len + 0.05);
+  };
+  const k = THREE.MathUtils.clamp(size, 0.4, 4);
+  if (kind === 'gun') { nz(0.09, 2600, 900, 'bandpass', 1.2, 0.55); osc(0.07, 180, 60, 'triangle', 0.35); }
+  else if (kind === 'cannon') { nz(0.7, 900, 90, 'lowpass', 0.7, 0.9); osc(0.45, 110, 35, 'sine', 0.8); }
+  else if (kind === 'missile') { nz(0.9, 500, 2400, 'bandpass', 0.8, 0.45, 0.05); osc(0.25, 90, 45, 'sine', 0.35); }
+  else if (kind === 'beam') { osc(0.35, 1700, 260, 'sawtooth', 0.18); osc(0.35, 1720, 300, 'sine', 0.25); }
+  else if (kind === 'swing') nz(0.18, 900, 3500, 'bandpass', 2, 0.35, 0.05);
+  else if (kind === 'clang') { osc(0.25, 1400, 1300, 'square', 0.12); nz(0.08, 4000, 2000, 'highpass', 0.7, 0.3); }
+  else if (kind === 'charge') osc(Math.min(3, size), 180, 900, 'sine', 0.12, Math.min(3, size) * 0.8);
+  else if (kind === 'boom') { nz(0.6 + 0.5 * k, 1400, 60, 'lowpass', 0.8, Math.min(1.4, 0.7 + 0.25 * k)); osc(0.5 + 0.4 * k, 90, 25, 'sine', Math.min(1.2, 0.6 + 0.2 * k)); }
+}
+function monBoom(x, y, z, sz, col) { fxBoom(x, y, z, sz, col); monSnd('boom', x, y, z, sz); }
+function monSndUi() { for (const id of ['monHudSnd', 'specSnd']) { const b = el(id); if (b) { b.textContent = monSndOn ? '🔊' : '🔇'; b.setAttribute('aria-label', monSndOn ? 'バトルの音を消す' : 'バトルの音を出す'); } } }
+for (const id of ['monHudSnd', 'specSnd']) el(id).addEventListener('click', () => { monSndOn = !monSndOn; try { localStorage.setItem('world.battleSnd', monSndOn ? '1' : '0'); } catch (e) {} audioCtx(); monSndUi(); showMsg(monSndOn ? '🔊 バトルの音を出します' : '🔇 バトルの音を消しました'); });
+monSndUi();
 function monFire(m, i, t, real, n) {
   const S = m.item.mon, w = S.weapons[i]; if (!w) return;
   const T = w.T, from = weaponPos(m, w, new THREE.Vector3());
+  monSnd(T.melee ? 'swing' : T.flame ? 'missile' : T.instant ? 'beam' : T.homing ? 'missile' : T.grav ? 'cannon' : 'gun', from.x, from.y, from.z);
   const aim = t ? monCenter(t, new THREE.Vector3()) : from.clone().add(new THREE.Vector3(Math.sin(m.h) * 30, 0, Math.cos(m.h) * 30));
   if (t && m.aimY) aim.y += m.aimY;   // 体が物かげ：見えている上のほうをねらう
-  const dmg = w.dmg || 1;
+  // 遠くでは威力が落ちる（射程の 4 割までは そのまま、射程のはしで半分）
+  const dmg = (w.dmg || 1) * (T.melee ? 1 : 1 - 0.5 * ss(w.R * 0.4, w.R, from.distanceTo(aim)));
   if (T.melee) {
     w.swing = 0.0001;   // 振る
     if (t) setTimeout(() => {
@@ -18044,6 +18161,7 @@ function monFire(m, i, t, real, n) {
       if (Math.hypot(t.pos.x - m.pos.x, t.pos.z - m.pos.z) > S.reachOf(w) + monRad(t) + 1.5) return;
       monCenter(t, _mc).lerp(m.pos, 0.3);
       for (let k = 0; k < 14; k++) fxEmit(true, _mc.x, _mc.y, _mc.z, rnd(5), rnd(4) + 2, rnd(5), 1, 0.9, 0.5, 0.18, 0, 0.35, 1, 9.8, 0.5);
+      monSnd('clang', _mc.x, _mc.y, _mc.z);
       if (real) monHit(t, dmg, false, m.pos);
     }, 220);
     return;
@@ -18054,7 +18172,7 @@ function monFire(m, i, t, real, n) {
     if (real && t && from.distanceTo(aim) < w.R + monRad(t)) monHit(t, dmg, true, m.pos);
     return;
   }
-  const dist0 = from.distanceTo(aim), miss = rangeSpread(w.R) * dist0 * 1.6;   // 射程が長い武器ほどずれる（大きい相手ほど当たる）
+  const dist0 = from.distanceTo(aim), miss = rangeSpread(w.R) * dist0 * 1.6 / (1 + 0.5 * (w.hold || 0));   // 射程が長い武器ほどずれる（大きい相手ほど当たる）。ためるほど よく当たる
   aim.x += rnd(1) * miss; aim.y += rnd(1) * miss * 0.5; aim.z += rnd(1) * miss;
   if (T.instant) {   // ビーム：光をためてから、まっすぐすぐ届く
     for (let k = 0; k < 8; k++) fxEmit(true, from.x + rnd(0.4), from.y + rnd(0.4), from.z + rnd(0.4), 0, 0, 0, 0.5, 1, 1, 0.25 + k * 0.05, 0.5, T.charge, 0.9, 0, 0);
@@ -18103,6 +18221,7 @@ function monHit(t, dmg, noDodge, fromPos) {
   }
   if (t.pvp) { pvpDamage(t, Math.max(0.5, dmg)); return; }   // プレイヤーの乗り物：当たったことを持ち主へ
   t.hp -= Math.max(0.5, dmg);
+  if (fromPos && t.know) for (const q of mbTeam(3 - mbSide(t))) if (q.pos.distanceTo(fromPos) < monRad(q) + 4) { const k = t.know.get(q); if (k) { k.t = clock.elapsedTime; k.p.copy(q.pos); } }   // 撃たれた：撃ってきた所がわかる
   if (t.hp <= 0) { t.hp = 0; monDown(t); }
 }
 // HP 0：チームにまだいれば、その 1 体だけ爆発して消える（本体がやられたときは、のこった分身と入れかわる）。だれもいなければ負け
@@ -18110,7 +18229,7 @@ function monDown(t) {
   const k = mbSide(t); if (!k) return;
   const left = mbTeam(k).filter((q) => q !== t);
   if (!left.length) { battleEnd(k === 1 ? MB.b : MB.a, 'ko'); return; }
-  monCenter(t, _mc); fxBoom(_mc.x, _mc.y, _mc.z, Math.min(4, 1 + t.item.mon.s * 0.5), null);
+  monCenter(t, _mc); monBoom(_mc.x, _mc.y, _mc.z, Math.min(4, 1 + t.item.mon.s * 0.5), null);
   const p = [Math.round(_mc.x * 10) / 10, Math.round(_mc.y * 10) / 10, Math.round(_mc.z * 10) / 10];
   let gone = t;
   if (t === MB.a || t === MB.b) {
@@ -18247,9 +18366,9 @@ function covPush(m) {
    バランス：まわりこみながら撃つ（ときどき回る向きを変える）。HP が半分を切ると物かげを使う
    防御型：遠くから撃つ。建物や車のかげにかくれて、撃つときだけ横に顔を出す */
 const MON_TEND = {
-  a: { n: '攻撃型', d: '多少当たっても前に出て、近くで撃ち合う。かくれない' },
-  b: { n: 'バランス', d: 'まわりこみながら撃つ。HP が半分を切ると物かげを使う' },
-  d: { n: '防御型', d: '遠くから撃ち、建物や車のかげにかくれて、撃つときだけ顔を出す' },
+  a: { n: '攻撃型', d: '多少当たっても前に出て、近くで撃ち合う。かくれない。武器の威力 ＋15%・HP −10%', atk: 1.15, hp: 0.9 },
+  b: { n: 'バランス', d: 'まわりこみながら撃つ。HP が半分を切ると物かげを使う', atk: 1, hp: 1 },
+  d: { n: '防御型', d: '遠くから撃ち、建物や車のかげにかくれて、撃つときだけ顔を出す。武器の威力 −15%・HP ＋10%', atk: 0.85, hp: 1.1 },
 };
 // かくれる場所：相手から見て物の向こう側。顔を出す場所：その横
 function monFindCover(m, t, want) {
@@ -18289,7 +18408,7 @@ function monFindCover(m, t, want) {
 // バトルのときの行き先
 function monBattleGoal(m, t, now, dt, out) {
   const S = m.item.mon, tend = (S.cfg && S.cfg.tend) || 'b';
-  const A = m.ai || (m.ai = { side: Math.random() < 0.5 ? 1 : -1, flip: 0, cover: null, coverT: 0, peek: false, phaseT: 0, stuckT: 0, bump: 0, hold: false, holdT: 0 });
+  const A = monAi(m);
   const dx = m.pos.x - t.pos.x, dz = m.pos.z - t.pos.z, d = Math.hypot(dx, dz) || 1, rT = monRad(t);
   let want;
   if (S.closeIn) want = S.minRange * 0.8 + rT * 0.8;
@@ -18324,7 +18443,31 @@ function monBattleGoal(m, t, now, dt, out) {
   return { goal: out.set(t.pos.x + Math.sin(ang) * rr, 0, t.pos.z + Math.cos(ang) * rr), stop: 0.3 };
 }
 // 相手が見えるか（0.2 秒ごと）。体のまん中が見えなければ頭の上をねらう
+// 見えるか（2026-11-19）：前と横（左右 120° ずつ）は見える。真後ろは、近く（体の大きさ＋8m）でないと気づかない。
+//   物かげ・丘に体がぜんぶかくれても見えない。MON_LOSE 秒見えないと見失う（最後に見た場所をさがしに行く）
 function monLos(m, t, now) {
+  monLos0(m, t, now);
+  const K = m.know || (m.know = new Map());
+  let k = K.get(t); if (!k) K.set(t, k = { t: now, p: t.pos.clone() });   // バトルの始めは、相手の場所を知っている
+  const ang = Math.abs(wrapA(Math.atan2(t.pos.x - m.pos.x, t.pos.z - m.pos.z) - m.h)), d = Math.hypot(t.pos.x - m.pos.x, t.pos.z - m.pos.z);
+  if (m.los !== false && (ang < 2.1 || d < 8 + monRad(m) + monRad(t))) { k.t = now; k.p.copy(t.pos); }
+  for (const q of mbTeam(mbSide(m))) { const o = q !== m && q.know && q.know.get(t); if (o && o.t > k.t) { k.t = o.t; k.p.copy(o.p); } }   // なかまが見ていれば、その場所を教えてもらえる
+  m.track = now - k.t < MON_LOSE; m.lastP = k.p;
+}
+const monKnows = (m, q, now) => { const k = m.know && m.know.get(q); return !k || now - k.t < MON_LOSE; };
+function monAi(m) { return m.ai || (m.ai = { side: Math.random() < 0.5 ? 1 : -1, flip: 0, cover: null, coverT: 0, peek: false, phaseT: 0, stuckT: 0, bump: 0, hold: false, holdT: 0 }); }
+// 見失ったとき：最後に見た場所へ行き、そのまわり（8〜26m）を順にさがす
+function monSearch(m, now, out) {
+  const A = monAi(m), P = m.lastP || m.pos;
+  if (!A.srch || !A.wp || now > A.wpT || Math.hypot(A.wp[0] - m.pos.x, A.wp[1] - m.pos.z) < 2.5) {
+    if (!A.srch) A.wp = [P.x, P.z];
+    else { const a = Math.random() * Math.PI * 2, r = 8 + Math.random() * 18; A.wp = [P.x + Math.sin(a) * r, P.z + Math.cos(a) * r]; }
+    if (MB.field) { A.wp[0] = THREE.MathUtils.clamp(A.wp[0], BF.x0 + 3, BF.x1 - 3); A.wp[1] = THREE.MathUtils.clamp(A.wp[1], BF.z0 + 3, BF.z1 - 3); }
+    A.srch = true; A.wpT = now + 4 + Math.random() * 2;
+  }
+  return out.set(A.wp[0], 0, A.wp[1]);
+}
+function monLos0(m, t, now) {
   if (m.losAt && now < m.losAt) return;
   m.losAt = now + 0.2;
   if (!COV.on) { m.los = true; m.aimY = 0; return; }
@@ -18354,14 +18497,17 @@ function monKindParse(k) {
 const monK = (x) => 1 + 0.15 * (x - 3);
 // スペック（2026-11-19）：HP（よける分だけ多く見る）と攻撃力（1 秒あたり）から 2√(HP×攻撃力)。
 //   撃ち合いでは「数²×HP×攻撃力」が強さなので、この数は足し算できる：スペック 200 が 5 体 ≒ スペック 1000 が 1 体
-const monSpec = (S) => Math.round(2 * Math.sqrt((S.hpMax / (1 - Math.min(0.5, S.dodge))) * S.atk));
+//   2026-11-19：攻撃力には射程（長いほど高い）と ため（長いほど高い）も入れる
+const monAtkK = (S) => { const W = S.weapons; if (!W.length) return 1; return W.reduce((a, w) => a + THREE.MathUtils.clamp(Math.pow(Math.max(0.5, S.reachOf(w)) / 25, 0.25), 0.6, 1.6) * (1 + 0.15 * (w.hold || 0)), 0) / W.length; };
+const monSpec = (S) => Math.round(2 * Math.sqrt((S.hpMax / (1 - Math.min(0.5, S.dodge))) * S.atk * monAtkK(S)));
 function monApplyCfg(S, cfg) {
   const c = S.cfg = monCfgFix(cfg), B = S.base;
   S.speed = Math.max(0.8, B.speed * monK(c.v));
   S.dodge = THREE.MathUtils.clamp(B.dodge + 0.03 * (c.v - 3), 0, 0.36);
-  S.hpMax = Math.round(B.hp * monK(c.d));
-  S.atk = B.atk * monK(c.a); S.share = B.share * monK(c.a);
-  for (const w of S.weapons) w.dmg = (w.dmg0 || 1) * monK(c.a);
+  const tk = MON_TEND[c.tend].atk, hk = MON_TEND[c.tend].hp;   // 戦い方：攻撃型は武器が強く体がもろい、防御型はその逆
+  S.hpMax = Math.round(B.hp * monK(c.d) * hk);
+  S.atk = B.atk * monK(c.a) * tk; S.share = (B.share || 0) * monK(c.a) * tk;
+  for (const w of S.weapons) w.dmg = (w.dmg0 || 1) * monK(c.a) * tk;
   return S;
 }
 // 置く前の画面：戦い方と配分。決めたら cfg、やめたら null
@@ -18420,14 +18566,14 @@ function stepMonShots(dt) {
     if (hit && !T.splash && s.real && Math.random() < hit.item.mon.dodge) { s.dodged = hit; hit = null; }   // よけた（そのまま飛んでいく）
     if (hit || ground || s.t > s.life) {
       if (T.splash && (hit || ground)) {
-        fxBoom(s.p.x, s.p.y + 0.2, s.p.z, T.splash / 4, null);
+        monBoom(s.p.x, s.p.y + 0.2, s.p.z, T.splash / 4, null);
         const q = s.tgt;
         if (s.real && q && monAlive(q)) { monCenter(q, _mc); const d = Math.max(0, _mc.distanceTo(s.p) - monRad(q)); if (d < T.splash) monHit(q, s.dmg * (1 - (d / T.splash) * 0.6) * (covSeg(s.p, _mc, 0.8) ? 0.25 : 1), true, s.from.pos); }   // 物のかげなら爆風は 1/4
       } else if (hit) {
-        if (T.homing) fxBoom(s.p.x, s.p.y, s.p.z, 0.6, null);
+        if (T.homing) monBoom(s.p.x, s.p.y, s.p.z, 0.6, null);
         else for (let k = 0; k < 8; k++) fxEmit(true, s.p.x, s.p.y, s.p.z, rnd(4), rnd(4), rnd(4), 1, 0.8, 0.3, 0.15, 0, 0.25, 1, 9.8, 0.5);
         if (s.real) monHit(hit, s.dmg, true, s.from.pos);
-      } else if (ground && T.homing) fxBoom(s.p.x, s.p.y, s.p.z, 0.5, null);
+      } else if (ground && T.homing) monBoom(s.p.x, s.p.y, s.p.z, 0.5, null);
       else if (wall) for (let k = 0; k < 6; k++) fxEmit(true, s.p.x, s.p.y, s.p.z, rnd(3), rnd(3) + 1, rnd(3), 1, 0.75, 0.35, 0.12, 0, 0.2, 1, 9.8, 0.5);   // 火花
       MSH.splice(i, 1);
     }
@@ -18487,6 +18633,11 @@ function poseMonster(m, dt, T) {
     stepSeqs(m, dt);
     mpApply(M);
   }
+  if (m.chgVis) {   // ためている：銃口が だんだん明るく大きく光る
+    const C = m.chgVis, w = S.weapons[C.i];
+    if (!w || T > C.until + 0.1 || !m.bt) m.chgVis = null;
+    else { const f = THREE.MathUtils.clamp((T - C.t0) / Math.max(0.1, C.until - C.t0), 0, 1); weaponPos(m, w, _mc); fxEmit(true, _mc.x, _mc.y, _mc.z, rnd(0.3), rnd(0.3), rnd(0.3), 1, 0.6 + 0.4 * f, 0.25 + 0.5 * f, (0.2 + 0.7 * f) * Math.max(0.7, Math.min(3, S.s * 0.35)), 0, 0.08, 1, 0, 0); }
+  }
   if (m.label) {
     monLabel(m);
     const far = camera.position.distanceTo(root.position);
@@ -18508,7 +18659,7 @@ function stepRemoteMonster(m, dt) {
   m.h += wrapA(N.h - m.h) * k;
   m.speedNow = dt > 0 ? Math.hypot(m.pos.x - px, m.pos.z - pz) / dt : 0;
 }
-let monSendT = 0, monSendNow = false;
+let monSendT = 0, monSendNow = false, monLoT = 3;
 function stepMonsters(dt) {
   stepBattleUi(dt);
   if (!MONS.length && !MSH.length && !MBEAMS.length) return;
@@ -18522,6 +18673,7 @@ function stepMonsters(dt) {
     if (MONS.includes(m)) poseMonster(m, dt, now);
   }
   stepMonShots(dt);
+  if (net.room && (monLoT -= dt) <= 0) { monLoT = 20; for (const m of MONS) if (m.mine && m.shared && m.id && !m.copyOf) monEmit(monLoadMsg(m)); }   // 自分のモンスターの武器とため（持ち主がいないバトルでも使えるよう、ときどき送る）
   // 動かしているモンスターの位置・HP をみんなに（動いている間は 0.2 秒ごと、止まっていれば 2 秒ごと）
   monSendT -= dt;
   if (net.room && (monSendT <= 0 || monSendNow)) {
@@ -18560,16 +18712,25 @@ function onMonNet(p) {
     const b = byId(d.b);
     for (const q of [m, b]) if (q && !mbIn(q)) { q.bt = { remote: true, vs: q === m ? b : m }; q.net = q.net || { x: q.pos.x, y: q.pos.y, z: q.pos.z, h: q.h, at: performance.now() }; q.net.at = performance.now(); }
     // 分身（2 体目から）：この画面でも同じ .glb から作る。位置は始めた人から届く
+    if (m && d.la) monApplyLoad(m.item.mon, d.la); if (b && d.lb) monApplyLoad(b.item.mon, d.lb);   // 武器の番号をそろえる
     const na = THREE.MathUtils.clamp(d.na | 0, 1, MON_CMAX), nb = THREE.MathUtils.clamp(d.nb | 0, 1, MON_CMAX);
     if (m && na > 1 && !mbIn(m)) monMakeCopies(m, na - 1, true).catch(() => {});
     if (b && nb > 1 && !mbIn(b)) monMakeCopies(b, nb - 1, true).catch(() => {});
     if (m && b && (m.mine || b.mine)) showMsg(`⚔ ${cleanName(p.data.n || '')}さんが「${m.name}」と「${b.name}」のバトルを始めました`);
     return;
   }
+  if (d.t === 'chg') { if (m && !monCtl(m) && m.item.mon.weapons[d.w | 0]) { const sec = num(d.s, 0, MON_HOLD, 0); m.chgVis = { i: d.w | 0, t0: clock.elapsedTime, until: clock.elapsedTime + sec }; monSnd('charge', m.pos.x, m.pos.y, m.pos.z, sec); } return; }
+  if (d.t === 'lo') {   // 持ち主がえらんだ武器とため
+    if (typeof d.id !== 'string' || !OK_ID.test(d.id) || !Array.isArray(d.u) || d.u.length > MON_WMAX) return;
+    const L = { u: d.u.slice(0, MON_WMAX).map((x) => x | 0), c: Array.isArray(d.c) ? d.c.slice(0, MON_WMAX).map((x) => num(x, 0, MON_HOLD, 0)) : [] };
+    MON_LOADS.set(d.id, L);
+    if (m && !m.mine && !m.bt && !mbIn(m)) monApplyLoad(m.item.mon, L);
+    return;
+  }
   if (d.t === 'kc') {   // 分身がやられた
     const c = MONS.find((q) => q.cid === d.id && q.copyOf && !monCtl(q)); if (!c) return;
     const P = Array.isArray(d.p) ? d.p : null; monCenter(c, _mc); if (P) _mc.set(num(P[0], X0, X1, _mc.x), num(P[1], Y_BOTTOM, Y_TOP, _mc.y), num(P[2], Z0, Z1, _mc.z));
-    fxBoom(_mc.x, _mc.y, _mc.z, Math.min(4, 1 + c.item.mon.s * 0.5), null); removeMonster(c);
+    monBoom(_mc.x, _mc.y, _mc.z, Math.min(4, 1 + c.item.mon.s * 0.5), null); removeMonster(c);
     return;
   }
   if (d.t === 'be') {   // バトルが終わった
@@ -18584,7 +18745,7 @@ function onMonNet(p) {
     else if (m && b && (m.mine || b.mine)) showMsg(`⚔ バトル：${m.name} と ${b.name} は引き分け。元の位置に帰りました`);
     return;
   }
-  if (d.t === 'boom' && m) { monCenter(m, _mc); fxBoom(_mc.x, _mc.y, _mc.z, Math.min(4, 1 + m.item.mon.s * 0.5), null); }
+  if (d.t === 'boom' && m) { monCenter(m, _mc); monBoom(_mc.x, _mc.y, _mc.z, Math.min(4, 1 + m.item.mon.s * 0.5), null); }
 }
 // 分身を作る（同じ .glb・同じ動き方と配分）。remote：ほかの人が始めたバトル（動きは届いた位置で）
 const MON_CMAX = 10, MON_CIRC = '①②③④⑤⑥⑦⑧⑨⑩';
@@ -18594,6 +18755,7 @@ async function monMakeCopies(m, n, remote) {
   for (let k = 0; k < n && MONS.includes(m); k++) {
     const it = await buildThing(buf, m.name, 'prop');
     rigMonster(it, S.move, S.cfg);
+    monApplyLoad(it.mon, S.load);   // 本体と同じ武器・ため
     const off = (Math.floor(k / 2) + 1) * (2 + monRad(m) * 2.4) * (k % 2 ? 1 : -1);
     const c = makeMonster(it, m.name + MON_CIRC[k + 1], m.pos.x + Math.cos(m.h) * off, m.pos.z - Math.sin(m.h) * off, m.h, { mine: false });
     c.copyOf = m; c.cid = m.shared && m.id ? `${m.id}-c${k + 2}` : null;
@@ -18618,6 +18780,7 @@ function bfPlaceTeams() {
 // バトルを始める（a：自分のモンスター、b：相手。na・nb：何体で戦うか。field：バトルフィールドで）
 async function battleStart(a, b, min, na = 1, nb = 1, field = false) {
   if (MB.on || MB.prep) { showMsg('いまバトル中です'); return; }
+  audioCtx();   // バトルの音（ボタンを押したときに音を出せるようにする）
   if (a.bt || b.bt) { showMsg('どちらかが、ほかのバトルに出ています'); return; }
   a.preview = b.preview = null;
   na = THREE.MathUtils.clamp(na | 0, 1, MON_CMAX); nb = THREE.MathUtils.clamp(nb | 0, 1, MON_CMAX);
@@ -18629,9 +18792,9 @@ async function battleStart(a, b, min, na = 1, nb = 1, field = false) {
   finally { MB.prep = false; }
   if (!MONS.includes(a) || !MONS.includes(b) || MB.on || a.bt || b.bt) { for (const q of [...ca, ...cb]) removeMonster(q); return; }
   Object.assign(MB, { on: true, a, b, A: [a, ...ca], B: [b, ...cb], n0: [1 + ca.length, 1 + cb.length], field: !!field, t0: Date.now(), limit: Math.round(min * 60), home });
-  for (const q of [...MB.A, ...MB.B]) { q.bt = { host: true }; q.hp = q.item.mon.hpMax; q.vel.set(0, 0, 0); q.foe = null; q.ai = null; q.mode = 'stay'; for (const w of q.item.mon.weapons) w.last = clock.elapsedTime - Math.random() * w.T.cd; }
+  for (const q of [...MB.A, ...MB.B]) { q.bt = { host: true }; q.hp = q.item.mon.hpMax; q.vel.set(0, 0, 0); q.foe = null; q.ai = null; q.know = null; q.track = true; q.chg = null; q.chgVis = null; q.mode = 'stay'; for (const w of q.item.mon.weapons) w.last = clock.elapsedTime - Math.random() * w.T.cd; }
   if (field) bfPlaceTeams();
-  if (a.shared && a.id && b.shared && b.id) monEmit({ t: 'bt', id: a.id, b: b.id, n: myName || '', na: MB.n0[0], nb: MB.n0[1], f: field ? 1 : 0 });
+  if (a.shared && a.id && b.shared && b.id) monEmit({ t: 'bt', id: a.id, b: b.id, n: myName || '', na: MB.n0[0], nb: MB.n0[1], f: field ? 1 : 0, la: a.item.mon.load, lb: b.item.mon.load });
   const cnt = (q, k) => (k > 1 ? `${q.name}×${k}` : q.name);
   showMsg(`⚔ バトル開始！ ${cnt(a, MB.n0[0])} vs ${cnt(b, MB.n0[1])}（${min} 分${field ? '・バトルフィールド' : ''}）`);
   el('monHud').hidden = false;
@@ -18650,7 +18813,7 @@ function battleEnd(win, why) {
   MB.A = []; MB.B = []; MB.field = false;
   const lose = win ? (win === a ? b : a) : null;
   [a, b].forEach((q, i) => {
-    q.bt = null; q.hp = q.item.mon.hpMax; q.vel.set(0, 0, 0);
+    q.bt = null; q.hp = q.item.mon.hpMax; q.vel.set(0, 0, 0); q.chg = null; q.chgVis = null; q.track = true; q.know = null;
     if (q === lose || !MONS.includes(q)) return;
     q.mode = 'stay';
     if (q === win) { q.retAt = clock.elapsedTime + 5; q.retH = home[i]; q.retSave = true; return; }   // 勝ったほう：その場で 5 秒待ってから帰る
@@ -18658,7 +18821,7 @@ function battleEnd(win, why) {
   });
   if (a.shared && a.id && b.shared && b.id) monEmit({ t: 'be', id: win === b ? b.id : a.id, b: win === b ? a.id : b.id, r: win ? 'ko' : 'draw', h: win === b ? [home[1], home[0]] : home });
   if (lose) {
-    monCenter(lose, _mc); fxBoom(_mc.x, _mc.y, _mc.z, Math.min(4, 1 + lose.item.mon.s * 0.5), null);
+    monCenter(lose, _mc); monBoom(_mc.x, _mc.y, _mc.z, Math.min(4, 1 + lose.item.mon.s * 0.5), null);
     if (lose.shared && lose.id) monEmit({ t: 'boom', id: lose.id });
     showMsg(`⚔ ${win.name} の勝ち！ ${lose.name} は爆発して消えました`);
     if (lose.shared && lose.id && net.db) { const id = lose.id; net.db.remove(id).catch(() => {}); unloadSharedProp(id); }
@@ -18700,6 +18863,39 @@ function stepBattleUi(dt) {
   monNearMe = near;
   el('monBattle').hidden = !near || !el('monDlg').hidden;
 }
+// 「🎯 武器とため」：使う武器（5 個まで）と、武器ごとの ため（0〜3 秒）をえらぶ
+function openMonLoad(m, after) {
+  const S = m.item.mon, D = el('monLoad'), old = { u: [...S.load.u], c: [...S.load.c] };
+  if (m.bt) { showMsg('バトル中は変えられません'); return; }
+  const sel = new Map(old.u.map((i, k) => [i, old.c[k]]));   // 武器の番号 → ため（秒）
+  const nm = (w) => String((w.o && w.o.name) || w.T.n).replace(/\.\d+$/, '').slice(0, 18);
+  el('monLoadT').textContent = `${m.name}：武器とため`;
+  const draw = () => {
+    monApplyLoad(S, { u: [...sel.keys()], c: [...sel.values()] });
+    el('monLoadCnt').textContent = `えらんだ武器 ${sel.size} / ${MON_WMAX}（全部で ${S.arms.length} 個）`;
+    el('monLoadList').innerHTML = S.arms.length ? S.arms.map((w, i) => {
+      const on = sel.has(i), h = sel.get(i) || 0;
+      return `<div class="mlrow${on ? ' on' : ''}"><button type="button" data-w="${i}" aria-pressed="${on}"${!on && sel.size >= MON_WMAX ? ' disabled' : ''}><b>${on ? '☑' : '☐'} ${escH(nm(w))}</b><small>${w.T.n}・射程 ${Math.round(S.reachOf(w))}m・重さ ${w.T.cost}${on ? `・1 回 ${Math.round(w.dmg)}` : ''}</small></button>`
+        + (on ? `<span class="mlh"><button type="button" data-h="${i}" data-d="-0.5" aria-label="ためを短く"${h <= 0 ? ' disabled' : ''}>−</button><b>ため ${h ? h + ' 秒' : 'なし'}</b><button type="button" data-h="${i}" data-d="0.5" aria-label="ためを長く"${h >= MON_HOLD ? ' disabled' : ''}>＋</button></span>` : '') + '</div>';
+    }).join('') : '<p class="mpnote">武器がありません（体当たりで戦います）</p>';
+    el('monLoadPrev').innerHTML = `<table><tr><th>スペック</th><td>${monSpec(S).toLocaleString()}</td></tr><tr><th>攻撃力</th><td>${Math.round(S.atk)}（1 つ ${S.share.toFixed(1)}）</td></tr><tr><th>武器の重さ</th><td>${S.weight} ／ 積める ${S.carry}${S.over > 0 ? '（こえた分おそい）' : ''}</td></tr><tr><th>速さ</th><td>${Math.round(S.speed * 3.6)}km/h</td></tr></table>`;
+  };
+  const close = () => { D.hidden = true; if (after) after(); };
+  D.onclick = (e) => {
+    const b = e.target.closest('button'); if (!b || b.disabled) return;
+    if (b.dataset.w != null) { const i = +b.dataset.w; if (sel.has(i)) { if (sel.size > 1) sel.delete(i); } else if (sel.size < MON_WMAX) sel.set(i, 0); draw(); return; }
+    if (b.dataset.h != null) { const i = +b.dataset.h; sel.set(i, THREE.MathUtils.clamp((sel.get(i) || 0) + +b.dataset.d, 0, MON_HOLD)); draw(); return; }
+    if (b.id === 'monLoadNo') { monApplyLoad(S, old); close(); return; }
+    if (b.id === 'monLoadGo') {
+      monLoadSave(m, S.load);
+      if (m.shared && m.id) monEmit(monLoadMsg(m));
+      showMsg(`${m.name}：武器 ${S.weapons.length} 個${S.weapons.some((w) => w.hold) ? '・ため あり' : ''}にしました（スペック ${monSpec(S).toLocaleString()}）`);
+      close();
+    }
+  };
+  draw();
+  D.hidden = false;
+}
 function openBattleDlg() {
   const m = monNearMe; if (!m) return;
   const list = battleCands(m);
@@ -18732,6 +18928,7 @@ function openBattleDlg() {
     if (b.dataset.i != null) { for (const x of box.querySelectorAll('button')) x.setAttribute('aria-pressed', String(x === b)); eq(); drawCnt(); return; }
     if (b.dataset.cn) { cnt[b.dataset.cn] = THREE.MathUtils.clamp(cnt[b.dataset.cn] + +b.dataset.d, 1, MON_CMAX); drawCnt(); return; }
     if (b.id === 'monDlgEq') { eq(); drawCnt(); return; }
+    if (b.id === 'monDlgLoad') { el('monDlg').hidden = true; openMonLoad(m, () => { if (MONS.includes(m)) { el('monDlg').hidden = false; drawCnt(); } }); return; }
     if (b.dataset.where) { for (const x of el('monDlgWhere').querySelectorAll('button')) x.setAttribute('aria-pressed', String(x === b)); return; }
     if (b.dataset.min) { for (const x of el('monDlgMin').querySelectorAll('button')) x.setAttribute('aria-pressed', String(x === b)); return; }
     if (b.id === 'monDlgNo') { el('monDlg').hidden = true; return; }
@@ -18756,7 +18953,7 @@ async function addMonsterFromBuffer(buf, name, move, cfg0) {
   const f = player.face, ahead = 2.5 + Math.max(S.size.x, S.size.z) * 0.6;
   const x = clampX(player.pos.x + Math.sin(f) * ahead, 4), z = clampZ(player.pos.z + Math.cos(f) * ahead, 4), rot = wrapA(f + Math.PI);
   const tris = countTris(item.root);
-  const put = (id) => { const m = makeMonster(item, name, x, z, rot, { id, shared: !!id, by: net.myId || null, mine: true }); renderMonMenu(); showMonStats(m); return m; };
+  const put = (id) => { const m = makeMonster(item, name, x, z, rot, { id, shared: !!id, by: net.myId || null, mine: true }); monLoadInit(m); renderMonMenu(); showMonStats(m); return m; };
   if (net.db && buf.byteLength <= SHARE_MAX && tris <= TRI_MAX) {
     showMsg(`${name}（モンスター）を置いています…`);
     const id = newId();
@@ -18785,6 +18982,7 @@ async function loadSharedMonster(d, buf, name) {
   rigMonster(item, K.move, K.cfg);
   const x = num(d.x, X0 + 1, X1 - 1), z = num(d.z, Z0 + 1, Z1 - 1), rot = num(d.rot, -100, 100);
   const m = makeMonster(item, name, x, z, rot, { id: d.id, shared: true, by: typeof d.by === 'string' ? d.by : null, mine: !!(d.by && d.by === net.myId) });
+  monLoadInit(m);   // 使う武器とため（自分のは この端末に覚えたもの、ほかの人のは届いたもの）
   if (m.mine) renderMonMenu();
   return m;
 }
@@ -18848,6 +19046,7 @@ function specNearest() {
   return ps.sort((x, y) => x[0].pos.distanceTo(_mo) - y[0].pos.distanceTo(_mo))[0];
 }
 function specStart() {
+  audioCtx();
   const p = specNearest(); if (!p) return;
   Object.assign(SPEC, { on: true, pair: p, view: SPEC.view || 'auto', autoT: 0, autoI: 0, jump: true });
   specUi(); showMsg(`👁 観戦：${p[0].name} vs ${p[1].name}`);
@@ -19028,7 +19227,7 @@ function pvpEnd(P, win, lose) {
   P.on = false;
   PVP.pairs = PVP.pairs.filter((q) => q !== P);
   for (const q of [P.a, P.b]) { q.bt = null; q.hp = q.item.mon.hpMax; for (const w of q.item.mon.weapons) w.run = null; }
-  if (lose) { monCenter(lose, _mc); fxBoom(_mc.x, _mc.y, _mc.z, Math.min(4, 1 + lose.item.mon.s * 0.5), null); }
+  if (lose) { monCenter(lose, _mc); monBoom(_mc.x, _mc.y, _mc.z, Math.min(4, 1 + lose.item.mon.s * 0.5), null); }
   const mine = PVP.mine === P;
   if (mine) {
     PVP.mine = null; el('monHud').hidden = true; el('pvpFire').hidden = true; PVP.fire = false;
