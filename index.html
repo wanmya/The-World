@@ -17754,6 +17754,9 @@ function rigMonster(item, forceMove, cfg, veh) {
     s, size: sz, lb, move, hpMax: hp, speed, autoSp, alt, wheels, seqParts, turn: (move === 'plane' ? 0.9 : 2.2) / (0.6 + 0.4 * s), dodge: THREE.MathUtils.clamp(0.32 - 0.06 * s, 0, 0.3),
     atk, carry, shields, shieldDirs, all: ws, arms, odd, half, reachOf, limbs,
   };
+  // カスタムプロパティが 1 つもない：Blender の書き出しで「含む → カスタムプロパティ」のチェックがない（武器・移動などがぜんぶ消える）
+  let anyProp = false; root.traverse((o) => { if (!anyProp && Object.keys(mpPropsOf(o)).some((k) => k !== mpKey('name'))) anyProp = true; });   // name は読みこみが入れる元の名前
+  item.mon.noProps = !anyProp;
   item.mon.base = { speed0: item.mon.speed, speed: item.mon.speed, hp, atk, dodge: item.mon.dodge };   // 配分の前（monApplyCfg がここから決める）
   monApplyLoad(item.mon, null, true);   // はじめは前から 5 個・ためなし
   return monApplyCfg(item.mon, cfg);
@@ -17812,6 +17815,8 @@ function monStatsHtml(S) {
     ['武器の重さ', `${S.weight} ／ 積める ${S.carry}${S.over > 0 ? '（こえた分おそい）' : ''}`],
   ];
   if (S.shields) rows.push(['守り', `盾のある側から来た攻撃 −60%`]);
+  if (S.noProps) rows.push(['注意', 'この .glb にはカスタムプロパティが入っていません。Blender の書き出し（glTF 2.0）で「含む」→「カスタムプロパティ」にチェックして、書き出しなおしてください（武器・移動などが消えています）']);
+  else if (!S.arms.length) rows.push(['注意', 'カスタムプロパティ「武器」のある部品がありません（武器=大砲 などを部品のオブジェクトにつけます）']);
   if (S.arms.length > MON_WMAX) rows.push(['注意', `バトルで使う武器は ${MON_WMAX} 個まで（えらばない武器は重さも入れない）`]);
   if (S.odd.length) rows.push(['注意', `わからない武器（${S.odd.join('・')}）は銃にしました`]);
   return `<table>${rows.map(([k, x]) => `<tr><th>${k}</th><td>${escH(x)}</td></tr>`).join('')}</table>`
@@ -18949,6 +18954,7 @@ async function addMonsterFromBuffer(buf, name, move, cfg0) {
   const S = rigMonster(item, move);
   const cfg = cfg0 ? monCfgFix(cfg0) : await monSetup(S, name);   // 戦い方と能力の配分を決めてから置く
   if (!cfg) { showMsg(`${name} を置くのをやめました`); return; }
+  if (S.noProps) showMsg('⚠ カスタムプロパティが入っていません：Blender の書き出しで「含む」→「カスタムプロパティ」にチェックしてください（武器が使えません）');
   monApplyCfg(S, cfg);
   const f = player.face, ahead = 2.5 + Math.max(S.size.x, S.size.z) * 0.6;
   const x = clampX(player.pos.x + Math.sin(f) * ahead, 4), z = clampZ(player.pos.z + Math.cos(f) * ahead, 4), rot = wrapA(f + Math.PI);
