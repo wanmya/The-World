@@ -3387,7 +3387,15 @@ function bfLift(x, z, h) {
   const t = ss(0, BF.M, e), cu = THREE.MathUtils.clamp(u, -BF.half, BF.half), cv = THREE.MathUtils.clamp(v, -BF.half, BF.half);
   return bfBase(cu, cv) * (1 - t) + h * t;   // まわり 14m で、もとの地面へなだらかにつなぐ
 }
-const BF_DIRT = new THREE.Color(0x9a7a52);
+const BF_DIRT = new THREE.Color(0x9a7a52), BF_MUDC = new THREE.Color(0x4a3420);
+// ぬかるみ（2026-11-19）：入ると、地面を動くモンスターがおそくなる（飛んでいる物はそのまま）。u, v, 半径
+const BF_MUD = [[-38, -8, 7], [12, -24, 6], [-44, 31, 6], [34, -15, 6.5]];
+function bfMudK(x, z) {   // ぬかるみの深さ（0〜1）
+  if (!bfIn(x, z)) return 0;
+  const u = x - BF.cx, v = z - BF.cz; let k = 0;
+  for (const [a, b, R] of BF_MUD) { const d = Math.hypot(u - a, v - b) / R + 0.12 * Math.sin(u * 0.9 + b) * Math.sin(v * 0.8 + a); if (d < 1) k = Math.max(k, 1 - ss(0.55, 1, d)); }
+  return k;
+}
 function bfDirt(u, v, y) {   // 土の色の濃さ（0〜1）
   let k = 0;
   for (const a of BF_PATHS) { const d = segD(u, v, a); if (d < 4) k = Math.max(k, 1 - ss(1.4, 3.6, d)); }
@@ -4455,7 +4463,7 @@ function surfaceColor(cx, cy, cz, ny, out) {
   const grassLine = 3.0 + fbm(cx * 2, cz * 2) * 0.9;
   if (cy > grassLine) {
     if (ny < 0.74) out.copy(COL.cliff);
-    else if (cx > BF.x0 && cx < BF.x1 && cz > BF.z0 && cz < BF.z1 && bfDirt(cx - BF.cx, cz - BF.cz, cy) > 0.02) out.copy(COL.grass1).lerp(COL.grass2, v).lerp(BF_DIRT, bfDirt(cx - BF.cx, cz - BF.cz, cy));   // バトルフィールドの土の道・くぼみ
+    else if (cx > BF.x0 && cx < BF.x1 && cz > BF.z0 && cz < BF.z1 && (bfDirt(cx - BF.cx, cz - BF.cz, cy) > 0.02 || bfMudK(cx, cz) > 0)) out.copy(COL.grass1).lerp(COL.grass2, v).lerp(BF_DIRT, bfDirt(cx - BF.cx, cz - BF.cz, cy)).lerp(BF_MUDC, bfMudK(cx, cz) * 0.9);   // バトルフィールドの土の道・くぼみ・ぬかるみ
     else out.copy(COL.grass1).lerp(COL.grass2, v).lerp(COL.grassHigh, ss(8, 24, cy) * 0.7).lerp(COL.rock, ss(45, 95, cy) * 0.85);   // 高い山は岩っぽく
     if (cy > 300) out.lerp(PEAK_SNOW, ss(330, 480, cy) * 0.9);   // みなみ連山・きた島のいちばん上は雪（2026-11-14）
   } else if (cy > 0.35) out.copy(COL.sand).lerp(COL.sandWet, ss(1.2, 0.35, cy) * 0.5);
@@ -17986,7 +17994,9 @@ function stepMyMonster(m, dt, now) {
     if (S.move === 'plane' && m.airborne && d <= stop) { stop = -1; }   // 着いても回りつづける
     if (d > stop) {
       const water = m.pos.y < SEA + 0.2 && S.move === 'walk', land = S.move === 'swim' && heightAt(m.pos.x, m.pos.z) > SEA - 0.5;
-      const vmax = S.speed * (water ? 0.5 : land ? 0.3 : 1) * (t ? 1 : Math.min(1.6, 0.6 + d / 15));
+      const mud = S.move === 'heli' || S.move === 'swim' || (S.move === 'plane' && m.airborne) ? 0 : bfMudK(m.pos.x, m.pos.z);   // ぬかるみ：いちばん深い所で 0.35 倍
+      const vmax = S.speed * (water ? 0.5 : land ? 0.3 : 1) * (t ? 1 : Math.min(1.6, 0.6 + d / 15)) * (1 - 0.65 * mud);
+      if (mud > 0.3 && Math.random() < dt * 8 * Math.min(1, Math.hypot(m.vel.x, m.vel.z) / 2)) fxEmit(false, m.pos.x + rnd(monRad(m) * 0.6), m.pos.y + 0.2, m.pos.z + rnd(monRad(m) * 0.6), rnd(1), 1.5 + Math.random() * 1.5, rnd(1), 0.3, 0.22, 0.13, 0.25 + Math.random() * 0.2, 0.3, 0.7, 0.9, 9.8, 0.5);   // どろがはねる
       let sp = Math.min(vmax, d * 2), dir = Math.atan2(dx, dz);
       if (t && m.ai && m.ai.bumpT > now) dir += (m.ai.side || 1) * 1.2;   // 物にぶつかっている：横へまわりこむ
       if (S.move === 'car' || S.move === 'plane') {   // 車・飛行機：向いている方へしか進めない（その場で回れない）
@@ -18115,7 +18125,7 @@ function monWeapons(m, t, now, noAttack) {
     if (d > S.reachOf(w) + tr) return;
     if ((T.melee || T.flame) && facing > 1.1) return;
     if (!T.melee && !T.homing && w.o && w.dl && !w.seq && !muzzleOk(w, t)) return;
-    if (!T.melee && !T.homing && !T.grav && m.los === false) return;   // 物にさえぎられて見えない：まっすぐ飛ぶ武器は撃たない（大砲は山なり、ミサイルは上から）   // 銃口が相手のほうを向いていない（シーケンスのある武器は、動いてから向く）
+    if (!T.melee && !T.homing && !T.grav && m.los === false && !(m.losDx && m.track && m.losDx.dx && m.losDx.dx.st < 3)) return;   // 物にさえぎられて見えない：まっすぐ飛ぶ武器は撃たない（大砲は山なり、ミサイルは上から）   // 銃口が相手のほうを向いていない（シーケンスのある武器は、動いてから向く）
     if (w.hold > 0) {   // ためてから撃つ（1 つずつ）
       if (m.chg) return;
       w.last = now + w.hold;
@@ -18255,6 +18265,7 @@ function monFire(m, i, t, real, n) {
       scene.add(line); MBEAMS.push({ line, t: 0.18 });
       for (let k = 0; k < 10; k++) fxEmit(true, aim.x, aim.y, aim.z, rnd(3), rnd(3), rnd(3), 0.5, 1, 1, 0.3, 0, 0.3, 1, 0, 1);
       if (real && t && monAlive(t) && !cb && monHitBox(t, aim, 0.4)) monHit(t, dmg, false, from);
+      if (real && cb && cb.o.dx) bfDxHit(cb.o, dmg, _dxV.subVectors(aim, from));
     }, T.charge * 1000);
     return;
   }
@@ -18539,10 +18550,12 @@ function monLos0(m, t, now) {
   m.losAt = now + 0.2;
   if (!COV.on) { m.los = true; m.aimY = 0; return; }
   const a = new THREE.Vector3(m.pos.x, m.pos.y + m.item.mon.size.y * 0.6, m.pos.z), b = monCenter(t, new THREE.Vector3());
+  m.losDx = null;
   if (!covSeg(a, b)) { m.los = true; m.aimY = 0; return; }
   const up = t.item.mon.size.y * 0.38; b.y += up;
   if (!covSeg(a, b)) { m.los = true; m.aimY = up; return; }
   m.los = false; m.aimY = 0;
+  b.y -= up; const cb = covSeg(a, b); m.losDx = cb && cb.o.dx && cb.o.dx.st < 3 ? cb.o : null;   // こわれる物のかげ：その物ごと撃つ
 }
 /* ---- 能力の配分（置くときに決める）：速さ・攻撃・守り に合計 9 点（1〜5）。どれかを上げると、ほかを下げることになる
    1 点で ±15%（速さは回避も ±3%）。3・3・3 がふつう */
@@ -18572,7 +18585,10 @@ function monApplyCfg(S, cfg) {
   S.speed = Math.max(0.8, B.speed * monK(c.v));
   S.dodge = THREE.MathUtils.clamp(B.dodge + 0.03 * (c.v - 3), 0, 0.36);
   const tk = MON_TEND[c.tend].atk, hk = MON_TEND[c.tend].hp;   // 戦い方：攻撃型は武器が強く体がもろい、防御型はその逆
-  S.hpMax = Math.round(B.hp * monK(c.d) * hk);
+  // スペックはいつも そのモンスターの最大（2026-11-19）：射程を長く・ため を長くして強くした分は HP（守り）からはらい、
+  //   射程が短い・ため なし の分は HP にもどす。スペック＝2√(HP×攻撃×射程とため) なので HP を ÷（射程とため）にすると、合計は変わらない
+  S.hpK = 1 / monAtkK(S);
+  S.hpMax = Math.max(1, Math.round(B.hp * monK(c.d) * hk * S.hpK));
   S.atk = B.atk * monK(c.a) * tk; S.share = (B.share || 0) * monK(c.a) * tk;
   for (const w of S.weapons) w.dmg = (w.dmg0 || 1) * monK(c.a) * tk;
   return S;
@@ -18642,6 +18658,7 @@ function stepMonShots(dt) {
         if (s.real) monHit(hit, s.dmg, true, s.from.pos);
       } else if (ground && T.homing) monBoom(s.p.x, s.p.y, s.p.z, 0.5, null);
       else if (wall) for (let k = 0; k < 6; k++) fxEmit(true, s.p.x, s.p.y, s.p.z, rnd(3), rnd(3) + 1, rnd(3), 1, 0.75, 0.35, 0.12, 0, 0.2, 1, 9.8, 0.5);   // 火花
+      if (s.real && (hit || ground)) { if (T.splash) bfDxSplash(s.p, T.splash + 1, s.dmg, s.v); else if (wall && wall.dx) bfDxHit(wall, s.dmg, s.v); }   // こわれる物かげ
       MSH.splice(i, 1);
     }
   }
@@ -18740,6 +18757,7 @@ function stepMonsters(dt) {
     if (MONS.includes(m)) poseMonster(m, dt, now);
   }
   stepMonShots(dt);
+  stepBfDx(dt);
   if (net.room && (monLoT -= dt) <= 0) { monLoT = 20; for (const m of MONS) if (m.mine && m.shared && m.id && !m.copyOf) monEmit(monLoadMsg(m)); }   // 自分のモンスターの武器とため（持ち主がいないバトルでも使えるよう、ときどき送る）
   // 動かしているモンスターの位置・HP をみんなに（動いている間は 0.2 秒ごと、止まっていれば 2 秒ごと）
   monSendT -= dt;
@@ -18772,6 +18790,8 @@ function onMonNet(p) {
     }
     return;
   }
+  if (d.t === 'dx') { const D = BF.dx[d.i | 0]; if (D && !MB.on) bfDxSet(D, THREE.MathUtils.clamp(d.s | 0, 0, 3), THREE.MathUtils.clamp(d.d | 0, 0, 3)); return; }   // 物かげがこわれた（バトルを始めた人から）
+  if (d.t === 'bt') bfDxReset();
   if (d.t === 'bt') for (const id of [d.id, d.b]) { const q = MON_DOWN.find((x) => x.id === id); if (q) { monRevive(q); renderMonMenu(); } }   // ダウン中の登録モンスターがえらばれた
   const m = byId(d.id);
   if (d.t === 'fire') { if (!m || monCtl(m)) return; monAttack(m, d.w | 0, byId(d.tg), false, d.n | 0); return; }
@@ -18802,6 +18822,7 @@ function onMonNet(p) {
     return;
   }
   if (d.t === 'be') {   // バトルが終わった
+    bfDxReset();
     const b = byId(d.b);
     for (const q of [...MONS]) if (q.copyOf && (q.copyOf === m || q.copyOf === b) && !monCtl(q)) removeMonster(q);   // 分身は消える
     for (const q of [m, b]) if (q && q.bt && q.bt.remote) {
@@ -18860,6 +18881,7 @@ async function battleStart(a, b, min, na = 1, nb = 1, field = false, hb = null) 
   catch (e) { console.warn('monster copies', e); }
   finally { MB.prep = false; }
   if (!MONS.includes(a) || !MONS.includes(b) || MB.on || a.bt || b.bt) { for (const q of [...ca, ...cb]) removeMonster(q); return; }
+  bfDxReset();
   Object.assign(MB, { on: true, a, b, A: [a, ...ca], B: [b, ...cb], n0: [1 + ca.length, 1 + cb.length], field: !!field, t0: Date.now(), limit: Math.round(min * 60), home });
   for (const q of [...MB.A, ...MB.B]) { q.bt = { host: true }; q.hp = q.item.mon.hpMax; q.vel.set(0, 0, 0); q.foe = null; q.ai = null; q.know = null; q.track = true; q.chg = null; q.chgVis = null; q.mode = 'stay'; for (const w of q.item.mon.weapons) w.last = clock.elapsedTime - Math.random() * w.T.cd; }
   if (field) bfPlaceTeams();
@@ -18875,6 +18897,7 @@ function battleEnd(win, why) {
   const { a, b, home } = MB;
   MB.on = false;
   el('monHud').hidden = true;
+  bfDxReset();   // こわれた物かげは元にもどる
   for (const q of [...MB.A, ...MB.B]) if (q.copyOf && MONS.includes(q)) {   // 分身は光って消える
     for (let k = 0; k < 14; k++) fxEmit(true, q.pos.x + rnd(1), q.pos.y + q.item.mon.size.y * Math.random(), q.pos.z + rnd(1), 0, 1.5, 0, 0.7, 0.9, 1, 0.3, 0, 0.8, 1, 0, 1);
     removeMonster(q);
@@ -18958,7 +18981,7 @@ function openMonLoad(m, after) {
         + (on ? `<span class="mlh"><button type="button" data-h="${i}" data-d="-0.5" aria-label="ためを短く"${h <= 0 ? ' disabled' : ''}>−</button><b>ため ${h ? h + ' 秒' : 'なし'}</b><button type="button" data-h="${i}" data-d="0.5" aria-label="ためを長く"${h >= MON_HOLD ? ' disabled' : ''}>＋</button></span>` : '')
         + (on ? (() => { const L = rangeLim(w.T), R = w.R; return `<span class="mlh"><button type="button" data-r="${i}" data-d="-1" aria-label="射程を短く"${R <= L.lo ? ' disabled' : ''}>−</button><b>射程 ${R}m${R === w.R0 ? '' : `（もと ${w.R0}m）`}</b><button type="button" data-r="${i}" data-d="1" aria-label="射程を長く"${R >= L.hi ? ' disabled' : ''}>＋</button></span>`; })() : '') + '</div>';
     }).join('') : '<p class="mpnote">武器がありません（体当たりで戦います）</p>';
-    el('monLoadPrev').innerHTML = `<table><tr><th>スペック</th><td>${monSpec(S).toLocaleString()}</td></tr><tr><th>攻撃力</th><td>${Math.round(S.atk)}（1 つ ${S.share.toFixed(1)}）</td></tr><tr><th>武器の重さ</th><td>${S.weight} ／ 積める ${S.carry}${S.over > 0 ? '（こえた分おそい）' : ''}</td></tr><tr><th>速さ</th><td>${Math.round(S.speed * 3.6)}km/h</td></tr></table>`;
+    el('monLoadPrev').innerHTML = `<table><tr><th>スペック</th><td>${monSpec(S).toLocaleString()}</td></tr><tr><th>HP</th><td>${S.hpMax.toLocaleString()}（${S.hpK >= 1 ? `射程・ためで あまった分 +${Math.round((S.hpK - 1) * 100)}%` : `射程・ためにまわした分 −${Math.round((1 - S.hpK) * 100)}%`}）</td></tr><tr><th>攻撃力</th><td>${Math.round(S.atk)}（1 つ ${S.share.toFixed(1)}）</td></tr><tr><th>武器の重さ</th><td>${S.weight} ／ 積める ${S.carry}${S.over > 0 ? '（こえた分おそい）' : ''}</td></tr><tr><th>速さ</th><td>${Math.round(S.speed * 3.6)}km/h</td></tr></table>`;
   };
   const close = () => { D.hidden = true; if (after) after(); };
   D.onclick = (e) => {
@@ -19396,7 +19419,7 @@ function stepPvp(dt) {
 el('pvpBtn').addEventListener('click', openPvpDlg);
 { const f = el('pvpFire'), on = (e) => { e.preventDefault(); PVP.fire = true; }, off = () => { PVP.fire = false; };
   f.addEventListener('pointerdown', on); f.addEventListener('pointerup', off); f.addEventListener('pointercancel', off); f.addEventListener('pointerleave', off); }
-window.__pvp = PVP; window.__pvpStart = pvpStart; window.__pvpNet = onPvpNet; window.__spec = SPEC; window.__mons = () => MONS; window.__monDown = () => MON_DOWN; window.__openLoad = openMonLoad; window.__battleEnd = battleEnd; window.__monReg = monSetReg; window.__monMenu = () => { el("monList").hidden = false; renderMonMenu(); return el("monList").innerText; }; window.__mb = MB; window.__cov = COV; window.__covSeg = covSeg; window.__battle = battleStart; window.__addMon = addMonsterFromBuffer; window.__monSpec = monSpec; window.__openBattle = () => { monNearMe = MONS.find((m) => m.mine && !m.copyOf) || null; openBattleDlg(); };   // テスト用
+window.__pvp = PVP; window.__pvpStart = pvpStart; window.__pvpNet = onPvpNet; window.__spec = SPEC; window.__mons = () => MONS; window.__monDown = () => MON_DOWN; window.__bf = BF; window.__bfDxHit = bfDxHit; window.__bfDxReset = bfDxReset; window.__openLoad = openMonLoad; window.__battleEnd = battleEnd; window.__monReg = monSetReg; window.__monMenu = () => { el("monList").hidden = false; renderMonMenu(); return el("monList").innerText; }; window.__mb = MB; window.__cov = COV; window.__covSeg = covSeg; window.__battle = battleStart; window.__addMon = addMonsterFromBuffer; window.__monSpec = monSpec; window.__openBattle = () => { monNearMe = MONS.find((m) => m.mine && !m.copyOf) || null; openBattleDlg(); };   // テスト用
 /* ================= ループ ================= */
 const clock = new THREE.Clock();
 let netTick = 0, firstFrame = true;
@@ -21744,8 +21767,216 @@ function buildBattleField() {
   const board = new THREE.Mesh(new THREE.PlaneGeometry(3.6, 1.35), new THREE.MeshLambertMaterial({ map: st })); board.position.set(sx - 0.06, sy + 2.3, sz); board.rotation.y = -Math.PI / 2; g.add(board);
   const back = new THREE.Mesh(new THREE.BoxGeometry(0.08, 1.45, 3.7), mats.dark); back.position.set(sx + 0.01, sy + 2.3, sz); g.add(back);
   for (const e of [-1.5, 1.5]) { const p = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 2.4, 6), mats.post); p.position.set(sx + 0.06, sy + 1.2, sz + e); g.add(p); }
+  bfBuildBridge(g, mats);
+  // ぬかるみの水たまり（見た目だけ）
+  const mudM = new THREE.MeshLambertMaterial({ color: 0x3d3326, transparent: true, opacity: 0.75, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
+  for (const [u, v, R] of BF_MUD) for (let k = 0; k < 4; k++) {
+    const a = k * 1.9 + u, r = R * (0.15 + 0.35 * ((k * 0.37 + v * 0.01) % 1)), px = BF.cx + u + Math.sin(a) * R * 0.4, pz = BF.cz + v + Math.cos(a) * R * 0.4;
+    const cg = new THREE.CircleGeometry(r, 14); cg.rotateX(-Math.PI / 2);
+    const P = cg.attributes.position; for (let i = 0; i < P.count; i++) P.setY(i, heightAt(px + P.getX(i), pz + P.getZ(i)) + 0.06);
+    cg.translate(px, 0, pz);
+    const pw = new THREE.Mesh(cg, mudM); pw.renderOrder = 1; g.add(pw);
+  }
+  bfBuildDx(g, lowAt);
   scene.add(g);
   BF.group = g;
+}
+/* ---- こわれる物かげ（2026-11-19 わんみゃさんの案）：家・車・大きなビル・煙突。流れ弾が当たると 燃える → 爆発して木っ端みじん（物かげでなくなる）。
+   背の高いビル・煙突は、燃えたあと さらに当たると横だおし（物かげの形が変わる）→ もっと当たると木っ端みじん。バトルが終わると元にもどる。
+   こわすのは バトルを始めた人の画面（'dx' でほかの人にも届く） */
+const BF_DXT = {
+  house: { w: 7, d: 6, h: 5.4, hp: 170, n: '家' }, car: { w: 1.9, d: 4.4, h: 1.5, hp: 60, n: '車' },
+  bldg: { w: 10, d: 8, h: 18, hp: 480, tall: true, n: 'ビル' }, chim: { w: 2.8, d: 2.8, h: 22, hp: 260, tall: true, n: '煙突' },
+};
+const BF_DXL = [   // 種類, u, v, 向き（度）, 色
+  ['house', -48, -12, 10, 0xd9cdb4], ['house', 8, -62, -5, 0xc9d6dc], ['house', 47, 54, 25, 0xe2c9a5], ['house', -62, 46, 90, 0xd6d0c0],
+  ['car', -32, -33, 30, 0xc0392b], ['car', 2, -6, 80, 0x2c6fb0], ['car', 64, 22, 0, 0xe0e0e0], ['car', -22, 64, 95, 0x2d2d2d], ['car', 38, -8, -20, 0xd4a017], ['car', 18, 30, 60, 0x3c8c4a],
+  ['bldg', -64, -46, 0, 0x8fa3b5], ['bldg', 66, -8, 90, 0xb5a28f], ['bldg', 22, 64, 0, 0x9aa5a0],
+  ['chim', 30, -70, 0, 0xb84a3a], ['chim', -68, -70, 0, 0xb84a3a], ['chim', 68, 70, 0, 0xb84a3a],
+];
+BF.dx = [];
+function bfBuildDx(g, lowAt) {
+  const unit = new THREE.BoxGeometry(1, 1, 1);
+  BF_DXL.forEach(([t, u, v, deg, col], i) => {
+    const T = BF_DXT[t], x = BF.cx + u, z = BF.cz + v, rot = deg * Math.PI / 180, hw = T.w / 2, hd = T.d / 2;
+    const [lo, hi] = lowAt(x, z, rot, hw, hd), base = Math.min(lo + 0.15, (lo + hi) / 2), h = T.h;
+    const outer = new THREE.Group(); outer.position.set(x, base, z); outer.rotation.y = rot;
+    const tilt = new THREE.Group(), body = new THREE.Group(); tilt.add(body); outer.add(tilt);
+    const mats = [], M = (c) => { const m = new THREE.MeshLambertMaterial({ color: c }); m.userData.c0 = m.color.clone(); mats.push(m); return m; };
+    const B = (m, w, hh, d, px, py, pz) => { const o = new THREE.Mesh(unit, m); o.scale.set(w, hh, d); o.position.set(px, py, pz); o.castShadow = true; o.receiveShadow = true; body.add(o); return o; };
+    const dark = M(0x2e3236);
+    if (t === 'house') {
+      const wall = M(col), roof = M(0x8a3b2a), wh = 3.2;
+      B(wall, T.w, wh + 1, T.d, 0, (wh - 1) / 2, 0);
+      for (const e of [-1, 1]) { const r = B(roof, T.w + 0.6, 0.25, T.d / 2 / Math.cos(0.55) + 0.4, 0, wh + Math.tan(0.55) * T.d / 4, e * T.d / 4); r.rotation.x = e * 0.55; }
+      const gab = new THREE.Shape(); gab.moveTo(-T.d / 2, 0); gab.lineTo(T.d / 2, 0); gab.lineTo(0, Math.tan(0.55) * T.d / 2); gab.closePath();
+      for (const e of [-1, 1]) { const gm = new THREE.Mesh(new THREE.ShapeGeometry(gab), wall); gm.rotation.y = Math.PI / 2 * e; gm.position.set(e * T.w / 2, wh, 0); body.add(gm); }
+      B(dark, 1, 2, 0.06, -1.6, 1, T.d / 2 + 0.02); for (const px of [0.6, 2.2]) B(dark, 1.1, 0.9, 0.06, px, 1.7, T.d / 2 + 0.02);
+      for (const px of [-2, 0, 2]) B(dark, 1.1, 0.9, 0.06, px, 1.7, -T.d / 2 - 0.02);
+    } else if (t === 'car') {
+      const pm = M(col);
+      B(pm, 1.8, 0.7, 4.3, 0, 0.6, 0); B(pm, 1.6, 0.62, 2.1, 0, 1.25, -0.2); B(dark, 1.62, 0.45, 2.0, 0, 1.25, -0.2);
+      for (const [a, b2] of [[-0.85, 1.35], [0.85, 1.35], [-0.85, -1.35], [0.85, -1.35]]) { const w = new THREE.Mesh(new THREE.CylinderGeometry(0.34, 0.34, 0.26, 12), dark); w.rotation.z = Math.PI / 2; w.position.set(a, 0.34, b2); body.add(w); }
+    } else if (t === 'bldg') {
+      const cv = document.createElement('canvas'); cv.width = 64; cv.height = 64; const c2 = cv.getContext('2d');
+      c2.fillStyle = '#' + new THREE.Color(col).getHexString(); c2.fillRect(0, 0, 64, 64); c2.fillStyle = '#26323d'; c2.fillRect(10, 18, 44, 26);
+      const tex = new THREE.CanvasTexture(cv); tex.wrapS = tex.wrapT = THREE.RepeatWrapping; tex.repeat.set(T.w / 2.5, h / 3); tex.colorSpace = THREE.SRGBColorSpace;
+      const wm = new THREE.MeshLambertMaterial({ map: tex }); wm.userData.c0 = wm.color.clone(); mats.push(wm);
+      const side = B(wm, T.w, h, T.d, 0, h / 2, 0);
+      const tex2 = tex.clone(); tex2.repeat.set(T.d / 2.5, h / 3); tex2.needsUpdate = true;
+      B(M(col), T.w + 0.3, 0.5, T.d + 0.3, 0, h + 0.25, 0); B(M(0x777777), 2.4, 1.6, 2.4, 1.5, h + 1.2, 1); B(M(col), T.w, 1, T.d, 0, -0.5, 0);
+      side.userData.tex = tex;
+    } else {   // 煙突：赤白のしま
+      const red = M(col), white = M(0xeeeeee), r0 = T.w / 2, r1 = T.w / 2 * 0.72, n = 6;
+      for (let k = 0; k < n; k++) { const y0 = k * h / n, y1 = (k + 1) * h / n, ra = r0 + (r1 - r0) * k / n, rb = r0 + (r1 - r0) * (k + 1) / n; const cy = new THREE.Mesh(new THREE.CylinderGeometry(rb, ra, y1 - y0, 16), k % 2 ? white : red); cy.position.y = (y0 + y1) / 2; cy.castShadow = true; body.add(cy); }
+      const ft = new THREE.Mesh(new THREE.CylinderGeometry(r0 + 0.4, r0 + 0.6, 1.6, 16), M(0x777777)); ft.position.y = 0; body.add(ft);
+    }
+    g.add(outer);
+    // がれき（こなごなになった後に残る、低い山。物かげではない）
+    const rub = new THREE.Mesh(new THREE.ConeGeometry(Math.max(hw, hd) * (T.tall ? 1.1 : 0.9), T.tall ? 2.2 : 1.1, 7), new THREE.MeshLambertMaterial({ color: 0x4a4440 }));
+    rub.position.set(x, base + (T.tall ? 0.6 : 0.3), z); rub.scale.set(1, 1, hd / hw || 1); rub.rotation.y = rot; rub.visible = false; g.add(rub);
+    const cov = covBox(x, z, rot, hw, hd, base - 0.5, base + h, null);
+    const box = { x, z, c: Math.cos(rot), s: Math.sin(rot), hw, hd, y0: base - 0.5, y1: base + h, r: Math.hypot(hw, hd) };
+    const pier = { x, z, rot, hw, hd, bot: base - 0.5, top: base + h };
+    BF.cov.push(cov); BF.boxes.push(box); addPier(x, z, rot, hw, hd, base - 0.5, base + h);
+    const D = { i, t, T, x, z, rot, base, hw, hd, h, dmg: 0, st: 0, outer, tilt, body, mats, rub, cov, box, pier: null, fall: null, deb: [], fireT: 0, c0: { ...cov }, b0: { ...box } };
+    cov.dx = D;
+    D.pier = PIERS.get(Math.floor(x / PIER_G) * 65536 + Math.floor(z / PIER_G)).find((q) => q.x === x && q.z === z && q.top === base + h);
+    D.p0 = D.pier && { ...D.pier };
+    BF.dx.push(D);
+  });
+}
+// 橋（池の上をこえる。橋げたの下は弾も通る・モンスターも通れる。こわれない）
+function bfBuildBridge(g, mats) {
+  const P = BF.pond, y = P.y, x0 = BF.cx - 46, x1 = BF.cx - 14, z = BF.cz + P.v, deckY = Math.max(y, heightAt(x0, z), heightAt(x1, z)) + 3.6;
+  const parts = [], conPart = [], unitBox = new THREE.BoxGeometry(1, 1, 1);
+  const box = (list, w, h, d, x, yy, zz) => { const b = unitBox.clone(); b.scale(w, h, d); b.translate(x, yy, zz); list.push(b); };
+  box(conPart, x1 - x0, 0.7, 4.4, (x0 + x1) / 2, deckY, z);   // 橋げた
+  for (const e of [-1, 1]) { box(parts, x1 - x0, 0.12, 0.12, (x0 + x1) / 2, deckY + 1.15, z + e * 2.1); for (let xx = x0; xx <= x1 + 0.01; xx += 2) box(parts, 0.1, 0.8, 0.1, xx, deckY + 0.75, z + e * 2.1); }
+  const cx = (x0 + x1) / 2;
+  BF.cov.push(covBox(cx, z, 0, (x1 - x0) / 2, 2.2, deckY - 0.35, deckY + 1.2, null));
+  addPier(cx, z, 0, (x1 - x0) / 2, 2.2, deckY - 0.35, deckY + 0.35);
+  for (const px of [x0 + 1, x0 + 11, x1 - 11, x1 - 1]) for (const e of [-1, 1]) {
+    const pz = z + e * 1.5, gy = Math.min(heightAt(px, pz), y) - 1.5;
+    box(conPart, 1.0, deckY - gy, 1.0, px, (deckY + gy) / 2, pz);
+    BF.cov.push(covBox(px, pz, 0, 0.5, 0.5, gy, deckY, null)); BF.boxes.push({ x: px, z: pz, c: 1, s: 0, hw: 0.5, hd: 0.5, y0: gy, y1: deckY, r: 0.71 }); addPier(px, pz, 0, 0.5, 0.5, gy, deckY);
+  }
+  const m1 = new THREE.Mesh(mergeGeometries(conPart), mats.con); m1.castShadow = true; m1.receiveShadow = true; g.add(m1);
+  const m2 = new THREE.Mesh(mergeGeometries(parts), mats.post); g.add(m2);
+}
+const _dxV = new THREE.Vector3();
+// 流れ弾・爆風が当たった（バトルを始めた人の画面だけ）
+function bfDxHit(o, dmg, v) {
+  const D = o && o.dx; if (!D || D.st >= 3 || !MB.on) return;
+  D.dmg += dmg * 1.5;
+  const hp = D.T.hp;
+  let s = D.st;
+  if (s < 1 && D.dmg >= hp * 0.35) s = 1;
+  if (D.T.tall) { if (s < 2 && D.dmg >= hp * 0.65) { s = 2; D.dmg = Math.max(D.dmg, hp * 0.65); } else if (D.st === 2 && D.fall && D.fall.t >= 1 && D.dmg >= hp) s = 3; }
+  else if (D.dmg >= hp) s = 3;
+  if (s === D.st) return;
+  let dir = 0;
+  if (s === 2) {   // 弾が飛んできた向きにたおれる（体の向きで 4 方向のどれか）
+    const ux = v ? v.x : Math.random() - 0.5, uz = v ? v.z : Math.random() - 0.5, c = Math.cos(D.rot), sn = Math.sin(D.rot);
+    const lx = ux * c - uz * sn, lz = ux * sn + uz * c;
+    dir = Math.abs(lx) > Math.abs(lz) ? (lx > 0 ? 0 : 1) : (lz > 0 ? 2 : 3);
+  }
+  bfDxSet(D, s, dir);
+  monEmit({ t: 'dx', i: D.i, s, d: dir });
+}
+function bfDxSplash(p, R, dmg, v) {
+  for (const D of BF.dx) {
+    if (D.st >= 3) continue;
+    const o = D.cov, dx = p.x - o.x, dz = p.z - o.z, u = dx * o.c - dz * o.s, w = dx * o.s + dz * o.c;
+    const d = Math.hypot(Math.max(0, Math.abs(u) - o.hw), Math.max(0, Math.abs(w) - o.hd), Math.max(0, o.y0 - p.y, p.y - o.y1));
+    if (d < R) bfDxHit(o, dmg * (1 - (d / R) * 0.6), v);
+  }
+}
+const bfDxOff = (o) => { o.y0 = o.y1 = -1e5; };
+function bfDxSet(D, s, dir) {
+  if (s <= D.st) return;
+  if (D.st < 1) {   // 燃える：色が黒っぽくなる
+    for (const m of D.mats) m.color.copy(m.userData.c0).lerp(new THREE.Color(0x221d1a), 0.45);
+    monBoom(D.x, D.base + D.h * 0.5, D.z, D.T.tall ? 1.4 : 0.9, null);
+  }
+  if (s >= 2 && D.st < 2 && D.T.tall) {   // 横だおし
+    const L = [[1, 0], [-1, 0], [0, 1], [0, -1]][dir | 0], ex = L[0] * D.hw, ez = L[1] * D.hd;
+    D.tilt.position.set(ex, 0, ez); D.body.position.set(-ex, 0, -ez);
+    D.fall = { L, t: 0, ax: L[0] ? 'z' : 'x', sg: L[0] ? -L[0] : L[1] };
+    // たおれた形の物かげ：たおれる向きに 高さ ぶん長く、高さは はば（向き）ぶん
+    const c = Math.cos(D.rot), sn = Math.sin(D.rot), ext = L[0] ? D.hw : D.hd, lx = L[0] * (ext + D.h / 2), lz = L[1] * (ext + D.h / 2);
+    const wx = D.x + lx * c + lz * sn, wz = D.z - lx * sn + lz * c, hw = L[0] ? D.h / 2 : D.hw, hd = L[0] ? D.hd : D.h / 2, top = D.base + 2 * ext * 0.85;
+    Object.assign(D.cov, { x: wx, z: wz, hw, hd, y0: D.base - 0.5, y1: top, r: Math.hypot(hw, hd) });
+    Object.assign(D.box, { x: wx, z: wz, hw, hd, y0: D.base - 0.5, y1: top, r: Math.hypot(hw, hd) });
+    if (D.pier) { D.pier.top = D.pier.bot = -1e5; }
+    if (COV.on) covStatic();
+  }
+  if (s >= 3) {   // 木っ端みじん：大爆発・破片が飛ぶ・がれきが残る（物かげではなくなる）
+    const cy = D.st >= 2 && D.fall ? D.base + 2 : D.base + D.h * 0.4;
+    D.outer.updateMatrixWorld(true);
+    const bb = new THREE.Box3().setFromObject(D.body), ctr = bb.getCenter(new THREE.Vector3()), sz = bb.getSize(new THREE.Vector3());
+    monBoom(ctr.x, Math.max(cy, ctr.y), ctr.z, D.T.tall ? 4 : D.t === 'car' ? 1.8 : 2.6, null);
+    for (let k = 0; k < 30; k++) fxEmit(false, ctr.x + rnd(sz.x / 2), ctr.y + rnd(sz.y / 2), ctr.z + rnd(sz.z / 2), rnd(3), 2 + Math.random() * 3, rnd(3), 0.35, 0.33, 0.3, 2 + Math.random() * 2, 2.5, 3.5, 0.7, -0.3, 1);
+    const n = D.T.tall ? 26 : D.t === 'car' ? 10 : 18, mats = D.mats.filter((m) => !m.map);
+    for (let k = 0; k < n; k++) {
+      const sc = (D.T.tall ? 1.4 : 0.8) * (0.4 + Math.random()), m = new THREE.Mesh(new THREE.BoxGeometry(sc, sc * 0.6, sc * 0.8), mats[k % mats.length] || D.mats[0]);
+      m.position.set(ctr.x + rnd(sz.x / 2), ctr.y + rnd(sz.y / 3), ctr.z + rnd(sz.z / 2)); m.castShadow = true;
+      const vv = new THREE.Vector3(m.position.x - ctr.x, 2, m.position.z - ctr.z).normalize().multiplyScalar(6 + Math.random() * 10); vv.y += 4 + Math.random() * 6;
+      BF.group.add(m); D.deb.push({ m, v: vv, w: new THREE.Vector3(rnd(6), rnd(6), rnd(6)), rest: false });
+    }
+    D.outer.visible = false; D.rub.visible = true;
+    bfDxOff(D.cov); bfDxOff(D.box); if (D.pier) D.pier.top = D.pier.bot = -1e5;
+    if (COV.on) covStatic();
+  }
+  D.st = s;
+}
+// バトルが終わった：みんな元にもどる
+function bfDxReset() {
+  for (const D of BF.dx) {
+    if (!D.st && !D.dmg) continue;
+    D.st = 0; D.dmg = 0; D.fall = null;
+    for (const m of D.mats) m.color.copy(m.userData.c0);
+    D.tilt.position.set(0, 0, 0); D.tilt.rotation.set(0, 0, 0); D.body.position.set(0, 0, 0);
+    D.outer.visible = true; D.rub.visible = false;
+    for (const q of D.deb) { BF.group.remove(q.m); q.m.geometry.dispose(); }
+    D.deb.length = 0;
+    Object.assign(D.cov, D.c0); Object.assign(D.box, D.b0); if (D.pier && D.p0) Object.assign(D.pier, D.p0);
+  }
+  if (COV.on) covStatic();
+}
+// 毎フレーム：火と煙・たおれる動き・破片
+function stepBfDx(dt) {
+  if (!BF.dx.length) return;
+  const cam = camera.position, near = Math.hypot(cam.x - BF.cx, cam.z - BF.cz) < 500;
+  for (const D of BF.dx) {
+    if (!D.st && !D.deb.length) continue;
+    if (D.fall && D.fall.t < 1) {
+      D.fall.t = Math.min(1, D.fall.t + dt / 1.8);
+      const a = (Math.PI / 2) * D.fall.t * D.fall.t;
+      D.tilt.rotation.set(0, 0, 0); D.tilt.rotation[D.fall.ax] = D.fall.sg * a;
+      if (D.fall.t >= 1) {   // 地面にたおれた：土ぼこりと音
+        const c = Math.cos(D.rot), sn = Math.sin(D.rot), L = D.fall.L, ext = L[0] ? D.hw : D.hd, r = ext + D.h * 0.6;
+        const lx = L[0] * r, lz = L[1] * r, px = D.x + lx * c + lz * sn, pz = D.z - lx * sn + lz * c;
+        monBoom(px, D.base + 1, pz, 1.8, null);
+        for (let k = 0; k < 24; k++) { const f = Math.random(); const qx = D.x + L[0] * (ext + D.h * f) * c + L[1] * (ext + D.h * f) * sn, qz = D.z - L[0] * (ext + D.h * f) * sn + L[1] * (ext + D.h * f) * c; fxEmit(false, qx, D.base + 0.5, qz, rnd(3), 1 + Math.random() * 2, rnd(3), 0.6, 0.55, 0.48, 1.5 + Math.random(), 2.2, 2.5, 0.6, -0.1, 1); }
+      }
+    }
+    if (near && (D.st === 1 || D.st === 2) && (D.fireT -= dt) <= 0) {   // 燃えている
+      D.fireT = D.T.tall ? 0.05 : 0.08;
+      D.outer.updateMatrixWorld(true);
+      const lp = D.st === 2 && D.fall ? new THREE.Vector3(rnd(D.hw), D.h * Math.random(), rnd(D.hd)) : new THREE.Vector3(rnd(D.hw * 0.8), D.h * (0.7 + 0.3 * Math.random()), rnd(D.hd * 0.8));
+      lp.applyMatrix4(D.body.matrixWorld);
+      fxEmit(true, lp.x, lp.y, lp.z, rnd(0.4), 1.5 + Math.random() * 1.5, rnd(0.4), 1, 0.45 + Math.random() * 0.25, 0.1, 0.9 + Math.random() * 0.6, -0.5, 0.6, 0.9, -1, 1);
+      if (Math.random() < 0.5) fxEmit(false, lp.x, lp.y + 1, lp.z, rnd(0.5), 2 + Math.random(), rnd(0.5), 0.18, 0.17, 0.16, 1.2 + Math.random(), 2, 3, 0.55, -0.4, 1);
+    }
+    for (const q of D.deb) {
+      if (q.rest) continue;
+      q.v.y -= 9.8 * dt; q.m.position.addScaledVector(q.v, dt);
+      q.m.rotation.x += q.w.x * dt; q.m.rotation.y += q.w.y * dt; q.m.rotation.z += q.w.z * dt;
+      const gy = heightAt(q.m.position.x, q.m.position.z) + 0.2;
+      if (q.m.position.y < gy) { q.m.position.y = gy; q.v.multiplyScalar(0.35); q.v.y = Math.abs(q.v.y) * 0.3; q.w.multiplyScalar(0.5); if (q.v.lengthSq() < 0.5) q.rest = true; }
+    }
+  }
 }
 // 歩く人：物かげ・フェンスを通りぬけない
 function bfPush(p, R) {
