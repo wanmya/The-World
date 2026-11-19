@@ -813,7 +813,7 @@ body.jetOn #map { display: none !important; }
 </div>
 <div id="monLoad" role="dialog" aria-modal="true" aria-labelledby="monLoadT" hidden>
   <p class="ptitle" id="monLoadT">武器とため</p>
-  <p class="mpnote">バトルで使う武器を 5 個までえらびます。えらばない武器は重さも入りません（軽いほど速い）。<b>ため</b>：撃つ前に止まって力をためる秒数（0〜3 秒）。長いほど 1 回が強く、よく当たりますが、ためている間は止まるので撃たれやすくなります。</p>
+  <p class="mpnote">バトルで使う武器を 5 個までえらびます。えらばない武器は重さも入りません（軽いほど速い）。<b>ため</b>：撃つ前に止まって力をためる秒数（0〜3 秒）。長いほど 1 回が強く、よく当たりますが、ためている間は止まるので撃たれやすくなります。<b>射程</b>：届く距離。短いほど 1 回が強く、長いほど遠くから撃てますが、ずれやすく、遠くでは威力が落ちます（はじめはカスタムプロパティの 射程、なければ武器の種類で決まる長さ）。</p>
   <p class="mlcnt" id="monLoadCnt"></p>
   <div id="monLoadList"></div>
   <div id="monLoadPrev"></div>
@@ -7239,6 +7239,9 @@ const WEAPON_ORDER = ['missile', 'beam', 'cannon', 'gun', 'spear', 'sword'];   /
 for (const k in WEAPONS) WEAPONS[k].k = k;
 // 射程が短いほど強い（射程 25m で 1 倍。2 倍〜0.5 倍）。射程が長いほど、ねらいがずれる
 const rangeMult = (R) => THREE.MathUtils.clamp(Math.pow(25 / Math.max(0.5, R), 0.3), 0.5, 2);
+// 射程をゲームの中で変えられる幅（2026-11-19）：近接は 0.5 m きざみ 0.5〜15 m、ほかは 5 m きざみ 10〜300 m
+const rangeLim = (T) => (T.melee ? { lo: 0.5, hi: 15, st: 0.5 } : { lo: 10, hi: 300, st: 5 });
+function rangeFix(w, r) { const L = rangeLim(w.T), v = Number(r); return v > 0 ? THREE.MathUtils.clamp(Math.round(v / L.st) * L.st, L.lo, L.hi) : w.R0; }
 const rangeSpread = (R) => 0.004 + R * 0.0004;   // ずれ（ラジアン）
 const TACKLE = { n: '体当たり', cost: 0, cd: 1.5, range: 0.8, melee: true, note: '武器がないとき' };
 
@@ -7253,7 +7256,7 @@ const HELP_MONSTER = `<h4>👾 モンスター</h4>
 <table><tr><th>武器</th><th>射程・威力</th><th>重さ</th><th>とくちょう</th></tr>
 ${['sword', 'spear', 'gun', 'beam', 'cannon', 'missile'].map((k) => { const W = WEAPONS[k]; return `<tr><td><code>${W.n}</code></td><td>${W.range ? `${W.range}m・×${rangeMult(W.range).toFixed(1)}` : '—'}</td><td>${W.cost}</td><td>${W.note}</td></tr>`; }).join('')}</table>
 <p>武器の部品に <code>射程</code>=<code>30</code>（m）のように書くと、射程を変えられます。<b>射程が短いほど 1 回の威力が強く</b>（25m で 1 倍・いちばん強くて 2 倍・いちばん弱くて 0.5 倍）、<b>長いほどねらいがずれます</b>。剣・槍は、体のふちから届く長さ。</p>
-<p><b>銃口</b>：武器の部品の子に <b><code>銃口</code></b> という名前の部品（小さな箱など。ゲームでは見えなくなる）を置くと、その原点から撃ちます。撃つ向きは<b>武器の原点 → 銃口の原点</b>の向き（銃の原点が (0,0,0)、銃口が (1,0,0) なら X の＋向き）。武器に <code>動作</code>=<code>回転</code> などをつけても、銃口はいっしょに動きます。<code>銃口</code> がなければ武器の<b>原点</b>から撃ち、向きは <code>向き</code>（なければ <code>前</code>＝正面。<code>上</code> <code>下</code> <code>左</code> <code>右</code> <code>後</code>）。<code>向き</code> を書けば、いつもそちらが先です。<code>射角</code>=<code>60</code>（度）：銃口の向きから左右この角度の中に相手がいるときだけ撃つ。ミサイルは銃口の向きに出てから追いかけます。</p>
+<p><b>銃口</b>：武器の部品の子に <b><code>銃口</code></b> という名前の部品（小さな箱など。ゲームでは見えなくなる）を置くと、その原点から撃ちます。撃つ向きは<b>武器の原点 → 銃口の原点</b>の向き（銃の原点が (0,0,0)、銃口が (1,0,0) なら X の＋向き）。武器に <code>動作</code>=<code>回転</code> などをつけても、銃口はいっしょに動きます。<code>銃口</code> がなければ武器の<b>原点</b>から撃ち、向きは <code>向き</code>（なければ <code>前</code>＝正面。<code>上</code> <code>下</code> <code>左</code> <code>右</code> <code>後</code>）。<code>向き</code> を書けば、いつもそちらが先です。<code>射角</code>=<code>5</code>（度）：銃口の向きから左右この角度の中に相手がいるときだけ撃つ（なければ ±5°。モンスターは、次に撃つ武器の銃口が相手を向くように体の向きを変えます）。ミサイルは銃口の向きに出てから追いかけます。</p>
 <p>にた名前でもよい（刀・ナイフ → 剣、ランス → 槍、ガン・ライフル → 銃、砲・キャノン・バズーカ → 大砲、ロケット → ミサイル、レーザー → ビーム）。ほかの名前は銃になります。</p>
 <h4>バランス：攻撃力は大きさで決まり、武器の数で分ける</h4>
 <p>体格（縦×横×高さの立方根）で <b>攻撃力の合計・HP・速さ・回避・積める重さ</b>が決まります。攻撃力の合計は<b>武器の数で分け合う</b>ので、武器 10 個なら 1 つ 1/10、5 個なら 1 つ 1/5 の強さ。数を増やしても強くはならず、いろいろな距離で戦えるようになるだけです。</p>
@@ -7377,8 +7380,8 @@ const HELP_PROPLIST = `<table><tr><th>名前</th><th>値</th><th>意味</th></tr
 <tr><td><code>くり返し</code></td><td>数（秒）</td><td>この秒ごとに勝手に爆発する</td></tr>
 <tr><th colspan="3">モンスター</th></tr>
 <tr><td><code>武器</code></td><td><code>剣</code> <code>槍</code> <code>銃</code> <code>大砲</code> <code>ミサイル</code> <code>ビーム</code></td><td>その部品で攻撃する</td></tr>
-<tr><td><code>射程</code></td><td>数（m）</td><td>武器の届く距離。短いほど強く、長いほどずれる</td></tr>
-<tr><td><code>射角</code></td><td>数（度）</td><td>銃口の向きから左右この角度の中だけ撃つ（なければ 60）</td></tr>
+<tr><td><code>射程</code></td><td>数（m）</td><td>武器の届く距離。短いほど強く、長いほどずれる（書かなくても、ゲームの中の「🎯 武器とため」で変えられます）</td></tr>
+<tr><td><code>射角</code></td><td>数（度）</td><td>銃口の向きから左右この角度の中だけ撃つ（なければ 5）</td></tr>
 <tr><td>部品の名前 <code>銃口</code></td><td>武器の子</td><td>ここから撃つ。武器の原点→銃口の向きに撃つ（<code>向き</code> があればそちら）</td></tr>
 <tr><td><code>攻撃</code> <code>順番</code></td><td>武器の部品の名前・1〜9</td><td>動く部品に：攻撃の前に順に動く（ため時間で威力 +25%／秒、上限 +50%）</td></tr>
 <tr><td><code>最高速度</code> <code>飛ぶ高さ</code></td><td>km/h・m</td><td>ボディに：速くすると HP が減る・飛ぶ高さ</td></tr>
@@ -17627,6 +17630,7 @@ function bizShopHtml(c) {
      小さい：速くて小回りがきき、よける（回避）。そのかわり HP が少なく、武器をたくさん積めない。
      武器をたくさん積んでも、コストの上限をこえた分は「出力を分け合う」：1 つずつの威力が下がり（上限 ÷ 合計）、重くなって遅くなる。
      だから武器 100 個でも強さは上限ぶんだけ。武器の数・種類は自由（組み合わせで戦い方が変わる）。 */
+const MON_CONE = 5;   // 射角（度）：銃口の向きから左右 ±5°（2026-11-19、前は 60）
 const MON_NAMES = { weapon: ['武器', 'ぶき', 'WEAPON'], move: ['移動', '移動の型', 'うごき方', '動き方', 'MOVE', 'MOVEMENT'], range: ['射程', 'レンジ', 'RANGE'], cone: ['射角', 'CONE'], seq: ['攻撃', 'こうげき', 'ATTACK'], alt: ['飛ぶ高さ', '高度', 'ALTITUDE'] };
 const MON_MOVES = { walk: { n: '歩く', sp: 1, hp: 1 }, car: { n: '走る', sp: 1.3, hp: 1 }, heli: { n: '飛ぶ', sp: 1.35, hp: 0.8 }, plane: { n: '飛行機', sp: 1.7, hp: 0.7 }, swim: { n: '泳ぐ', sp: 1, hp: 1 } };
 function monMoveOf(v) {
@@ -17679,7 +17683,7 @@ function rigMonster(item, forceMove, cfg, veh) {
       if (dv == null && lp.lengthSq() > 1e-6) dl = lp.normalize();
     }
     const cv = mpNum(mpGet(P, MON_NAMES.cone));
-    ws.push({ o, k, T, R, dl, mz, cone: THREE.MathUtils.degToRad(THREE.MathUtils.clamp(cv != null ? cv : 60, 5, 180)), last: -99, q0: o.quaternion.clone(), swing: 0 });
+    ws.push({ o, k, T, R, R0: R, dl, mz, cone: THREE.MathUtils.degToRad(THREE.MathUtils.clamp(cv != null ? cv : MON_CONE, 1, 180)), last: -99, q0: o.quaternion.clone(), swing: 0 });
   });
   const carry = Math.round(6 + 3 * s);   // 積める重さ
   const shields = Math.min(2, ws.filter((w) => w.T.shield).length);
@@ -17765,17 +17769,17 @@ function rigMonster(item, forceMove, cfg, veh) {
    L = { u: [えらんだ武器の番号（arms の中）], c: [それぞれの ため 秒] }。えらばない武器の重さは入れない（軽いほど速い）。
    攻撃力の合計は えらんだ数で等分。ため 1 秒で 1 回の威力が「待った分 ＋15%」（ためている間は止まる・よく当たる） */
 function monLoadFix(S, L) {
-  const n = S.arms.length, u = [], c = [];
-  if (L && Array.isArray(L.u)) L.u.forEach((x, k) => { const i = x | 0; if (i >= 0 && i < n && !u.includes(i) && u.length < MON_WMAX) { u.push(i); c.push(THREE.MathUtils.clamp(Math.round((Number(Array.isArray(L.c) ? L.c[k] : 0) || 0) * 2) / 2, 0, MON_HOLD)); } });
-  if (!u.length) for (let i = 0; i < Math.min(n, MON_WMAX); i++) { u.push(i); c.push(0); }
-  return { u, c };
+  const n = S.arms.length, u = [], c = [], r = [];   // r：射程（m）。0 は カスタムプロパティ（なければ武器の種類）のまま
+  if (L && Array.isArray(L.u)) L.u.forEach((x, k) => { const i = x | 0; if (i >= 0 && i < n && !u.includes(i) && u.length < MON_WMAX) { u.push(i); c.push(THREE.MathUtils.clamp(Math.round((Number(Array.isArray(L.c) ? L.c[k] : 0) || 0) * 2) / 2, 0, MON_HOLD)); const rv = rangeFix(S.arms[i], Array.isArray(L.r) ? L.r[k] : 0); r.push(rv === S.arms[i].R0 ? 0 : rv); } });
+  if (!u.length) for (let i = 0; i < Math.min(n, MON_WMAX); i++) { u.push(i); c.push(0); r.push(0); }
+  return { u, c, r };
 }
 function monApplyLoad(S, L, noCfg) {
   const F = S.load = monLoadFix(S, L);
-  let use = F.u.map((i, k) => { const w = S.arms[i]; w.hold = F.c[k]; return w; });
+  let use = F.u.map((i, k) => { const w = S.arms[i]; w.hold = F.c[k]; w.R = F.r[k] || w.R0; w.mult = rangeMult(w.R); return w; });
   const weight = use.reduce((a, w) => a + w.T.cost, 0), over = Math.max(0, weight / S.carry - 1);
   if (!use.length) use = [S.tackle || (S.tackle = { o: null, k: 'tackle', T: TACKLE, R: TACKLE.range, last: -99, hold: 0, charge: 0, bonus: 1, period0: TACKLE.cd, mult: rangeMult(TACKLE.range) })];
-  const share = S.atk / (use.length + S.shields);   // 1 つの武器の分け前（盾も 1 つ分使う）
+  const share = S.base.atk / (use.length + S.shields);   // 1 つの武器の分け前（盾も 1 つ分使う）。配分・戦い方の倍率は monApplyCfg がかける（S.atk はかけた後なので使わない）
   for (const w of use) {
     w.period = w.period0 + (w.hold || 0);
     w.dmg0 = share * w.mult * w.period * w.bonus * (1 + 0.15 * (w.hold || 0));   // 1 回のダメージ（射程が短いほど強い。ため 1 秒で ＋15%）
@@ -17796,7 +17800,7 @@ function monLoadInit(m) {
   const L = m.mine ? monLoadSaved(m) : (m.id && MON_LOADS.get(m.id)) || null;
   if (L) monApplyLoad(m.item.mon, L);
 }
-const monLoadMsg = (m) => ({ t: 'lo', id: m.id, u: m.item.mon.load.u, c: m.item.mon.load.c });
+const monLoadMsg = (m) => ({ t: 'lo', id: m.id, u: m.item.mon.load.u, c: m.item.mon.load.c, r: m.item.mon.load.r });
 function monStatsHtml(S) {
   const cnt = {};
   for (const w of S.weapons) { const k = w.T.shield ? w.T.n : `${w.T.n}（${w.R}m・×${rangeMult(w.R).toFixed(1)}${w.hold ? `・ため ${w.hold} 秒` : ''}${w.charge ? `・動き ${w.charge.toFixed(1)} 秒 +${Math.round((w.bonus - 1) * 100)}%` : ''}）`; cnt[k] = (cnt[k] || 0) + 1; }
@@ -17921,6 +17925,20 @@ function mbFoe(m, now) {
 // この画面が動かすモンスターか
 const monCtl = (m) => (MB.on && mbIn(m)) || (m.mine && !m.bt);
 const _mo = new THREE.Vector3(), _mt = new THREE.Vector3(), _mc = new THREE.Vector3(), _md = new THREE.Vector3();
+// 射角がせまい（±5°）ので、次に撃てる武器の銃口が相手を向くように体を回す：銃口の向き − 体の向き
+function monAimOff(m, now, t) {
+  const S = m.item.mon, d = Math.hypot(t.pos.x - m.pos.x, t.pos.z - m.pos.z); let best = null, bt = Infinity;
+  const ch = m.chg ? S.weapons[m.chg.i] : null;
+  for (const w of ch ? [ch] : S.weapons) {
+    if (w.T.melee || w.T.homing || !w.o || !w.dl || w.seq) continue;
+    const wait = w.last + (w.period || w.T.cd) - now + (d > S.reachOf(w) + 2 ? 99 : 0);   // 届かない武器は後回し
+    if (wait < bt) { bt = wait; best = w; }
+  }
+  if (!best) return 0;
+  const md = muzzleDir(best, _ma); if (Math.hypot(md.x, md.z) < 0.25) return 0;
+  return wrapA(Math.atan2(md.x, md.z) - m.h);
+}
+const _ma = new THREE.Vector3();
 function stepMyMonster(m, dt, now) {
   const S = m.item.mon;
   const t = mbIn(m) ? mbFoe(m, now) : null;
@@ -17931,9 +17949,9 @@ function stepMyMonster(m, dt, now) {
       if (m.ai) m.ai.srch = false;
       const G = monBattleGoal(m, t, now, dt, _mt);
       goal = G.goal; stop = G.stop;
-      face = Math.atan2(t.pos.x - m.pos.x, t.pos.z - m.pos.z);
+      face = Math.atan2(t.pos.x - m.pos.x, t.pos.z - m.pos.z) - monAimOff(m, now, t);
     } else { goal = monSearch(m, now, _mt); stop = 1.5; }   // 見失った：最後に見た場所 → そのまわりをさがす
-    if (m.chg && S.move !== 'plane') { goal = null; if (m.track) face = Math.atan2(t.pos.x - m.pos.x, t.pos.z - m.pos.z); }   // ためている間は止まる（飛行機は止まれない）
+    if (m.chg && S.move !== 'plane') { goal = null; if (m.track) face = Math.atan2(t.pos.x - m.pos.x, t.pos.z - m.pos.z) - monAimOff(m, now, t); }   // ためている間は止まる（飛行機は止まれない）
   } else if (m.mode === 'follow') {
     ownerAt(_mo);
     const d = Math.hypot(_mo.x - m.pos.x, _mo.z - m.pos.z);
@@ -18772,7 +18790,7 @@ function onMonNet(p) {
   if (d.t === 'chg') { if (m && !monCtl(m) && m.item.mon.weapons[d.w | 0]) { const sec = num(d.s, 0, MON_HOLD, 0); m.chgVis = { i: d.w | 0, t0: clock.elapsedTime, until: clock.elapsedTime + sec }; monSnd('charge', m.pos.x, m.pos.y, m.pos.z, sec); } return; }
   if (d.t === 'lo') {   // 持ち主がえらんだ武器とため
     if (typeof d.id !== 'string' || !OK_ID.test(d.id) || !Array.isArray(d.u) || d.u.length > MON_WMAX) return;
-    const L = { u: d.u.slice(0, MON_WMAX).map((x) => x | 0), c: Array.isArray(d.c) ? d.c.slice(0, MON_WMAX).map((x) => num(x, 0, MON_HOLD, 0)) : [] };
+    const L = { u: d.u.slice(0, MON_WMAX).map((x) => x | 0), c: Array.isArray(d.c) ? d.c.slice(0, MON_WMAX).map((x) => num(x, 0, MON_HOLD, 0)) : [], r: Array.isArray(d.r) ? d.r.slice(0, MON_WMAX).map((x) => num(x, 0, 300, 0)) : [] };
     MON_LOADS.set(d.id, L);
     if (m && !m.mine && !m.bt && !mbIn(m)) monApplyLoad(m.item.mon, L);
     return;
@@ -18925,18 +18943,20 @@ function stepBattleUi(dt) {
 }
 // 「🎯 武器とため」：使う武器（5 個まで）と、武器ごとの ため（0〜3 秒）をえらぶ
 function openMonLoad(m, after) {
-  const S = m.item.mon, D = el('monLoad'), old = { u: [...S.load.u], c: [...S.load.c] };
+  const S = m.item.mon, D = el('monLoad'), old = { u: [...S.load.u], c: [...S.load.c], r: [...(S.load.r || [])] };
   if (m.bt) { showMsg('バトル中は変えられません'); return; }
   const sel = new Map(old.u.map((i, k) => [i, old.c[k]]));   // 武器の番号 → ため（秒）
+  const rng = new Map(old.u.map((i, k) => [i, old.r[k] || 0]));   // 武器の番号 → 射程（0 はもとのまま）
   const nm = (w) => String((w.o && w.o.name) || w.T.n).replace(/\.\d+$/, '').slice(0, 18);
-  el('monLoadT').textContent = `${m.name}：武器とため`;
+  el('monLoadT').textContent = `${m.name}：武器・ため・射程`;
   const draw = () => {
-    monApplyLoad(S, { u: [...sel.keys()], c: [...sel.values()] });
+    monApplyLoad(S, { u: [...sel.keys()], c: [...sel.values()], r: [...sel.keys()].map((i) => rng.get(i) || 0) });
     el('monLoadCnt').textContent = `えらんだ武器 ${sel.size} / ${MON_WMAX}（全部で ${S.arms.length} 個）`;
     el('monLoadList').innerHTML = S.arms.length ? S.arms.map((w, i) => {
       const on = sel.has(i), h = sel.get(i) || 0;
       return `<div class="mlrow${on ? ' on' : ''}"><button type="button" data-w="${i}" aria-pressed="${on}"${!on && sel.size >= MON_WMAX ? ' disabled' : ''}><b>${on ? '☑' : '☐'} ${escH(nm(w))}</b><small>${w.T.n}・射程 ${Math.round(S.reachOf(w))}m・重さ ${w.T.cost}${on ? `・1 回 ${Math.round(w.dmg)}` : ''}</small></button>`
-        + (on ? `<span class="mlh"><button type="button" data-h="${i}" data-d="-0.5" aria-label="ためを短く"${h <= 0 ? ' disabled' : ''}>−</button><b>ため ${h ? h + ' 秒' : 'なし'}</b><button type="button" data-h="${i}" data-d="0.5" aria-label="ためを長く"${h >= MON_HOLD ? ' disabled' : ''}>＋</button></span>` : '') + '</div>';
+        + (on ? `<span class="mlh"><button type="button" data-h="${i}" data-d="-0.5" aria-label="ためを短く"${h <= 0 ? ' disabled' : ''}>−</button><b>ため ${h ? h + ' 秒' : 'なし'}</b><button type="button" data-h="${i}" data-d="0.5" aria-label="ためを長く"${h >= MON_HOLD ? ' disabled' : ''}>＋</button></span>` : '')
+        + (on ? (() => { const L = rangeLim(w.T), R = w.R; return `<span class="mlh"><button type="button" data-r="${i}" data-d="-1" aria-label="射程を短く"${R <= L.lo ? ' disabled' : ''}>−</button><b>射程 ${R}m${R === w.R0 ? '' : `（もと ${w.R0}m）`}</b><button type="button" data-r="${i}" data-d="1" aria-label="射程を長く"${R >= L.hi ? ' disabled' : ''}>＋</button></span>`; })() : '') + '</div>';
     }).join('') : '<p class="mpnote">武器がありません（体当たりで戦います）</p>';
     el('monLoadPrev').innerHTML = `<table><tr><th>スペック</th><td>${monSpec(S).toLocaleString()}</td></tr><tr><th>攻撃力</th><td>${Math.round(S.atk)}（1 つ ${S.share.toFixed(1)}）</td></tr><tr><th>武器の重さ</th><td>${S.weight} ／ 積める ${S.carry}${S.over > 0 ? '（こえた分おそい）' : ''}</td></tr><tr><th>速さ</th><td>${Math.round(S.speed * 3.6)}km/h</td></tr></table>`;
   };
@@ -18945,6 +18965,7 @@ function openMonLoad(m, after) {
     const b = e.target.closest('button'); if (!b || b.disabled) return;
     if (b.dataset.w != null) { const i = +b.dataset.w; if (sel.has(i)) { if (sel.size > 1) sel.delete(i); } else if (sel.size < MON_WMAX) sel.set(i, 0); draw(); return; }
     if (b.dataset.h != null) { const i = +b.dataset.h; sel.set(i, THREE.MathUtils.clamp((sel.get(i) || 0) + +b.dataset.d, 0, MON_HOLD)); draw(); return; }
+    if (b.dataset.r != null) { const i = +b.dataset.r, w = S.arms[i], v = rangeFix(w, w.R + rangeLim(w.T).st * +b.dataset.d); rng.set(i, v === w.R0 ? 0 : v); draw(); return; }
     if (b.id === 'monLoadNo') { monApplyLoad(S, old); close(); return; }
     if (b.id === 'monLoadGo') {
       monLoadSave(m, S.load);
@@ -19375,7 +19396,7 @@ function stepPvp(dt) {
 el('pvpBtn').addEventListener('click', openPvpDlg);
 { const f = el('pvpFire'), on = (e) => { e.preventDefault(); PVP.fire = true; }, off = () => { PVP.fire = false; };
   f.addEventListener('pointerdown', on); f.addEventListener('pointerup', off); f.addEventListener('pointercancel', off); f.addEventListener('pointerleave', off); }
-window.__pvp = PVP; window.__pvpStart = pvpStart; window.__pvpNet = onPvpNet; window.__spec = SPEC; window.__mons = () => MONS; window.__monDown = () => MON_DOWN; window.__battleEnd = battleEnd; window.__monReg = monSetReg; window.__monMenu = () => { el("monList").hidden = false; renderMonMenu(); return el("monList").innerText; }; window.__mb = MB; window.__cov = COV; window.__covSeg = covSeg; window.__battle = battleStart; window.__addMon = addMonsterFromBuffer; window.__monSpec = monSpec; window.__openBattle = () => { monNearMe = MONS.find((m) => m.mine && !m.copyOf) || null; openBattleDlg(); };   // テスト用
+window.__pvp = PVP; window.__pvpStart = pvpStart; window.__pvpNet = onPvpNet; window.__spec = SPEC; window.__mons = () => MONS; window.__monDown = () => MON_DOWN; window.__openLoad = openMonLoad; window.__battleEnd = battleEnd; window.__monReg = monSetReg; window.__monMenu = () => { el("monList").hidden = false; renderMonMenu(); return el("monList").innerText; }; window.__mb = MB; window.__cov = COV; window.__covSeg = covSeg; window.__battle = battleStart; window.__addMon = addMonsterFromBuffer; window.__monSpec = monSpec; window.__openBattle = () => { monNearMe = MONS.find((m) => m.mine && !m.copyOf) || null; openBattleDlg(); };   // テスト用
 /* ================= ループ ================= */
 const clock = new THREE.Clock();
 let netTick = 0, firstFrame = true;
