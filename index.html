@@ -466,7 +466,19 @@ body.jetOn #map { display: none !important; }
 #monDlgList button { display: grid; text-align: left; gap: 2px; font: 800 14px var(--font-ui); color: var(--ink); background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 8px 12px; cursor: pointer; }
 #monDlgList button small { font-weight: 600; font-size: 12px; color: var(--ink-dim); }
 #monDlgList button[aria-pressed="true"], #monDlgMin button[aria-pressed="true"] { background: #fff1e6; border-color: #e08a3c; }
-#monDlgMin { display: flex; gap: 6px; }
+#monDlgMin, #monDlgWhere { display: flex; gap: 6px; }
+#monDlgWhere button { flex: 1; font: 800 13px var(--font-ui); color: var(--ink); background: #fff; border: 1px solid var(--line); border-radius: 999px; padding: 6px 0; cursor: pointer; }
+#monDlgWhere button[aria-pressed="true"] { background: #fff1e6; border-color: #e08a3c; }
+#monDlgCnt { display: grid; gap: 6px; }
+#monDlgCnt[hidden], #monDlgWhere[hidden], #monDlgWhereT[hidden] { display: none; }
+#monDlgCnt .mcnt { display: grid; grid-template-columns: 1fr 34px 30px 34px; align-items: center; gap: 6px; font-size: 13px; }
+#monDlgCnt .mcnt span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#monDlgCnt .mcnt b { text-align: center; font-size: 16px; }
+#monDlgCnt .mcnt button { height: 32px; font: 800 16px var(--font-ui); color: var(--ink); background: #fff; border: 1px solid var(--line); border-radius: 10px; cursor: pointer; }
+#monDlgCnt .mcnt button:disabled { opacity: 0.35; cursor: default; }
+#monDlgCnt .mcsum { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-weight: 800; font-size: 13px; }
+#monDlgCnt .mcsum.off span { color: #b8401a; }
+#monDlgEq { font: 800 12px var(--font-ui); color: #7a2a12; background: #fff1e6; border: 1px solid #e08a3c; border-radius: 999px; padding: 5px 10px; cursor: pointer; }
 #monDlgMin button { flex: 1; font: 800 13px var(--font-ui); color: var(--ink); background: #fff; border: 1px solid var(--line); border-radius: 999px; padding: 6px 0; cursor: pointer; }
 #monDlg .pfoot, #monSet .pfoot { display: flex; justify-content: flex-end; gap: 8px; }
 #monDlg .pfoot button, #monSet .pfoot button { font: 800 13px var(--font-ui); border-radius: 999px; padding: 8px 16px; cursor: pointer; border: 1px solid var(--line); background: #fff; color: var(--ink); }
@@ -788,9 +800,17 @@ body.jetOn #map { display: none !important; }
 <div id="monDlg" role="dialog" aria-modal="true" aria-labelledby="monDlgT" hidden>
   <p class="ptitle" id="monDlgT">バトル：相手は？</p>
   <div id="monDlgList"></div>
+  <div id="monDlgCnt" hidden>
+    <p class="mpnote">スペック（HP・攻撃力・回避から）の合計がそろうように、弱いほうは何体かで戦えます。2 体目からは、バトルの間だけの分身です</p>
+    <div class="mcnt"><span data-cs="a"></span><button type="button" data-cn="a" data-d="-1" aria-label="へらす">−</button><b data-cv="a">1</b><button type="button" data-cn="a" data-d="1" aria-label="ふやす">＋</button></div>
+    <div class="mcnt"><span data-cs="b"></span><button type="button" data-cn="b" data-d="-1" aria-label="へらす">−</button><b data-cv="b">1</b><button type="button" data-cn="b" data-d="1" aria-label="ふやす">＋</button></div>
+    <div class="mcsum"><span id="monDlgSum"></span><button type="button" id="monDlgEq">⚖ そろえる</button></div>
+  </div>
+  <p class="mpnote" id="monDlgWhereT">場所</p>
+  <div id="monDlgWhere"><button type="button" data-where="field" aria-pressed="true">🏟 バトルフィールド</button><button type="button" data-where="here" aria-pressed="false">その場で</button></div>
   <p class="mpnote">制限時間（こえると引き分け）</p>
   <div id="monDlgMin"><button type="button" data-min="1" aria-pressed="false">1分</button><button type="button" data-min="3" aria-pressed="false">3分</button><button type="button" data-min="5" aria-pressed="true">5分</button><button type="button" data-min="10" aria-pressed="false">10分</button></div>
-  <p class="mpnote">負けたモンスターは爆発して消えます（もどりません）。勝ったほうは 5 秒その場で待ってから、引き分けは 2 体ともすぐ、元の位置に帰ります。</p>
+  <p class="mpnote">負けたモンスターは爆発して消えます（もどりません）。勝ったほうは 5 秒その場で待ってから、引き分けは 2 体ともすぐ、元の位置に帰ります。分身はバトルが終わると消えます。バトルフィールドは、はじめの浜バスターミナルの東どなり（バトル中はフィールドの外に出ません）。</p>
   <div class="pfoot"><button type="button" class="pcancel" id="monDlgNo">やめる</button><button type="button" class="pok" id="monDlgGo">⚔ バトル開始</button></div>
 </div>
 <div id="specDlg" role="dialog" aria-modal="true" aria-labelledby="specT" hidden>
@@ -3299,7 +3319,62 @@ function aptLift(x, z, h) {   // 空港の地面：海の島はもり上げる�
   }
   return h;
 }
-function rawHeight0(x, z) { return aptLift(x, z, rawHeight00(x, z)); }
+/* ================= バトルフィールド（2026-11-19 わんみゃさんの案）=================
+   はじめの浜バスターミナルの東どなりの 150m × 150m。サバイバルゲームの場所のように、丘・土手・くぼみ・小さな池・物かげがあり、まわりはフェンス。
+   モンスターのバトルはここで行う（バトル中はフィールドの外に出ない）。地面の高さ：もとの地面をなだらかにした高さ（base）＋ 丘など（relief）
+   座標：u = x − 中心、v = z − 中心（−75〜75） */
+const BF = { x0: 90, x1: 240, z0: -28, z1: 122, cx: 165, cz: 47, half: 75, M: 14, g: null, pond: { u: -30, v: 22, R: 10, y: 0 }, boxes: [], cov: [], gates: [{ side: 'w', at: 0, w: 5 }, { side: 's', at: -20, w: 5 }], built: false };
+const BF_HILLS = [[-40, -45, 12, 7], [30, -50, 13, 6], [5, 5, 15, 9], [50, 25, 9, 10], [-50, 45, 11, 6], [20, 55, 10, 7], [-10, -62, 7, 4], [62, -20, 8, 5], [-62, -5, 8, 4.5], [-22, -22, 6, 3.5], [32, 30, 6, 3], [-58, 22, 6, 3], [62, 62, 8, 5], [-8, 38, 6, 2.5]];   // u, v, 半径, 高さ
+const BF_BERMS = [[-30, -15, -5, -30, 3, 2.2], [15, 32, 42, 42, 3, 2], [40, -35, 55, -5, 3, 2.5]];   // 土手：u1, v1, u2, v2, はば, 高さ
+const BF_DITCH = [[-68, -35, -45, -20, 3.5, 1.8], [20, -18, 48, -12, 3.5, 1.6]];   // くぼみ（ほり）：同じ形で −
+const BF_PATHS = [[-75, 0, -42, 2], [-42, 2, -8, -14], [-8, -14, 22, -6], [22, -6, 60, 4], [-20, -75, -18, -45], [-18, -45, -8, -14], [-42, 2, -36, 40], [-36, 40, 2, 58], [2, 58, 45, 50], [22, -6, 30, -32]];   // 踏みかためた土の道
+const segD = (u, v, a) => { const dx = a[2] - a[0], dz = a[3] - a[1], L2 = dx * dx + dz * dz, t = Math.max(0, Math.min(1, ((u - a[0]) * dx + (v - a[1]) * dz) / L2)); return Math.hypot(u - a[0] - dx * t, v - a[1] - dz * t); };
+// もとの地面をなだらかにした高さ（50m ごとの点から。はじめて使うときに計算する。どの画面でも同じ）
+function bfBase(u, v) {
+  if (!BF.g) {
+    BF.g = [];
+    for (let j = 0; j < 4; j++) for (let i = 0; i < 4; i++) {
+      let s = 0, n = 0;
+      for (let a = -2; a <= 2; a++) for (let b = -2; b <= 2; b++) { s += rawHeight00(BF.cx - 75 + i * 50 + a * 6, BF.cz - 75 + j * 50 + b * 6); n++; }
+      BF.g.push(Math.max(3, s / n));
+    }
+    const p = BF.pond; p.y = bfBase(p.u, p.v) - 0.35;
+  }
+  const fi = THREE.MathUtils.clamp((u + 75) / 50, 0, 2.999), fj = THREE.MathUtils.clamp((v + 75) / 50, 0, 2.999), i = Math.floor(fi), j = Math.floor(fj), a = ss(0, 1, fi - i), b = ss(0, 1, fj - j), G = BF.g;
+  return (G[j * 4 + i] * (1 - a) + G[j * 4 + i + 1] * a) * (1 - b) + (G[(j + 1) * 4 + i] * (1 - a) + G[(j + 1) * 4 + i + 1] * a) * b;
+}
+// フィールドの中の高さ（池・フェンスぎわは平ら）
+function bfField(u, v) {
+  let r = 0;
+  for (const [hu, hv, R, H] of BF_HILLS) { const d2 = (u - hu) ** 2 + (v - hv) ** 2; if (d2 < 9 * R * R) r += H * Math.exp(-d2 / (R * R)); }
+  for (const b of BF_BERMS) { const d = segD(u, v, b); if (d < b[4] * 1.6) r += b[5] * (1 - ss(b[4] * 0.35, b[4] * 1.6, d)); }
+  for (const b of BF_DITCH) { const d = segD(u, v, b); if (d < b[4] * 1.4) r -= b[5] * (1 - ss(b[4] * 0.3, b[4] * 1.4, d)); }
+  r += 0.45 * Math.sin(u * 0.23 + 1.3) * Math.sin(v * 0.19 + 0.4) + 0.3 * Math.sin(u * 0.51 + v * 0.37);   // 小さなでこぼこ
+  const edge = BF.half - Math.max(Math.abs(u), Math.abs(v));
+  r *= ss(2, 10, edge);   // フェンスのそばは平ら
+  let h = bfBase(u, v) + r;
+  const P = BF.pond, pd = Math.hypot(u - P.u, v - P.v);
+  if (pd < P.R + 10) h = Math.min(h, pd < P.R ? P.y - 0.25 - 1.3 * (1 - (pd / P.R) ** 2) : P.y - 0.25 + (pd - P.R) * 0.5);   // 池（まん中の深さ 1.5m）
+  return h;
+}
+function bfLift(x, z, h) {
+  const u = x - BF.cx, v = z - BF.cz, e = Math.max(Math.abs(u), Math.abs(v)) - BF.half;
+  if (e >= BF.M) return h;
+  if (e <= 0) return bfField(u, v);
+  const t = ss(0, BF.M, e), cu = THREE.MathUtils.clamp(u, -BF.half, BF.half), cv = THREE.MathUtils.clamp(v, -BF.half, BF.half);
+  return bfBase(cu, cv) * (1 - t) + h * t;   // まわり 14m で、もとの地面へなだらかにつなぐ
+}
+const BF_DIRT = new THREE.Color(0x9a7a52);
+function bfDirt(u, v, y) {   // 土の色の濃さ（0〜1）
+  let k = 0;
+  for (const a of BF_PATHS) { const d = segD(u, v, a); if (d < 4) k = Math.max(k, 1 - ss(1.4, 3.6, d)); }
+  for (const b of BF_DITCH) { const d = segD(u, v, b); if (d < 3) k = Math.max(k, 1 - ss(1, 2.6, d)); }
+  const P = BF.pond, pd = Math.hypot(u - P.u, v - P.v); if (pd < P.R + 3) k = Math.max(k, 1 - ss(P.R + 0.5, P.R + 2.8, pd));
+  k = Math.max(k, ss(0.3, 0.7, Math.sin(u * 0.13 + 2) * Math.sin(v * 0.11 + 1) + 0.25 * Math.sin(u * 0.41 - v * 0.29)) * 0.4);   // ところどころ草がはげている
+  return Math.min(0.85, k);
+}
+const bfIn = (x, z, pad = 0) => x > BF.x0 + pad && x < BF.x1 - pad && z > BF.z0 + pad && z < BF.z1 - pad;
+function rawHeight0(x, z) { return bfLift(x, z, aptLift(x, z, rawHeight00(x, z))); }
 function rawHeight00(x, z) {   // 道を作る前の地面（前の世界の中はそのまま。外へ 400m かけて新しい地形へつなぐ）
   const d = Math.max(OLD.x0 - x, x - OLD.x1, OLD.z0 - z, z - OLD.z1, 0);
   if (d <= 0) return oldHeight(x, z);
@@ -3431,6 +3506,7 @@ const LANDMARKS = [
   { name: 'はじめの浜', kind: '浜', x: 0, z: -95 },
   { name: 'はじめの浜バスターミナル', kind: '駅', x: 5, z: 45 },
   { name: '見晴らしの丘', kind: '山', x: 45, z: 70 },
+  { name: 'バトルフィールド', kind: '広場', x: 165, z: 47 },
   { name: 'はじめの入り江', kind: '海', x: 0, z: -60 },
   { name: 'ヤシの島', kind: '島', x: 0, z: -265 },
   { name: '岩の島', kind: '島', x: -260, z: -420 },
@@ -4356,6 +4432,7 @@ function surfaceColor(cx, cy, cz, ny, out) {
   const grassLine = 3.0 + fbm(cx * 2, cz * 2) * 0.9;
   if (cy > grassLine) {
     if (ny < 0.74) out.copy(COL.cliff);
+    else if (cx > BF.x0 && cx < BF.x1 && cz > BF.z0 && cz < BF.z1 && bfDirt(cx - BF.cx, cz - BF.cz, cy) > 0.02) out.copy(COL.grass1).lerp(COL.grass2, v).lerp(BF_DIRT, bfDirt(cx - BF.cx, cz - BF.cz, cy));   // バトルフィールドの土の道・くぼみ
     else out.copy(COL.grass1).lerp(COL.grass2, v).lerp(COL.grassHigh, ss(8, 24, cy) * 0.7).lerp(COL.rock, ss(45, 95, cy) * 0.85);   // 高い山は岩っぽく
     if (cy > 300) out.lerp(PEAK_SNOW, ss(330, 480, cy) * 0.9);   // みなみ連山・きた島のいちばん上は雪（2026-11-14）
   } else if (cy > 0.35) out.copy(COL.sand).lerp(COL.sandWet, ss(1.2, 0.35, cy) * 0.5);
@@ -4565,7 +4642,7 @@ function detailTile(ci, cj) {
   if (detailMemo.has(key)) return detailMemo.get(key);
   const x0 = X0 + ci * CHM, z0 = Z0 + cj * CHM, x1 = x0 + CHM, z1 = z0 + CHM;
   const near = (o, r) => Math.hypot(Math.max(x0 - o.x, 0, o.x - x1), Math.max(z0 - o.z, 0, o.z - z1)) < r;
-  const v = near(ISLAND, 40) || ISLETS.some((o) => near(o, Math.max(o.rx, o.rz) + 10)) || near(TUNNEL, TUNNEL.rx + 10) || (x1 > -130 && x0 < 130 && z1 > -130 && z0 < 100);
+  const v = near(ISLAND, 40) || ISLETS.some((o) => near(o, Math.max(o.rx, o.rz) + 10)) || near(TUNNEL, TUNNEL.rx + 10) || (x1 > -130 && x0 < 130 && z1 > -130 && z0 < 100) || (x1 > BF.x0 - 20 && x0 < BF.x1 + 20 && z1 > BF.z0 - 20 && z0 < BF.z1 + 20);   // バトルフィールドも細かく
   detailMemo.set(key, v);
   return v;
 }
@@ -10445,6 +10522,7 @@ function stepPlayer(dt) {
   }
   if (blds.length) bldPush(player.pos, P_R);   // 建物の壁とドア
   townPush(player.pos, P_R);   // 街の家・会社の建物
+  bfPush(player.pos, P_R);   // バトルフィールドの物かげ・フェンス
   if (!hwWalkMove(ox, oz, oy)) { player.pos.x = ox; player.pos.z = oz; if (player.pos.y < oy) { player.pos.y = oy; player.vy = Math.max(0, player.vy); } }   // 高速道路は歩いて出入りできない
   for (const pr of props) {
     if (pr.bld) continue;
@@ -17613,7 +17691,7 @@ function rigMonster(item, forceMove, cfg, veh) {
   }
   // 盾：盾のある側（体の中心から見た向き）から来た攻撃を弱める
   const shieldDirs = ws.filter((w) => w.T.shield).slice(0, 4).map((w) => { const p = w.o.getWorldPosition(new THREE.Vector3()); return Math.hypot(p.x, p.z) < 0.1 * Math.max(sz.x, sz.z) ? 0 : Math.atan2(p.x, p.z); });
-  let speed = 11 / (0.55 + 0.45 * s) / (1 + 0.35 * over);
+  let speed = 5.5 / (0.55 + 0.45 * s) / (1 + 0.35 * over);   // 2026-11-19：前の半分（速すぎて、すぐ目の前で撃ち合いになっていた）
   let hp = Math.round(500 * Math.pow(s, 1.3));   // 5 分の中で決着がつくくらい
   const MV = MON_MOVES[move];
   speed *= MV.sp; hp *= MV.hp;
@@ -17655,7 +17733,7 @@ function rigMonster(item, forceMove, cfg, veh) {
     limbs.push({ o, q0: o.quaternion.clone(), ph: (side ? Math.PI : 0) + (arm ? Math.PI : 0), amp: arm ? 0.35 : 0.5 });
   });
   item.mon = {
-    s, size: sz, lb, move, hpMax: hp, speed, autoSp, alt, wheels, seqParts, turn: (move === 'plane' ? 1.4 : 4) / (0.6 + 0.4 * s), dodge: THREE.MathUtils.clamp(0.32 - 0.06 * s, 0, 0.3),
+    s, size: sz, lb, move, hpMax: hp, speed, autoSp, alt, wheels, seqParts, turn: (move === 'plane' ? 0.9 : 2.2) / (0.6 + 0.4 * s), dodge: THREE.MathUtils.clamp(0.32 - 0.06 * s, 0, 0.3),
     atk, share, weight, carry, over, shields, shieldDirs, weapons: use, all: ws, odd, half, reachOf, range: Math.max(...ranges), minRange: Math.min(...ranges),
     closeIn: use.some((w) => w.T.melee && reachOf(w) === Math.min(...ranges)), limbs,
   };
@@ -17669,6 +17747,7 @@ function monStatsHtml(S) {
   const wl = Object.entries(cnt).map(([k, n]) => `${k}×${n}`).join('・') || 'なし（体当たり）';
   const nW = S.weapons.length + S.shields;
   const rows = [
+    ['スペック', `${monSpec(S).toLocaleString()}（HP・攻撃力・回避から。バトルでは、合計がそろうように数を決められる）`],
     ['体格', `${S.s.toFixed(1)}（${S.size.x.toFixed(1)}×${S.size.z.toFixed(1)}×高さ${S.size.y.toFixed(1)}m）`],
     ['HP', S.hpMax.toLocaleString()],
     ['攻撃力', `${Math.round(S.atk)}（武器 ${nW} 個で分けて 1 つ ${S.share.toFixed(1)}）`],
@@ -17764,13 +17843,26 @@ function ownerAt(out) {
 const ownerFace = () => (ride ? ride.h : player.face);
 /* ---- バトル：自分のモンスターに近づいて「⚔ バトル」。始めた人の画面が 2 体とも動かす（相手の持ち主がいなくても戦える）
    負け：爆発して消える（みんなの世界からも消える）。時間切れ：引き分け。終わったら 2 体とも元の位置に帰り、HP は満タン */
-const MB = { on: false, a: null, b: null, t0: 0, limit: 300, home: null, uiT: 0 };
+const MB = { on: false, prep: false, a: null, b: null, A: [], B: [], n0: [1, 1], field: false, t0: 0, limit: 300, home: null, uiT: 0 };
+// チーム（2026-11-19）：A＝a と分身、B＝b と分身。分身はバトルの間だけいる（同じ .glb から作る）。本体はチームの最後の 1 体になるまで残る
+const mbSide = (m) => (!MB.on || !m ? 0 : MB.A.includes(m) ? 1 : MB.B.includes(m) ? 2 : 0);
+const mbIn = (m) => mbSide(m) > 0;
+const mbTeam = (k) => (k === 1 ? MB.A : MB.B).filter((q) => MONS.includes(q) && q.hp > 0);
+// ねらう相手：相手チームのいちばん近いもの（1.5〜2.5 秒ごとに見なおす。今の相手は少しひいき）
+function mbFoe(m, now) {
+  const k = mbSide(m); if (!k) return null;
+  if (m.foe && m.foeT > now && mbSide(m.foe) === 3 - k && m.foe.hp > 0 && MONS.includes(m.foe)) return m.foe;
+  let best = null, bd = Infinity;
+  for (const q of mbTeam(3 - k)) { const d = q.pos.distanceTo(m.pos) - (q === m.foe ? 8 : 0); if (d < bd) { bd = d; best = q; } }
+  m.foe = best; m.foeT = now + 1.5 + Math.random();
+  return best;
+}
 // この画面が動かすモンスターか
-const monCtl = (m) => (MB.on && (MB.a === m || MB.b === m)) || (m.mine && !m.bt);
+const monCtl = (m) => (MB.on && mbIn(m)) || (m.mine && !m.bt);
 const _mo = new THREE.Vector3(), _mt = new THREE.Vector3(), _mc = new THREE.Vector3(), _md = new THREE.Vector3();
 function stepMyMonster(m, dt, now) {
   const S = m.item.mon;
-  const t = MB.on && MB.a === m ? MB.b : MB.on && MB.b === m ? MB.a : null;
+  const t = mbIn(m) ? mbFoe(m, now) : null;
   let goal = null, face = null, stop = 0.5;
   if (t) {   // 戦い方（攻撃型・バランス・防御型）で動く。まわりこむ・物かげにかくれる
     monLos(m, t, now);
@@ -17813,6 +17905,7 @@ function stepMyMonster(m, dt, now) {
       const water = m.pos.y < SEA + 0.2 && S.move === 'walk', land = S.move === 'swim' && heightAt(m.pos.x, m.pos.z) > SEA - 0.5;
       const vmax = S.speed * (water ? 0.5 : land ? 0.3 : 1) * (t ? 1 : Math.min(1.6, 0.6 + d / 15));
       let sp = Math.min(vmax, d * 2), dir = Math.atan2(dx, dz);
+      if (t && m.ai && m.ai.bumpT > now) dir += (m.ai.side || 1) * 1.2;   // 物にぶつかっている：横へまわりこむ
       if (S.move === 'car' || S.move === 'plane') {   // 車・飛行機：向いている方へしか進めない（その場で回れない）
         if (S.move === 'plane') sp = Math.max(sp, S.speed * 0.55);
         const dh = wrapA(dir - m.h), turnK = S.move === 'car' ? Math.min(1, (Math.hypot(m.vel.x, m.vel.z) + 0.5) / (1 + S.s)) : 1;
@@ -17821,8 +17914,9 @@ function stepMyMonster(m, dt, now) {
         if (S.move === 'car' && Math.abs(dh) > 2.2 && d < 12) sp = -sp * 0.4;   // 真後ろが近い：バック
         dir = m.h; face = null;
       } else if (face == null) face = dir;
-      m.vel.x += (Math.sin(dir) * sp - m.vel.x) * Math.min(1, dt * 4);
-      m.vel.z += (Math.cos(dir) * sp - m.vel.z) * Math.min(1, dt * 4);
+      const acc = Math.min(1, dt * (t ? 2.5 : 4));   // バトル中は、動き出し・止まりがゆっくり
+      m.vel.x += (Math.sin(dir) * sp - m.vel.x) * acc;
+      m.vel.z += (Math.cos(dir) * sp - m.vel.z) * acc;
     } else { m.vel.x *= Math.exp(-dt * 6); m.vel.z *= Math.exp(-dt * 6); }
   } else { m.vel.x *= Math.exp(-dt * 6); m.vel.z *= Math.exp(-dt * 6); }
   // ほかのモンスターと重ならない
@@ -17833,6 +17927,7 @@ function stepMyMonster(m, dt, now) {
   }
   m.pos.x = clampX(m.pos.x + m.vel.x * dt, 4); m.pos.z = clampZ(m.pos.z + m.vel.z * dt, 4);
   if (!monFlies(S)) covPush(m);   // 建物・車を通りぬけない（低い物はまたぐ）
+  if (MB.on && MB.field && mbIn(m)) { const r = Math.min(monRad(m) * 0.8, 30) + 1; m.pos.x = THREE.MathUtils.clamp(m.pos.x, BF.x0 + r, BF.x1 - r); m.pos.z = THREE.MathUtils.clamp(m.pos.z, BF.z0 + r, BF.z1 - r); }   // バトルフィールドの外に出ない
   if (face != null && S.move !== 'car' && !(S.move === 'plane' && m.airborne)) m.h += THREE.MathUtils.clamp(wrapA(face - m.h), -S.turn * dt, S.turn * dt);
   else if (face != null && S.move === 'car' && t && m.speedNow < 0.5) m.h += THREE.MathUtils.clamp(wrapA(face - m.h), -S.turn * 0.3 * dt, S.turn * 0.3 * dt);   // 止まって撃つときは、ゆっくり向きを変える
   if (!goal || S.move !== 'car' && S.move !== 'plane') m.bank = (m.bank || 0) * Math.exp(-dt * 3);
@@ -17992,7 +18087,7 @@ function monFire(m, i, t, real, n) {
   fxEmit(true, from.x, from.y, from.z, 0, 0, 0, 1, 0.85, 0.5, T.homing ? 1 : 0.5, 2, 0.1, 1, 0, 0);
 }
 function monHit(t, dmg, noDodge, fromPos) {
-  if (t.pvp ? !(t.bt && t.bt.pair && t.bt.pair.on) : (!MB.on || (MB.a !== t && MB.b !== t))) return;
+  if (t.pvp ? !(t.bt && t.bt.pair && t.bt.pair.on) : !mbIn(t)) return;
   if (!noDodge && Math.random() < t.item.mon.dodge) {   // よけた
     monCenter(t, _mc);
     for (let k = 0; k < 6; k++) fxEmit(false, _mc.x, _mc.y, _mc.z, rnd(2), 1, rnd(2), 0.9, 0.9, 0.9, 0.4, 1, 0.5, 0.5, 0, 1);
@@ -18008,7 +18103,25 @@ function monHit(t, dmg, noDodge, fromPos) {
   }
   if (t.pvp) { pvpDamage(t, Math.max(0.5, dmg)); return; }   // プレイヤーの乗り物：当たったことを持ち主へ
   t.hp -= Math.max(0.5, dmg);
-  if (t.hp <= 0) { t.hp = 0; battleEnd(MB.a === t ? MB.b : MB.a, 'ko'); }
+  if (t.hp <= 0) { t.hp = 0; monDown(t); }
+}
+// HP 0：チームにまだいれば、その 1 体だけ爆発して消える（本体がやられたときは、のこった分身と入れかわる）。だれもいなければ負け
+function monDown(t) {
+  const k = mbSide(t); if (!k) return;
+  const left = mbTeam(k).filter((q) => q !== t);
+  if (!left.length) { battleEnd(k === 1 ? MB.b : MB.a, 'ko'); return; }
+  monCenter(t, _mc); fxBoom(_mc.x, _mc.y, _mc.z, Math.min(4, 1 + t.item.mon.s * 0.5), null);
+  const p = [Math.round(_mc.x * 10) / 10, Math.round(_mc.y * 10) / 10, Math.round(_mc.z * 10) / 10];
+  let gone = t;
+  if (t === MB.a || t === MB.b) {
+    const c = left.find((q) => q.copyOf) || left[0];
+    t.pos.copy(c.pos); t.h = c.h; t.hp = c.hp; t.vel.copy(c.vel); t.ai = c.ai; t.airborne = c.airborne; t.foe = null; t.los = c.los;
+    for (const w of t.item.mon.weapons) w.run = null;
+    gone = c;
+  }
+  if (gone.cid) monEmit({ t: 'kc', id: gone.cid, p });
+  removeMonster(gone);
+  showMsg(`⚔ ${t.copyOf ? t.copyOf.name : t.name} が 1 体やられた（のこり ${left.length} 体）`);
 }
 /* ---- 遮蔽物（2026-11-18）：町の家・会社・置いた建物と置物・町の車とバス・置いた乗り物で、弾・ビーム・爆発が止まる
    バトル中（か弾が飛んでいる間）だけ、まわりの物を「向きのついた箱」にして覚えておく。動かない物は 1.5 秒ごと、車は 0.2 秒ごと */
@@ -18027,7 +18140,7 @@ const covExt = (o, ux, uz) => o.hw * Math.abs(ux * o.c - uz * o.s) + o.hd * Math
 function covUpdate(dt) {
   const pts = [];
   for (const P of PVP.pairs) if (P.on) pts.push(P.a.pos, P.b.pos);
-  if (MB.on) pts.push(MB.a.pos, MB.b.pos);
+  if (MB.on) for (const q of [...MB.A, ...MB.B]) if (MONS.includes(q)) pts.push(q.pos);
   else { for (const m of MONS) if (m.bt || m.preview) pts.push(m.pos); if (MSH.length) pts.push(MSH[0].p, MSH[MSH.length - 1].p); }
   if (!pts.length) { if (COV.on) { COV.on = false; COV.st.length = 0; COV.dyn.length = 0; COV.grid.clear(); COV.tS = 0; } return; }
   let sx = 0, sz = 0;
@@ -18053,6 +18166,7 @@ function covStatic() {
       }
     }
   }
+  if (BF.built && Math.abs(BF.cx - cx) < R + 110 && Math.abs(BF.cz - cz) < R + 110) for (const o of BF.cov) L.push(o);   // バトルフィールドの物かげ
   for (const pr of props) {   // 置いた置物・建物（外側の箱）
     const b = pr.box; if (!b || b.isEmpty() || (pr.root && !pr.root.visible)) continue;
     const hy = b.max.y - b.min.y, hx = (b.max.x - b.min.x) / 2, hz = (b.max.z - b.min.z) / 2;
@@ -18096,6 +18210,7 @@ function covSeg(a, b, step = 1.2) {
     _cvP.lerpVectors(a, b, k / n);
     const o = covAt(_cvP.x, _cvP.y, _cvP.z, a, b);
     if (o) return { o, p: _cvP.clone() };
+    if (bfIn(_cvP.x, _cvP.z) && k > 1 && k < n - 1) { const g = heightAt(_cvP.x, _cvP.z); if (_cvP.y < g - 0.3) return { o: { y1: g + 1 }, p: _cvP.clone() }; }   // バトルフィールドの丘・土手のかげ
   }
   return null;
 }
@@ -18119,7 +18234,7 @@ function covPush(m) {
     let nu = u, nv = v;
     if (hw - Math.abs(u) < hd - Math.abs(v)) nu = Math.sign(u || 1) * hw; else nv = Math.sign(v || 1) * hd;
     m.pos.x = o.x + nu * o.c + nv * o.s; m.pos.z = o.z - nu * o.s + nv * o.c;
-    m.ai && (m.ai.bump = (m.ai.bump || 0) + 1);
+    m.ai && (m.ai.bump = (m.ai.bump || 0) + 1, m.ai.bumpT = clock.elapsedTime + 0.8);   // ぶつかった：しばらく横へよける（stepMyMonster）
   };
   const C = COV.C, seen = new Set();
   for (let gx = Math.floor((m.pos.x - R) / C); gx <= Math.floor((m.pos.x + R) / C); gx++) for (let gz = Math.floor((m.pos.z - R) / C); gz <= Math.floor((m.pos.z + R) / C); gz++) {
@@ -18174,7 +18289,7 @@ function monFindCover(m, t, want) {
 // バトルのときの行き先
 function monBattleGoal(m, t, now, dt, out) {
   const S = m.item.mon, tend = (S.cfg && S.cfg.tend) || 'b';
-  const A = m.ai || (m.ai = { side: Math.random() < 0.5 ? 1 : -1, flip: 0, cover: null, coverT: 0, peek: false, phaseT: 0, stuckT: 0, bump: 0 });
+  const A = m.ai || (m.ai = { side: Math.random() < 0.5 ? 1 : -1, flip: 0, cover: null, coverT: 0, peek: false, phaseT: 0, stuckT: 0, bump: 0, hold: false, holdT: 0 });
   const dx = m.pos.x - t.pos.x, dz = m.pos.z - t.pos.z, d = Math.hypot(dx, dz) || 1, rT = monRad(t);
   let want;
   if (S.closeIn) want = S.minRange * 0.8 + rT * 0.8;
@@ -18196,6 +18311,11 @@ function monBattleGoal(m, t, now, dt, out) {
       return { goal: out.set(P[0], 0, P[1]), stop: 0.4 };
     }
   }
+  // 2026-11-19：ちょうどよい距離で相手が見えているときは、しばらく止まって撃つ ⇄ 少し動く（ずっと回りつづけない）
+  if (!S.closeIn && !monFlies(S) && m.los !== false && Math.abs(d - want) < want * 0.35 + 3) {
+    if (now > A.holdT) { A.hold = !A.hold; A.holdT = now + (A.hold ? (tend === 'a' ? 1 : 1.8) + Math.random() * 2 : 1.8 + Math.random() * 2.5); }
+    if (A.hold) return { goal: out.set(m.pos.x, 0, m.pos.z), stop: 1 };
+  } else if (A.hold) { A.hold = false; A.holdT = now + 2; }
   // まわりこむ：相手のまわりを回りながら、ほしい距離をたもつ
   let rr = want;
   if (tend === 'a') rr = want * (0.75 + 0.25 * Math.sin(now * 0.8 + m.ix)) * (m.los === false ? 0.6 : 1);   // 攻撃型：前へ前へ
@@ -18232,6 +18352,9 @@ function monKindParse(k) {
   return { move: k.slice(3) || null, cfg: monCfgFix() };   // monwalk・moncar…（monster は .glb で決める）
 }
 const monK = (x) => 1 + 0.15 * (x - 3);
+// スペック（2026-11-19）：HP（よける分だけ多く見る）と攻撃力（1 秒あたり）から 2√(HP×攻撃力)。
+//   撃ち合いでは「数²×HP×攻撃力」が強さなので、この数は足し算できる：スペック 200 が 5 体 ≒ スペック 1000 が 1 体
+const monSpec = (S) => Math.round(2 * Math.sqrt((S.hpMax / (1 - Math.min(0.5, S.dodge))) * S.atk));
 function monApplyCfg(S, cfg) {
   const c = S.cfg = monCfgFix(cfg), B = S.base;
   S.speed = Math.max(0.8, B.speed * monK(c.v));
@@ -18257,7 +18380,7 @@ function monSetup(S, name) {
       }
       el('monSetLeft').textContent = left > 0 ? `のこり ${left} 点（どれかに入れてください）` : '合計 9 点。上げたいときは、ほかを下げます';
       monApplyCfg(S, c);
-      el('monSetPrev').innerHTML = `<table><tr><th>HP（守り）</th><td>${S.hpMax.toLocaleString()}</td></tr><tr><th>攻撃力</th><td>${Math.round(S.atk)}</td></tr><tr><th>速さ</th><td>${Math.round(S.speed * 3.6)}km/h・回避 ${Math.round(S.dodge * 100)}%</td></tr></table>`;
+      el('monSetPrev').innerHTML = `<table><tr><th>スペック</th><td>${monSpec(S).toLocaleString()}</td></tr><tr><th>HP（守り）</th><td>${S.hpMax.toLocaleString()}</td></tr><tr><th>攻撃力</th><td>${Math.round(S.atk)}</td></tr><tr><th>速さ</th><td>${Math.round(S.speed * 3.6)}km/h・回避 ${Math.round(S.dodge * 100)}%</td></tr></table>`;
     };
     D.onclick = (e) => {
       const b = e.target.closest('button'); if (!b) return;
@@ -18270,7 +18393,7 @@ function monSetup(S, name) {
     D.hidden = false;
   });
 }
-const monSideOf = (s, q) => MB.on && s.from && ((s.from === MB.a && q === MB.b) || (s.from === MB.b && q === MB.a));
+const monSideOf = (s, q) => MB.on && s.from && mbIn(s.from) && mbIn(q) && mbSide(s.from) !== mbSide(q);
 function stepMonShots(dt) {
   for (let i = MSH.length - 1; i >= 0; i--) {
     const s = MSH[i], T = s.w;
@@ -18377,6 +18500,7 @@ function poseMonster(m, dt, T) {
 function stepRemoteMonster(m, dt) {
   const N = m.net;
   if (m.bt && (!N || performance.now() - N.at > 8000)) { m.bt = null; m.hp = m.item.mon.hpMax; }   // バトルを始めた人がいなくなった
+  if (m.copyOf && (!m.bt || !MONS.includes(m.copyOf))) { removeMonster(m); return; }   // 分身はバトルの間だけ
   if (!N) { m.speedNow = 0; return; }
   const k = 1 - Math.exp(-dt * 8), px = m.pos.x, pz = m.pos.z;
   const a0 = (performance.now() - N.at) / 1000, age = a0 < 0.35 ? a0 : Math.max(0, 0.7 - a0);   // 次が来なければ（止まった）もとへもどる   // 届いてからの時間だけ、速さの分だけ先へ（カクカクしない）
@@ -18401,12 +18525,12 @@ function stepMonsters(dt) {
   // 動かしているモンスターの位置・HP をみんなに（動いている間は 0.2 秒ごと、止まっていれば 2 秒ごと）
   monSendT -= dt;
   if (net.room && (monSendT <= 0 || monSendNow)) {
-    const list = MONS.filter((m) => monCtl(m) && m.shared && m.id);
+    const list = MONS.filter((m) => monCtl(m) && ((m.shared && m.id) || m.cid));   // 分身（cid）もバトル中は送る
     if (list.length) {
       const busy = MB.on || list.some((m) => (m.speedNow || 0) > 0.2);
       if (busy || monSendT <= -1.8 || monSendNow) {
         const r = (v, k = 100) => Math.round(v * k) / k;
-        monEmit({ t: 'st', l: list.map((m) => [m.id, r(m.pos.x), r(m.pos.y), r(m.pos.z), r(wrapA(m.h)), Math.round(m.hp), MB.on && (MB.a === m || MB.b === m) ? 1 : 0, r(m.vel.x, 10), r(m.vel.z, 10)]) });
+        monEmit({ t: 'st', l: list.map((m) => [m.id || m.cid, r(m.pos.x), r(m.pos.y), r(m.pos.z), r(wrapA(m.h)), Math.round(m.hp), mbIn(m) ? 1 : 0, r(m.vel.x, 10), r(m.vel.z, 10)]) });
         monSendT = MB.on ? 0.1 : 0.2; monSendNow = false;   // バトル中は 1 秒に 10 回（なめらかに）
       }
     }
@@ -18415,11 +18539,11 @@ function stepMonsters(dt) {
 function monEmit(d) { if (net.room) net.room.emit('mon', d).catch(() => {}); }
 function onMonNet(p) {
   const d = p && p.data; if (!d || typeof d.t !== 'string') return;
-  const byId = (id) => (typeof id === 'string' && OK_ID.test(id) ? MONS.find((m) => m.id === id) || pvpById(id) : null);
+  const byId = (id) => (typeof id === 'string' && OK_ID.test(id) ? MONS.find((m) => m.id === id || m.cid === id) || pvpById(id) : null);
   if (d.t === 'st' && Array.isArray(d.l)) {
     for (const a of d.l.slice(0, 40)) {
       if (!Array.isArray(a)) continue;
-      const m = byId(a[0]); if (!m || (MB.on && (MB.a === m || MB.b === m))) continue;
+      const m = byId(a[0]); if (!m || mbIn(m)) continue;
       const inBt = !!((a[6] | 0) & 1);
       if (!inBt && m.mine) continue;   // 自分のモンスターは自分が動かす（バトル中だけ始めた人が動かす）
       m.net = { x: num(a[1], X0, X1), y: num(a[2], Y_BOTTOM, Y_TOP), z: num(a[3], Z0, Z1), h: num(a[4], -10, 10), vx: num(a[7], -200, 200, 0), vz: num(a[8], -200, 200, 0), at: performance.now() };
@@ -18434,12 +18558,23 @@ function onMonNet(p) {
   if (d.t === 'xm') { const s = m && MSH.find((q) => q.from === m && q.n === (d.n | 0)); if (s) missileDown(s, false); return; }
   if (d.t === 'bt') {   // ほかの人がバトルを始めた：その 2 体は、その人の画面が動かす
     const b = byId(d.b);
-    for (const q of [m, b]) if (q && !(MB.on && (MB.a === q || MB.b === q))) { q.bt = { remote: true, vs: q === m ? b : m }; q.net = q.net || { x: q.pos.x, y: q.pos.y, z: q.pos.z, h: q.h, at: performance.now() }; q.net.at = performance.now(); }
+    for (const q of [m, b]) if (q && !mbIn(q)) { q.bt = { remote: true, vs: q === m ? b : m }; q.net = q.net || { x: q.pos.x, y: q.pos.y, z: q.pos.z, h: q.h, at: performance.now() }; q.net.at = performance.now(); }
+    // 分身（2 体目から）：この画面でも同じ .glb から作る。位置は始めた人から届く
+    const na = THREE.MathUtils.clamp(d.na | 0, 1, MON_CMAX), nb = THREE.MathUtils.clamp(d.nb | 0, 1, MON_CMAX);
+    if (m && na > 1 && !mbIn(m)) monMakeCopies(m, na - 1, true).catch(() => {});
+    if (b && nb > 1 && !mbIn(b)) monMakeCopies(b, nb - 1, true).catch(() => {});
     if (m && b && (m.mine || b.mine)) showMsg(`⚔ ${cleanName(p.data.n || '')}さんが「${m.name}」と「${b.name}」のバトルを始めました`);
+    return;
+  }
+  if (d.t === 'kc') {   // 分身がやられた
+    const c = MONS.find((q) => q.cid === d.id && q.copyOf && !monCtl(q)); if (!c) return;
+    const P = Array.isArray(d.p) ? d.p : null; monCenter(c, _mc); if (P) _mc.set(num(P[0], X0, X1, _mc.x), num(P[1], Y_BOTTOM, Y_TOP, _mc.y), num(P[2], Z0, Z1, _mc.z));
+    fxBoom(_mc.x, _mc.y, _mc.z, Math.min(4, 1 + c.item.mon.s * 0.5), null); removeMonster(c);
     return;
   }
   if (d.t === 'be') {   // バトルが終わった
     const b = byId(d.b);
+    for (const q of [...MONS]) if (q.copyOf && (q.copyOf === m || q.copyOf === b) && !monCtl(q)) removeMonster(q);   // 分身は消える
     for (const q of [m, b]) if (q && q.bt && q.bt.remote) {
       q.bt = null; q.hp = q.item.mon.hpMax;
       const H = Array.isArray(d.h) ? d.h[q === m ? 0 : 1] : null;
@@ -18451,16 +18586,56 @@ function onMonNet(p) {
   }
   if (d.t === 'boom' && m) { monCenter(m, _mc); fxBoom(_mc.x, _mc.y, _mc.z, Math.min(4, 1 + m.item.mon.s * 0.5), null); }
 }
-// バトルを始める（a：自分のモンスター、b：相手）
-function battleStart(a, b, min) {
-  if (MB.on) { showMsg('いまバトル中です'); return; }
+// 分身を作る（同じ .glb・同じ動き方と配分）。remote：ほかの人が始めたバトル（動きは届いた位置で）
+const MON_CMAX = 10, MON_CIRC = '①②③④⑤⑥⑦⑧⑨⑩';
+async function monMakeCopies(m, n, remote) {
+  const out = [], S = m.item.mon, buf = m.item.def && m.item.def.source && m.item.def.source.buffer;
+  if (!buf || n <= 0) return out;
+  for (let k = 0; k < n && MONS.includes(m); k++) {
+    const it = await buildThing(buf, m.name, 'prop');
+    rigMonster(it, S.move, S.cfg);
+    const off = (Math.floor(k / 2) + 1) * (2 + monRad(m) * 2.4) * (k % 2 ? 1 : -1);
+    const c = makeMonster(it, m.name + MON_CIRC[k + 1], m.pos.x + Math.cos(m.h) * off, m.pos.z - Math.sin(m.h) * off, m.h, { mine: false });
+    c.copyOf = m; c.cid = m.shared && m.id ? `${m.id}-c${k + 2}` : null;
+    if (remote) { c.bt = { remote: true, copy: true }; c.net = { x: c.pos.x, y: c.pos.y, z: c.pos.z, h: c.h, at: performance.now() }; }
+    out.push(c);
+  }
+  return out;
+}
+// バトルフィールドの南と北のはしに、チームごとにならぶ（光って消えて、そこに出る）
+function bfPlaceTeams() {
+  [[MB.A, -1], [MB.B, 1]].forEach(([L, sg]) => {
+    const n = L.length, w = Math.max(...L.map((q) => Math.max(q.item.mon.size.x, q.item.mon.size.z))), sp = Math.min(Math.max(5, w * 1.5), 136 / Math.max(1, n - 1 || 1));
+    L.forEach((q, i) => {
+      for (let k = 0; k < 14; k++) fxEmit(true, q.pos.x + rnd(1), q.pos.y + q.item.mon.size.y * Math.random(), q.pos.z + rnd(1), 0, 1.5, 0, 0.7, 0.9, 1, 0.3, 0, 0.8, 1, 0, 1);
+      let u = THREE.MathUtils.clamp((i - (n - 1) / 2) * sp, -66, 66), v = sg * THREE.MathUtils.clamp(64 - monRad(q), 15, 62);
+      for (let k = 0; k < 8 && BF.boxes.some((o) => Math.hypot(BF.cx + u - o.x, BF.cz + v - o.z) < o.r + monRad(q) + 1); k++) v -= sg * 4;   // 物かげの上・すぐ後ろには出ない
+      q.pos.set(BF.cx + u, 0, BF.cz + v); q.h = sg > 0 ? Math.PI : 0; q.vel.set(0, 0, 0); q.airborne = false; q.net = null;
+      q.pos.y = monFloor(q, q.pos.x, q.pos.z, heightAt(q.pos.x, q.pos.z) + 2);
+    });
+  });
+}
+// バトルを始める（a：自分のモンスター、b：相手。na・nb：何体で戦うか。field：バトルフィールドで）
+async function battleStart(a, b, min, na = 1, nb = 1, field = false) {
+  if (MB.on || MB.prep) { showMsg('いまバトル中です'); return; }
   if (a.bt || b.bt) { showMsg('どちらかが、ほかのバトルに出ています'); return; }
   a.preview = b.preview = null;
-  Object.assign(MB, { on: true, a, b, t0: Date.now(), limit: Math.round(min * 60), home: [[a.pos.x, a.pos.z, a.h], [b.pos.x, b.pos.z, b.h]] });
-  for (const q of [a, b]) { q.bt = { host: true }; q.hp = q.item.mon.hpMax; q.vel.set(0, 0, 0); for (const w of q.item.mon.weapons) w.last = clock.elapsedTime - Math.random() * w.T.cd; }
-  if (a.shared && a.id && b.shared && b.id) monEmit({ t: 'bt', id: a.id, b: b.id, n: myName || '' });
-  showMsg(`⚔ バトル開始！ ${a.name} vs ${b.name}（${min} 分）`);
+  na = THREE.MathUtils.clamp(na | 0, 1, MON_CMAX); nb = THREE.MathUtils.clamp(nb | 0, 1, MON_CMAX);
+  const home = [[a.pos.x, a.pos.z, a.h], [b.pos.x, b.pos.z, b.h]];
+  let ca = [], cb = [];
+  MB.prep = true;
+  try { if (na > 1 || nb > 1) showMsg('⚔ 分身を用意しています…'); ca = await monMakeCopies(a, na - 1, false); cb = await monMakeCopies(b, nb - 1, false); }
+  catch (e) { console.warn('monster copies', e); }
+  finally { MB.prep = false; }
+  if (!MONS.includes(a) || !MONS.includes(b) || MB.on || a.bt || b.bt) { for (const q of [...ca, ...cb]) removeMonster(q); return; }
+  Object.assign(MB, { on: true, a, b, A: [a, ...ca], B: [b, ...cb], n0: [1 + ca.length, 1 + cb.length], field: !!field, t0: Date.now(), limit: Math.round(min * 60), home });
+  for (const q of [...MB.A, ...MB.B]) { q.bt = { host: true }; q.hp = q.item.mon.hpMax; q.vel.set(0, 0, 0); q.foe = null; q.ai = null; q.mode = 'stay'; for (const w of q.item.mon.weapons) w.last = clock.elapsedTime - Math.random() * w.T.cd; }
+  if (field) bfPlaceTeams();
+  if (a.shared && a.id && b.shared && b.id) monEmit({ t: 'bt', id: a.id, b: b.id, n: myName || '', na: MB.n0[0], nb: MB.n0[1], f: field ? 1 : 0 });
+  const cnt = (q, k) => (k > 1 ? `${q.name}×${k}` : q.name);
+  showMsg(`⚔ バトル開始！ ${cnt(a, MB.n0[0])} vs ${cnt(b, MB.n0[1])}（${min} 分${field ? '・バトルフィールド' : ''}）`);
   el('monHud').hidden = false;
+  if (field) { ownerAt(_mo); if (Math.hypot(_mo.x - BF.cx, _mo.z - BF.cz) > 130 && !SPEC.on) specStart(); }   // 遠くにいるときは観戦の画面にする
 }
 // 終わる：win＝勝ったほう（null は引き分け）。負けたほうは爆発して消える
 function battleEnd(win, why) {
@@ -18468,6 +18643,11 @@ function battleEnd(win, why) {
   const { a, b, home } = MB;
   MB.on = false;
   el('monHud').hidden = true;
+  for (const q of [...MB.A, ...MB.B]) if (q.copyOf && MONS.includes(q)) {   // 分身は光って消える
+    for (let k = 0; k < 14; k++) fxEmit(true, q.pos.x + rnd(1), q.pos.y + q.item.mon.size.y * Math.random(), q.pos.z + rnd(1), 0, 1.5, 0, 0.7, 0.9, 1, 0.3, 0, 0.8, 1, 0, 1);
+    removeMonster(q);
+  }
+  MB.A = []; MB.B = []; MB.field = false;
   const lose = win ? (win === a ? b : a) : null;
   [a, b].forEach((q, i) => {
     q.bt = null; q.hp = q.item.mon.hpMax; q.vel.set(0, 0, 0);
@@ -18505,7 +18685,8 @@ function stepBattleUi(dt) {
   MB.uiT = 0.25;
   if (MB.on) {
     const left = Math.max(0, MB.limit - (Date.now() - MB.t0) / 1000), hp = (q) => `${Math.ceil(q.hp)}/${q.item.mon.hpMax}`;
-    el('monHudTxt').textContent = `⚔ ${Math.floor(left / 60)}:${String(Math.floor(left % 60)).padStart(2, '0')}　${MB.a.name} ${hp(MB.a)}　vs　${MB.b.name} ${hp(MB.b)}`;
+    const tm = (k, o) => { const L = mbTeam(k), n0 = MB.n0[k - 1]; if (n0 < 2) return `${o.name} ${hp(o)}`; return `${o.name}×${L.length}/${n0} ${Math.ceil(L.reduce((x, q) => x + q.hp, 0))}/${o.item.mon.hpMax * n0}`; };
+    el('monHudTxt').textContent = `⚔ ${Math.floor(left / 60)}:${String(Math.floor(left % 60)).padStart(2, '0')}　${tm(1, MB.a)}　vs　${tm(2, MB.b)}`;
   }
   let near = null;
   if (!MB.on && !driving && !aboard && !busRide) {
@@ -18526,21 +18707,40 @@ function openBattleDlg() {
   const box = el('monDlgList'); box.textContent = '';
   list.forEach((q, i) => {
     const b = document.createElement('button'); b.type = 'button'; b.dataset.i = String(i);
-    b.innerHTML = `<b>${escH(q.name)}</b><small>${q.mine ? '自分' : escH(net.names.get(q.by) || 'だれか') + 'さん'}・${Math.round(q.pos.distanceTo(m.pos))}m・HP ${q.item.mon.hpMax}</small>`;
+    b.innerHTML = `<b>${escH(q.name)}</b><small>${q.mine ? '自分' : escH(net.names.get(q.by) || 'だれか') + 'さん'}・${Math.round(q.pos.distanceTo(m.pos))}m・スペック ${monSpec(q.item.mon).toLocaleString()}（HP ${q.item.mon.hpMax.toLocaleString()}）</small>`;
     if (i === 0) b.setAttribute('aria-pressed', 'true');
     box.appendChild(b);
   });
+  // 何体で戦うか：はじめはスペックの合計がそろう数
+  const C = el('monDlgCnt'), cnt = { a: 1, b: 1 }, foe = () => { const pk = box.querySelector('[aria-pressed="true"]'); return pk ? list[+pk.dataset.i] : null; };
+  const eq = () => { const q = foe(); if (!q) return; const sa = monSpec(m.item.mon), sb = monSpec(q.item.mon); cnt.a = sa >= sb ? 1 : THREE.MathUtils.clamp(Math.round(sb / sa), 1, MON_CMAX); cnt.b = sb >= sa ? 1 : THREE.MathUtils.clamp(Math.round(sa / sb), 1, MON_CMAX); };
+  const drawCnt = () => {
+    const q = foe(); C.hidden = !q; if (!q) return;
+    const sa = monSpec(m.item.mon), sb = monSpec(q.item.mon), ta = sa * cnt.a, tb = sb * cnt.b;
+    C.querySelector('[data-cs="a"]').textContent = `自分：${m.name}（${sa.toLocaleString()}）`;
+    C.querySelector('[data-cs="b"]').textContent = `相手：${q.name}（${sb.toLocaleString()}）`;
+    for (const k of ['a', 'b']) { C.querySelector(`[data-cv="${k}"]`).textContent = `×${cnt[k]}`; C.querySelector(`[data-cn="${k}"][data-d="-1"]`).disabled = cnt[k] <= 1; C.querySelector(`[data-cn="${k}"][data-d="1"]`).disabled = cnt[k] >= MON_CMAX; }
+    const off = Math.max(ta, tb) / Math.max(1, Math.min(ta, tb)) > 1.25;
+    el('monDlgSum').textContent = `合計 ${ta.toLocaleString()} vs ${tb.toLocaleString()}${off ? '（差が大きい）' : '（ほぼ互角）'}`;
+    el('monDlgSum').parentElement.classList.toggle('off', off);
+  };
+  eq(); drawCnt();
+  el('monDlgWhere').hidden = el('monDlgWhereT').hidden = false;
   el('monDlg').hidden = false; el('monBattle').hidden = true;
   el('monDlg').onclick = (e) => {
     const b = e.target.closest('button'); if (!b) return;
-    if (b.dataset.i != null) { for (const x of box.querySelectorAll('button')) x.setAttribute('aria-pressed', String(x === b)); return; }
+    if (b.dataset.i != null) { for (const x of box.querySelectorAll('button')) x.setAttribute('aria-pressed', String(x === b)); eq(); drawCnt(); return; }
+    if (b.dataset.cn) { cnt[b.dataset.cn] = THREE.MathUtils.clamp(cnt[b.dataset.cn] + +b.dataset.d, 1, MON_CMAX); drawCnt(); return; }
+    if (b.id === 'monDlgEq') { eq(); drawCnt(); return; }
+    if (b.dataset.where) { for (const x of el('monDlgWhere').querySelectorAll('button')) x.setAttribute('aria-pressed', String(x === b)); return; }
     if (b.dataset.min) { for (const x of el('monDlgMin').querySelectorAll('button')) x.setAttribute('aria-pressed', String(x === b)); return; }
     if (b.id === 'monDlgNo') { el('monDlg').hidden = true; return; }
     if (b.id === 'monDlgGo') {
       const pick = box.querySelector('[aria-pressed="true"]'), mn = el('monDlgMin').querySelector('[aria-pressed="true"]');
       const q = pick && list[+pick.dataset.i];
       el('monDlg').hidden = true;
-      if (q && MONS.includes(q) && MONS.includes(m)) battleStart(m, q, mn ? +mn.dataset.min : 5);
+      const where = el('monDlgWhere').querySelector('[aria-pressed="true"]');
+      if (q && MONS.includes(q) && MONS.includes(m)) battleStart(m, q, mn ? +mn.dataset.min : 5, cnt.a, cnt.b, !where || where.dataset.where === 'field');
     }
   };
 }
@@ -18634,9 +18834,9 @@ function battlePairs() {
   if (MB.on && MONS.includes(MB.a) && MONS.includes(MB.b)) { out.push([MB.a, MB.b]); seen.add(MB.a); seen.add(MB.b); }
   for (const P of PVP.pairs) if (P.on && monAlive(P.a) && monAlive(P.b)) out.push([P.a, P.b]);   // プレイヤーどうしの対戦
   for (const m of MONS) {
-    if (!m.bt || !m.bt.remote || seen.has(m)) continue;
+    if (!m.bt || !m.bt.remote || seen.has(m) || m.copyOf) continue;
     let o = m.bt.vs && MONS.includes(m.bt.vs) && !seen.has(m.bt.vs) ? m.bt.vs : null;
-    if (!o) { let bd = Infinity; for (const q of MONS) if (q !== m && q.bt && q.bt.remote && !seen.has(q)) { const d = q.pos.distanceTo(m.pos); if (d < bd) { bd = d; o = q; } } }
+    if (!o) { let bd = Infinity; for (const q of MONS) if (q !== m && q.bt && q.bt.remote && !seen.has(q) && !q.copyOf) { const d = q.pos.distanceTo(m.pos); if (d < bd) { bd = d; o = q; } } }
     if (!o) continue;
     seen.add(m); seen.add(o); out.push([m, o]);
   }
@@ -18768,6 +18968,7 @@ function openPvpDlg() {
     box.appendChild(b);
   });
   el('monDlgGo').textContent = '⚔ 申しこむ';
+  el('monDlgCnt').hidden = el('monDlgWhere').hidden = el('monDlgWhereT').hidden = true;   // 数と場所はモンスターのバトルだけ
   el('monDlg').hidden = false; el('pvpBtn').hidden = true;
   el('monDlg').onclick = (e) => {
     const b = e.target.closest('button'); if (!b) return;
@@ -18890,7 +19091,7 @@ function stepPvp(dt) {
 el('pvpBtn').addEventListener('click', openPvpDlg);
 { const f = el('pvpFire'), on = (e) => { e.preventDefault(); PVP.fire = true; }, off = () => { PVP.fire = false; };
   f.addEventListener('pointerdown', on); f.addEventListener('pointerup', off); f.addEventListener('pointercancel', off); f.addEventListener('pointerleave', off); }
-window.__pvp = PVP; window.__pvpStart = pvpStart; window.__pvpNet = onPvpNet; window.__spec = SPEC; window.__mons = () => MONS; window.__mb = MB; window.__cov = COV; window.__covSeg = covSeg; window.__battle = battleStart; window.__addMon = addMonsterFromBuffer;   // テスト用
+window.__pvp = PVP; window.__pvpStart = pvpStart; window.__pvpNet = onPvpNet; window.__spec = SPEC; window.__mons = () => MONS; window.__mb = MB; window.__cov = COV; window.__covSeg = covSeg; window.__battle = battleStart; window.__addMon = addMonsterFromBuffer; window.__monSpec = monSpec; window.__openBattle = () => { monNearMe = MONS.find((m) => m.mine && !m.copyOf) || null; openBattleDlg(); };   // テスト用
 /* ================= ループ ================= */
 const clock = new THREE.Clock();
 let netTick = 0, firstFrame = true;
@@ -21140,6 +21341,130 @@ jetPushBtnInit();
 el('aptBtn').addEventListener('click', () => goAirport(AIRPORTS[0]));
 el('apt2Btn').addEventListener('click', () => goAirport(AIRPORTS[1]));
 
+/* ---- バトルフィールドの物（2026-11-19）：物かげ（コンクリートの壁・木の板・木箱・コンテナ・土のう・ドラム缶・タイヤ・こわれた建物）、池の水、フェンスと入口、看板
+   物かげは、モンスターの弾をさえぎる（COV）・車や飛行機がぶつかる（addPier）・歩く人が通りぬけない（bfPush） */
+const BF_TYPES = {   // はば（x）・おく行き（z）・高さ
+  wall: [6, 0.4, 2.4], wallS: [3, 0.4, 2.4], wood: [4, 0.25, 1.8], crate: [1.6, 1.6, 1.6], cont: [6.1, 2.44, 2.6],
+  sand: [3, 0.9, 0.9], drums: [1.9, 1.9, 1.0], tires: [1.4, 1.4, 1.2], ruin: [8, 6, 5.5],
+};
+const BF_LAYOUT = [   // 種類, u, v, 向き（度）, おまけ（木箱の段・コンテナの色）
+  ['sand', -66, 8, 90], ['sand', -66, -8, 90], ['wood', -55, 20, 0], ['crate', -58, -18, 0, 2], ['drums', -52, -30, 0],
+  ['cont', -55, -58, 15, 0xa0442a], ['wall', -35, -62, 0], ['crate', -25, -50, 20, 1], ['tires', -45, -30, 0], ['wood', -20, -40, 60],
+  ['ruin', 10, -40, 0], ['sand', 0, -25, 0], ['cont', 45, -60, 90, 0x2f5f9a], ['wall', 60, -45, 90], ['drums', 30, -30, 0], ['crate', 62, -62, 0, 2],
+  ['wall', -15, 10, 30], ['wallS', 22, 15, -40], ['wood', -5, 30, 90], ['crate', 30, 0, 10, 1], ['tires', 15, -10, 0],
+  ['cont', 65, 5, 0, 0x3f7a3a], ['wood', 55, 45, 30], ['sand', 40, 8, 90], ['wallS', 66, 40, 90], ['drums', 60, 60, 0],
+  ['ruin', -10, 55, 90], ['cont', -40, 62, 90, 0xd08a2a], ['wall', 40, 65, 0], ['crate', 8, 68, 0, 2], ['sand', -25, 42, 20],
+  ['tires', -60, 62, 0], ['wall', -60, 30, 90], ['wood', -45, 0, -30], ['crate', -8, -15, 45, 1], ['wallS', 50, -20, 0],
+];
+function buildBattleField() {
+  if (BF.built) return; BF.built = true;
+  const g = new THREE.Group(); g.name = 'battlefield';
+  const mats = {
+    con: new THREE.MeshLambertMaterial({ color: 0x9c9b95 }), wood: new THREE.MeshLambertMaterial({ color: 0x8a5a32 }), crate: new THREE.MeshLambertMaterial({ color: 0xb48a4e }),
+    cont: new THREE.MeshLambertMaterial({ color: 0xffffff }), sand: new THREE.MeshLambertMaterial({ color: 0xb9a878 }), drum: new THREE.MeshLambertMaterial({ color: 0x2f6f8f }),
+    tire: new THREE.MeshLambertMaterial({ color: 0x222222 }), dark: new THREE.MeshLambertMaterial({ color: 0x3b3b38 }), post: new THREE.MeshLambertMaterial({ color: 0x7d858c }),
+  };
+  const parts = { con: [], wood: [], crate: [], sand: [], drum: [], tire: [], dark: [], post: [] }, conts = [];
+  const unitBox = new THREE.BoxGeometry(1, 1, 1);
+  const box = (list, w, h, d, x, y, z, rot) => { const b = unitBox.clone(); b.scale(w, h, d); b.rotateY(rot); b.translate(x, y, z); list.push(b); };
+  // 足もとのいちばん低い所（坂でも浮かない。下は 1m 地面にうめる）
+  const lowAt = (x, z, rot, hw, hd) => { const c = Math.cos(rot), s = Math.sin(rot); let lo = Infinity, hi = -Infinity; for (const [a, b] of [[0, 0], [1, 1], [1, -1], [-1, 1], [-1, -1]]) { const lx = a * hw, lz = b * hd, h = heightAt(x + lx * c + lz * s, z - lx * s + lz * c); lo = Math.min(lo, h); hi = Math.max(hi, h); } return [lo, hi]; };
+  const solid = (x, z, rot, hw, hd, y0, y1) => {
+    BF.cov.push(covBox(x, z, rot, hw, hd, y0, y1, null));
+    BF.boxes.push({ x, z, c: Math.cos(rot), s: Math.sin(rot), hw, hd, y0, y1, r: Math.hypot(hw, hd) });
+    addPier(x, z, rot, hw, hd, y0, y1);
+  };
+  for (const [t, u, v, deg, extra] of BF_LAYOUT) {
+    const [w, d, h0] = BF_TYPES[t], x = BF.cx + u, z = BF.cz + v, rot = deg * Math.PI / 180, c = Math.cos(rot), s = Math.sin(rot);
+    const [lo, hi] = lowAt(x, z, rot, w / 2, d / 2), base = Math.min(lo + 0.15, (lo + hi) / 2), at = (lx, lz) => [x + lx * c + lz * s, z - lx * s + lz * c];
+    let h = h0;
+    if (t === 'wall' || t === 'wallS') { box(parts.con, w, h + 1, d, x, base + (h - 1) / 2, z, rot); box(parts.con, 0.6, 0.25, d + 0.3, ...at(-w / 2 + 0.3, 0).slice(0, 1), base + h + 0.12, at(-w / 2 + 0.3, 0)[1], rot); }
+    else if (t === 'wood') { for (let k = 0; k < 4; k++) box(parts.wood, w, 0.36, d, x, base + 0.25 + k * 0.42, z, rot); for (const e of [-1, 1]) { const [px, pz] = at(e * (w / 2 - 0.2), d / 2 + 0.06); box(parts.dark, 0.12, h + 1, 0.12, px, base + (h - 1) / 2, pz, rot); } }
+    else if (t === 'crate') { h = 1.6 * (extra || 1); for (let k = 0; k < (extra || 1); k++) { box(parts.crate, 1.6, 1.6, 1.6, x, base + 0.8 + k * 1.6, z, rot + k * 0.3); box(parts.wood, 1.64, 0.14, 1.64, x, base + 0.08 + k * 1.6, z, rot + k * 0.3); box(parts.wood, 1.64, 0.14, 1.64, x, base + 1.52 + k * 1.6, z, rot + k * 0.3); } if (extra === 1) { const [px, pz] = at(1.9, 0.3); box(parts.crate, 1.2, 1.2, 1.2, px, base + 0.6, pz, rot + 0.5); } }
+    else if (t === 'cont') { const b = unitBox.clone(); b.scale(w, h + 1, d); b.rotateY(rot); b.translate(x, base + (h - 1) / 2, z); conts.push([b, extra]); for (let k = -5; k <= 5; k++) { const [px, pz] = at(k * 0.55, 0); box(parts.dark, 0.06, h * 0.9, d + 0.04, px, base + h * 0.5, pz, rot); } }
+    else if (t === 'sand') { for (let k = 0; k < 3; k++) for (let i = 0; i < 4 - (k % 2); i++) { const [px, pz] = at(-1.15 + i * 0.75 + (k % 2) * 0.37, 0); box(parts.sand, 0.72, 0.3, 0.8, px, base + 0.15 + k * 0.29, pz, rot); } }
+    else if (t === 'drums') { for (const [a, b2] of [[-0.45, -0.45], [0.5, -0.4], [-0.4, 0.5], [0.45, 0.45]]) { const [px, pz] = at(a, b2), cy = new THREE.CylinderGeometry(0.38, 0.38, 0.95, 12); cy.translate(px, base + 0.48, pz); parts.drum.push(cy); } }
+    else if (t === 'tires') { for (let k = 0; k < 4; k++) { const tr = new THREE.TorusGeometry(0.5, 0.2, 6, 14); tr.rotateX(Math.PI / 2); tr.translate(x + (k % 2) * 0.05, base + 0.2 + k * 0.3, z); parts.tire.push(tr); } }
+    else if (t === 'ruin') {   // こわれたコンクリートの建物：4 つの壁（窓の穴）・中は空っぽ。弾の箱は外側
+      for (const [lx, lz, ww, dd] of [[0, -d / 2 + 0.2, w, 0.4], [0, d / 2 - 0.2, w, 0.4], [-w / 2 + 0.2, 0, 0.4, d], [w / 2 - 0.2, 0, 0.4, d]]) { const [px, pz] = at(lx, lz); box(parts.con, ww, h + 1, dd, px, base + (h - 1) / 2, pz, rot); }
+      for (const [lx, lz, ww, dd] of [[-2, -d / 2 + 0.2, 1.4, 0.45], [2, -d / 2 + 0.2, 1.4, 0.45], [0, d / 2 - 0.2, 1.4, 0.45], [-w / 2 + 0.2, 0, 0.45, 1.4], [w / 2 - 0.2, 0, 0.45, 1.4]]) { const [px, pz] = at(lx, lz); box(parts.dark, ww, 1.1, dd, px, base + 3.2, pz, rot); }
+      const fl = unitBox.clone(); fl.scale(w - 0.6, 0.2, d - 0.6); fl.rotateY(rot); fl.translate(x, base + 0.1, z); parts.dark.push(fl);
+    }
+    solid(x, z, rot, w / 2, d / 2, base - 0.5, base + h);
+  }
+  for (const [k, list] of Object.entries(parts)) if (list.length) { const m = new THREE.Mesh(mergeGeometries(list), mats[k]); m.castShadow = true; m.receiveShadow = true; g.add(m); }
+  for (const [b, col] of conts) { const m = new THREE.Mesh(b, new THREE.MeshLambertMaterial({ color: col })); m.castShadow = true; m.receiveShadow = true; g.add(m); }
+  // 池の水
+  const P = BF.pond, wg = new THREE.CircleGeometry(P.R + 2.2, 48); wg.rotateX(-Math.PI / 2);
+  const water = new THREE.Mesh(wg, new THREE.MeshLambertMaterial({ color: 0x3f86a8, transparent: true, opacity: 0.82, depthWrite: false }));
+  water.position.set(BF.cx + P.u, P.y, BF.cz + P.v); water.renderOrder = 2; g.add(water);
+  // フェンス：3m ごとの柱・あみ・上の手すり。入口（西・南）はあいている
+  const sides = [['s', [BF.x0, BF.z0], [1, 0]], ['e', [BF.x1, BF.z0], [0, 1]], ['n', [BF.x1, BF.z1], [-1, 0]], ['w', [BF.x0, BF.z1], [0, -1]]];
+  const cv = document.createElement('canvas'); cv.width = 64; cv.height = 64; const cg = cv.getContext('2d');
+  cg.strokeStyle = 'rgba(200,206,212,1)'; cg.lineWidth = 3; cg.beginPath(); cg.moveTo(0, 32); cg.lineTo(32, 0); cg.lineTo(64, 32); cg.lineTo(32, 64); cg.closePath(); cg.moveTo(-32, 32); cg.lineTo(0, 0); cg.moveTo(64, 0); cg.lineTo(96, 32); cg.stroke();
+  const tex = new THREE.CanvasTexture(cv); tex.wrapS = tex.wrapT = THREE.RepeatWrapping; tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = 4;
+  const netM = new THREE.MeshLambertMaterial({ map: tex, transparent: true, alphaTest: 0.35, side: THREE.DoubleSide });
+  const FH = 2.4, posts = [], pos = [], uv = [], idx = [];
+  BF.fence = [];
+  for (const [nm, p0, dir] of sides) {
+    const gate = BF.gates.find((q) => q.side === nm), L = 150;
+    // 入口の位置（辺の始まりからの距離）
+    const gAt = gate ? (nm === 'w' ? BF.cz + gate.at - BF.z1 : nm === 's' ? BF.cx + gate.at - BF.x0 : 0) : 0, g0 = gate ? Math.abs(gAt) - gate.w / 2 : -1, g1 = gate ? Math.abs(gAt) + gate.w / 2 : -1;
+    const runs = gate ? [[0, g0], [g1, L]] : [[0, L]];
+    for (const [a, b] of runs) {
+      const n = Math.max(1, Math.round((b - a) / 3)), base = pos.length / 3;
+      let ylo = Infinity, yhi = -Infinity;
+      for (let k = 0; k <= n; k++) {
+        const t = a + (b - a) * k / n, x = p0[0] + dir[0] * t, z = p0[1] + dir[1] * t, y = heightAt(x, z);
+        ylo = Math.min(ylo, y); yhi = Math.max(yhi, y);
+        pos.push(x, y + 0.05, z, x, y + FH, z); uv.push(t / 1.2, 0, t / 1.2, FH / 1.2);
+        if (k) { const q = base + (k - 1) * 2; idx.push(q, q + 2, q + 1, q + 1, q + 2, q + 3); }
+        const thick = (k === 0 || k === n) && gate ? 0.09 : 0.05, pc = new THREE.CylinderGeometry(thick, thick, FH + 0.6, 6); pc.translate(x, y + FH / 2 - 0.2, z); posts.push(pc);
+        if (k) { const x0 = p0[0] + dir[0] * (a + (b - a) * (k - 1) / n), z0 = p0[1] + dir[1] * (a + (b - a) * (k - 1) / n), y0 = heightAt(x0, z0), rail = new THREE.CylinderGeometry(0.035, 0.035, 1, 5); rail.rotateZ(Math.PI / 2); const Ls = Math.hypot(x - x0, z - z0, y - y0); rail.scale(Ls, 1, 1); rail.rotateZ(Math.atan2(y - y0, Math.hypot(x - x0, z - z0))); rail.rotateY(-Math.atan2(z - z0, x - x0)); rail.translate((x + x0) / 2, (y + y0) / 2 + FH, (z + z0) / 2); posts.push(rail); }
+      }
+      const xa = p0[0] + dir[0] * a, za = p0[1] + dir[1] * a, xb = p0[0] + dir[0] * b, zb = p0[1] + dir[1] * b;
+      BF.fence.push({ x0: xa, z0: za, x1: xb, z1: zb });
+      addPier((xa + xb) / 2, (za + zb) / 2, dir[0] ? 0 : Math.PI / 2, (b - a) / 2, 0.08, ylo - 0.5, yhi + FH);
+    }
+  }
+  const ng = new THREE.BufferGeometry(); ng.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); ng.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); ng.setIndex(idx); ng.computeVertexNormals();
+  const netMesh = new THREE.Mesh(ng, netM); g.add(netMesh);
+  const pm = new THREE.Mesh(mergeGeometries(posts), mats.post); pm.castShadow = true; g.add(pm);
+  // 看板（西の入口の横。バスターミナルのほうを向く）
+  const sx = BF.x0 - 1.2, sz = BF.cz + 5.5, sy = heightAt(sx, sz);
+  const sc = document.createElement('canvas'); sc.width = 512; sc.height = 192; const sg = sc.getContext('2d');
+  sg.fillStyle = '#7a2a12'; sg.fillRect(0, 0, 512, 192); sg.fillStyle = '#ffe9c2'; sg.fillRect(8, 8, 496, 176); sg.fillStyle = '#7a2a12'; sg.textAlign = 'center'; sg.textBaseline = 'middle';
+  sg.font = '900 64px sans-serif'; sg.fillText('⚔ バトルフィールド', 256, 78, 480); sg.font = '700 30px sans-serif'; sg.fillText('モンスターのバトルはここで', 256, 146, 480);
+  const st = new THREE.CanvasTexture(sc); st.colorSpace = THREE.SRGBColorSpace;
+  const board = new THREE.Mesh(new THREE.PlaneGeometry(3.6, 1.35), new THREE.MeshLambertMaterial({ map: st })); board.position.set(sx - 0.06, sy + 2.3, sz); board.rotation.y = -Math.PI / 2; g.add(board);
+  const back = new THREE.Mesh(new THREE.BoxGeometry(0.08, 1.45, 3.7), mats.dark); back.position.set(sx + 0.01, sy + 2.3, sz); g.add(back);
+  for (const e of [-1.5, 1.5]) { const p = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 2.4, 6), mats.post); p.position.set(sx + 0.06, sy + 1.2, sz + e); g.add(p); }
+  scene.add(g);
+  BF.group = g;
+}
+// 歩く人：物かげ・フェンスを通りぬけない
+function bfPush(p, R) {
+  if (!BF.built || p.x < BF.x0 - 3 || p.x > BF.x1 + 3 || p.z < BF.z0 - 3 || p.z > BF.z1 + 3) return;
+  for (const o of BF.boxes) {
+    const dx = p.x - o.x, dz = p.z - o.z; if (dx * dx + dz * dz > (o.r + R) * (o.r + R)) continue;
+    if (p.y > o.y1 - 0.4 || p.y + P_H < o.y0) continue;
+    const u = dx * o.c - dz * o.s, v = dx * o.s + dz * o.c, hw = o.hw + R, hd = o.hd + R;
+    if (Math.abs(u) >= hw || Math.abs(v) >= hd) continue;
+    let nu = u, nv = v;
+    if (hw - Math.abs(u) < hd - Math.abs(v)) nu = Math.sign(u || 1) * hw; else nv = Math.sign(v || 1) * hd;
+    p.x = o.x + nu * o.c + nv * o.s; p.z = o.z - nu * o.s + nv * o.c;
+  }
+  for (const f of BF.fence) {
+    const vx = f.x1 - f.x0, vz = f.z1 - f.z0, L2 = vx * vx + vz * vz, t = Math.max(0, Math.min(1, ((p.x - f.x0) * vx + (p.z - f.z0) * vz) / L2));
+    const qx = f.x0 + vx * t, qz = f.z0 + vz * t, dx = p.x - qx, dz = p.z - qz, d = Math.hypot(dx, dz), r = R + 0.1;
+    if (d >= r) continue;
+    let nx = dx, nz = dz;
+    if (d < 1e-4) { const inside = bfIn(p.x, p.z); nx = vz; nz = -vx; const k = Math.hypot(nx, nz); nx /= k; nz /= k; if (bfIn(p.x + nx, p.z + nz) !== inside) { nx = -nx; nz = -nz; } }
+    else { nx /= d; nz /= d; }
+    p.x = qx + nx * r; p.z = qz + nz * r;
+  }
+}
+buildBattleField();
 window.__world = {
   addPropFromBuffer, buildThing, VKINDS, stepCarLamps, toggleWork, toggleRide, get rideV() { return ride; },
   get player() { return player.pos.toArray(); },
@@ -21155,7 +21480,7 @@ window.__world = {
   hullGround, findWaterSpot, rescueBoat, get periscope() { return periscope; }, toggleLight, setPeriscope,
   teleport(x, z, y) { player.pos.set(x, y ?? heightAt(x, z), z); player.vy = 0; },
   torps, tube, ord, booms, get clockT() { return clock.elapsedTime; },
-  get BIZ() { return BIZ; }, get BIZS() { return BIZS; }, equipFee, tonCls, PAIDV, RUNS, stepRuns, runCheck, cargoAction, doCargo, coSites, parkAt, myGltfTrucks, truckKey, BIZX, BIZ_RECIPE, bizById, bizProcBy, bizCarrier, grpList, bizTradeIn, bizTradeFlush, BIZ_NET, carRegister, carBuy, carTry, trialEnd, TRIAL, carSaleIn, carList, dlrSync, DLR_SHOW, dlrLayout, myMachines, MACH, BIZ_BLD, bizNetLoad, bizNetEvent, bizPush, bizAct, bizDay, bizSettle, bizHtml, drawBizOnMap, TOWN, COMPANIES, ECON, makePaper, openTown, closeTown, townNearAction, get myStocks() { return myStocks; }, weatherAt, wxDay, calOf, gameDayN, setDayOffset(d) { dayOffset = d; }, setGameTime(n, hr) { dayOffset = 0; hourOffset = 0; const real = worldHour(); hourOffset = ((hr - real) % 24 + 24) % 24; dayOffset = n - Math.floor(gameDayF()); }, townMeshes, townBlds, townBoats, fieldStage,
+  BF, bfIn, buildBattleField, get BIZ() { return BIZ; }, get BIZS() { return BIZS; }, equipFee, tonCls, PAIDV, RUNS, stepRuns, runCheck, cargoAction, doCargo, coSites, parkAt, myGltfTrucks, truckKey, BIZX, BIZ_RECIPE, bizById, bizProcBy, bizCarrier, grpList, bizTradeIn, bizTradeFlush, BIZ_NET, carRegister, carBuy, carTry, trialEnd, TRIAL, carSaleIn, carList, dlrSync, DLR_SHOW, dlrLayout, myMachines, MACH, BIZ_BLD, bizNetLoad, bizNetEvent, bizPush, bizAct, bizDay, bizSettle, bizHtml, drawBizOnMap, TOWN, COMPANIES, ECON, makePaper, openTown, closeTown, townNearAction, get myStocks() { return myStocks; }, weatherAt, wxDay, calOf, gameDayN, setDayOffset(d) { dayOffset = d; }, setGameTime(n, hr) { dayOffset = 0; hourOffset = 0; const real = worldHour(); hourOffset = ((hr - real) % 24 + 24) % 24; dayOffset = n - Math.floor(gameDayF()); }, townMeshes, townBlds, townBoats, fieldStage,
   AIRPORT, AIRPORTS, goAirport, AIRLINERS, isa, jetOf, jetHits, AIR, ATC, APT_LAY, aiTrack, aiCycle, aiRunwayBusy, atcMakePlan, atcFile, atcMapPick, atcStep, atcApply, MAR, standInfo, atcPickStand, jetCamCycle, get jetView() { return jetView; }, jetPushback, activeRwy, appGeo, pathMake, stepJet, jetApButton, jetApAdjust, jetGearLever, jetFlapLever, jetSpeedbrake, ilsInfo, jetVs, jetVref, jetTO, get jetRideV() { return jetRide(); }, farLand,
   AUTO, SEMI, semiGo, semiHalt, setSemi, semiTurnReq, semiTurnCand, semiNext, setApMin, startAuto, stopAuto, planAuto, stepHwTraffic, autoSpeed, autoLaneReq, autoTurnReq, get myCar() { return myCar; }, makeVehicle, rideFromMenu, putAwayMini, renderMoveList, makeMiniCar, CARL, setTurnSignal, cycleLampMode, autoBlinkDir, stepTraffic, stepVehicle, camera, signalState,
 };
